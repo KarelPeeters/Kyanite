@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::fmt::{self, Write};
+use std::hash::{Hash, Hasher};
 
 use rand::Rng;
 
@@ -8,7 +9,7 @@ use crate::board::Player::Neutral;
 
 #[derive(Copy, Clone)]
 #[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum Player {
     Player,
     Enemy,
@@ -16,7 +17,7 @@ pub enum Player {
 }
 
 impl Player {
-    pub fn other(&self) -> Player {
+    pub fn other(self) -> Player {
         match self {
             Player::Player => Player::Enemy,
             Player::Enemy => Player::Player,
@@ -24,7 +25,7 @@ impl Player {
         }
     }
 
-    fn index(&self) -> u32 {
+    fn index(self) -> u32 {
         match self {
             Player::Player => 0,
             Player::Enemy => 1,
@@ -35,7 +36,7 @@ impl Player {
 
 #[derive(Copy, Clone)]
 #[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Eq, PartialEq)]
 pub struct Coord(u8);
 
 impl Coord {
@@ -59,28 +60,28 @@ impl Coord {
         Coord(((x / 3) + (y / 3) * 3) * 9 + ((x % 3) + (y % 3) * 3))
     }
 
-    pub fn o(&self) -> u8 {
+    pub fn o(self) -> u8 {
         self.0
     }
 
-    pub fn om(&self) -> u8 {
+    pub fn om(self) -> u8 {
         (self.0 / 9) as u8
     }
 
-    pub fn os(&self) -> u8 {
+    pub fn os(self) -> u8 {
         (self.0 % 9) as u8
     }
 
-    pub fn x(&self) -> u8 {
+    pub fn x(self) -> u8 {
         (self.om() % 3) * 3 + (self.os() % 3)
     }
 
-    pub fn y(&self) -> u8 {
+    pub fn y(self) -> u8 {
         (self.om() / 3) * 3 + (self.os() / 3)
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct Board {
     grids: [u32; 9],
     main_grid: u32,
@@ -91,6 +92,14 @@ pub struct Board {
 
     macro_mask: u32,
     macro_open: u32,
+
+    hash: usize,
+}
+
+impl PartialEq for Board {
+    fn eq(&self, other: &Self) -> bool {
+        self.grids == other.grids && self.macro_mask == other.macro_mask
+    }
 }
 
 impl fmt::Display for Board {
@@ -145,7 +154,7 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
             } else {
                 self.curr_om = self.macro_left.trailing_zeros();
                 self.macro_left &= self.macro_left - 1;
-                self.grid_left = !compact_grid(self.board.grids[self.curr_om as usize]) & Board::FULL_MASK
+                self.grid_left = !compact_grid(self.board.grids[self.curr_om as usize]) & Board::FULL_MASK;
             }
         }
 
@@ -153,6 +162,35 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
         self.grid_left &= self.grid_left - 1;
 
         Some(Coord::of_oo(self.curr_om as u8, os as u8))
+    }
+}
+
+lazy_static! {
+    static ref PIECE_BITS: [usize; 2*81 + 9] = {
+        let mut arr = [0; 2*81 + 9];
+        let mut rng = rand::thread_rng();
+        for i in 0..arr.len() {
+            arr[i] = rng.gen();
+        }
+        arr
+    };
+}
+
+fn get_piece_bit(coord: Coord, player: Player) -> usize {
+    match player {
+        Player::Player => PIECE_BITS[coord.o() as usize],
+        Player::Enemy => PIECE_BITS[81 + coord.o() as usize],
+        Player::Neutral => panic!(),
+    }
+}
+
+fn get_last_move_bit(coord: Coord) -> usize {
+    PIECE_BITS[2 * 81 + coord.os() as usize]
+}
+
+impl Hash for Board {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.hash)
     }
 }
 
@@ -168,6 +206,7 @@ impl Board {
             won_by: None,
             macro_mask: Board::FULL_MASK,
             macro_open: Board::FULL_MASK,
+            hash: 0,
         }
     }
 
@@ -191,6 +230,10 @@ impl Board {
         };
     }
 
+    pub fn get_hash(&self) -> usize {
+        return self.hash;
+    }
+
     #[inline(always)]
     pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
         if self.is_done() {
@@ -208,7 +251,7 @@ impl Board {
             let grid = self.grids[om as usize];
             let grid_count = 9 - grid.count_ones();
 
-            if index <= grid_count - 1 {
+            if index < grid_count {
                 let os = get_nth_set_bit(!compact_grid(grid), index as u32);
                 return Some(Coord::of_oo(om as u8, os as u8));
             }
@@ -248,6 +291,11 @@ impl Board {
         let os = coord.os();
         let p = (9 * player.index()) as u8;
 
+        //update hash
+        self.hash ^= get_piece_bit(coord, player);
+        self.hash ^= self.last_move.map_or(0, |m| get_last_move_bit(m));
+        self.hash ^= get_last_move_bit(coord);
+
         //set tile and macro, check win
         let new_grid = self.grids[om as usize] | (1 << (os + p));
         self.grids[om as usize] = new_grid;
@@ -262,7 +310,7 @@ impl Board {
             }
         }
 
-        //update macro masks
+        //update macro masks, remove bit from open and recalculate mask
         if grid_win || new_grid.count_ones() == 9 {
             self.macro_open ^= 1 << om;
             if self.macro_open == 0 && self.won_by.is_none() {
@@ -276,7 +324,7 @@ impl Board {
 
     fn calc_macro_mask(&self, os: u8) -> u32 {
         if has_bit(self.macro_open, os) {
-            1 << os as u32
+            1u32 << os
         } else {
             self.macro_open
         }

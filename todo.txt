@@ -1,0 +1,16 @@
+store board in Node instead of recalculating moves every time
+    -> measure difference
+
+switch from lookup table to checking all masks
+
+neural networks
+
+keep reference to best node, swap if improved
+
+try out hashing again
+
+unsafe code in rust to work with the tree?
+
+bitshift om and os instead of %/ 9
+
+delay child allocation, more then half of them are never visited anyway
