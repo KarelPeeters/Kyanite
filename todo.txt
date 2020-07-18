@@ -14,3 +14,5 @@ unsafe code in rust to work with the tree?
 bitshift om and os instead of %/ 9
 
 delay child allocation, more then half of them are never visited anyway
+
+figure out difference in amount of nodes between Rust, Kotlin and C versions?

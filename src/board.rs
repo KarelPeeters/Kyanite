@@ -238,7 +238,7 @@ impl Board {
 //        return self.hash;
 //    }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
         if self.is_done() {
             return None;

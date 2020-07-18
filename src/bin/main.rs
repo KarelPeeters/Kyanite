@@ -2,7 +2,7 @@ use std::io;
 use std::io::{stdin, Write};
 use std::time::Instant;
 
-use rand::thread_rng;
+use rand::{thread_rng, SeedableRng};
 use regex::Regex;
 
 use sttt::board::{Board, Coord};
@@ -11,9 +11,13 @@ use sttt::bot_game::{MCTSBot};
 use sttt::mcts::old_move_mcts;
 use sttt::minimax::move_minimax;
 use std::ops::Range;
+use rand::rngs::SmallRng;
 
 fn main() {
-    _console_game();
+    // _console_game();
+    _test_mcts()
+
+
 }
 
 fn _test_mm() {
@@ -37,15 +41,15 @@ fn _follow_playout() {
 
 fn _test_mcts() {
     let mut board = Board::new();
-    board.play(Coord::of_oo(4, 4)); // X center center
-    board.play(Coord::of_oo(4, 0)); // O top left corner
-    board.play(Coord::of_oo(0, 4)); // X top left center
-    board.play(Coord::of_oo(4, 2)); // O center top right
+    // board.play(Coord::of_oo(4, 4)); // X center center
+    // board.play(Coord::of_oo(4, 0)); // O top left corner
+    // board.play(Coord::of_oo(0, 4)); // X top left center
+    // board.play(Coord::of_oo(4, 2)); // O center top right
 
     println!("{}", board);
 
     let start = Instant::now();
-    println!("{:?}", old_move_mcts(&board, 200 * 1000 * 1000, &mut thread_rng(), true));
+    println!("{:?}", old_move_mcts(&board, 10_000_000, &mut SmallRng::from_entropy(), true));
     println!("{}", start.elapsed().as_millis() as f64 / 1000.0);
 }
 

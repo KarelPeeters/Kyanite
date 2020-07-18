@@ -6,10 +6,35 @@ use rand::seq::IteratorRandom;
 
 use crate::board::{Board, Coord, Player};
 
+#[derive(Copy, Clone)]
+struct IdxRange {
+    start: usize,
+    end_exclusive: usize,
+}
+
+impl IdxRange {
+    fn len(self) -> usize {
+        self.end_exclusive - self.start
+    }
+
+    fn iter(self) -> impl Iterator<Item=usize> {
+        self.into_iter()
+    }
+}
+
+impl IntoIterator for IdxRange {
+    type Item = usize;
+    type IntoIter = std::ops::Range<usize>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.start..self.end_exclusive
+    }
+}
+
 #[derive(Clone)]
 struct Node {
     board: Board,
-    children: Option<Vec<usize>>,
+    children: Option<IdxRange>,
     visits: usize,
     wins: usize,
 }
@@ -43,19 +68,21 @@ impl Node {
                 false => "├── ",
             });
         }
-        out.push_str(&format!("{:?}: {}/{}", self.board.last_move, self.wins, self.visits));
+        out.push_str(&format!("{:?}: {}/{} ≈ {:.03}", self.board.last_move, self.wins, self.visits,
+                              self.wins as f32 / self.visits as f32));
         out.push('\n');
 
         if let Some(children) = &self.children {
             for (i, child) in children.iter().enumerate() {
-                tree[*child].append_tree(tree, out, depth + 1, max_depth, i == children.len() - 1)
+                tree[child].append_tree(tree, out, depth + 1, max_depth, i == children.len() - 1)
             }
         };
     }
 }
 
 pub fn old_move_mcts(board: &Board, iterations: usize, rand: &mut impl Rng, log: bool) -> Option<Coord> {
-    let mut tree: Vec<Node> = Vec::with_capacity(iterations);
+    let initial_capacity = iterations * 3;
+    let mut tree: Vec<Node> = Vec::with_capacity(initial_capacity);
     tree.push(Node::new(Board::new()));
 
     while tree[0].visits < iterations {
@@ -69,23 +96,23 @@ pub fn old_move_mcts(board: &Board, iterations: usize, rand: &mut impl Rng, log:
     if log {
         println!("{}", tree[0].to_string(&tree, 1));
         println!("{:?}", count(&tree, 0));
-        println!("Total node count {:?}", tree.len());
+        println!("Total node count {:?} / {:?} (orig {:?})", tree.len(), tree.capacity(), initial_capacity);
     }
 
     tree[0].children.as_ref().and_then(
         |children| children.iter()
-            .max_by_key(|n| tree[**n].visits)
-            .map(|n| tree[*n].board.last_move)
+            .max_by_key(|&n| tree[n].visits)
+            .map(|n| tree[n].board.last_move)
             .and_then(|x| x)
     )
 }
 
 fn count(tree: &Vec<Node>, node: usize) -> (u32, u32) {
-    if tree[node].children.clone().map_or(false, |children| children.iter().all(|n| tree[*n].visits == 0)) {
+    if tree[node].children.clone().map_or(false, |children| children.iter().all(|n| tree[n].visits == 0)) {
         (1, 1)
     } else {
         let (c, u) = tree[node].children.iter()
-            .flat_map(|children| children.iter().map(|child| count(tree, *child)))
+            .flat_map(|children| children.iter().map(|child| count(tree, child)))
             .fold((0, 0), |(ac, au), (c, u)| (ac + c, au + u));
         (c + 1, u)
     }
@@ -137,20 +164,30 @@ fn old_recurse_down<R: Rng>(tree: &mut Vec<Node>, node: usize, board: &Board, pl
     let won = if let Some(winner) = board.won_by {
         is_win(winner, player, rand)
     } else {
-        //TODO children doesn't have to be a vec, it could just be an (index, len) tuple
-        let mut children = tree[node].children.take().unwrap_or_else(|| board.available_moves().map(|c| {
-            let mut board = board.clone();
-            board.play(c);
+        let children = match tree[node].children {
+            Some(children) => children,
+            None => {
+                let start = tree.len();
 
+                for c in board.available_moves() {
+                    let mut board = board.clone();
+                    board.play(c);
+                    tree.push(Node::new(board));
+                };
 
-            let index = tree.len();
-            tree.push(Node::new(board));
-            index
-        }).collect());
-        let explore_child = children.iter_mut().filter(|n| tree[**n].visits == 0).choose(rand);
+                let end_exclusive = tree.len();
+                let children = IdxRange { start, end_exclusive };
+                tree[node].children = Some(children);
+                children
+            },
+        };
+
+        let explore_child = children.iter()
+            .filter(|&n| tree[n].visits == 0)
+            .choose(rand);
 
         let won = if let Some(next) = explore_child {
-            let next_node = &mut tree[*next];
+            let next_node = &mut tree[next];
 
             //Exploration
             let mut board = next_node.board.clone();
@@ -171,15 +208,14 @@ fn old_recurse_down<R: Rng>(tree: &mut Vec<Node>, node: usize, board: &Board, pl
             won
         } else {
             //Selection
-            let next = children.iter_mut()
-                .max_by_key(|n| {
-                    let n = &tree[**n];
+            let next = children.iter()
+                .max_by_key(|&n| {
+                    let n = &tree[n];
                     uct(n.wins, n.visits, tree[node].visits)
                 }).unwrap();
-            old_recurse_down(tree, *next, &tree[*next].board.clone(), player, rand)
+            old_recurse_down(tree, next, &tree[next].board.clone(), player, rand)
         };
 
-        tree[node].children = Some(children);
         won
     };
 
