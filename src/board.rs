@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use std::fmt::{self, Write};
-use std::hash::{Hash, Hasher};
+use std::fmt::{self, Write, Debug};
 
 use rand::Rng;
 
@@ -35,19 +34,13 @@ impl Player {
 }
 
 #[derive(Copy, Clone)]
-#[derive(Debug)]
 #[derive(Eq, PartialEq)]
 pub struct Coord(u8);
 
 impl Coord {
-    pub fn none() -> Coord {
-        Coord(100)
-    }
-
-    pub fn of_o(o: u8) -> Coord {
-        assert!(o < 81);
-        Coord(o)
-    }
+//    pub fn none() -> Coord {
+//        Coord(100)
+//    }
 
     pub fn of_oo(om: u8, os: u8) -> Coord {
         assert!(om < 9);
@@ -55,21 +48,26 @@ impl Coord {
         Coord(9 * om + os)
     }
 
+    pub fn of_o(o: u8) -> Coord {
+        assert!(o < 81);
+        Coord::of_oo(o / 9, o % 9)
+    }
+
     pub fn of_xy(x: u8, y: u8) -> Coord {
         assert!(x < 9 && y < 9);
         Coord(((x / 3) + (y / 3) * 3) * 9 + ((x % 3) + (y % 3) * 3))
     }
 
-    pub fn o(self) -> u8 {
-        self.0
-    }
-
     pub fn om(self) -> u8 {
-        (self.0 / 9) as u8
+        self.0 / 9
     }
 
     pub fn os(self) -> u8 {
-        (self.0 % 9) as u8
+        self.0 % 9
+    }
+
+    pub fn o(self) -> u8 {
+        9 * self.om() + self.os()
     }
 
     pub fn x(self) -> u8 {
@@ -78,6 +76,12 @@ impl Coord {
 
     pub fn y(self) -> u8 {
         (self.om() / 3) * 3 + (self.os() / 3)
+    }
+}
+
+impl Debug for Coord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "({}, {})", self.om(), self.os())
     }
 }
 
@@ -93,7 +97,7 @@ pub struct Board {
     macro_mask: u32,
     macro_open: u32,
 
-    hash: usize,
+//    hash: usize,
 }
 
 impl PartialEq for Board {
@@ -188,11 +192,11 @@ fn get_last_move_bit(coord: Coord) -> usize {
     PIECE_BITS[2 * 81 + coord.os() as usize]
 }
 
-impl Hash for Board {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.hash)
-    }
-}
+//impl Hash for Board {
+//    fn hash<H: Hasher>(&self, state: &mut H) {
+//        state.write_usize(self.hash)
+//    }
+//}
 
 impl Board {
     const FULL_MASK: u32 = 0b111_111_111;
@@ -206,7 +210,7 @@ impl Board {
             won_by: None,
             macro_mask: Board::FULL_MASK,
             macro_open: Board::FULL_MASK,
-            hash: 0,
+//            hash: 0,
         }
     }
 
@@ -230,9 +234,9 @@ impl Board {
         };
     }
 
-    pub fn get_hash(&self) -> usize {
-        return self.hash;
-    }
+//    pub fn get_hash(&self) -> usize {
+//        return self.hash;
+//    }
 
     #[inline(always)]
     pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
@@ -259,22 +263,20 @@ impl Board {
             index -= grid_count;
         }
 
+        //todo try unchecked here
         unreachable!()
     }
 
-    pub fn play(&mut self, coord: Coord) -> bool {
-        assert!(!self.is_done());
-
+    pub fn is_available_move(&self, coord: Coord) -> bool {
         let om = coord.om();
         let os = coord.os();
+        has_bit(self.macro_mask, om) &&
+            !has_bit(compact_grid(self.grids[om as usize]), os)
+    }
 
-        let grid = self.grids[om as usize];
-
-        //checking
-        if !has_bit(self.macro_mask, om) ||
-            has_bit(compact_grid(grid), os) {
-            panic!("move not available");
-        }
+    pub fn play(&mut self, coord: Coord) -> bool {
+        assert!(!self.is_done(), "can't play on done board");
+        assert!(self.is_available_move(coord), "move not available");
 
         //do actual move
         let won_grid = self.set_tile_and_update(self.next_player, coord);
@@ -292,9 +294,9 @@ impl Board {
         let p = (9 * player.index()) as u8;
 
         //update hash
-        self.hash ^= get_piece_bit(coord, player);
-        self.hash ^= self.last_move.map_or(0, |m| get_last_move_bit(m));
-        self.hash ^= get_last_move_bit(coord);
+//        self.hash ^= get_piece_bit(coord, player);
+//        self.hash ^= self.last_move.map_or(0, |m| get_last_move_bit(m));
+//        self.hash ^= get_last_move_bit(coord);
 
         //set tile and macro, check win
         let new_grid = self.grids[om as usize] | (1 << (os + p));

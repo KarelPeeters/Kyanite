@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rand::{self, SeedableRng, seq::SliceRandom};
-    use rand_xorshift::XorShiftRng;
+    use rand::{self, SeedableRng, seq::SliceRandom, XorShiftRng};
 
     use crate::board::{Board, Coord};
 

@@ -1,6 +1,7 @@
-use rand::Rng;
+use rand::{Rng, thread_rng};
 
 use crate::board::{Board, Coord, Player};
+use crate::mcts::old_move_mcts;
 
 pub trait Bot {
     fn play(&self, board: &Board) -> Option<Coord>;
@@ -12,8 +13,37 @@ impl<F: Fn(&Board) -> Option<Coord>> Bot for F {
     }
 }
 
-pub fn run<A: Bot, B: Bot, R: Rng>(bot_a: &A, bot_b: &B, games: usize, shuffle: bool, rand: &mut R)
-                                   -> BotGameResult {
+pub struct MCTSBot {
+    iterations: usize,
+}
+
+impl MCTSBot {
+    pub fn new(iterations: usize) -> Self {
+        MCTSBot { iterations }
+    }
+}
+
+impl Bot for MCTSBot {
+    fn play(&self, board: &Board) -> Option<Coord> {
+        old_move_mcts(board, self.iterations, &mut thread_rng(), false)
+    }
+}
+
+pub struct RandomBot;
+
+impl Bot for RandomBot {
+    fn play(&self, board: &Board) -> Option<Coord> {
+        board.random_available_move(&mut thread_rng())
+    }
+}
+
+pub fn run<A: Bot, B: Bot, R: Rng>(
+    bot_a: &A,
+    bot_b: &B,
+    games: usize,
+    shuffle: bool,
+    rand: &mut R,
+) -> BotGameResult {
     let bots: Vec<&Bot> = vec![bot_a, bot_b];
     let mut wins = [0, 0];
 
@@ -45,11 +75,12 @@ pub fn run<A: Bot, B: Bot, R: Rng>(bot_a: &A, bot_b: &B, games: usize, shuffle: 
 
 #[allow(dead_code)]
 #[derive(Debug)]
+#[must_use]
 pub struct BotGameResult {
+    games: usize,
     wins_a: usize,
     wins_b: usize,
     ties: usize,
-    games: usize,
 
     rate_a: f32,
     rate_b: f32,
@@ -58,12 +89,12 @@ pub struct BotGameResult {
 
 impl BotGameResult {
     fn new(wins_a: usize, wins_b: usize, games: usize) -> BotGameResult {
-        let ties = games - wins_b - wins_b;
+        let ties = games - wins_a - wins_b;
         BotGameResult {
+            games,
             wins_a,
             wins_b,
             ties,
-            games,
             rate_a: wins_a as f32 / games as f32,
             rate_b: wins_b as f32 / games as f32,
             rate_tie: ties as f32 / games as f32,
