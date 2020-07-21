@@ -5,6 +5,7 @@ use std::fmt::{self, Write, Debug};
 use rand::Rng;
 
 use crate::board::Player::Neutral;
+use itertools::Itertools;
 
 #[derive(Copy, Clone)]
 #[derive(Debug)]
@@ -85,7 +86,8 @@ impl Debug for Coord {
     }
 }
 
-#[derive(Clone, Eq)]
+//TODO implement simpler partialeq again
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Board {
     grids: [u32; 9],
     main_grid: u32,
@@ -100,11 +102,11 @@ pub struct Board {
 //    hash: usize,
 }
 
-impl PartialEq for Board {
-    fn eq(&self, other: &Self) -> bool {
-        self.grids == other.grids && self.macro_mask == other.macro_mask
-    }
-}
+// impl PartialEq for Board {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.grids == other.grids && self.macro_mask == other.macro_mask
+//     }
+// }
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -117,11 +119,16 @@ impl fmt::Display for Board {
                 if x == 3 || x == 6 {
                     f.write_char('|')?;
                 }
-                let symbol = match self.tile(Coord::of_xy(x, y)) {
-                    Player::Player => 'X',
-                    Player::Enemy => 'O',
-                    Player::Neutral => ' ',
+
+                let coord = Coord::of_xy(x, y);
+                let symbol = match (Some(coord) == self.last_move, self.tile(coord)) {
+                    (false, Player::Player) => 'X',
+                    (true, Player::Player) => 'x',
+                    (false, Player::Enemy) => 'O',
+                    (true, Player::Enemy) => 'o',
+                    (_, Player::Neutral) => ' ',
                 };
+
                 f.write_char(symbol)?;
             }
 
@@ -314,7 +321,7 @@ impl Board {
 
         //update macro masks, remove bit from open and recalculate mask
         if grid_win || new_grid.count_ones() == 9 {
-            self.macro_open ^= 1 << om;
+            self.macro_open &= !(1 << om);
             if self.macro_open == 0 && self.won_by.is_none() {
                 self.won_by = Some(Neutral);
             }
@@ -391,4 +398,53 @@ impl Iterator for BitIter {
             Some(index)
         }
     }
+}
+
+pub fn board_to_compact_string(board: &Board) -> String {
+    (0..81).map(|o| {
+        let coord = Coord::of_o(o);
+        match (Some(coord) == board.last_move, board.tile(coord)) {
+            (false, Player::Player) => 'X',
+            (true, Player::Player) => 'x',
+            (false, Player::Enemy) => 'O',
+            (true, Player::Enemy) => 'o',
+            (_, Player::Neutral) => ' ',
+        }
+    }).join("")
+}
+
+pub fn board_from_compact_string(s: &str) -> Board {
+    debug_assert!(s.chars().count() == 81);
+
+    let mut board = Board::new();
+    let mut last_move = None;
+
+    for (o, c) in s.chars().enumerate() {
+        let coord = Coord::of_o(o as u8);
+
+        let (player, last) = match c {
+            'X' => (Player::Player, false),
+            'x' => (Player::Player, true),
+            'O' => (Player::Enemy, false),
+            'o' => (Player::Enemy, true),
+            ' ' => (Player::Neutral, false),
+            _ => panic!("unexpected character in shortstring")
+        };
+
+        if last {
+            last_move = Some((player, coord));
+        }
+
+        if player != Player::Neutral {
+            board.set_tile_and_update(player, coord);
+        }
+    }
+
+    if let Some((last_player, last_coord)) = last_move {
+        board.set_tile_and_update(last_player, last_coord);
+        board.last_move = Some(last_coord);
+        board.next_player = last_player.other()
+    }
+
+    board
 }

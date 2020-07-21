@@ -2,10 +2,10 @@ use std::io;
 use std::io::{stdin, Write};
 use std::time::Instant;
 
-use rand::{thread_rng, SeedableRng};
+use rand::{thread_rng, SeedableRng, Rng};
 use regex::Regex;
 
-use sttt::board::{Board, Coord};
+use sttt::board::{Board, Coord, board_to_compact_string, board_from_compact_string};
 use sttt::bot_game;
 use sttt::bot_game::{MCTSBot};
 use sttt::mcts::old_move_mcts;
@@ -15,9 +15,31 @@ use rand::rngs::SmallRng;
 
 fn main() {
     // _console_game();
-    _test_mcts()
+    // _test_mcts();
+    _test_compact_string();
+}
 
+fn _test_compact_string() {
+    let seed: [u8; 16] = SmallRng::from_entropy().gen();
+    print!("Seed: {:?}", seed);
 
+    let mut rand = SmallRng::from_seed(seed);
+
+    loop {
+        let mut board = Board::new();
+
+        while let Some(mv) = board.random_available_move(&mut rand) {
+            board.play(mv);
+
+            let compact_string = board_to_compact_string(&board);
+            let rev_board = board_from_compact_string(&compact_string);
+
+            // print!("Board:\n{}\n{:#?}\nRev Board:\n{}\n{:#?}", board, board, rev_board, rev_board);
+            assert_eq!(rev_board, board);
+
+            println!("{}", compact_string);
+        }
+    }
 }
 
 fn _test_mm() {
