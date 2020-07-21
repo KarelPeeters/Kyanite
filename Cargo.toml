@@ -1,6 +1,9 @@
 [package]
 name = "sttt"
 version = "0.1.0"
+authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
+description = "An implemention of super tic tac toe, including bots that play it."
+license-file = "NONE.md"
 edition = "2018"
 
 [dependencies]
