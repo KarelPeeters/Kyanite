@@ -16,3 +16,5 @@ bitshift om and os instead of %/ 9
 delay child allocation, more then half of them are never visited anyway
 
 figure out difference in amount of nodes between Rust, Kotlin and C versions?
+
+//TODO investigate why (4,4) on empty board is 99% winning while none of the children are

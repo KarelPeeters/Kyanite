@@ -1,6 +1,6 @@
 [package]
 name = "sttt"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "An implemention of super tic tac toe, including bots that play it."
 license-file = "NONE.md"
@@ -14,6 +14,7 @@ lazy_static = "1.3.0"
 rand_pcg = "0.1.2"
 regex = "1.1.6"
 itertools = "0.9.0"
+rayon = "1.3.1"
 
 [dev-dependencies]
 criterion = "0.3.3"

@@ -1,7 +1,11 @@
-use rand::{Rng, thread_rng};
+use rand::{Rng, SeedableRng, thread_rng};
+use rand::rngs::SmallRng;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 
 use crate::board::{Board, Coord, Player};
 use crate::mcts::old_move_mcts;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub trait Bot {
     fn play(&self, board: &Board) -> Option<Coord>;
@@ -15,17 +19,22 @@ impl<F: Fn(&Board) -> Option<Coord>> Bot for F {
 
 pub struct MCTSBot {
     iterations: usize,
+    exploration_factor: f32,
 }
 
 impl MCTSBot {
     pub fn new(iterations: usize) -> Self {
-        MCTSBot { iterations }
+        MCTSBot { iterations, exploration_factor: 1.5 }
+    }
+
+    pub fn new_with_exploration_factor(iterations: usize, exploration_factor: f32) -> Self {
+        MCTSBot { iterations, exploration_factor }
     }
 }
 
 impl Bot for MCTSBot {
     fn play(&self, board: &Board) -> Option<Coord> {
-        old_move_mcts(board, self.iterations, &mut thread_rng(), false)
+        old_move_mcts(board, self.iterations, self.exploration_factor, &mut thread_rng(), false)
     }
 }
 
@@ -37,20 +46,21 @@ impl Bot for RandomBot {
     }
 }
 
-pub fn run<A: Bot, B: Bot, R: Rng>(
-    bot_a: &A,
-    bot_b: &B,
+pub fn run<A: Bot, B: Bot>(
+    bot_a: impl Fn() -> A + Sync,
+    bot_b: impl Fn() -> B + Sync,
     games: usize,
     shuffle: bool,
-    rand: &mut R,
 ) -> BotGameResult {
-    let bots: Vec<&Bot> = vec![bot_a, bot_b];
-    let mut wins = [0, 0];
+    let progress_counter = AtomicUsize::default();
 
-    for i in 0..games {
-        println!("Starting game {}/{}", i, games);
+    let score = (0..games).into_par_iter().map(|_i| {
+        let bot_a = bot_a();
+        let bot_b = bot_b();
 
-        let flip = if shuffle { rand.gen::<bool>() as usize } else { 0 };
+        let mut rand = SmallRng::from_entropy();
+
+        let flip = if shuffle { rand.gen::<bool>() } else { false };
         let mut board = Board::new();
 
         for i in 0.. {
@@ -58,19 +68,32 @@ pub fn run<A: Bot, B: Bot, R: Rng>(
                 break;
             }
 
-            let bot = bots[flip ^ (i % 2)];
-            let mv = bot.play(&board).expect("bot didn't return move in unfinished game");
+            let mv = if flip ^ (i % 2 == 0) {
+                bot_a.play(&board).expect("bot A didn't return move in unfinished game")
+            } else {
+                bot_b.play(&board).expect("bot B didn't return move in unfinished game")
+            };
+
             board.play(mv);
         }
 
-        match board.won_by.unwrap() {
-            Player::Player => wins[flip] += 1,
-            Player::Enemy => wins[1 - flip] += 1,
-            Player::Neutral => {}
-        }
-    }
+        let score = match board.won_by.unwrap() {
+            Player::Player => (1, 0),
+            Player::Enemy => (0, 1),
+            Player::Neutral => (0, 0)
+        };
 
-    BotGameResult::new(wins[0], wins[1], games)
+        let score = if flip { (score.1, score.0) } else { score };
+
+        let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        if progress % (games / 10) == 0 {
+            println!("Progress: {}", progress as f32 / games as f32);
+        }
+
+        score
+    }).reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+
+    BotGameResult::new(score.0, score.1, games)
 }
 
 #[allow(dead_code)]

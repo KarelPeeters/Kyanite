@@ -21,7 +21,7 @@ mod tests {
 
             for (mv, &count) in counts.iter().enumerate() {
                 if moves.contains(&Coord::of_o(mv as u8)) {
-                    assert!((count.wrapping_sub(avg)).abs() < 10_000, "uniformly distributed")
+                   debug_assert!((count.wrapping_sub(avg)).abs() < 10_000, "uniformly distributed")
                 } else {
                     assert_eq!(count, 0, "only actual moves returned")
                 }

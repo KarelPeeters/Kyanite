@@ -2,21 +2,28 @@ use std::io;
 use std::io::{stdin, Write};
 use std::time::Instant;
 
-use rand::{thread_rng, SeedableRng, Rng};
+use rand::{Rng, SeedableRng, thread_rng};
+use rand::rngs::SmallRng;
 use regex::Regex;
 
-use sttt::board::{Board, Coord, board_to_compact_string, board_from_compact_string};
+use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord};
 use sttt::bot_game;
-use sttt::bot_game::{MCTSBot};
+use sttt::bot_game::{MCTSBot, RandomBot};
 use sttt::mcts::old_move_mcts;
 use sttt::minimax::move_minimax;
-use std::ops::Range;
-use rand::rngs::SmallRng;
 
 fn main() {
     // _console_game();
-    // _test_mcts();
-    _test_compact_string();
+    // _bot_game();
+    // _test_compact_string();
+
+    let mut board = Board::new();
+    board.play(Coord::of_oo(4,4));
+    board.play(Coord::of_oo(4, 0));
+
+    time(|| {
+        old_move_mcts(&board, 1_000_000, 1.5, &mut SmallRng::from_entropy(), true);
+    })
 }
 
 fn _test_compact_string() {
@@ -62,7 +69,7 @@ fn _follow_playout() {
 }
 
 fn _test_mcts() {
-    let mut board = Board::new();
+    let board = Board::new();
     // board.play(Coord::of_oo(4, 4)); // X center center
     // board.play(Coord::of_oo(4, 0)); // O top left corner
     // board.play(Coord::of_oo(0, 4)); // X top left center
@@ -71,17 +78,16 @@ fn _test_mcts() {
     println!("{}", board);
 
     let start = Instant::now();
-    println!("{:?}", old_move_mcts(&board, 10_000_000, &mut SmallRng::from_entropy(), true));
+    println!("{:?}", old_move_mcts(&board, 1_000_000,1.5, &mut SmallRng::from_entropy(), true));
     println!("{}", start.elapsed().as_millis() as f64 / 1000.0);
 }
 
 fn _bot_game() {
     let res = bot_game::run(
-        &MCTSBot::new(1000),
-        &MCTSBot::new(10000),
-        10000,
+        || RandomBot,
+        || MCTSBot::new(1000),
+        100,
         true,
-        &mut thread_rng(),
     );
 
     println!("{:?}", res);
@@ -147,7 +153,7 @@ fn _console_game() {
         }
 
         //Bot move
-        let mv = old_move_mcts(&board, 1_000_000, &mut thread_rng(), true).expect("MCTS should return move");
+        let mv = old_move_mcts(&board, 1_000_000, 1.5, &mut thread_rng(), true).expect("MCTS should return move");
         board.play(mv);
         println!("{}", board);
 
@@ -156,4 +162,12 @@ fn _console_game() {
             break;
         }
     }
+}
+
+#[allow(unused)]
+fn time<R, F: FnOnce() -> R>(block: F) -> R {
+    let start = Instant::now();
+    let result = block();
+    print!("Took {:02}s", (Instant::now() - start).as_secs_f32());
+    result
 }

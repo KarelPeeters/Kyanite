@@ -44,18 +44,18 @@ impl Coord {
 //    }
 
     pub fn of_oo(om: u8, os: u8) -> Coord {
-        assert!(om < 9);
-        assert!(os < 9);
+       debug_assert!(om < 9);
+       debug_assert!(os < 9);
         Coord(9 * om + os)
     }
 
     pub fn of_o(o: u8) -> Coord {
-        assert!(o < 81);
+       debug_assert!(o < 81);
         Coord::of_oo(o / 9, o % 9)
     }
 
     pub fn of_xy(x: u8, y: u8) -> Coord {
-        assert!(x < 9 && y < 9);
+       debug_assert!(x < 9 && y < 9);
         Coord(((x / 3) + (y / 3) * 3) * 9 + ((x % 3) + (y % 3) * 3))
     }
 
@@ -282,8 +282,8 @@ impl Board {
     }
 
     pub fn play(&mut self, coord: Coord) -> bool {
-        assert!(!self.is_done(), "can't play on done board");
-        assert!(self.is_available_move(coord), "move not available");
+       debug_assert!(!self.is_done(), "can't play on done board");
+       debug_assert!(self.is_available_move(coord), "move not available");
 
         //do actual move
         let won_grid = self.set_tile_and_update(self.next_player, coord);

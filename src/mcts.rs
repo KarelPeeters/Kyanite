@@ -5,6 +5,8 @@ use rand::Rng;
 use rand::seq::IteratorRandom;
 
 use crate::board::{Board, Coord, Player};
+use std::fs::File;
+use std::io::Write;
 
 #[derive(Copy, Clone)]
 struct IdxRange {
@@ -80,7 +82,7 @@ impl Node {
     }
 }
 
-pub fn old_move_mcts(board: &Board, iterations: usize, rand: &mut impl Rng, log: bool) -> Option<Coord> {
+pub fn old_move_mcts(board: &Board, iterations: usize, exploration_factor: f32, rand: &mut impl Rng, log: bool) -> Option<Coord> {
     let initial_capacity = iterations * 3;
     let mut tree: Vec<Node> = Vec::with_capacity(initial_capacity);
     tree.push(Node::new(Board::new()));
@@ -90,11 +92,16 @@ pub fn old_move_mcts(board: &Board, iterations: usize, rand: &mut impl Rng, log:
             println!("Progress: {}", tree[0].visits as f64 / iterations as f64);
         }
 
-        old_recurse_down(&mut tree, 0, &board, board.next_player, rand);
+        old_recurse_down(exploration_factor, &mut tree, 0, &board, board.next_player, rand);
     }
 
     if log {
-        println!("{}", tree[0].to_string(&tree, 1));
+        let tree_as_str = tree[0].to_string(&tree, 1);
+
+        let mut file = File::create("tree.txt").unwrap();
+        file.write_all(tree_as_str.as_bytes()).unwrap();
+
+        println!("{}", tree_as_str);
         println!("{:?}", count(&tree, 0));
         println!("Total node count {:?} / {:?} (orig {:?})", tree.len(), tree.capacity(), initial_capacity);
     }
@@ -160,7 +167,7 @@ fn count(tree: &Vec<Node>, node: usize) -> (u32, u32) {
     None
 }*/
 
-fn old_recurse_down<R: Rng>(tree: &mut Vec<Node>, node: usize, board: &Board, player: Player, rand: &mut R) -> bool {
+fn old_recurse_down<R: Rng>(exploration_factor: f32, tree: &mut Vec<Node>, node: usize, board: &Board, player: Player, rand: &mut R) -> bool {
     let won = if let Some(winner) = board.won_by {
         is_win(winner, player, rand)
     } else {
@@ -182,6 +189,7 @@ fn old_recurse_down<R: Rng>(tree: &mut Vec<Node>, node: usize, board: &Board, pl
             },
         };
 
+        //TODO maybe we should just do this when initializing the children?
         let explore_child = children.iter()
             .filter(|&n| tree[n].visits == 0)
             .choose(rand);
@@ -211,9 +219,11 @@ fn old_recurse_down<R: Rng>(tree: &mut Vec<Node>, node: usize, board: &Board, pl
             let next = children.iter()
                 .max_by_key(|&n| {
                     let n = &tree[n];
-                    uct(n.wins, n.visits, tree[node].visits)
+                    uct(exploration_factor, n.wins, n.visits, tree[node].visits)
                 }).unwrap();
-            old_recurse_down(tree, next, &tree[next].board.clone(), player, rand)
+
+            //TODO where is the flipping happening? why does the bot play way worse when adding a flip here?
+            old_recurse_down(exploration_factor, tree, next, &tree[next].board.clone(), player, rand)
         };
 
         won
@@ -287,12 +297,12 @@ pub fn move_mcts<R: Rng>(board: &Board, iterations: u32, rand: &mut R) -> Option
 }
 */
 
-fn uct(wins: usize, visits: usize, parent_visits: usize) -> OrderedFloat<f32> {
+fn uct(exploration_factor: f32, wins: usize, visits: usize, parent_visits: usize) -> OrderedFloat<f32> {
     let wins = wins as f32;
     let visits = visits as f32;
     let parent_visits = parent_visits as f32;
 
-    let value = wins / visits + 1.5 * (parent_visits.ln() / visits).sqrt();
+    let value = wins / visits + exploration_factor * (parent_visits.ln() / visits).sqrt();
     OrderedFloat(value)
 }
 
