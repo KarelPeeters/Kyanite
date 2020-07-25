@@ -4,44 +4,22 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::board::{Board, Coord, Player};
-use crate::mcts::old_move_mcts;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub trait Bot {
-    fn play(&self, board: &Board) -> Option<Coord>;
+    fn play(&mut self, board: &Board) -> Option<Coord>;
 }
 
-impl<F: Fn(&Board) -> Option<Coord>> Bot for F {
-    fn play(&self, board: &Board) -> Option<Coord> {
+impl<F: FnMut(&Board) -> Option<Coord>> Bot for F {
+    fn play(&mut self, board: &Board) -> Option<Coord> {
         self(board)
-    }
-}
-
-pub struct MCTSBot {
-    iterations: usize,
-    exploration_factor: f32,
-}
-
-impl MCTSBot {
-    pub fn new(iterations: usize) -> Self {
-        MCTSBot { iterations, exploration_factor: 1.5 }
-    }
-
-    pub fn new_with_exploration_factor(iterations: usize, exploration_factor: f32) -> Self {
-        MCTSBot { iterations, exploration_factor }
-    }
-}
-
-impl Bot for MCTSBot {
-    fn play(&self, board: &Board) -> Option<Coord> {
-        old_move_mcts(board, self.iterations, self.exploration_factor, &mut thread_rng(), false)
     }
 }
 
 pub struct RandomBot;
 
 impl Bot for RandomBot {
-    fn play(&self, board: &Board) -> Option<Coord> {
+    fn play(&mut self, board: &Board) -> Option<Coord> {
         board.random_available_move(&mut thread_rng())
     }
 }
@@ -55,8 +33,8 @@ pub fn run<A: Bot, B: Bot>(
     let progress_counter = AtomicUsize::default();
 
     let score = (0..games).into_par_iter().map(|_i| {
-        let bot_a = bot_a();
-        let bot_b = bot_b();
+        let mut bot_a = bot_a();
+        let mut bot_b = bot_b();
 
         let mut rand = SmallRng::from_entropy();
 
@@ -78,8 +56,8 @@ pub fn run<A: Bot, B: Bot>(
         }
 
         let score = match board.won_by.unwrap() {
-            Player::Player => (1, 0),
-            Player::Enemy => (0, 1),
+            Player::X => (1, 0),
+            Player::O => (0, 1),
             Player::Neutral => (0, 0)
         };
 

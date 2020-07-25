@@ -1,311 +1,232 @@
-use std::f32;
+use std::fmt::Write;
+use std::num::NonZeroUsize;
+use std::ops::Range;
 
 use ordered_float::OrderedFloat;
 use rand::Rng;
-use rand::seq::IteratorRandom;
 
 use crate::board::{Board, Coord, Player};
-use std::fs::File;
-use std::io::Write;
+use crate::bot_game::Bot;
 
 #[derive(Copy, Clone)]
-struct IdxRange {
-    start: usize,
-    end_exclusive: usize,
+struct TreeRange {
+    start: NonZeroUsize,
+    end: usize,
 }
 
-impl IdxRange {
-    fn len(self) -> usize {
-        self.end_exclusive - self.start
-    }
-
-    fn iter(self) -> impl Iterator<Item=usize> {
-        self.into_iter()
-    }
-}
-
-impl IntoIterator for IdxRange {
+impl IntoIterator for TreeRange {
     type Item = usize;
-    type IntoIter = std::ops::Range<usize>;
+    type IntoIter = Range<usize>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.start..self.end_exclusive
+        self.start.get()..self.end
     }
 }
 
-#[derive(Clone)]
 struct Node {
     board: Board,
-    children: Option<IdxRange>,
-    visits: usize,
-    wins: usize,
+    children: Option<TreeRange>,
+
+    //score from the perspective of the next player at this node
+    // +1: win, 0: draw, -1: loss
+    //TODO be careful when implementing UCT!
+    score: i32,
+    visits: i32,
 }
 
-impl Node {
-    fn new(board: Board) -> Node {
-        Node { board, children: None, visits: 0, wins: 0 }
-    }
-
-    fn increment(&mut self, won: bool) {
-        self.visits += 1;
-        self.wins += won as usize;
-    }
-
-    fn to_string(&self, tree: &Vec<Node>, depth: usize) -> String {
-        let mut res = String::new();
-        self.append_tree(tree, &mut res, 0, depth, true);
-        res.shrink_to_fit();
-        res
-    }
-
-    fn append_tree(&self, tree: &Vec<Node>, out: &mut String, depth: usize, max_depth: usize, is_last: bool) {
-        if depth > max_depth {
-            return;
-        }
-
-        if depth > 0 {
-            out.push_str(&format!("{: ^1$}", "", (depth - 1) * 2));
-            out.push_str(match is_last {
-                true => "└── ",
-                false => "├── ",
-            });
-        }
-        out.push_str(&format!("{:?}: {}/{} ≈ {:.03}", self.board.last_move, self.wins, self.visits,
-                              self.wins as f32 / self.visits as f32));
-        out.push('\n');
-
-        if let Some(children) = &self.children {
-            for (i, child) in children.iter().enumerate() {
-                tree[child].append_tree(tree, out, depth + 1, max_depth, i == children.len() - 1)
-            }
-        };
-    }
+struct State {
+    exploration_factor: f32,
+    nodes: Vec<Node>,
 }
 
-pub fn old_move_mcts(board: &Board, iterations: usize, exploration_factor: f32, rand: &mut impl Rng, log: bool) -> Option<Coord> {
-    let initial_capacity = iterations * 3;
-    let mut tree: Vec<Node> = Vec::with_capacity(initial_capacity);
-    tree.push(Node::new(Board::new()));
-
-    while tree[0].visits < iterations {
-        if log && tree[0].visits % (iterations / 20) == 0 {
-            println!("Progress: {}", tree[0].visits as f64 / iterations as f64);
+impl State {
+    // returns the achieved score from the perspective of the next player at the node
+    fn recurse_down<R: Rng>(&mut self, rand: &mut R, node: usize) -> (i32, i32) {
+        //if this is a terminal node, juts return the score immediately
+        if let Some(winner) = self.nodes[node].board.won_by {
+            //TODO this should always be either 1 or -1, figure out which and return that
+            return (winner_to_score(winner, self.nodes[node].board.next_player), 1);
         }
 
-        old_recurse_down(exploration_factor, &mut tree, 0, &board, board.next_player, rand);
-    }
+        let mut total_score: i32 = 0;
+        let mut total_visits: i32 = 0;
 
-    if log {
-        let tree_as_str = tree[0].to_string(&tree, 1);
-
-        let mut file = File::create("tree.txt").unwrap();
-        file.write_all(tree_as_str.as_bytes()).unwrap();
-
-        println!("{}", tree_as_str);
-        println!("{:?}", count(&tree, 0));
-        println!("Total node count {:?} / {:?} (orig {:?})", tree.len(), tree.capacity(), initial_capacity);
-    }
-
-    tree[0].children.as_ref().and_then(
-        |children| children.iter()
-            .max_by_key(|&n| tree[n].visits)
-            .map(|n| tree[n].board.last_move)
-            .and_then(|x| x)
-    )
-}
-
-fn count(tree: &Vec<Node>, node: usize) -> (u32, u32) {
-    if tree[node].children.clone().map_or(false, |children| children.iter().all(|n| tree[n].visits == 0)) {
-        (1, 1)
-    } else {
-        let (c, u) = tree[node].children.iter()
-            .flat_map(|children| children.iter().map(|child| count(tree, child)))
-            .fold((0, 0), |(ac, au), (c, u)| (ac + c, au + u));
-        (c + 1, u)
-    }
-}
-
-/*pub fn move_mcts(board: &Board, iterations: u32, rand: &mut impl Rng) -> Option<Coord> {
-    let mut head = Node::new(Coord::none());
-    let mut visited: Vec<usize> = Vec::with_capacity(81);
-
-    while head.visits < iterations {
-        //selection
-        let mut current = &mut head;
-        while let Some(children) = current.children {
-            let i = children.iter().enumerate()
-                .filter(|(_, n)| n.visits == 0)
-                .max_by_key(|(_, n)| uct(n.wins, n.visits, current.visits))
-                .map(|(i, _)| i)
-                .expect("No children?");
-
-            visited.push(i);
-            current = unsafe {
-
-            }
-            current = &mut visited.last().unwrap().1[i];
-
-            //TODO how to get reference inside Some child?
-        }
-
-        //expansion
-
-        //simulation
-        let mut won: bool = unimplemented!();
-
-        //backpropagation
-        let mut curr = &head;
-
-        for &i in visited.iter() {
-            curr.increment(won);
-            won = !won;
-            curr = &curr.children.unwrap()[i];
-        }
-        curr.increment(won);
-    }
-
-    None
-}*/
-
-fn old_recurse_down<R: Rng>(exploration_factor: f32, tree: &mut Vec<Node>, node: usize, board: &Board, player: Player, rand: &mut R) -> bool {
-    let won = if let Some(winner) = board.won_by {
-        is_win(winner, player, rand)
-    } else {
-        let children = match tree[node].children {
+        //get the children, initialize if necessary
+        let children = match self.nodes[node].children {
             Some(children) => children,
             None => {
-                let start = tree.len();
+                let start = self.nodes.len();
+                let board = self.nodes[node].board.clone();
 
-                for c in board.available_moves() {
-                    let mut board = board.clone();
-                    board.play(c);
-                    tree.push(Node::new(board));
-                };
+                //initialize all child nodes
+                for mv in board.available_moves() {
+                    let mut next_board = board.clone();
+                    next_board.play(mv);
 
-                let end_exclusive = tree.len();
-                let children = IdxRange { start, end_exclusive };
-                tree[node].children = Some(children);
+                    //do the first random playout on this board immediately
+                    let winner = random_playout(rand, next_board.clone());
+                    let next_score = winner_to_score(winner, next_board.next_player);
+
+                    total_score += next_score;
+                    total_visits += 1;
+
+                    let next_node = Node {
+                        score: next_score,
+                        visits: 1,
+                        children: None,
+                        board: next_board,
+                    };
+                    self.nodes.push(next_node);
+                }
+
+                let end = self.nodes.len();
+
+                let children = TreeRange { start: NonZeroUsize::new(start).unwrap(), end };
+                self.nodes[node].children = Some(children);
                 children
-            },
-        };
-
-        //TODO maybe we should just do this when initializing the children?
-        let explore_child = children.iter()
-            .filter(|&n| tree[n].visits == 0)
-            .choose(rand);
-
-        let won = if let Some(next) = explore_child {
-            let next_node = &mut tree[next];
-
-            //Exploration
-            let mut board = next_node.board.clone();
-
-            //Simulation
-            loop {
-                match board.random_available_move(rand) {
-                    Some(mv) => board.play(mv),
-                    None => break
-                };
             }
-
-            let won = is_win(board.won_by.unwrap(), player, rand);
-            next_node.visits += 1;
-            if won {
-                next_node.wins += 1;
-            }
-            won
-        } else {
-            //Selection
-            let next = children.iter()
-                .max_by_key(|&n| {
-                    let n = &tree[n];
-                    uct(exploration_factor, n.wins, n.visits, tree[node].visits)
-                }).unwrap();
-
-            //TODO where is the flipping happening? why does the bot play way worse when adding a flip here?
-            old_recurse_down(exploration_factor, tree, next, &tree[next].board.clone(), player, rand)
         };
 
-        won
-    };
+        //find the best child
+        //there is guaranteed to be at least one child since this is not a terminal node
+        let best_child = children.into_iter().max_by_key(|&child_node| {
+            let child_node = &self.nodes[child_node];
+            self.uct(child_node.score, child_node.visits, self.nodes[node].visits)
+        }).unwrap();
 
-    tree[node].visits += 1;
-    if won {
-        tree[node].wins += 1;
-    }
-    won
-}
+        //evaluate that child
+        let (child_score, child_visits) = self.recurse_down(rand, best_child);
 
-/*
-//TODO continue rewrite procedurally using https://stackoverflow.com/questions/29296038/implementing-a-mutable-tree-structure
-pub fn move_mcts<R: Rng>(board: &Board, iterations: u32, rand: &mut R) -> Option<Coord> {
-    let mut head = Node::new(Coord::none());
+        //flip the score because the perspective changes
+        total_score += -child_score;
+        total_visits += child_visits;
 
-    while head.visits < iterations {
-        let mut visited: Vec<usize> = Vec::with_capacity(81);
+        //Actually increment the current node
+        self.nodes[node].score += total_score;
+        self.nodes[node].visits += total_visits;
 
-        let mut current = &mut head;
-        let mut current_board = board.clone();
-
-        while !board.is_done() {
-            let mut children: Vec<Node>;
-            let next_index: usize;
-
-            match current.children.take() {
-                None => {
-                    children = board.available_moves().map(|c| Node::new(c)).collect();
-                    next_index = rand.gen_range(0, children.len());
-                }
-                Some(c) => {
-                    children = c;
-                    next_index = children.iter().enumerate().filter(|(_, n)| n.visits == 0).choose(rand).map(|(i, _)| i)
-                        .or_else(|| children.iter().enumerate().max_by_key(|(_, n)| uct(n.wins, n.visits, current.visits)).map(|(i, _)| i))
-                        .unwrap();
-                }
-            };
-
-            visited.push(next_index);
-            let next = &mut children[next_index];
-
-            current_board.play(next.coord);
-
-            current = next;
-            current.children = Some(children);
-        }
-
-        loop {
-            match current_board.random_available_move(rand) {
-                Some(mv) => current_board.play(mv),
-                None => break,
-            };
-        }
-
-        let won = match current_board.won_by.unwrap() {
-            Player::Neutral => rand.gen(),
-            player => player == board.next_player,
-        };
-
-        head.increment(won);
-        let mut current = &head;
-        for i in visited {
-            current = &current.children.unwrap()[i];
-            current.increment(won)
-        }
+        (total_score, total_visits)
     }
 
-    head.children.and_then(|children| children.iter().max_by_key(|n| n.visits).map(|n| n.coord))
+    fn uct(&self, score: i32, visits: i32, parent_visits: i32) -> OrderedFloat<f32> {
+        let score = score as f32;
+        let visits = visits as f32;
+        let parent_visits = parent_visits as f32;
+
+        let exploitation = (score + visits) / (2.0 * visits);
+        let exploration = (parent_visits.ln() / visits).sqrt();
+
+        (exploitation + self.exploration_factor * exploration).into()
+    }
+
+    fn tree_to_string(&self, node: usize, depth: usize) -> String {
+        fn print_tree_rec(state: &State, result: &mut String, mv: Option<Coord>, node: usize, max_depth: usize, curr_depth: usize, is_last: bool) {
+            if curr_depth == max_depth { return; }
+
+            for _ in 1..curr_depth {
+                result.push_str("│ ");
+            }
+
+            if curr_depth != 0 {
+                if is_last {
+                    result.push_str("└─")
+                } else {
+                    result.push_str("├─")
+                }
+            }
+
+            let node = &state.nodes[node];
+            let children = node.children;
+
+            if children.is_some() {
+                result.push_str("┬")
+            } else {
+                result.push_str("─")
+            }
+
+            write!(result, " {:?} {}/{} = {}\n", mv, node.score, node.visits, node.score as f32 / node.visits as f32).unwrap();
+
+            if let Some(children) = children {
+                for (child_mv, child) in node.board.available_moves().zip(children.into_iter()) {
+                    print_tree_rec(state, result, Some(child_mv), child, max_depth, curr_depth + 1, child == children.end - 1)
+                }
+            }
+        }
+
+        let mut string = String::new();
+        print_tree_rec(self, &mut string, None, node, depth, 0, false);
+        return string;
+    }
 }
-*/
 
-fn uct(exploration_factor: f32, wins: usize, visits: usize, parent_visits: usize) -> OrderedFloat<f32> {
-    let wins = wins as f32;
-    let visits = visits as f32;
-    let parent_visits = parent_visits as f32;
-
-    let value = wins / visits + exploration_factor * (parent_visits.ln() / visits).sqrt();
-    OrderedFloat(value)
+fn random_playout<R: Rng>(rand: &mut R, mut board: Board) -> Player {
+    loop {
+        match board.random_available_move(rand) {
+            None => return board.won_by.unwrap(),
+            Some(mv) => board.play(mv),
+        };
+    }
 }
 
-fn is_win<R: Rng>(winner: Player, player: Player, rand: &mut R) -> bool {
-    (winner == player) || (winner == Player::Neutral && rand.gen())
+fn winner_to_score(winner: Player, perspective: Player) -> i32 {
+    debug_assert!(perspective == Player::X || perspective == Player::O);
+
+    if winner == Player::Neutral { 0 } else if winner == perspective { 1 } else { -1 }
+}
+
+pub struct MCTSBot<R: Rng> {
+    iterations: usize,
+    exploration_factor: f32,
+    rand: R,
+}
+
+impl<R: Rng> MCTSBot<R> {
+    pub fn new(iterations: usize, rand: R) -> Self {
+        MCTSBot {
+            iterations,
+            exploration_factor: 1.5,
+            rand,
+        }
+    }
+}
+
+impl<R: Rng> Bot for MCTSBot<R> {
+    fn play(&mut self, board: &Board) -> Option<Coord> {
+        //initialize state
+        let root = Node {
+            board: board.clone(),
+            children: None,
+            score: 0,
+            visits: 0,
+        };
+
+        let mut state = State {
+            exploration_factor: self.exploration_factor,
+            nodes: vec![root],
+        };
+
+        //actually run
+        for i in 0..self.iterations {
+            if i % (self.iterations / 10) == 0 {
+                // println!("Progress: {}/{}", i, self.iterations);
+            }
+
+            state.recurse_down(&mut self.rand, 0);
+        }
+
+        // println!("{}", state.tree_to_string(0, 2));
+
+        //recover the best move
+        let children = state.nodes[0].children?;
+
+        let best_child = children.into_iter().max_by_key(|&child| {
+            state.nodes[child].visits
+        })?;
+
+        let best_move = state.nodes[0].board.available_moves()
+            .nth(best_child - children.start.get())
+            .unwrap();
+
+        Some(best_move)
+    }
 }

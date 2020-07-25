@@ -2,27 +2,31 @@ use std::io;
 use std::io::{stdin, Write};
 use std::time::Instant;
 
-use rand::{Rng, SeedableRng, thread_rng};
+use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use regex::Regex;
 
 use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord};
 use sttt::bot_game;
-use sttt::bot_game::{MCTSBot, RandomBot};
-use sttt::mcts::old_move_mcts;
+use sttt::bot_game::{RandomBot, Bot};
 use sttt::minimax::move_minimax;
+use sttt::mcts::MCTSBot;
 
 fn main() {
     // _console_game();
-    // _bot_game();
+    _bot_game();
     // _test_compact_string();
+    // _time_mcts()
 
+}
+
+fn _time_mcts() {
     let mut board = Board::new();
-    board.play(Coord::of_oo(4,4));
+    board.play(Coord::of_oo(4, 4));
     board.play(Coord::of_oo(4, 0));
 
     time(|| {
-        old_move_mcts(&board, 1_000_000, 1.5, &mut SmallRng::from_entropy(), true);
+        MCTSBot::new(10_000, SmallRng::from_entropy()).play(&board);
     })
 }
 
@@ -68,24 +72,10 @@ fn _follow_playout() {
     }
 }
 
-fn _test_mcts() {
-    let board = Board::new();
-    // board.play(Coord::of_oo(4, 4)); // X center center
-    // board.play(Coord::of_oo(4, 0)); // O top left corner
-    // board.play(Coord::of_oo(0, 4)); // X top left center
-    // board.play(Coord::of_oo(4, 2)); // O center top right
-
-    println!("{}", board);
-
-    let start = Instant::now();
-    println!("{:?}", old_move_mcts(&board, 1_000_000,1.5, &mut SmallRng::from_entropy(), true));
-    println!("{}", start.elapsed().as_millis() as f64 / 1000.0);
-}
-
 fn _bot_game() {
     let res = bot_game::run(
         || RandomBot,
-        || MCTSBot::new(1000),
+        || MCTSBot::new(1000, SmallRng::from_entropy()),
         100,
         true,
     );
@@ -93,7 +83,7 @@ fn _bot_game() {
     println!("{:?}", res);
 }
 
-fn _console_game() {
+fn _console_game<B: Bot>(mut bot: B) {
     let move_regex = Regex::new(r"^(?P<om>\d+)\s*(?:,\s*)?(?P<os>\d+)$").unwrap();
 
     let mut history = Vec::new();
@@ -153,7 +143,9 @@ fn _console_game() {
         }
 
         //Bot move
-        let mv = old_move_mcts(&board, 1_000_000, 1.5, &mut thread_rng(), true).expect("MCTS should return move");
+        let mv = bot.play(&board)
+            .expect("Bot should return move");
+
         board.play(mv);
         println!("{}", board);
 

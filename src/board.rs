@@ -11,24 +11,24 @@ use itertools::Itertools;
 #[derive(Debug)]
 #[derive(Eq, PartialEq)]
 pub enum Player {
-    Player,
-    Enemy,
+    X,
+    O,
     Neutral,
 }
 
 impl Player {
     pub fn other(self) -> Player {
         match self {
-            Player::Player => Player::Enemy,
-            Player::Enemy => Player::Player,
+            Player::X => Player::O,
+            Player::O => Player::X,
             Player::Neutral => Player::Neutral,
         }
     }
 
     fn index(self) -> u32 {
         match self {
-            Player::Player => 0,
-            Player::Enemy => 1,
+            Player::X => 0,
+            Player::O => 1,
             Player::Neutral => panic!(),
         }
     }
@@ -122,10 +122,10 @@ impl fmt::Display for Board {
 
                 let coord = Coord::of_xy(x, y);
                 let symbol = match (Some(coord) == self.last_move, self.tile(coord)) {
-                    (false, Player::Player) => 'X',
-                    (true, Player::Player) => 'x',
-                    (false, Player::Enemy) => 'O',
-                    (true, Player::Enemy) => 'o',
+                    (false, Player::X) => 'X',
+                    (true, Player::X) => 'x',
+                    (false, Player::O) => 'O',
+                    (true, Player::O) => 'o',
                     (_, Player::Neutral) => ' ',
                 };
 
@@ -189,8 +189,8 @@ lazy_static! {
 
 fn get_piece_bit(coord: Coord, player: Player) -> usize {
     match player {
-        Player::Player => PIECE_BITS[coord.o() as usize],
-        Player::Enemy => PIECE_BITS[81 + coord.o() as usize],
+        Player::X => PIECE_BITS[coord.o() as usize],
+        Player::O => PIECE_BITS[81 + coord.o() as usize],
         Player::Neutral => panic!(),
     }
 }
@@ -213,7 +213,7 @@ impl Board {
             grids: [0; 9],
             main_grid: 0,
             last_move: None,
-            next_player: Player::Player,
+            next_player: Player::X,
             won_by: None,
             macro_mask: Board::FULL_MASK,
             macro_open: Board::FULL_MASK,
@@ -368,9 +368,9 @@ fn compact_grid(grid: u32) -> u32 {
 
 fn get_player(grid: u32, index: u8) -> Player {
     if has_bit(grid, index) {
-        Player::Player
+        Player::X
     } else if has_bit(grid, index + 9) {
-        Player::Enemy
+        Player::O
     } else {
         Player::Neutral
     }
@@ -404,10 +404,10 @@ pub fn board_to_compact_string(board: &Board) -> String {
     (0..81).map(|o| {
         let coord = Coord::of_o(o);
         match (Some(coord) == board.last_move, board.tile(coord)) {
-            (false, Player::Player) => 'X',
-            (true, Player::Player) => 'x',
-            (false, Player::Enemy) => 'O',
-            (true, Player::Enemy) => 'o',
+            (false, Player::X) => 'X',
+            (true, Player::X) => 'x',
+            (false, Player::O) => 'O',
+            (true, Player::O) => 'o',
             (_, Player::Neutral) => ' ',
         }
     }).join("")
@@ -423,10 +423,10 @@ pub fn board_from_compact_string(s: &str) -> Board {
         let coord = Coord::of_o(o as u8);
 
         let (player, last) = match c {
-            'X' => (Player::Player, false),
-            'x' => (Player::Player, true),
-            'O' => (Player::Enemy, false),
-            'o' => (Player::Enemy, true),
+            'X' => (Player::X, false),
+            'x' => (Player::X, true),
+            'O' => (Player::O, false),
+            'o' => (Player::O, true),
             ' ' => (Player::Neutral, false),
             _ => panic!("unexpected character in shortstring")
         };

@@ -59,8 +59,8 @@ pub fn value(board: &Board) -> f64 {
 
 fn player_sign(player: Player) -> f64 {
     match player {
-        Player::Player => 1.0,
-        Player::Enemy => -1.0,
+        Player::X => 1.0,
+        Player::O => -1.0,
         Player::Neutral => 0.0,
     }
 }
