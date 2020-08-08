@@ -1,23 +1,68 @@
 use std::io;
-use std::io::{stdin, Write};
+use std::io::{Read, stdin, Write};
+use std::net::TcpListener;
 use std::time::Instant;
 
+use derive_more::From;
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use regex::Regex;
 
 use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord};
 use sttt::bot_game;
-use sttt::bot_game::{RandomBot, Bot};
-use sttt::minimax::move_minimax;
+use sttt::bot_game::{Bot, RandomBot};
 use sttt::mcts::MCTSBot;
+use sttt::minimax::MiniMaxBot;
 
 fn main() {
     // _console_game();
-    _bot_game();
+    // _bot_game();
     // _test_compact_string();
     // _time_mcts()
 
+    println!("Main");
+
+    _bot_server(MCTSBot::new(10_000, SmallRng::from_entropy())).unwrap()
+}
+
+#[derive(Debug, From)]
+enum Error {
+    IO(std::io::Error),
+    Utf8(std::str::Utf8Error),
+}
+
+fn _bot_server<B: Bot>(mut bot: B) -> Result<(), Error> {
+    println!("Before bind");
+
+    let listener = TcpListener::bind("::1:1576")?;
+
+    println!("Waiting for connection");
+    for stream in listener.incoming() {
+        println!("Got stream");
+
+        let mut stream = stream?;
+
+        loop {
+            println!("Listening");
+            let mut buf = [0; 81];
+            stream.read_exact(&mut buf)?;
+
+            let string = std::str::from_utf8(&buf)?;
+            println!("Received board {:?}", string);
+
+            let board = board_from_compact_string(string);
+            let mv = bot.play(&board);
+
+            println!("Replying move {:?}", mv);
+
+            let mv_int = mv.map(Coord::o).unwrap_or(100);
+            stream.write(&[mv_int])?;
+
+            println!("Reply done");
+        }
+    }
+
+    Ok(())
 }
 
 fn _time_mcts() {
@@ -57,7 +102,7 @@ fn _test_mm() {
     let board = Board::new();
 
     let start = Instant::now();
-    let mv = move_minimax(&board, 10);
+    let mv = MiniMaxBot::new(10).play(&board);
     println!("{:?}", mv);
     println!("{}", start.elapsed().as_millis() as f64 / 1000.0);
 }

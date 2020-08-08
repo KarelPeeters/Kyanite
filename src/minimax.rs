@@ -1,15 +1,29 @@
 use std::f64;
 
-use crate::board::{Board, Coord, Player};
+use derive_more::Constructor;
 
-pub fn move_minimax(board: &Board, depth: u32) -> Option<Coord> {
+use crate::board::{Board, Coord, Player};
+use crate::bot_game::Bot;
+
+#[derive(Constructor)]
+pub struct MiniMaxBot {
+    depth: u32
+}
+
+impl Bot for MiniMaxBot {
+    fn play(&mut self, board: &Board) -> Option<Coord> {
+        move_minimax(board, self.depth)
+    }
+}
+
+fn move_minimax(board: &Board, depth: u32) -> Option<Coord> {
     negamax(board, value(board), depth,
             f64::NEG_INFINITY, f64::INFINITY,
             player_sign(board.next_player),
     ).0
 }
 
-pub fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64) -> (Option<Coord>, f64) {
+fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64) -> (Option<Coord>, f64) {
     if depth == 0 || board.is_done() {
         return (board.last_move, player * c_value);
     }
