@@ -1,13 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use rand::{self, SeedableRng, seq::SliceRandom, XorShiftRng};
+    use rand::{self, SeedableRng, seq::SliceRandom};
 
     use crate::board::{Board, Coord};
+    use rand::rngs::SmallRng;
 
     #[test]
     fn test_random_distribution() {
         let mut board = Board::new();
-        let mut rand = XorShiftRng::from_seed([0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 1]);
+        let mut rand = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 1]);
 
         while !board.is_done() {
             let moves: Vec<Coord> = board.available_moves().collect();

@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 
-use std::fmt::{self, Write, Debug};
+use std::fmt::{self, Debug, Write};
 
+use itertools::Itertools;
 use rand::Rng;
 
 use crate::board::Player::Neutral;
-use itertools::Itertools;
+use crate::mcts::Rand;
 
 #[derive(Copy, Clone)]
 #[derive(Debug)]
@@ -43,19 +44,20 @@ impl Coord {
 //        Coord(100)
 //    }
 
+        //TODO rename these functions, maybe just oo, xy, o or with a new_ prefix?
     pub fn of_oo(om: u8, os: u8) -> Coord {
-       debug_assert!(om < 9);
-       debug_assert!(os < 9);
+        debug_assert!(om < 9);
+        debug_assert!(os < 9);
         Coord(9 * om + os)
     }
 
     pub fn of_o(o: u8) -> Coord {
-       debug_assert!(o < 81);
+        debug_assert!(o < 81);
         Coord::of_oo(o / 9, o % 9)
     }
 
     pub fn of_xy(x: u8, y: u8) -> Coord {
-       debug_assert!(x < 9 && y < 9);
+        debug_assert!(x < 9 && y < 9);
         Coord(((x / 3) + (y / 3) * 3) * 9 + ((x % 3) + (y % 3) * 3))
     }
 
@@ -139,6 +141,8 @@ impl fmt::Display for Board {
     }
 }
 
+//TODO implement a size hint
+//TODO look into other iterator speedup functions that can be implemented
 pub struct BoardMoveIterator<'a> {
     board: &'a Board,
     macro_left: u32,
@@ -176,7 +180,7 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
     }
 }
 
-lazy_static! {
+/*lazy_static! {
     static ref PIECE_BITS: [usize; 2*81 + 9] = {
         let mut arr = [0; 2*81 + 9];
         let mut rng = rand::thread_rng();
@@ -186,7 +190,8 @@ lazy_static! {
         arr
     };
 }
-
+*/
+/*
 fn get_piece_bit(coord: Coord, player: Player) -> usize {
     match player {
         Player::X => PIECE_BITS[coord.o() as usize],
@@ -198,6 +203,7 @@ fn get_piece_bit(coord: Coord, player: Player) -> usize {
 fn get_last_move_bit(coord: Coord) -> usize {
     PIECE_BITS[2 * 81 + coord.os() as usize]
 }
+*/
 
 //impl Hash for Board {
 //    fn hash<H: Hasher>(&self, state: &mut H) {
@@ -246,7 +252,7 @@ impl Board {
 //    }
 
     // #[inline(always)]
-    pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
+    pub fn random_available_move<R: Rand>(&self, rand: &mut R) -> Option<Coord> {
         if self.is_done() {
             return None;
         }
@@ -256,7 +262,7 @@ impl Board {
             count += 9 - self.grids[om as usize].count_ones();
         }
 
-        let mut index = rand.gen_range(0, count);
+        let mut index = rand.gen_range(0, count as usize) as u32;
 
         for om in BitIter::of(self.macro_mask) {
             let grid = self.grids[om as usize];
@@ -282,8 +288,8 @@ impl Board {
     }
 
     pub fn play(&mut self, coord: Coord) -> bool {
-       debug_assert!(!self.is_done(), "can't play on done board");
-       debug_assert!(self.is_available_move(coord), "move not available");
+        debug_assert!(!self.is_done(), "can't play on done board");
+        debug_assert!(self.is_available_move(coord), "move not available");
 
         //do actual move
         let won_grid = self.set_tile_and_update(self.next_player, coord);
@@ -337,6 +343,12 @@ impl Board {
         } else {
             self.macro_open
         }
+    }
+}
+
+impl Default for Board {
+    fn default() -> Self {
+        Board::new()
     }
 }
 
