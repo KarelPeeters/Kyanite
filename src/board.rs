@@ -6,7 +6,6 @@ use itertools::Itertools;
 use rand::Rng;
 
 use crate::board::Player::Neutral;
-use crate::mcts::Rand;
 
 #[derive(Copy, Clone)]
 #[derive(Debug)]
@@ -252,7 +251,7 @@ impl Board {
 //    }
 
     // #[inline(always)]
-    pub fn random_available_move<R: Rand>(&self, rand: &mut R) -> Option<Coord> {
+    pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
         if self.is_done() {
             return None;
         }
@@ -262,7 +261,7 @@ impl Board {
             count += 9 - self.grids[om as usize].count_ones();
         }
 
-        let mut index = rand.gen_range(0, count as usize) as u32;
+        let mut index = rand.gen_range(0, count);
 
         for om in BitIter::of(self.macro_mask) {
             let grid = self.grids[om as usize];

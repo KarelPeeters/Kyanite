@@ -1,5 +1,4 @@
 use derive_more::Constructor;
-use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
@@ -52,29 +51,13 @@ impl Node {
     }
 }
 
-pub trait Rand {
-    fn gen_range(&mut self, low: usize, high: usize) -> usize;
-
-    fn gen(&mut self) -> bool;
-}
-
-impl<R: Rng> Rand for R {
-    fn gen_range(&mut self, low: usize, high: usize) -> usize {
-        Rng::gen_range(self, low, high)
-    }
-
-    fn gen(&mut self) -> bool {
-        Rng::gen(self)
-    }
-}
-
 #[derive(Constructor)]
-pub struct MCTSBot<R: Rand> {
+pub struct MCTSBot<R: Rng> {
     iterations: usize,
     rand: R,
 }
 
-impl<R: Rand> Bot for MCTSBot<R> {
+impl<R: Rng> Bot for MCTSBot<R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
         let mut tree: Vec<Node> = Vec::new();
         let mut visited: Vec<usize> = Vec::with_capacity(81);
@@ -82,7 +65,7 @@ impl<R: Rand> Bot for MCTSBot<R> {
         //the actual coord doesn't matter, just pick something
         tree.push(Node::new(Coord::of_o(0)));
 
-        for i in 0..self.iterations {
+        for _ in 0..self.iterations {
             //println!("Start iter {}", i);
             let mut curr_node = 0;
             let mut curr_board = board.clone();
@@ -172,11 +155,6 @@ impl<R: Rand> Bot for MCTSBot<R> {
         match tree[0].children {
             None => board.random_available_move(&mut self.rand),
             Some(children) => {
-                for child in children {
-                    let node = &tree[child];
-                    //println!("move {:?} scores {}={}/{}", node.coord, (node.wins as f32) / (node.visits as f32), node.wins, node.visits)
-                }
-
                 children.iter().rev().max_by_key(|&child| {
                     tree[child].visits
                 }).map(|child| {

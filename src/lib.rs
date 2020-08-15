@@ -8,6 +8,3 @@ pub mod game;
 pub mod bot_game;
 
 mod tests;
-
-#[macro_use]
-extern crate lazy_static;
