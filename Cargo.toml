@@ -1,6 +1,6 @@
 [package]
 name = "sttt"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "An implemention of super tic tac toe, including bots that play it."
 license-file = "NONE.md"
@@ -20,9 +20,9 @@ derive_more = "0.99.9"
 [dev-dependencies]
 criterion = "0.3.3"
 
-[[bench]]
-name = "mcts"
-harness = false
+#[[bench]]
+#name = "mcts"
+#harness = false
 
 [profile.release]
 lto = true

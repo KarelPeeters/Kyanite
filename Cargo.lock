@@ -519,7 +519,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "sttt"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "criterion 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive_more 0.99.9 (registry+https://github.com/rust-lang/crates.io-index)",
