@@ -21,7 +21,7 @@ mod tests {
             let avg = (1_000_000 / moves.len()) as i32;
 
             for (mv, &count) in counts.iter().enumerate() {
-                if moves.contains(&Coord::of_o(mv as u8)) {
+                if moves.contains(&Coord::from_o(mv as u8)) {
                    debug_assert!((count.wrapping_sub(avg)).abs() < 10_000, "uniformly distributed")
                 } else {
                     assert_eq!(count, 0, "only actual moves returned")
@@ -29,7 +29,7 @@ mod tests {
             }
 
             let mv = moves.choose(&mut rand).unwrap().o();
-            board.play(Coord::of_o(mv as u8));
+            board.play(Coord::from_o(mv as u8));
         }
     }
 }

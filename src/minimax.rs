@@ -64,7 +64,7 @@ pub fn value(board: &Board) -> f64 {
     match board.won_by {
         Some(player) => f64::INFINITY * player_sign(player),
         _ => {
-            let tiles: f64 = (0..81).map(|c| factor(c % 9) * factor(c / 9) * player_sign(board.tile(Coord::of_o(c)))).sum();
+            let tiles: f64 = (0..81).map(|c| factor(c % 9) * factor(c / 9) * player_sign(board.tile(Coord::from_o(c)))).sum();
             let macros: f64 = (0..9).map(|c| factor(c) * player_sign(board.macr(c))).sum();
             TILE_VALUE * tiles + MACRO_VALUE * macros
         }

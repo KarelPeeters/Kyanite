@@ -39,23 +39,18 @@ impl Player {
 pub struct Coord(u8);
 
 impl Coord {
-//    pub fn none() -> Coord {
-//        Coord(100)
-//    }
-
-        //TODO rename these functions, maybe just oo, xy, o or with a new_ prefix?
-    pub fn of_oo(om: u8, os: u8) -> Coord {
+    pub fn from_oo(om: u8, os: u8) -> Coord {
         debug_assert!(om < 9);
         debug_assert!(os < 9);
         Coord(9 * om + os)
     }
 
-    pub fn of_o(o: u8) -> Coord {
+    pub fn from_o(o: u8) -> Coord {
         debug_assert!(o < 81);
-        Coord::of_oo(o / 9, o % 9)
+        Coord::from_oo(o / 9, o % 9)
     }
 
-    pub fn of_xy(x: u8, y: u8) -> Coord {
+    pub fn from_xy(x: u8, y: u8) -> Coord {
         debug_assert!(x < 9 && y < 9);
         Coord(((x / 3) + (y / 3) * 3) * 9 + ((x % 3) + (y % 3) * 3))
     }
@@ -99,15 +94,7 @@ pub struct Board {
 
     macro_mask: u32,
     macro_open: u32,
-
-//    hash: usize,
 }
-
-// impl PartialEq for Board {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.grids == other.grids && self.macro_mask == other.macro_mask
-//     }
-// }
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -121,7 +108,7 @@ impl fmt::Display for Board {
                     f.write_char('|')?;
                 }
 
-                let coord = Coord::of_xy(x, y);
+                let coord = Coord::from_xy(x, y);
                 let symbol = match (Some(coord) == self.last_move, self.tile(coord)) {
                     (false, Player::X) => 'X',
                     (true, Player::X) => 'x',
@@ -175,40 +162,9 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
         let os = self.grid_left.trailing_zeros();
         self.grid_left &= self.grid_left - 1;
 
-        Some(Coord::of_oo(self.curr_om as u8, os as u8))
+        Some(Coord::from_oo(self.curr_om as u8, os as u8))
     }
 }
-
-/*lazy_static! {
-    static ref PIECE_BITS: [usize; 2*81 + 9] = {
-        let mut arr = [0; 2*81 + 9];
-        let mut rng = rand::thread_rng();
-        for i in 0..arr.len() {
-            arr[i] = rng.gen();
-        }
-        arr
-    };
-}
-*/
-/*
-fn get_piece_bit(coord: Coord, player: Player) -> usize {
-    match player {
-        Player::X => PIECE_BITS[coord.o() as usize],
-        Player::O => PIECE_BITS[81 + coord.o() as usize],
-        Player::Neutral => panic!(),
-    }
-}
-
-fn get_last_move_bit(coord: Coord) -> usize {
-    PIECE_BITS[2 * 81 + coord.os() as usize]
-}
-*/
-
-//impl Hash for Board {
-//    fn hash<H: Hasher>(&self, state: &mut H) {
-//        state.write_usize(self.hash)
-//    }
-//}
 
 impl Board {
     const FULL_MASK: u32 = 0b111_111_111;
@@ -222,7 +178,6 @@ impl Board {
             won_by: None,
             macro_mask: Board::FULL_MASK,
             macro_open: Board::FULL_MASK,
-//            hash: 0,
         }
     }
 
@@ -246,11 +201,6 @@ impl Board {
         };
     }
 
-//    pub fn get_hash(&self) -> usize {
-//        return self.hash;
-//    }
-
-    // #[inline(always)]
     pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
         if self.is_done() {
             return None;
@@ -269,7 +219,7 @@ impl Board {
 
             if index < grid_count {
                 let os = get_nth_set_bit(!compact_grid(grid), index as u32);
-                return Some(Coord::of_oo(om as u8, os as u8));
+                return Some(Coord::from_oo(om as u8, os as u8));
             }
 
             index -= grid_count;
@@ -304,11 +254,6 @@ impl Board {
         let om = coord.om();
         let os = coord.os();
         let p = (9 * player.index()) as u8;
-
-        //update hash
-//        self.hash ^= get_piece_bit(coord, player);
-//        self.hash ^= self.last_move.map_or(0, |m| get_last_move_bit(m));
-//        self.hash ^= get_last_move_bit(coord);
 
         //set tile and macro, check win
         let new_grid = self.grids[om as usize] | (1 << (os + p));
@@ -413,7 +358,7 @@ impl Iterator for BitIter {
 
 pub fn board_to_compact_string(board: &Board) -> String {
     (0..81).map(|o| {
-        let coord = Coord::of_o(o);
+        let coord = Coord::from_o(o);
         match (Some(coord) == board.last_move, board.tile(coord)) {
             (false, Player::X) => 'X',
             (true, Player::X) => 'x',
@@ -431,7 +376,7 @@ pub fn board_from_compact_string(s: &str) -> Board {
     let mut last_move = None;
 
     for (o, c) in s.chars().enumerate() {
-        let coord = Coord::of_o(o as u8);
+        let coord = Coord::from_o(o as u8);
 
         let (player, last) = match c {
             'X' => (Player::X, false),

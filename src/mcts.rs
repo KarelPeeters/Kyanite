@@ -63,7 +63,7 @@ impl<R: Rng> Bot for MCTSBot<R> {
         let mut visited: Vec<usize> = Vec::with_capacity(81);
 
         //the actual coord doesn't matter, just pick something
-        tree.push(Node::new(Coord::of_o(0)));
+        tree.push(Node::new(Coord::from_o(0)));
 
         for _ in 0..self.iterations {
             //println!("Start iter {}", i);

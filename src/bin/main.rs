@@ -67,8 +67,8 @@ fn _bot_server<B: Bot>(mut bot: B) -> Result<(), Error> {
 
 fn _time_mcts() {
     let mut board = Board::new();
-    board.play(Coord::of_oo(4, 4));
-    board.play(Coord::of_oo(4, 0));
+    board.play(Coord::from_oo(4, 4));
+    board.play(Coord::from_oo(4, 0));
 
     time(|| {
         MCTSBot::new(1_000_000, SmallRng::from_entropy()).play(&board);
@@ -112,7 +112,7 @@ fn _follow_playout() {
 
     let mut board = Board::new();
     for &mv in moves.iter() {
-        board.play(Coord::of_o(mv));
+        board.play(Coord::from_o(mv));
         println!("{}", board);
     }
 }
@@ -165,7 +165,7 @@ fn _console_game<B: Bot>(mut bot: B) {
                 let os: u8 = m["os"].parse().unwrap();
 
                 if om <= 8 && os <= 8 {
-                    let mv = Coord::of_oo(om, os);
+                    let mv = Coord::from_oo(om, os);
                     if board.is_available_move(mv) {
                         history.push(board.clone());
                         board.play(mv);
