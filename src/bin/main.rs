@@ -8,9 +8,10 @@ use sttt::bot_game;
 use sttt::bot_game::{Bot, RandomBot};
 use sttt::mcts::MCTSBot;
 use sttt::minimax::MiniMaxBot;
+use sttt::mcts::heuristic::{MacroHeuristic, MacroLeftHeuristic};
 
 fn main() {
-    _time_mcts()
+    _heuristic_bot_game()
 }
 
 fn _time_mcts() {
@@ -63,6 +64,17 @@ fn _follow_playout() {
         board.play(Coord::from_o(mv));
         println!("{}", board);
     }
+}
+
+fn _heuristic_bot_game() {
+    let res = bot_game::run(
+        || MCTSBot::new(50_000, SmallRng::from_entropy()),
+        || MCTSBot::new_with_heuristic(50_000, SmallRng::from_entropy(), MacroHeuristic { weight: 1.0 }),
+        50,
+        true,
+    );
+
+    println!("{:?}", res);
 }
 
 fn _bot_game() {

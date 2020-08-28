@@ -1,9 +1,11 @@
-use derive_more::Constructor;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
 use crate::board::{Board, Coord, Player};
 use crate::bot_game::Bot;
+use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
+
+pub mod heuristic;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 struct IdxRange {
@@ -43,21 +45,35 @@ impl Node {
         }
     }
 
-    fn uct(&self, parent_visits: usize) -> OrderedFloat<f32> {
+    fn uct(&self, parent_visits: usize, heuristic: f32) -> OrderedFloat<f32> {
         let wins = self.wins as f32;
         let visits = self.visits as f32;
-        let value = (wins / visits) + (2.0 * (parent_visits as f32).ln() / visits).sqrt();
+        let value = (wins / visits) +
+            (2.0 * (parent_visits as f32).ln() / visits).sqrt() +
+            (heuristic / (visits + 1.0));
         value.into()
     }
 }
 
-#[derive(Constructor)]
-pub struct MCTSBot<R: Rng> {
+pub struct MCTSBot<H: Heuristic, R: Rng> {
     iterations: usize,
+    heuristic: H,
     rand: R,
 }
 
-impl<R: Rng> Bot for MCTSBot<R> {
+impl<R: Rng> MCTSBot<ZeroHeuristic, R> {
+    pub fn new(iterations: usize, rand: R) -> MCTSBot<ZeroHeuristic, R> {
+        MCTSBot { iterations, heuristic: ZeroHeuristic, rand }
+    }
+}
+
+impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
+    pub fn new_with_heuristic(iterations: usize, rand: R, heuristic: H) -> MCTSBot<H, R> {
+        MCTSBot { iterations, heuristic, rand }
+    }
+}
+
+impl<H: Heuristic, R: Rng> Bot for MCTSBot<H, R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
         let mut tree: Vec<Node> = Vec::new();
         let mut visited: Vec<usize> = Vec::with_capacity(81);
@@ -113,7 +129,8 @@ impl<R: Rng> Bot for MCTSBot<R> {
                 //println!("Values: {:?}", children.iter().map(|child| tree[child].uct(parent_visits)).collect_vec());
 
                 let selected = children.iter().max_by_key(|&child| {
-                    tree[child].uct(parent_visits)
+                    let heuristic = self.heuristic.evaluate(&curr_board);
+                    tree[child].uct(parent_visits, heuristic)
                 }).expect("Board is not done, this node should have a child");
 
                 curr_node = selected;
