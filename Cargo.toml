@@ -5,13 +5,11 @@ authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "An implemention of super tic tac toe, including bots that play it."
 license-file = "NONE.md"
 edition = "2018"
+default-run = "main"
 
 [dependencies]
 rand = { version = "0.7.3", features = ["small_rng"] }
-smallvec = "0.6.9"
 ordered-float = "2.0.0"
-lazy_static = "1.3.0"
-rand_pcg = "0.1.2"
 regex = "1.1.6"
 itertools = "0.9.0"
 rayon = "1.3.1"
