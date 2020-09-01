@@ -96,7 +96,7 @@ impl Propagate for SigmoidLayer {
         result
     }
 
-    fn apply_deltas(&mut self, factor: f32) {}
+    fn apply_deltas(&mut self, _factor: f32) {}
 }
 
 #[derive(Debug)]
@@ -114,12 +114,14 @@ impl ReluLayer {
     }
 }
 
+const RELU_LEAK: f32 = 0.1;
+
 impl Propagate for ReluLayer {
     fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
         debug_assert!(input.dim() == (self.size, 1));
 
         self.input = input;
-        self.input.map(|x| x.max(0.0))
+        self.input.map(|&x| if x < 0.0 { RELU_LEAK * x } else { x })
     }
 
     fn clear_deltas(&mut self) {}
@@ -128,7 +130,7 @@ impl Propagate for ReluLayer {
         debug_assert!(output_deriv.dim() == (self.size, 1));
 
         let mut result = output_deriv;
-        azip!((&i in &self.input, r in &mut result) if i < 0.0 { *r = 0.0 } );
+        azip!((&i in &self.input, r in &mut result) if i < 0.0 { *r *= RELU_LEAK } );
         result
     }
 
@@ -227,7 +229,7 @@ impl QuadraticCost {
 
 type Entry = (Array2<f32>, Array2<f32>);
 
-fn train_network(network: &mut Network, epochs: usize, batch_size: usize, data: &[Entry]) {
+fn train_network(network: &mut Network, epochs: usize, batch_size: usize, train_factor: f32, data: &[Entry]) {
     assert!(batch_size <= data.len(), "batch size larger than data length");
 
     let mut rng = SmallRng::from_entropy();
@@ -245,7 +247,7 @@ fn train_network(network: &mut Network, epochs: usize, batch_size: usize, data: 
             network.backwards(output_deriv);
         }
 
-        network.apply_deltas(0.001 / batch_size as f32);
+        network.apply_deltas(train_factor / batch_size as f32);
         println!("done, cost: {}", total_cost / batch_size as f32);
     }
 }
@@ -272,7 +274,13 @@ fn load_mnist() -> (Vec<Entry>, Vec<Entry>) {
     (convert(&mnist.trn_lbl, &mnist.trn_img), convert(&mnist.tst_lbl, &mnist.tst_img))
 }
 
-fn main() {
+fn _manual_test() {
+    // let train_data = (0..1000).map(|_| {
+    //     let input = StandardNormal.sample(&mut rng);
+    //     let output = 3.0 + 6.0 * input;
+    //     (Array2::from_elem((1, 1), input), Array2::from_elem((1, 1), output))
+    // }).collect_vec();
+
     let mut rng = SmallRng::from_entropy();
 
     let mut network = Network {
@@ -282,29 +290,40 @@ fn main() {
         ]
     };
 
-    let train_data = (0..1000).map(|_| {
-        let input = StandardNormal.sample(&mut rng);
-        let output = 3.0 + 6.0 * input;
-        (Array2::from_elem((1, 1), input), Array2::from_elem((1, 1), output))
-    }).collect_vec();
+    let input = Array2::from_elem((1, 1), 2.0);
+    println!("input: {:?}", input);
 
-    // let (train_data, test_data) = load_mnist();
+    network.clear_deltas();
 
-    /*for y in 0..28 {
-        for x in 0..28 {
-            if train_data[1].0[(28*y + x, 0)] > 0.1 {
-                print!("#")
-            }
-            else {
-                print!(" ")
-            }
-        }
-        println!()
-    }
+    let output = network.forward(input);
+    println!("output: {:?}", output);
+    let output_deriv = Array2::from_elem((1, 1), 0.5);
+    println!("output_deriv: {:?}", output_deriv);
 
-    println!("{:#?}", train_data[1]);*/
+    let input_deriv = network.backwards(output_deriv);
+    println!("input_deriv: {:?}", input_deriv);
 
-    train_network(&mut network, 10000, 1000, &train_data);
+    println!("network: {:#?}", network);
+
+    network.apply_deltas(0.1);
+
+    println!("network: {:#?}", network);
+}
+
+fn main() {
+    let mut rng = SmallRng::from_entropy();
+
+    let mut network = Network {
+        layers: vec![
+            DenseLayer::new(28*28, 128, &mut rng).into(),
+            ReluLayer::new(128).into(),
+            DenseLayer::new(128, 10, &mut rng).into(),
+        ]
+    };
+
+    let (train_data, test_data) = load_mnist();
+
+    train_network(&mut network, 100000, 100, 0.001, &train_data);
 
     let output = network.forward(train_data[1].0.clone());
     println!("output: {:?}", output)
