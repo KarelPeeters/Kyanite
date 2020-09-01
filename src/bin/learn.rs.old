@@ -1,0 +1,157 @@
+use itertools::Itertools;
+use itertools::izip;
+use ndarray::{Array1, Array3, Axis};
+use ndarray_npy::write_npy;
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
+use rayon::iter::{ParallelBridge, ParallelIterator};
+
+use sttt::board::{Board, Coord};
+use sttt::mcts::heuristic::ZeroHeuristic;
+use sttt::mcts::mcts_evaluate;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::error::Error;
+use tch::{Tensor, nn, Device, Kind};
+use tch::nn::{OptimizerConfig, Module};
+
+fn eval(board: &Board) -> f32 {
+    mcts_evaluate(
+        board,
+        1_000,
+        &ZeroHeuristic,
+        &mut SmallRng::from_entropy(),
+    ).value
+}
+
+struct RandomBoardIter {
+    first: bool,
+    board: Board,
+    rand: SmallRng,
+}
+
+impl Default for RandomBoardIter {
+    fn default() -> Self {
+        RandomBoardIter {
+            first: true,
+            board: Default::default(),
+            rand: SmallRng::from_entropy(),
+        }
+    }
+}
+
+impl Iterator for RandomBoardIter {
+    type Item = Board;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.first {
+            //return empty board once
+            self.first = false;
+            Some(Board::new())
+        } else {
+            if self.board.is_done() {
+                self.board = Board::new();
+            }
+
+            self.board.play(self.board.random_available_move(&mut self.rand).unwrap());
+
+            Some(self.board.clone())
+        }
+    }
+}
+
+//TODO don't just use random boards, use boards that occur in games between MCTS, Random and MM
+//   not _only_ random because we'd waste lots of time looking at useless positions
+//   not _only_ mcts because we might forget how to play against dumb players
+
+fn generate_data() {
+    // let mut board = Board::new();
+    // board.play(Coord::from_oo(0, 0));
+    // println!("Value: {}", eval(&board));
+
+    let data_count = 1_000_000;
+
+    let mut data_x_tiles = Array3::<i8>::zeros((data_count, 81, 4));
+    let mut data_x_macros = Array3::<i8>::zeros((data_count,  9, 2));
+    let mut data_y = Array1::<f32>::zeros(data_count);
+
+    let random_boards = RandomBoardIter::default().take(data_count).collect_vec();
+    let progress = AtomicUsize::new(0);
+
+    izip!(random_boards, data_x_tiles.axis_iter_mut(Axis(0)), data_x_macros.axis_iter_mut(Axis(0)), &mut data_y)
+        .par_bridge().for_each(|(board, mut data_x_tiles, mut data_x_macros,  data_y)| {
+
+        let progress = progress.fetch_add(1, Ordering::Relaxed);
+        if progress % (data_count / 1000) == 0 {
+            println!("Progress {}", (progress as f32) / (data_count) as f32)
+        }
+
+        for coord in Coord::all() {
+            let o = coord.o() as usize;
+
+            let p = board.tile(coord);
+            if p == board.next_player {
+                data_x_tiles[(o, 0)] = 1;
+            }
+            if p == board.next_player.other() {
+                data_x_tiles[(o, 1)] = 1;
+            }
+            //TODO is there a better way to pass this?
+            if Some(coord) == board.last_move {
+                data_x_tiles[(o, 2)] = 1;
+            }
+            //TODO is this actually helpful in the long term?
+            if board.is_available_move(coord) {
+                data_x_tiles[(o, 3)] = 1;
+            }
+        }
+
+        //TODO shouldn't the network be able to learn this on its own?
+        for om in 0..9 {
+            let p = board.macr(om);
+            let om = om as usize;
+            if p == board.next_player {
+                data_x_macros[(om, 0)] = 1;
+            }
+            if p == board.next_player.other() {
+                data_x_macros[(om, 1)] = 1;
+            }
+        }
+
+        let value = eval(&board);
+        *data_y = value;
+    });
+
+    write_npy("data_x_tiles.npy", data_x_tiles).unwrap();
+    write_npy("data_x_macros.npy", data_x_macros).unwrap();
+    write_npy("data_y.npy", data_y).unwrap();
+}
+
+fn test_pytorch() -> Result<(), Box<dyn Error>> {
+    let inputs = Tensor::zeros(&[10, 2], (Kind::Float, Device::Cpu));
+
+    let vs = nn::VarStore::new(Device::Cpu);
+
+    let model = nn::seq()
+        .add(nn::linear(&vs.root() / "layer1", 2, 1, Default::default()));
+        // .add_fn(|x| x.relu());
+
+    let opt = nn::Adam::default().build(&vs, 1e-3)?;
+
+
+    for epoch in 0..10 {
+        // let loss = model.forward(&m.train_images)
+    }
+
+    Ok(())
+}
+
+struct
+
+fn manual_neural_net() {
+
+}
+
+fn main()  {
+    // generate_data();
+    test_pytorch();
+}

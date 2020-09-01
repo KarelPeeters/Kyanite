@@ -39,6 +39,10 @@ impl Player {
 pub struct Coord(u8);
 
 impl Coord {
+    pub fn all() -> impl Iterator<Item=Coord> {
+        (0..81).map(|o| Self::from_o(o))
+    }
+    
     pub fn from_oo(om: u8, os: u8) -> Coord {
         debug_assert!(om < 9);
         debug_assert!(os < 9);
@@ -357,8 +361,7 @@ impl Iterator for BitIter {
 }
 
 pub fn board_to_compact_string(board: &Board) -> String {
-    (0..81).map(|o| {
-        let coord = Coord::from_o(o);
+    Coord::all().map(|coord| {
         match (Some(coord) == board.last_move, board.tile(coord)) {
             (false, Player::X) => 'X',
             (true, Player::X) => 'x',
