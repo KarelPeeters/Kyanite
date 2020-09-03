@@ -1,256 +1,18 @@
-use std::cmp::{max, min};
+use std::io;
+use std::io::Write;
 
-use derive_more::From;
-use itertools::Itertools;
+use itertools::{Itertools, zip};
 use mnist::MnistBuilder;
-use ndarray::{Array2, azip};
 use ndarray_rand::RandomExt;
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use rand_distr::{Distribution, StandardNormal};
+use rand_distr::StandardNormal;
 
-//TODO remove mutable state from layers
-//  have a NetworkBuilder that gets a list of layers and checks them, then build a TrainNetwork instance
-//  with state for the backpropagation
-//  there is also a Network state that only does calculation, no actual training
-//  maybe allow multiple inputs and outputs, how though?
-#[derive(From, Debug)]
-enum Layer {
-    Relu(ReluLayer),
-    Sigmoid(SigmoidLayer),
-    Dense(DenseLayer),
-}
+type Matrix = ndarray::Array2<f32>;
+type Vector = ndarray::Array1<f32>;
 
-impl Propagate for Layer {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
-        match self {
-            Layer::Relu(layer) => layer.forward(input),
-            Layer::Sigmoid(layer) => layer.forward(input),
-            Layer::Dense(layer) => layer.forward(input)
-        }
-    }
-
-    fn clear_deltas(&mut self) {
-        match self {
-            Layer::Relu(layer) => layer.clear_deltas(),
-            Layer::Sigmoid(layer) => layer.clear_deltas(),
-            Layer::Dense(layer) => layer.clear_deltas()
-        }
-    }
-
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32> {
-        match self {
-            Layer::Relu(layer) => layer.backwards(output_deriv),
-            Layer::Sigmoid(layer) => layer.backwards(output_deriv),
-            Layer::Dense(layer) => layer.backwards(output_deriv)
-        }
-    }
-
-    fn apply_deltas(&mut self, factor: f32) {
-        match self {
-            Layer::Relu(layer) => layer.apply_deltas(factor),
-            Layer::Sigmoid(layer) => layer.apply_deltas(factor),
-            Layer::Dense(layer) => layer.apply_deltas(factor)
-        }
-    }
-}
-
-trait Propagate {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32>;
-
-    fn clear_deltas(&mut self);
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32>;
-    fn apply_deltas(&mut self, factor: f32);
-}
-
-#[derive(Debug)]
-struct SigmoidLayer {
-    size: usize,
-    input: Array2<f32>,
-}
-
-impl SigmoidLayer {
-    fn new(size: usize) -> Self {
-        SigmoidLayer {
-            size,
-            input: Array2::zeros((size, 1)),
-        }
-    }
-}
-
-fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
-}
-
-impl Propagate for SigmoidLayer {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
-        input.map(|&x| sigmoid(x))
-    }
-
-    fn clear_deltas(&mut self) {}
-
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32> {
-        let mut result = output_deriv;
-        azip!((&i in &self.input, r in &mut result) *r *= sigmoid(i) * (1.0 - sigmoid(i)) );
-        result
-    }
-
-    fn apply_deltas(&mut self, _factor: f32) {}
-}
-
-#[derive(Debug)]
-struct ReluLayer {
-    size: usize,
-    input: Array2<f32>,
-}
-
-impl ReluLayer {
-    fn new(size: usize) -> Self {
-        ReluLayer {
-            size,
-            input: Array2::zeros((size, 1)),
-        }
-    }
-}
-
-const RELU_LEAK: f32 = 0.1;
-
-impl Propagate for ReluLayer {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
-        debug_assert!(input.dim() == (self.size, 1));
-
-        self.input = input;
-        self.input.map(|&x| if x < 0.0 { RELU_LEAK * x } else { x })
-    }
-
-    fn clear_deltas(&mut self) {}
-
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32> {
-        debug_assert!(output_deriv.dim() == (self.size, 1));
-
-        let mut result = output_deriv;
-        azip!((&i in &self.input, r in &mut result) if i < 0.0 { *r *= RELU_LEAK } );
-        result
-    }
-
-    fn apply_deltas(&mut self, _factor: f32) {}
-}
-
-#[derive(Debug)]
-struct DenseLayer {
-    w: Array2<f32>,
-    b: Array2<f32>,
-
-    input: Array2<f32>,
-    w_delta: Array2<f32>,
-    b_delta: Array2<f32>,
-}
-
-impl DenseLayer {
-    fn new<R: Rng>(input: usize, output: usize, rng: &mut R) -> Self {
-        DenseLayer {
-            w: Array2::random_using((output, input), StandardNormal, rng),
-            b: Array2::random_using((output, 1), StandardNormal, rng),
-            input: Array2::zeros((input, 1)),
-            w_delta: Array2::zeros((output, input)),
-            b_delta: Array2::zeros((output, 1)),
-        }
-    }
-}
-
-impl Propagate for DenseLayer {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
-        self.input = input;
-        self.w.dot(&self.input) + &self.b
-    }
-
-    fn clear_deltas(&mut self) {
-        self.w_delta.fill(0.0);
-        self.b_delta.fill(0.0);
-    }
-
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32> {
-        let input_deriv = self.w.t().dot(&output_deriv);
-        let weight_deriv = output_deriv.dot(&self.input.t());
-
-        self.w_delta += &weight_deriv;
-        self.b_delta += &output_deriv;
-
-        input_deriv
-    }
-
-    fn apply_deltas(&mut self, factor: f32) {
-        self.w -= &(&self.w_delta * factor);
-        self.b -= &(&self.b_delta * factor);
-    }
-}
-
-#[derive(Debug)]
-struct Network {
-    layers: Vec<Layer>
-}
-
-impl Propagate for Network {
-    fn forward(&mut self, input: Array2<f32>) -> Array2<f32> {
-        self.layers.iter_mut().fold(input, |state, layer| {
-            layer.forward(state)
-        })
-    }
-
-    fn clear_deltas(&mut self) {
-        for layer in &mut self.layers {
-            layer.clear_deltas()
-        }
-    }
-
-    fn backwards(&mut self, output_deriv: Array2<f32>) -> Array2<f32> {
-        self.layers.iter_mut().rev().fold(output_deriv, |state, layer| {
-            layer.backwards(state)
-        })
-    }
-
-    fn apply_deltas(&mut self, factor: f32) {
-        for layer in &mut self.layers {
-            layer.apply_deltas(factor)
-        }
-    }
-}
-
-struct QuadraticCost;
-
-impl QuadraticCost {
-    fn eval(actual: &Array2<f32>, expected: &Array2<f32>) -> (f32, Array2<f32>) {
-        let deriv: Array2<f32> = actual - expected;
-        let norm = deriv.fold(0.0, |acc, x| acc + x * x);
-        (norm / 2.0, deriv)
-    }
-}
-
-type Entry = (Array2<f32>, Array2<f32>);
-
-fn train_network(network: &mut Network, epochs: usize, batch_size: usize, train_factor: f32, data: &[Entry]) {
-    assert!(batch_size <= data.len(), "batch size larger than data length");
-
-    let mut rng = SmallRng::from_entropy();
-
-    for epoch in 0..epochs {
-        print!("Epoch {} ... ", epoch);
-
-        let mut total_cost = 0.0;
-        network.clear_deltas();
-
-        for (input, expected_output) in data.choose_multiple(&mut rng, batch_size) {
-            let output = network.forward(input.clone());
-            let (cost, output_deriv) = QuadraticCost::eval(&output, expected_output);
-            total_cost += cost;
-            network.backwards(output_deriv);
-        }
-
-        network.apply_deltas(train_factor / batch_size as f32);
-        println!("done, cost: {}", total_cost / batch_size as f32);
-    }
-}
+type Entry = (Vector, Vector);
 
 fn load_mnist() -> (Vec<Entry>, Vec<Entry>) {
     let mnist = MnistBuilder::new()
@@ -261,10 +23,10 @@ fn load_mnist() -> (Vec<Entry>, Vec<Entry>) {
         assert_eq!(labels.len() * 28 * 28, images.len());
 
         labels.iter().zip(images.chunks_exact(28 * 28)).map(|(&digit, image)| {
-            let input = Array2::from_shape_fn((28 * 28, 1), |(i, _)| {
+            let input = Vector::from_shape_fn(28 * 28, |i| {
                 image[i] as f32 / 255.0
             });
-            let output = Array2::from_shape_fn((10, 1), |(i, _)| {
+            let output = Vector::from_shape_fn(10, |i| {
                 (i as u8 == digit) as u8 as f32
             });
             (input, output)
@@ -274,57 +36,240 @@ fn load_mnist() -> (Vec<Entry>, Vec<Entry>) {
     (convert(&mnist.trn_lbl, &mnist.trn_img), convert(&mnist.tst_lbl, &mnist.tst_img))
 }
 
-fn _manual_test() {
-    // let train_data = (0..1000).map(|_| {
-    //     let input = StandardNormal.sample(&mut rng);
-    //     let output = 3.0 + 6.0 * input;
-    //     (Array2::from_elem((1, 1), input), Array2::from_elem((1, 1), output))
-    // }).collect_vec();
+trait CostFunc {
+    fn eval(&self, expected: &Vector, actual: &Vector) -> (f32, Vector);
+}
 
-    let mut rng = SmallRng::from_entropy();
+struct QuadraticCost;
 
-    let mut network = Network {
-        layers: vec![
-            DenseLayer::new(1, 1, &mut rng).into(),
-            ReluLayer::new(1).into(),
-        ]
-    };
+impl CostFunc for QuadraticCost {
+    fn eval(&self, expected: &Vector, actual: &Vector) -> (f32, Vector) {
+        let delta: Vector = actual - expected;
+        let cost = delta.fold(0.0, |a, x| a + x * x);
+        (cost, delta)
+    }
+}
 
-    let input = Array2::from_elem((1, 1), 2.0);
-    println!("input: {:?}", input);
+#[derive(Debug)]
+struct Network {
+    weights: Vec<Matrix>,
+    biases: Vec<Vector>,
+}
 
-    network.clear_deltas();
+fn sigmoid(z: f32) -> f32 {
+    1.0 / (1.0 + (-z).exp())
+}
 
-    let output = network.forward(input);
-    println!("output: {:?}", output);
-    let output_deriv = Array2::from_elem((1, 1), 0.5);
-    println!("output_deriv: {:?}", output_deriv);
+fn sigmoid_prime(z: f32) -> f32 {
+    sigmoid(z) * (1.0 - sigmoid(z))
+}
 
-    let input_deriv = network.backwards(output_deriv);
-    println!("input_deriv: {:?}", input_deriv);
+fn sigmoid_arr(mut x: Vector) -> Vector {
+    x.map_inplace(|x| *x = sigmoid(*x));
+    x
+}
 
-    println!("network: {:#?}", network);
+fn sigmoid_prime_arr(mut x: Vector) -> Vector {
+    x.map_inplace(|x| *x = sigmoid_prime(*x));
+    x
+}
 
-    network.apply_deltas(0.1);
+impl Network {
+    fn new<R: Rng>(input_size: usize, layer_sizes: &[usize], rng: &mut R) -> Self {
+        let (weights, biases) = layer_sizes.iter().scan(input_size, |i, &o| {
+            let weight = Matrix::random_using((o, *i), StandardNormal, rng);
+            let bias = Vector::random_using(o, StandardNormal, rng);
+            *i = o;
+            Some((weight, bias))
+        }).unzip();
 
-    println!("network: {:#?}", network);
+        Network {
+            weights,
+            biases,
+        }
+    }
+
+    fn forward(&self, input: &Vector) -> Vector {
+        let mut a = input.clone();
+        for (w, b) in zip(&self.weights, &self.biases) {
+            a = sigmoid_arr(w.dot(&a) + b);
+        }
+        a
+    }
+
+    fn train(&mut self, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32) {
+        println!("{}", batch_size);
+        println!("{}", data.len());
+        assert!(batch_size <= data.len());
+        let mut rng = SmallRng::from_entropy();
+
+        for epoch in 0..epochs {
+            print!("Starting epoch {} ... ", epoch);
+            io::stdout().flush().unwrap();
+
+            let mut total_cost = 0.0;
+
+            data.shuffle(&mut rng);
+            for batch in data.chunks_exact(batch_size) {
+                // print!("Starting batch ... ");
+                io::stdout().flush().unwrap();
+                let batch_cost = self.train_batch(batch, learning_rate);
+                total_cost += batch_cost;
+                // println!("cost {}", batch_cost / batch_size as f32)
+            }
+
+            let batch_count = data.len() / batch_size;
+            let avg_train_cost = total_cost / batch_count as f32;
+            print!("train {}", avg_train_cost);
+
+            if let Some(test_data) = test_data {
+                let avg_test_cost = self.evaluate(&test_data);
+                println!(", test {}", avg_test_cost);
+            } else {
+                println!();
+            }
+        }
+    }
+
+    fn evaluate(&mut self, data: &[Entry]) -> f32 {
+        let mut total_score = 0.0;
+        for (input, expected_output) in data {
+            let output = self.forward(input);
+            total_score += QuadraticCost.eval(expected_output, &output).0;
+        }
+        total_score / data.len() as f32
+    }
+
+    fn train_batch(&mut self, batch: &[Entry], learning_rate: f32) -> f32 {
+        let mut w_deltas = self.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
+        let mut b_deltas = self.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
+
+        let mut total_cost = 0.0;
+
+        //collect deltas
+        for (input, expected_output) in batch {
+            total_cost += self.backprop(input, expected_output, &mut w_deltas, &mut b_deltas);
+        }
+
+        //apply deltas
+        for (w, w_delta) in zip(&mut self.weights, w_deltas) {
+            *w -= &(learning_rate / batch.len() as f32 * w_delta);
+        }
+        for (b, b_delta) in zip(&mut self.biases, b_deltas) {
+            *b -= &(learning_rate / batch.len() as f32 * b_delta);
+        }
+
+        total_cost / batch.len() as f32
+    }
+
+    fn backprop(&self, input: &Vector, expected_output: &Vector, w_deltas: &mut [Matrix], b_deltas: &mut [Vector]) -> f32 {
+        let mut a = input.clone();
+        let mut zs = vec![];
+        let mut activations = vec![a.clone()];
+
+        // forward pass
+        for (w, b) in zip(&self.weights, &self.biases) {
+            let z = w.dot(&a) + b;
+            a = sigmoid_arr(z.clone());
+
+            zs.push(z);
+            activations.push(a.clone());
+        }
+
+        //backwards pass
+        let (cost, mut a_delta) = QuadraticCost.eval(expected_output, &a);
+
+        for i in (0..self.weights.len()).rev() {
+            let z_delta: Vector = a_delta * &sigmoid_prime_arr(zs[i].clone());
+            a_delta = self.weights[i].t().dot(&z_delta);
+
+            b_deltas[i] += &z_delta;
+            w_deltas[i] += a_delta.dot(&activations[i].t())
+        }
+
+        cost
+    }
+}
+
+fn test_deriv(network: &mut Network, data: &[Entry]) {
+    let mut w_backprop_deltas = network.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
+    let mut b_backprop_deltas = network.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
+
+    let mut w_test_deltas = network.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
+    let mut b_test_deltas = network.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
+
+    let mut orig_cost = 0.0;
+    let mut second_cost = 0.0;
+
+    const EPS: f32 = 0.01;
+
+    for entry in data {
+        orig_cost += network.backprop(&entry.0, &entry.1, &mut w_backprop_deltas, &mut b_backprop_deltas);
+        second_cost += QuadraticCost.eval(&entry.1, &network.forward(&entry.0)).0;
+
+        for layer in 0..network.weights.len() {
+            for wi in 0..network.weights[layer].len() {
+                let slice = network.weights[layer].as_slice_mut().unwrap();
+                let orig_weight = slice[wi];
+                slice[wi] += EPS;
+
+                let output = network.forward(&entry.0);
+                let (cost, _) = QuadraticCost.eval(&entry.1, &output);
+
+                let test_delta = (cost - orig_cost) / EPS;
+                w_test_deltas[layer].as_slice_mut().unwrap()[wi] += test_delta;
+
+                network.weights[layer].as_slice_mut().unwrap()[wi] = orig_weight;
+            }
+
+            for bi in 0..network.biases[layer].len() {
+                let slice = network.biases[layer].as_slice_mut().unwrap();
+                let orig_bias = slice[bi];
+                slice[bi] += EPS;
+
+                let output = network.forward(&entry.0);
+                let (cost, _) = QuadraticCost.eval(&entry.1, &output);
+
+                let test_delta = (cost - orig_cost) / EPS;
+                b_test_deltas[layer].as_slice_mut().unwrap()[bi] += test_delta;
+
+                network.biases[layer].as_slice_mut().unwrap()[bi] = orig_bias;
+            }
+        }
+    }
+
+    let len_factor = data.len() as f32;
+    orig_cost /= len_factor;
+    second_cost /= len_factor;
+    w_backprop_deltas.iter_mut().for_each(|w| *w /= len_factor);
+    b_backprop_deltas.iter_mut().for_each(|b| *b /= len_factor);
+    w_test_deltas.iter_mut().for_each(|w| *w /= len_factor);
+    b_test_deltas.iter_mut().for_each(|b| *b /= len_factor);
+
+    println!("Costs should equal: {} == {}", orig_cost, second_cost);
+
+    println!("Backprop:");
+    println!("w_deltas: {:?}", w_backprop_deltas);
+    println!("b_deltas: {:?}", b_backprop_deltas);
+
+    println!("Test:");
+    println!("w_deltas: {:?}", w_backprop_deltas);
+    println!("b_deltas: {:?}", b_backprop_deltas);
 }
 
 fn main() {
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut network = Network::new(28 * 28, &[10], &mut rng);
 
-    let mut network = Network {
-        layers: vec![
-            DenseLayer::new(28*28, 128, &mut rng).into(),
-            ReluLayer::new(128).into(),
-            DenseLayer::new(128, 10, &mut rng).into(),
-        ]
-    };
+    let (mut train_data, test_data) = load_mnist();
 
-    let (train_data, test_data) = load_mnist();
+    // test_deriv(&mut network, &train_data[0..10]);
+    // return;
 
-    train_network(&mut network, 100000, 100, 0.001, &train_data);
+    let output = network.forward(&train_data[0].0);
+    println!("{}", output);
 
-    let output = network.forward(train_data[1].0.clone());
-    println!("output: {:?}", output)
+    network.train(&mut train_data[0..100], Some(&test_data), 100, 20, 0.1);
+    let output = network.forward(&train_data[0].0);
+    println!("{}", output);
 }
