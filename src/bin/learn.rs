@@ -100,7 +100,7 @@ impl Network {
         a
     }
 
-    fn train(&mut self, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32, weight_decay: f32) {
+    fn train(&mut self, cost_fn: &impl CostFunc, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32, weight_decay: f32) {
         println!("{}", batch_size);
         println!("{}", data.len());
         assert!(batch_size <= data.len());
@@ -116,7 +116,7 @@ impl Network {
             for batch in data.chunks_exact(batch_size) {
                 // print!("Starting batch ... ");
                 io::stdout().flush().unwrap();
-                let batch_cost = self.train_batch(batch, learning_rate, weight_decay);
+                let batch_cost = self.train_batch(cost_fn, batch, learning_rate, weight_decay);
                 total_cost += batch_cost;
                 // println!("cost {}", batch_cost / batch_size as f32)
             }
@@ -126,7 +126,7 @@ impl Network {
             print!("train cost {}", avg_train_cost);
 
             if let Some(test_data) = test_data {
-                let (avg_test_cost, test_correct) = self.evaluate(&test_data);
+                let (avg_test_cost, test_correct) = self.evaluate(cost_fn, &test_data);
                 println!(", test cost {} correct {}", avg_test_cost, test_correct);
             } else {
                 println!();
@@ -134,12 +134,12 @@ impl Network {
         }
     }
 
-    fn evaluate(&mut self, data: &[Entry]) -> (f32, f32) {
+    fn evaluate(&mut self, cost_fn: &impl CostFunc, data: &[Entry]) -> (f32, f32) {
         let mut total_score = 0.0;
         let mut correct = 0.0;
         for (input, expected_output) in data {
             let output = self.forward(input);
-            total_score += QuadraticCost.eval(expected_output, &output).0;
+            total_score += cost_fn.eval(expected_output, &output).0;
 
             let expected_i = expected_output.iter().position_max_by_key(|&&x| OrderedFloat::from(x));
             let actual_i = output.iter().position_max_by_key(|&&x| OrderedFloat::from(x));
@@ -152,7 +152,7 @@ impl Network {
         (total_score / len_factor, correct / len_factor)
     }
 
-    fn train_batch(&mut self, batch: &[Entry], learning_rate: f32, weight_decay: f32) -> f32 {
+    fn train_batch(&mut self, cost_fn: &impl CostFunc, batch: &[Entry], learning_rate: f32, weight_decay: f32) -> f32 {
         let mut w_deltas = self.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
         let mut b_deltas = self.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
 
@@ -161,7 +161,7 @@ impl Network {
 
         //collect deltas
         for (input, expected_output) in batch {
-            total_cost += self.backprop(input, expected_output, &mut w_deltas, &mut b_deltas);
+            total_cost += self.backprop(cost_fn, input, expected_output, &mut w_deltas, &mut b_deltas);
         }
 
         //apply deltas
@@ -176,7 +176,7 @@ impl Network {
         total_cost / batch_len_factor
     }
 
-    fn backprop(&self, input: &Vector, expected_output: &Vector, w_deltas: &mut [Matrix], b_deltas: &mut [Vector]) -> f32 {
+    fn backprop(&self, cost_fn: &impl CostFunc, input: &Vector, expected_output: &Vector, w_deltas: &mut [Matrix], b_deltas: &mut [Vector]) -> f32 {
         let mut a = input.clone();
         let mut zs = vec![];
         let mut activations = vec![a.clone()];
@@ -191,7 +191,7 @@ impl Network {
         }
 
         //backwards pass
-        let (cost, mut a_delta) = QuadraticCost.eval(expected_output, &a);
+        let (cost, mut a_delta) = cost_fn.eval(expected_output, &a);
 
         for i in (0..self.weights.len()).rev() {
             let z_delta: Vector = &a_delta * &sigmoid_prime_arr(zs[i].clone());
@@ -211,7 +211,7 @@ impl Network {
     }
 }
 
-fn test_deriv(network: &mut Network, data: &[Entry]) {
+fn test_deriv(network: &mut Network, cost_fn: &impl CostFunc, data: &[Entry]) {
     let mut w_backprop_deltas = network.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
     let mut b_backprop_deltas = network.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
 
@@ -224,8 +224,8 @@ fn test_deriv(network: &mut Network, data: &[Entry]) {
     const EPS: f32 = 0.01;
 
     for entry in data {
-        orig_cost += network.backprop(&entry.0, &entry.1, &mut w_backprop_deltas, &mut b_backprop_deltas);
-        second_cost += QuadraticCost.eval(&entry.1, &network.forward(&entry.0)).0;
+        orig_cost += network.backprop(cost_fn, &entry.0, &entry.1, &mut w_backprop_deltas, &mut b_backprop_deltas);
+        second_cost += cost_fn.eval(&entry.1, &network.forward(&entry.0)).0;
 
         for layer in 0..network.weights.len() {
             for wi in 0..network.weights[layer].len() {
@@ -234,7 +234,7 @@ fn test_deriv(network: &mut Network, data: &[Entry]) {
                 slice[wi] += EPS;
 
                 let output = network.forward(&entry.0);
-                let (cost, _) = QuadraticCost.eval(&entry.1, &output);
+                let (cost, _) = cost_fn.eval(&entry.1, &output);
 
                 let test_delta = (cost - orig_cost) / EPS;
                 w_test_deltas[layer].as_slice_mut().unwrap()[wi] += test_delta;
@@ -248,7 +248,7 @@ fn test_deriv(network: &mut Network, data: &[Entry]) {
                 slice[bi] += EPS;
 
                 let output = network.forward(&entry.0);
-                let (cost, _) = QuadraticCost.eval(&entry.1, &output);
+                let (cost, _) = cost_fn.eval(&entry.1, &output);
 
                 let test_delta = (cost - orig_cost) / EPS;
                 b_test_deltas[layer].as_slice_mut().unwrap()[bi] += test_delta;
@@ -291,7 +291,7 @@ fn main() {
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 
-    network.train(&mut train_data, Some(&test_data), 30, 10, 3.0, 0.0);
+    network.train(&QuadraticCost, &mut train_data, Some(&test_data), 30, 10, 3.0, 0.0);
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 }
