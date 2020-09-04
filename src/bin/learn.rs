@@ -1,9 +1,10 @@
 use std::io;
 use std::io::Write;
+use std::ops::Mul;
 
-use itertools::{Itertools, zip};
+use itertools::{Itertools, izip, multizip, zip};
 use mnist::MnistBuilder;
-use ndarray::{IntoNdProducer, Zip};
+use ndarray::{Array, IntoNdProducer, Zip};
 use ndarray_rand::RandomExt;
 use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng};
@@ -49,6 +50,61 @@ impl CostFunc for QuadraticCost {
         let delta: Vector = actual - expected;
         let cost = delta.fold(0.0, |a, x| a + x * x);
         (cost, delta)
+    }
+}
+
+trait Trainer {
+    type WeightState: From<(usize, usize)>;
+    type BiasState: From<usize>;
+
+    fn step_weight(&self, weight: &mut Matrix, state: &mut Self::WeightState, delta: Matrix);
+    fn step_bias(&self, bias: &mut Vector, state: &mut Self::BiasState, delta: Vector);
+}
+
+struct GradientDescent {
+    learning_rate: f32,
+}
+
+struct EmptyState;
+
+impl From<usize> for EmptyState {
+    fn from(_: usize) -> Self {
+        EmptyState
+    }
+}
+
+impl From<(usize, usize)> for EmptyState {
+    fn from(_: (usize, usize)) -> Self {
+        EmptyState
+    }
+}
+
+//TODO how to combine bias and weights? they're different types :(
+impl Trainer for GradientDescent {
+    type WeightState = EmptyState;
+    type BiasState = EmptyState;
+
+    fn step_weight(&self, weight: &mut Matrix, _state: &mut EmptyState, delta: Matrix) {
+        //TODO avoid making copy here
+        //TODO why doesn't delta: &Matrix work?
+        *weight -= &(self.learning_rate * delta);
+    }
+
+    fn step_bias(&self, bias: &mut Vector, _state: &mut EmptyState, delta: Vector) {
+        *bias -= &(self.learning_rate * delta);
+    }
+}
+
+struct Adam {
+    alpha: f32,
+    beta1: f32,
+    beta2: f32,
+    eps: f32,
+}
+
+impl Default for Adam {
+    fn default() -> Self {
+        Adam { alpha: 0.001, beta1: 0.9, beta2: 0.999, eps: 1e-8 }
     }
 }
 
@@ -100,11 +156,22 @@ impl Network {
         a
     }
 
-    fn train(&mut self, cost_fn: &impl CostFunc, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32, weight_decay: f32) {
+    fn train(
+        &mut self,
+        cost_fn: &impl CostFunc,
+        trainer: &impl Trainer,
+        data: &mut [Entry],
+        test_data: Option<&[Entry]>,
+        epochs: usize,
+        batch_size: usize,
+    ) {
         println!("{}", batch_size);
         println!("{}", data.len());
         assert!(batch_size <= data.len());
         let mut rng = SmallRng::from_entropy();
+
+        let mut w_states = self.weights.iter().map(Matrix::dim).map_into().collect_vec();
+        let mut b_states = self.biases.iter().map(Vector::dim).map_into().collect_vec();
 
         for epoch in 0..epochs {
             print!("Starting epoch {} ... ", epoch);
@@ -116,7 +183,7 @@ impl Network {
             for batch in data.chunks_exact(batch_size) {
                 // print!("Starting batch ... ");
                 io::stdout().flush().unwrap();
-                let batch_cost = self.train_batch(cost_fn, batch, learning_rate, weight_decay);
+                let batch_cost = self.train_batch(cost_fn, trainer, batch, &mut w_states, &mut b_states);
                 total_cost += batch_cost;
                 // println!("cost {}", batch_cost / batch_size as f32)
             }
@@ -152,7 +219,14 @@ impl Network {
         (total_score / len_factor, correct / len_factor)
     }
 
-    fn train_batch(&mut self, cost_fn: &impl CostFunc, batch: &[Entry], learning_rate: f32, weight_decay: f32) -> f32 {
+    fn train_batch<T: Trainer>(
+        &mut self,
+        cost_fn: &impl CostFunc,
+        trainer: &T,
+        batch: &[Entry],
+        w_states: &mut [T::WeightState],
+        b_states: &mut [T::BiasState],
+    ) -> f32 {
         let mut w_deltas = self.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
         let mut b_deltas = self.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
 
@@ -165,12 +239,14 @@ impl Network {
         }
 
         //apply deltas
-        for (w, w_delta) in zip(&mut self.weights, w_deltas) {
-            *w *= 1.0 - learning_rate * weight_decay / batch_len_factor;
-            *w -= &(learning_rate / batch_len_factor * w_delta);
+        //TODO move this into trainer struct
+        for (w, w_state, mut w_delta) in izip!(&mut self.weights, w_states, w_deltas) {
+            w_delta /= batch_len_factor;
+            trainer.step_weight(w, w_state, w_delta);
         }
-        for (b, b_delta) in zip(&mut self.biases, b_deltas) {
-            *b -= &(learning_rate / batch_len_factor * b_delta);
+        for (b, b_state, mut b_delta) in izip!(&mut self.biases, b_states, b_deltas) {
+            b_delta /= batch_len_factor;
+            trainer.step_bias(b, b_state, b_delta);
         }
 
         total_cost / batch_len_factor
@@ -291,7 +367,14 @@ fn main() {
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 
-    network.train(&QuadraticCost, &mut train_data, Some(&test_data), 30, 10, 3.0, 0.0);
+    network.train(
+        &QuadraticCost,
+        &GradientDescent { learning_rate: 3.0 },
+        &mut train_data,
+        Some(&test_data),
+        30,
+        10,
+    );
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 }
