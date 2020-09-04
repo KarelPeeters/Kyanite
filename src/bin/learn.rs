@@ -3,13 +3,13 @@ use std::io::Write;
 
 use itertools::{Itertools, zip};
 use mnist::MnistBuilder;
+use ndarray::{IntoNdProducer, Zip};
 use ndarray_rand::RandomExt;
+use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use rand_distr::StandardNormal;
-use ordered_float::OrderedFloat;
-use ndarray::{IntoNdProducer, Zip};
+use rand_distr::{Normal, StandardNormal};
 
 type Matrix = ndarray::Array2<f32>;
 type Vector = ndarray::Array1<f32>;
@@ -79,7 +79,8 @@ fn sigmoid_prime_arr(mut x: Vector) -> Vector {
 impl Network {
     fn new<R: Rng>(input_size: usize, layer_sizes: &[usize], rng: &mut R) -> Self {
         let (weights, biases) = layer_sizes.iter().scan(input_size, |i, &o| {
-            let weight = Matrix::random_using((o, *i), StandardNormal, rng);
+            let weight_distr = Normal::new(0.0, 1.0 / (input_size as f32).sqrt()).unwrap();
+            let weight = Matrix::random_using((o, *i), weight_distr, rng);
             let bias = Vector::random_using(o, StandardNormal, rng);
             *i = o;
             Some((weight, bias))
@@ -99,7 +100,7 @@ impl Network {
         a
     }
 
-    fn train(&mut self, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32) {
+    fn train(&mut self, data: &mut [Entry], test_data: Option<&[Entry]>, epochs: usize, batch_size: usize, learning_rate: f32, weight_decay: f32) {
         println!("{}", batch_size);
         println!("{}", data.len());
         assert!(batch_size <= data.len());
@@ -115,18 +116,18 @@ impl Network {
             for batch in data.chunks_exact(batch_size) {
                 // print!("Starting batch ... ");
                 io::stdout().flush().unwrap();
-                let batch_cost = self.train_batch(batch, learning_rate);
+                let batch_cost = self.train_batch(batch, learning_rate, weight_decay);
                 total_cost += batch_cost;
                 // println!("cost {}", batch_cost / batch_size as f32)
             }
 
             let batch_count = data.len() / batch_size;
             let avg_train_cost = total_cost / batch_count as f32;
-            print!("train {}", avg_train_cost);
+            print!("train cost {}", avg_train_cost);
 
             if let Some(test_data) = test_data {
                 let (avg_test_cost, test_correct) = self.evaluate(&test_data);
-                println!(", test score {} correct {}", avg_test_cost, test_correct);
+                println!(", test cost {} correct {}", avg_test_cost, test_correct);
             } else {
                 println!();
             }
@@ -151,10 +152,11 @@ impl Network {
         (total_score / len_factor, correct / len_factor)
     }
 
-    fn train_batch(&mut self, batch: &[Entry], learning_rate: f32) -> f32 {
+    fn train_batch(&mut self, batch: &[Entry], learning_rate: f32, weight_decay: f32) -> f32 {
         let mut w_deltas = self.weights.iter().map(|w| Matrix::zeros(w.raw_dim())).collect_vec();
         let mut b_deltas = self.biases.iter().map(|b| Vector::zeros(b.raw_dim())).collect_vec();
 
+        let batch_len_factor = batch.len() as f32;
         let mut total_cost = 0.0;
 
         //collect deltas
@@ -164,13 +166,14 @@ impl Network {
 
         //apply deltas
         for (w, w_delta) in zip(&mut self.weights, w_deltas) {
-            *w -= &(learning_rate / batch.len() as f32 * w_delta);
+            *w *= 1.0 - learning_rate * weight_decay / batch_len_factor;
+            *w -= &(learning_rate / batch_len_factor * w_delta);
         }
         for (b, b_delta) in zip(&mut self.biases, b_deltas) {
-            *b -= &(learning_rate / batch.len() as f32 * b_delta);
+            *b -= &(learning_rate / batch_len_factor * b_delta);
         }
 
-        total_cost / batch.len() as f32
+        total_cost / batch_len_factor
     }
 
     fn backprop(&self, input: &Vector, expected_output: &Vector, w_deltas: &mut [Matrix], b_deltas: &mut [Vector]) -> f32 {
@@ -275,7 +278,9 @@ fn test_deriv(network: &mut Network, data: &[Entry]) {
 }
 
 fn main() {
-    let mut rng = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // let mut rng = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut rng = SmallRng::from_entropy();
+
     let mut network = Network::new(28 * 28, &[30, 10], &mut rng);
 
     let (mut train_data, test_data) = load_mnist();
@@ -286,7 +291,7 @@ fn main() {
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 
-    network.train(&mut train_data, Some(&test_data), 30, 10, 3.0);
+    network.train(&mut train_data, Some(&test_data), 30, 10, 3.0, 0.0);
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 }
