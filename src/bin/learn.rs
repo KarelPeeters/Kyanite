@@ -8,6 +8,8 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand_distr::StandardNormal;
+use ordered_float::OrderedFloat;
+use ndarray::{IntoNdProducer, Zip};
 
 type Matrix = ndarray::Array2<f32>;
 type Vector = ndarray::Array1<f32>;
@@ -123,21 +125,30 @@ impl Network {
             print!("train {}", avg_train_cost);
 
             if let Some(test_data) = test_data {
-                let avg_test_cost = self.evaluate(&test_data);
-                println!(", test {}", avg_test_cost);
+                let (avg_test_cost, test_correct) = self.evaluate(&test_data);
+                println!(", test score {} correct {}", avg_test_cost, test_correct);
             } else {
                 println!();
             }
         }
     }
 
-    fn evaluate(&mut self, data: &[Entry]) -> f32 {
+    fn evaluate(&mut self, data: &[Entry]) -> (f32, f32) {
         let mut total_score = 0.0;
+        let mut correct = 0.0;
         for (input, expected_output) in data {
             let output = self.forward(input);
             total_score += QuadraticCost.eval(expected_output, &output).0;
+
+            let expected_i = expected_output.iter().position_max_by_key(|&&x| OrderedFloat::from(x));
+            let actual_i = output.iter().position_max_by_key(|&&x| OrderedFloat::from(x));
+
+            if expected_i == actual_i {
+                correct += 1.0;
+            }
         }
-        total_score / data.len() as f32
+        let len_factor = data.len() as f32;
+        (total_score / len_factor, correct / len_factor)
     }
 
     fn train_batch(&mut self, batch: &[Entry], learning_rate: f32) -> f32 {
@@ -180,11 +191,17 @@ impl Network {
         let (cost, mut a_delta) = QuadraticCost.eval(expected_output, &a);
 
         for i in (0..self.weights.len()).rev() {
-            let z_delta: Vector = a_delta * &sigmoid_prime_arr(zs[i].clone());
-            a_delta = self.weights[i].t().dot(&z_delta);
-
+            let z_delta: Vector = &a_delta * &sigmoid_prime_arr(zs[i].clone());
             b_deltas[i] += &z_delta;
-            w_deltas[i] += a_delta.dot(&activations[i].t())
+
+            let activation = &activations[i];
+
+            //in-place outer product
+            w_deltas[i].indexed_iter_mut().for_each(|((r, c), w)| {
+                *w += z_delta[r] * activation[c]
+            });
+
+            a_delta = self.weights[i].t().dot(&z_delta);
         }
 
         cost
@@ -259,7 +276,7 @@ fn test_deriv(network: &mut Network, data: &[Entry]) {
 
 fn main() {
     let mut rng = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let mut network = Network::new(28 * 28, &[10], &mut rng);
+    let mut network = Network::new(28 * 28, &[30, 10], &mut rng);
 
     let (mut train_data, test_data) = load_mnist();
 
@@ -269,7 +286,7 @@ fn main() {
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 
-    network.train(&mut train_data[0..100], Some(&test_data), 100, 20, 0.1);
+    network.train(&mut train_data, Some(&test_data), 30, 10, 3.0);
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
 }
