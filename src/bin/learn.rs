@@ -1,10 +1,10 @@
 use std::io;
 use std::io::Write;
-use std::ops::Mul;
 
-use itertools::{Itertools, izip, multizip, zip};
+use itertools::{Itertools, izip, zip};
 use mnist::MnistBuilder;
-use ndarray::{Array, IntoNdProducer, Zip};
+use ndarray::{Dimension, Ix1, Ix2};
+use ndarray::Array;
 use ndarray_rand::RandomExt;
 use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng};
@@ -105,6 +105,60 @@ struct Adam {
 impl Default for Adam {
     fn default() -> Self {
         Adam { alpha: 0.001, beta1: 0.9, beta2: 0.999, eps: 1e-8 }
+    }
+}
+
+struct AdamState<D> {
+    m: Array<f32, D>,
+    v: Array<f32, D>,
+    //TODO this doesn't need to be duplicated for every weight, maybe add some global state?
+    //   or maybe just bail and let the Trainer manage its own state?
+    t: usize,
+}
+
+impl From<usize> for AdamState<Ix1> {
+    fn from(sh: usize) -> Self {
+        AdamState {
+            m: Vector::zeros(sh),
+            v: Vector::zeros(sh),
+            t: 0,
+        }
+    }
+}
+
+impl From<(usize, usize)> for AdamState<Ix2> {
+    fn from(sh: (usize, usize)) -> Self {
+        AdamState {
+            m: Matrix::zeros(sh),
+            v: Matrix::zeros(sh),
+            t: 0,
+        }
+    }
+}
+
+impl Adam {
+    fn step<D: Dimension>(&self, weight: &mut Array<f32, D>, state: &mut AdamState<D>, delta: Array<f32, D>) {
+        state.t += 1;
+        let t = state.t as i32;
+
+        state.m = self.beta1 * &state.m + (1.0 - self.beta1) * &delta;
+        state.v = self.beta2 * &state.v + (1.0 - self.beta2) * &delta.map(|x| x * x);
+
+        let alpha_t = self.alpha * (1.0 - self.beta2.powi(t)).sqrt() / (1.0 - self.beta1.powi(t));
+        *weight -= &(alpha_t * &state.m / state.v.map(|x| x.sqrt() + self.eps))
+    }
+}
+
+impl Trainer for Adam {
+    type WeightState = AdamState<Ix2>;
+    type BiasState = AdamState<Ix1>;
+
+    fn step_weight(&self, weight: &mut Matrix, state: &mut Self::WeightState, delta: Matrix) {
+        self.step(weight, state, delta);
+    }
+
+    fn step_bias(&self, bias: &mut Vector, state: &mut Self::BiasState, delta: Vector) {
+        self.step(bias, state, delta);
     }
 }
 
