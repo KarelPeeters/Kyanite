@@ -12,6 +12,10 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand_distr::{Normal, StandardNormal};
 
+use sttt::board::{Board, Coord};
+use sttt::mcts::heuristic::ZeroHeuristic;
+use sttt::mcts::mcts_evaluate;
+
 type Matrix = ndarray::Array2<f32>;
 type Vector = ndarray::Array1<f32>;
 
@@ -407,7 +411,7 @@ fn test_deriv(network: &mut Network, cost_fn: &impl CostFunc, data: &[Entry]) {
     println!("b_deltas: {:?}", b_backprop_deltas);
 }
 
-fn main() {
+fn _old_main() {
     // let mut rng = SmallRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     let mut rng = SmallRng::from_entropy();
 
@@ -431,4 +435,99 @@ fn main() {
     );
     let output = network.forward(&train_data[0].0);
     println!("{}", output);
+}
+
+fn eval(board: &Board) -> f32 {
+    mcts_evaluate(
+        board,
+        1_000,
+        &ZeroHeuristic,
+        &mut SmallRng::from_entropy(),
+    ).value
+}
+
+struct RandomBoardIter {
+    first: bool,
+    board: Board,
+    rand: SmallRng,
+}
+
+impl Default for RandomBoardIter {
+    fn default() -> Self {
+        RandomBoardIter {
+            first: true,
+            board: Default::default(),
+            rand: SmallRng::from_entropy(),
+        }
+    }
+}
+
+impl Iterator for RandomBoardIter {
+    type Item = Board;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.first {
+            //return empty board once
+            self.first = false;
+            Some(Board::new())
+        } else {
+            if self.board.is_done() {
+                self.board = Board::new();
+            }
+
+            self.board.play(self.board.random_available_move(&mut self.rand).unwrap());
+
+            Some(self.board.clone())
+        }
+    }
+}
+
+fn main() {
+    const INPUT_SIZE: usize = 81*4 + 9 * 2;
+    let mut network = Network::new(INPUT_SIZE, &[1], &mut SmallRng::from_entropy());
+
+    let super_epoch_size = 10_000;
+
+    let mut iter = RandomBoardIter::default();
+
+    for super_epoch in 0.. {
+        println!("Starting super_epoch {}, generating games", super_epoch);
+
+        let mut data = iter.by_ref().take(super_epoch_size).map(|board| {
+            let mut input = Vec::with_capacity(INPUT_SIZE);
+
+            for coord in Coord::all() {
+                let p = board.tile(coord);
+                input.push(((p == board.next_player) as u8) as f32);
+                input.push(((p == board.next_player.other()) as u8) as f32);
+                input.push(((Some(coord) == board.last_move) as u8) as f32);
+                input.push(((board.is_available_move(coord)) as u8) as f32);
+            }
+
+            //TODO shouldn't the network be able to learn this on its own?
+            for om in 0..9 {
+                let p = board.macr(om);
+
+                input.push(((p == board.next_player) as u8) as f32);
+                input.push(((p == board.next_player.other()) as u8) as f32);
+            }
+
+            assert_eq!(INPUT_SIZE, input.len());
+
+            let input = Vector::from(input);
+            let output = Vector::from(vec![eval(&board)]);
+
+            (input, output)
+        }).collect_vec();
+
+        println!("Start training");
+        network.train(
+            &QuadraticCost,
+            &GradientDescent { learning_rate: 3.0 },
+            &mut data,
+            None,
+            10,
+            100,
+        )
+    }
 }
