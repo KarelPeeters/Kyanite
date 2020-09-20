@@ -7,14 +7,15 @@ use ndarray::{Dimension, Ix1, Ix2};
 use ndarray::Array;
 use ndarray_rand::RandomExt;
 use ordered_float::OrderedFloat;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, SeedableRng, thread_rng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use rand_distr::{Normal, StandardNormal};
+use rand_distr::{Bernoulli, Distribution, Normal, StandardNormal};
 
-use sttt::board::{Board, Coord};
+use sttt::board::{Board, Coord, Player};
+use sttt::bot_game::{Bot, RandomBot};
+use sttt::mcts::{mcts_evaluate, MCTSBot};
 use sttt::mcts::heuristic::ZeroHeuristic;
-use sttt::mcts::mcts_evaluate;
 
 type Matrix = ndarray::Array2<f32>;
 type Vector = ndarray::Array1<f32>;
@@ -437,63 +438,88 @@ fn _old_main() {
     println!("{}", output);
 }
 
-fn eval(board: &Board) -> f32 {
-    mcts_evaluate(
-        board,
-        1_000,
-        &ZeroHeuristic,
-        &mut SmallRng::from_entropy(),
-    ).value
-}
+fn gen_boards_from_mcts_self_play(count: usize, iterations: usize, explore_prob: f64) -> Vec<(Board, f32)> {
+    let mut result = Vec::new();
+    let mut rand = thread_rng();
+    let explore_prob = Bernoulli::new(explore_prob).unwrap();
 
-struct RandomBoardIter {
-    first: bool,
-    board: Board,
-    rand: SmallRng,
-}
+    let mut prev_progress = usize::MAX;
 
-impl Default for RandomBoardIter {
-    fn default() -> Self {
-        RandomBoardIter {
-            first: true,
-            board: Default::default(),
-            rand: SmallRng::from_entropy(),
+    print!("Generating games ... ");
+
+    while result.len() < count {
+        //print progress
+        let progress = result.len() / (count / 10);
+        if progress != prev_progress {
+            print!("{}", progress);
+            std::io::stdout().flush().unwrap();
+            prev_progress = progress;
         }
-    }
-}
 
-impl Iterator for RandomBoardIter {
-    type Item = Board;
+        let mut board = Board::new();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.first {
-            //return empty board once
-            self.first = false;
-            Some(Board::new())
-        } else {
-            if self.board.is_done() {
-                self.board = Board::new();
+        while !board.is_done() {
+            let evaluation = mcts_evaluate(&board, iterations, &ZeroHeuristic, &mut rand);
+
+            //save the board
+            result.push((board.clone(), evaluation.value));
+
+            //play a move
+            if explore_prob.sample(&mut rand) {
+                board.play(board.random_available_move(&mut rand).unwrap());
+            } else {
+                board.play(evaluation.best_move.unwrap());
             }
-
-            self.board.play(self.board.random_available_move(&mut self.rand).unwrap());
-
-            Some(self.board.clone())
         }
+
+        //add final board too
+        let winner = board.won_by.unwrap();
+        let value = if winner == board.next_player { 1.0 } else if winner == Player::Neutral { 0.5 } else { 0.0 };
+        result.push((board, value));
     }
+
+    result.truncate(count);
+
+    println!();
+    result
 }
 
 fn main() {
-    const INPUT_SIZE: usize = 81*4 + 9 * 2;
-    let mut network = Network::new(INPUT_SIZE, &[1], &mut SmallRng::from_entropy());
+    //do some statistics
+    let mut board = Board::new();
+    let mut rand = thread_rng();
 
-    let super_epoch_size = 10_000;
+    // for _ in 0..10 {
+    //     board.play(board.random_available_move(&mut rand).unwrap());
+    // }
 
-    let mut iter = RandomBoardIter::default();
+    let samples = (0..1000)
+        .map(|_| mcts_evaluate(&board, 10000, &ZeroHeuristic, &mut rand).value)
+        .collect_vec();
+
+    println!("Samples {:?}", samples);
+    let mean: f32 = samples.iter().fold(0.0, |a, &x| a + x) / samples.len() as f32;
+    let sigma: f32 = (samples.iter().fold(0.0, |a, &x| a + (x - mean) * (x - mean)) / samples.len() as f32).sqrt();
+
+    println!("Mean {}", mean);
+    println!("Sigma {}", sigma);
+
+    //start training
+
+    const INPUT_SIZE: usize = 81 * 4 + 9 * 2;
+    const MCTS_ITERATIONS: usize = 5000;
+    const SUPER_EPOCH_SIZE: usize = 4000;
+
+    let mut network = Network::new(INPUT_SIZE, &[128, 1], &mut SmallRng::from_entropy());
+
+    //TODO delete this, this only works when we're not using the network to improve MCTS
+    let mut all_data = Vec::new();
 
     for super_epoch in 0.. {
-        println!("Starting super_epoch {}, generating games", super_epoch);
+        println!("Starting super_epoch {}", super_epoch);
+        let boards = gen_boards_from_mcts_self_play(SUPER_EPOCH_SIZE, MCTS_ITERATIONS, 0.0);
 
-        let mut data = iter.by_ref().take(super_epoch_size).map(|board| {
+        all_data.extend(boards.iter().map(|(board, evaluation)| {
             let mut input = Vec::with_capacity(INPUT_SIZE);
 
             for coord in Coord::all() {
@@ -515,19 +541,19 @@ fn main() {
             assert_eq!(INPUT_SIZE, input.len());
 
             let input = Vector::from(input);
-            let output = Vector::from(vec![eval(&board)]);
+            let output = Vector::from(vec![*evaluation]);
 
             (input, output)
-        }).collect_vec();
+        }));
 
         println!("Start training");
         network.train(
             &QuadraticCost,
             &GradientDescent { learning_rate: 3.0 },
-            &mut data,
+            &mut all_data,
             None,
             10,
-            100,
+            500,
         )
     }
 }
