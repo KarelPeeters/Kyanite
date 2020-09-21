@@ -12,20 +12,28 @@ pub struct MiniMaxBot {
 
 impl Bot for MiniMaxBot {
     fn play(&mut self, board: &Board) -> Option<Coord> {
-        move_minimax(board, self.depth)
+        evaluate_minimax(board, self.depth).best_move
     }
 }
 
-fn move_minimax(board: &Board, depth: u32) -> Option<Coord> {
+pub struct Evaluation {
+    pub best_move: Option<Coord>,
+    pub value: f64,
+}
+
+fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
     negamax(board, value(board), depth,
             f64::NEG_INFINITY, f64::INFINITY,
             player_sign(board.next_player),
-    ).0
+    )
 }
 
-fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64) -> (Option<Coord>, f64) {
+fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64) -> Evaluation {
     if depth == 0 || board.is_done() {
-        return (board.last_move, player * c_value);
+        return Evaluation {
+            best_move: board.last_move,
+            value: player * c_value,
+        }
     }
 
     let mut best_value = f64::NEG_INFINITY;
@@ -46,7 +54,7 @@ fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64)
         }
 
         //Check if the (global) value of this child is better then the previous best child
-        let value = -negamax(&child, child_value, depth - 1, -b, -new_a, -player).1;
+        let value = -negamax(&child, child_value, depth - 1, -b, -new_a, -player).value;
         if value > best_value || best_move.is_none() {
             best_value = value;
             best_move = Some(mv);
@@ -57,7 +65,10 @@ fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64)
         }
     }
 
-    (best_move, best_value)
+    Evaluation {
+        best_move,
+        value: best_value,
+    }
 }
 
 pub fn value(board: &Board) -> f64 {

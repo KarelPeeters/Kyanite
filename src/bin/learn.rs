@@ -473,8 +473,7 @@ fn gen_boards_from_mcts_self_play(count: usize, iterations: usize, explore_prob:
         }
 
         //add final board too
-        let winner = board.won_by.unwrap();
-        let value = if winner == board.next_player { 1.0 } else if winner == Player::Neutral { 0.5 } else { 0.0 };
+        let value = value_winner(board.won_by.unwrap(), board.next_player);
         result.push((board, value));
     }
 
@@ -484,7 +483,27 @@ fn gen_boards_from_mcts_self_play(count: usize, iterations: usize, explore_prob:
     result
 }
 
+fn value_winner(winner: Player, next_player: Player) -> f32 {
+    if winner == next_player { 1.0 } else if winner == Player::Neutral { 0.5 } else { 0.0 }
+}
+
+fn gen_done_boards(count: usize) -> Vec<(Board, f32)> {
+    let mut rand = thread_rng();
+
+    (0..count).map(|_| {
+        let mut board = Board::new();
+        while let Some(mv) = board.random_available_move(&mut rand) {
+            board.play(mv);
+        }
+
+        //TODO this never contains a won board!
+        let value = value_winner(board.won_by.unwrap(), board.next_player);
+        (board, value)
+    }).collect_vec()
+}
+
 fn main() {
+    /*
     //do some statistics
     let mut board = Board::new();
     let mut rand = thread_rng();
@@ -503,57 +522,65 @@ fn main() {
 
     println!("Mean {}", mean);
     println!("Sigma {}", sigma);
+    */
 
     //start training
 
-    const INPUT_SIZE: usize = 81 * 4 + 9 * 2;
+    // TODO why is this piece of shit neural network not able to learn whether a position is won or lost?
+    //   it literally only needs to look at the macro board
+    //   IDEA: try without any other inputs first
+    //   IDEA: just try to get it to detect won/not won at first
+
+
+    const INPUT_SIZE: usize = /*81 * 4 +*/ 9 /* 2*/;
     const MCTS_ITERATIONS: usize = 5000;
-    const SUPER_EPOCH_SIZE: usize = 4000;
+    const SUPER_EPOCH_SIZE: usize = 100_000;
 
-    let mut network = Network::new(INPUT_SIZE, &[128, 1], &mut SmallRng::from_entropy());
+    let mut network = Network::new(INPUT_SIZE, &[9, 8, 3, 1], &mut SmallRng::from_entropy());
 
-    //TODO delete this, this only works when we're not using the network to improve MCTS
-    let mut all_data = Vec::new();
+    println!("Generating boards");
+    let boards = gen_done_boards(SUPER_EPOCH_SIZE);
+    println!("Embedding boards");
+    let mut all_data = boards.iter().map(|(board, evaluation)| {
+        let mut input = Vec::with_capacity(INPUT_SIZE);
 
-    for super_epoch in 0.. {
-        println!("Starting super_epoch {}", super_epoch);
-        let boards = gen_boards_from_mcts_self_play(SUPER_EPOCH_SIZE, MCTS_ITERATIONS, 0.0);
+        /*for coord in Coord::all() {
+            let p = board.tile(coord);
+            input.push(((p == board.next_player) as u8) as f32);
+            input.push(((p == board.next_player.other()) as u8) as f32);
+            input.push(((Some(coord) == board.last_move) as u8) as f32);
+            input.push(((board.is_available_move(coord)) as u8) as f32);
+        }*/
 
-        all_data.extend(boards.iter().map(|(board, evaluation)| {
-            let mut input = Vec::with_capacity(INPUT_SIZE);
+        //TODO shouldn't the network be able to learn this on its own?
+        for om in 0..9 {
+            let p = board.macr(om);
 
-            for coord in Coord::all() {
-                let p = board.tile(coord);
-                input.push(((p == board.next_player) as u8) as f32);
-                input.push(((p == board.next_player.other()) as u8) as f32);
-                input.push(((Some(coord) == board.last_move) as u8) as f32);
-                input.push(((board.is_available_move(coord)) as u8) as f32);
-            }
+            input.push(((p == board.next_player) as u8) as f32);
+            // input.push(((p == board.next_player.other()) as u8) as f32);
+        }
 
-            //TODO shouldn't the network be able to learn this on its own?
-            for om in 0..9 {
-                let p = board.macr(om);
+        assert_eq!(INPUT_SIZE, input.len());
 
-                input.push(((p == board.next_player) as u8) as f32);
-                input.push(((p == board.next_player.other()) as u8) as f32);
-            }
+        let input = Vector::from(input);
+        let output = Vector::from(vec![*evaluation]);
 
-            assert_eq!(INPUT_SIZE, input.len());
+        println!("Evaluation {}", evaluation);
 
-            let input = Vector::from(input);
-            let output = Vector::from(vec![*evaluation]);
+        (input, output)
+    }).collect_vec();
 
-            (input, output)
-        }));
+    // for super_epoch in 0.. {
+    //     println!("Starting super_epoch {}", super_epoch);
 
-        println!("Start training");
-        network.train(
-            &QuadraticCost,
-            &GradientDescent { learning_rate: 3.0 },
-            &mut all_data,
-            None,
-            10,
-            500,
-        )
-    }
+    println!("Start training");
+    network.train(
+        &QuadraticCost,
+        &GradientDescent { learning_rate: 3.0 },
+        &mut all_data,
+        None,
+        1000,
+        500,
+    )
+    // }
 }
