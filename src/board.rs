@@ -42,7 +42,7 @@ impl Coord {
     pub fn all() -> impl Iterator<Item=Coord> {
         (0..81).map(|o| Self::from_o(o))
     }
-    
+
     pub fn from_oo(om: u8, os: u8) -> Coord {
         debug_assert!(om < 9);
         debug_assert!(os < 9);
@@ -263,12 +263,12 @@ impl Board {
         let new_grid = self.grids[om as usize] | (1 << (os + p));
         self.grids[om as usize] = new_grid;
 
-        let grid_win = is_win_grid(new_grid >> p);
+        let grid_win = is_win_grid((new_grid >> p) & Board::FULL_MASK);
         if grid_win {
             let new_main_grid = self.main_grid | (1 << (om + p));
             self.main_grid = new_main_grid;
 
-            if is_win_grid(new_main_grid >> p) {
+            if is_win_grid((new_main_grid >> p) & Board::FULL_MASK) {
                 self.won_by = Some(player);
             }
         }
@@ -301,9 +301,14 @@ impl Default for Board {
 }
 
 fn is_win_grid(grid: u32) -> bool {
-    let grid = grid & Board::FULL_MASK;
+    debug_assert!(has_mask(Board::FULL_MASK, grid));
 
-    const WIN_GRIDS: [u32; 16] = [2155905152, 4286611584, 4210076288, 4293962368, 3435954304, 4291592320, 4277971584, 4294748800, 2863300736, 4294635760, 4210731648, 4294638320, 4008607872, 4294897904, 4294967295, 4294967295];
+    const WIN_GRIDS: [u32; 16] = [
+        2155905152, 4286611584, 4210076288, 4293962368,
+        3435954304, 4291592320, 4277971584, 4294748800,
+        2863300736, 4294635760, 4210731648, 4294638320,
+        4008607872, 4294897904, 4294967295, 4294967295
+    ];
     has_bit(WIN_GRIDS[(grid / 32) as usize], (grid % 32) as u8)
 }
 
@@ -362,6 +367,12 @@ impl Iterator for BitIter {
 
 pub fn board_to_compact_string(board: &Board) -> String {
     Coord::all().map(|coord| {
+        let c = match board.tile(coord) {
+            Player::X => 'X',
+            Player::O => 'O',
+            Player::Neutral => ' ',
+        };
+
         match (Some(coord) == board.last_move, board.tile(coord)) {
             (false, Player::X) => 'X',
             (true, Player::X) => 'x',
@@ -373,7 +384,7 @@ pub fn board_to_compact_string(board: &Board) -> String {
 }
 
 pub fn board_from_compact_string(s: &str) -> Board {
-    debug_assert!(s.chars().count() == 81);
+    debug_assert!(s.chars().count() == 81, "compact string should have length 81");
 
     let mut board = Board::new();
     let mut last_move = None;
@@ -387,7 +398,7 @@ pub fn board_from_compact_string(s: &str) -> Board {
             'O' => (Player::O, false),
             'o' => (Player::O, true),
             ' ' => (Player::Neutral, false),
-            _ => panic!("unexpected character in shortstring")
+            _ => panic!("unexpected character '{}' in compact string", c)
         };
 
         if last {
