@@ -70,7 +70,6 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
     tree.push(Node::new(Coord::from_o(0), None));
 
     for _ in 0..iterations {
-        //println!("Start iter {}", i);
         let mut curr_node = 0;
         let mut curr_board = board.clone();
 
@@ -79,8 +78,6 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
             let children = match tree[curr_node].children {
                 Some(children) => children,
                 None => {
-                    //println!("Init {}", tree[curr_node].coord.o());
-
                     let start = tree.len();
                     tree.extend(curr_board.available_moves().map(|c| Node::new(c, Some(curr_node))));
                     let end = tree.len();
@@ -103,14 +100,11 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
                 curr_node = child;
                 curr_board.play(tree[curr_node].coord);
 
-                //println!("Exploring {}", tree[curr_node].coord.o());
-
                 break;
             }
 
             //Selection
             let parent_visits = tree[curr_node].visits;
-            //println!("Values: {:?}", children.iter().map(|child| tree[child].uct(parent_visits)).collect_vec());
 
             let selected = children.iter().max_by_key(|&child| {
                 let heuristic = heuristic.evaluate(&curr_board);
@@ -119,8 +113,6 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
 
             curr_node = selected;
             curr_board.play(tree[curr_node].coord);
-
-            //println!("Selecting {}", tree[curr_node].coord.o());
         }
 
         //Simulate
@@ -134,8 +126,6 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
             curr_board.play(curr_board.random_available_move(rand)
                 .expect("No winner, so board is not done yet"));
         };
-
-        //println!("Simulation won by {:?}", won_by);
 
         //Update
         let mut won = if won_by != Player::Neutral {
