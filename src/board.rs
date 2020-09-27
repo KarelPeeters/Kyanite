@@ -367,12 +367,6 @@ impl Iterator for BitIter {
 
 pub fn board_to_compact_string(board: &Board) -> String {
     Coord::all().map(|coord| {
-        let c = match board.tile(coord) {
-            Player::X => 'X',
-            Player::O => 'O',
-            Player::Neutral => ' ',
-        };
-
         match (Some(coord) == board.last_move, board.tile(coord)) {
             (false, Player::X) => 'X',
             (true, Player::X) => 'x',

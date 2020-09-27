@@ -1,10 +1,11 @@
-use rand::{Rng, SeedableRng, thread_rng};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::board::{Board, Coord, Player};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub trait Bot {
     fn play(&mut self, board: &Board) -> Option<Coord>;
@@ -13,14 +14,6 @@ pub trait Bot {
 impl<F: FnMut(&Board) -> Option<Coord>> Bot for F {
     fn play(&mut self, board: &Board) -> Option<Coord> {
         self(board)
-    }
-}
-
-pub struct RandomBot;
-
-impl Bot for RandomBot {
-    fn play(&mut self, board: &Board) -> Option<Coord> {
-        board.random_available_move(&mut thread_rng())
     }
 }
 
