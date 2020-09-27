@@ -5,10 +5,11 @@ use rand::rngs::SmallRng;
 
 use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord};
 use sttt::bot_game;
-use sttt::bot_game::{Bot, RandomBot};
+use sttt::bot_game::Bot;
+use sttt::bots::RandomBot;
+use sttt::mcts::heuristic::MacroHeuristic;
 use sttt::mcts::MCTSBot;
 use sttt::minimax::MiniMaxBot;
-use sttt::mcts::heuristic::{MacroHeuristic, MacroLeftHeuristic};
 
 fn main() {
     _heuristic_bot_game()
@@ -92,6 +93,6 @@ fn _bot_game() {
 fn time<R, F: FnOnce() -> R>(block: F) -> R {
     let start = Instant::now();
     let result = block();
-    print!("Took {:02}s", (Instant::now() - start).as_secs_f32());
+    println!("Took {:02}s", (Instant::now() - start).as_secs_f32());
     result
 }
