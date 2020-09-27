@@ -1,5 +1,3 @@
-use std::f64;
-
 use derive_more::Constructor;
 
 use crate::board::{Board, Coord, Player};
@@ -18,25 +16,25 @@ impl Bot for MiniMaxBot {
 
 pub struct Evaluation {
     pub best_move: Option<Coord>,
-    pub value: f64,
+    pub value: i64,
 }
 
 fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
     negamax(board, value(board), depth,
-            f64::NEG_INFINITY, f64::INFINITY,
+            -BOUND_VALUE, BOUND_VALUE,
             player_sign(board.next_player),
     )
 }
 
-fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64) -> Evaluation {
+fn negamax(board: &Board, c_value: i64, depth: u32, a: i64, b: i64, player: i64) -> Evaluation {
     if depth == 0 || board.is_done() {
         return Evaluation {
             best_move: board.last_move,
             value: player * c_value,
-        }
+        };
     }
 
-    let mut best_value = f64::NEG_INFINITY;
+    let mut best_value = -BOUND_VALUE;
     let mut best_move: Option<Coord> = None;
     let mut new_a = a;
 
@@ -47,7 +45,7 @@ fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64)
         let mut child_value = c_value + TILE_VALUE * factor(mv.om()) * factor(mv.os()) * player;
         if child.play(mv) {
             if child.is_done() {
-                child_value = f64::INFINITY * player;
+                child_value = (WIN_VALUE + depth as i64) * player;
             } else {
                 child_value += MACRO_VALUE * factor(mv.om()) * player;
             }
@@ -71,26 +69,26 @@ fn negamax(board: &Board, c_value: f64, depth: u32, a: f64, b: f64, player: f64)
     }
 }
 
-pub fn value(board: &Board) -> f64 {
+pub fn value(board: &Board) -> i64 {
     match board.won_by {
-        Some(player) => f64::INFINITY * player_sign(player),
+        Some(player) => WIN_VALUE * player_sign(player),
         _ => {
-            let tiles: f64 = (0..81).map(|c| factor(c % 9) * factor(c / 9) * player_sign(board.tile(Coord::from_o(c)))).sum();
-            let macros: f64 = (0..9).map(|c| factor(c) * player_sign(board.macr(c))).sum();
+            let tiles: i64 = (0..81).map(|c| factor(c % 9) * factor(c / 9) * player_sign(board.tile(Coord::from_o(c)))).sum();
+            let macros: i64 = (0..9).map(|c| factor(c) * player_sign(board.macr(c))).sum();
             TILE_VALUE * tiles + MACRO_VALUE * macros
         }
     }
 }
 
-fn player_sign(player: Player) -> f64 {
+fn player_sign(player: Player) -> i64 {
     match player {
-        Player::X => 1.0,
-        Player::O => -1.0,
-        Player::Neutral => 0.0,
+        Player::X => 1,
+        Player::O => -1,
+        Player::Neutral => 0,
     }
 }
 
-fn factor(os: u8) -> f64 {
+fn factor(os: u8) -> i64 {
     match os {
         4 => CENTER_FACTOR,
         _ if os % 2 == 0 => CORNER_FACTOR,
@@ -98,9 +96,11 @@ fn factor(os: u8) -> f64 {
     }
 }
 
-const TILE_VALUE: f64 = 1.0;
-const MACRO_VALUE: f64 = 10e9;
+const TILE_VALUE: i64 = 1;
+const MACRO_VALUE: i64 = 1_000;
+const WIN_VALUE: i64 = 1_000_000;
+const BOUND_VALUE: i64 = 1_000_000_000;
 
-const CENTER_FACTOR: f64 = 4.0;
-const CORNER_FACTOR: f64 = 3.0;
-const EDGE_FACTOR: f64 = 1.0;
+const CENTER_FACTOR: i64 = 4;
+const CORNER_FACTOR: i64 = 3;
+const EDGE_FACTOR: i64 = 1;
