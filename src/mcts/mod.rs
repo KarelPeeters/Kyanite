@@ -30,15 +30,17 @@ impl IntoIterator for IdxRange {
 
 struct Node {
     coord: Coord,
+    parent: Option<usize>,
     children: Option<IdxRange>,
     visits: usize,
     wins: usize,
 }
 
 impl Node {
-    fn new(coord: Coord) -> Self {
+    fn new(coord: Coord, parent: Option<usize>) -> Self {
         Node {
             coord,
+            parent,
             children: None,
             visits: 0,
             wins: 0,
@@ -55,6 +57,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 pub struct Evaluation {
     pub best_move: Option<Coord>,
     pub value: f32,
@@ -62,18 +65,14 @@ pub struct Evaluation {
 
 pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Evaluation {
     let mut tree: Vec<Node> = Vec::new();
-    let mut visited: Vec<usize> = Vec::with_capacity(81);
 
     //the actual coord doesn't matter, just pick something
-    tree.push(Node::new(Coord::from_o(0)));
+    tree.push(Node::new(Coord::from_o(0), None));
 
     for _ in 0..iterations {
         //println!("Start iter {}", i);
         let mut curr_node = 0;
         let mut curr_board = board.clone();
-
-        visited.clear();
-        visited.push(curr_node);
 
         while !curr_board.is_done() {
             //Init children
@@ -83,7 +82,7 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
                     //println!("Init {}", tree[curr_node].coord.o());
 
                     let start = tree.len();
-                    tree.extend(curr_board.available_moves().map(Node::new));
+                    tree.extend(curr_board.available_moves().map(|c| Node::new(c, Some(curr_node))));
                     let end = tree.len();
 
                     let children = IdxRange { start, end };
@@ -102,7 +101,6 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
                     .expect("we specifically selected the index based on the count already");
 
                 curr_node = child;
-                visited.push(curr_node);
                 curr_board.play(tree[curr_node].coord);
 
                 //println!("Exploring {}", tree[curr_node].coord.o());
@@ -121,12 +119,13 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
 
             curr_node = selected;
             curr_board.play(tree[curr_node].coord);
-            visited.push(curr_node);
 
             //println!("Selecting {}", tree[curr_node].coord.o());
         }
 
         //Simulate
+        let curr_player = curr_board.next_player;
+
         let won_by = loop {
             if let Some(won_by) = curr_board.won_by {
                 break won_by;
@@ -140,17 +139,24 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
 
         //Update
         let mut won = if won_by != Player::Neutral {
-            won_by == board.next_player
+            won_by == curr_player
         } else {
             rand.gen()
         };
 
-        for &node in &visited {
-            won ^= true;
-            let node = &mut tree[node];
+        loop {
+            won = !won;
+
+            let node = &mut tree[curr_node];
             node.visits += 1;
             if won {
                 node.wins += 1;
+            }
+
+            if let Some(parent) = node.parent {
+                curr_node = parent;
+            } else {
+                break
             }
         }
     }
