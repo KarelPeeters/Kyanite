@@ -34,6 +34,7 @@ struct Node {
     children: Option<IdxRange>,
     visits: usize,
     wins: usize,
+    needs_eval: bool,
 }
 
 impl Node {
@@ -44,6 +45,7 @@ impl Node {
             children: None,
             visits: 0,
             wins: 0,
+            needs_eval: false,
         }
     }
 
@@ -63,8 +65,9 @@ pub struct Evaluation {
     pub value: f32,
 }
 
-pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Evaluation {
+pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, batch_eval: bool, rand: &mut R) -> Evaluation {
     let mut tree: Vec<Node> = Vec::new();
+    let mut eval_queue: Vec<(usize, Board)> = Vec::new();
 
     //the actual coord doesn't matter, just pick something
     tree.push(Node::new(Coord::from_o(0), None));
@@ -116,6 +119,93 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
         }
 
         //Simulate
+        if batch_eval {
+            if tree[curr_node].needs_eval {
+                //do all queued evaluations
+                // println!("Doing batch eval with queue size {}", eval_queue.len());
+                do_batch_evals(&mut tree, &mut eval_queue, rand);
+            } else {
+                tree[curr_node].needs_eval = true;
+                eval_queue.push((curr_node, curr_board));
+
+                //only increment visit count here, win count will be incremented later in the batch
+                loop {
+                    tree[curr_node].visits += 1;
+
+                    if let Some(parent) = tree[curr_node].parent {
+                        curr_node = parent;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        } else {
+            let curr_player = curr_board.next_player;
+
+            let won_by = loop {
+                if let Some(won_by) = curr_board.won_by {
+                    break won_by;
+                }
+
+                curr_board.play(curr_board.random_available_move(rand)
+                    .expect("No winner, so board is not done yet"));
+            };
+
+            //Update
+            let mut won = if won_by != Player::Neutral {
+                won_by == curr_player
+            } else {
+                rand.gen()
+            };
+
+            loop {
+                won = !won;
+
+                let node = &mut tree[curr_node];
+                node.visits += 1;
+                if won {
+                    node.wins += 1;
+                }
+
+                if let Some(parent) = node.parent {
+                    curr_node = parent;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if batch_eval {
+            if eval_queue.len() >= 100 {
+                // println!("Trigger batch eval");
+                do_batch_evals(&mut tree, &mut eval_queue, rand);
+            }
+        }
+    }
+
+    if batch_eval {
+        // println!("Leftover queue: {}", eval_queue.len());
+        do_batch_evals(&mut tree, &mut eval_queue, rand);
+    }
+
+    let best_move = match tree[0].children {
+        None => board.random_available_move(rand),
+        Some(children) => {
+            children.iter().rev().max_by_key(|&child| {
+                tree[child].visits
+            }).map(|child| {
+                tree[child].coord
+            })
+        }
+    };
+
+    let value = (tree[0].wins as f32) / (tree[0].visits as f32);
+    Evaluation { best_move, value }
+}
+
+fn do_batch_evals(tree: &mut Vec<Node>, eval_queue: &mut Vec<(usize, Board)>, rand: &mut impl Rng) {
+    for (mut curr_node, mut curr_board) in eval_queue.drain(..) {
+        debug_assert!(tree[curr_node].needs_eval);
         let curr_player = curr_board.next_player;
 
         let won_by = loop {
@@ -134,11 +224,12 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
             rand.gen()
         };
 
+        tree[curr_node].needs_eval = false;
+
         loop {
             won = !won;
 
             let node = &mut tree[curr_node];
-            node.visits += 1;
             if won {
                 node.wins += 1;
             }
@@ -146,46 +237,37 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
             if let Some(parent) = node.parent {
                 curr_node = parent;
             } else {
-                break
+                break;
             }
         }
     }
-
-    let best_move = match tree[0].children {
-        None => board.random_available_move(rand),
-        Some(children) => {
-            children.iter().rev().max_by_key(|&child| {
-                tree[child].visits
-            }).map(|child| {
-                tree[child].coord
-            })
-        }
-    };
-
-    let value = (tree[0].wins as f32) / (tree[0].visits as f32);
-    Evaluation { best_move, value }
 }
 
 pub struct MCTSBot<H: Heuristic, R: Rng> {
     iterations: usize,
     heuristic: H,
+    batch_eval: bool,
     rand: R,
 }
 
 impl<R: Rng> MCTSBot<ZeroHeuristic, R> {
     pub fn new(iterations: usize, rand: R) -> MCTSBot<ZeroHeuristic, R> {
-        MCTSBot { iterations, heuristic: ZeroHeuristic, rand }
+        MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: false, rand }
+    }
+
+    pub fn new_with_batch_eval(iterations: usize, rand: R) -> MCTSBot<ZeroHeuristic, R> {
+        MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: true, rand }
     }
 }
 
 impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
     pub fn new_with_heuristic(iterations: usize, rand: R, heuristic: H) -> MCTSBot<H, R> {
-        MCTSBot { iterations, heuristic, rand }
+        MCTSBot { iterations, heuristic, batch_eval: false, rand }
     }
 }
 
 impl<H: Heuristic, R: Rng> Bot for MCTSBot<H, R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
-        mcts_evaluate(board, self.iterations, &self.heuristic, &mut self.rand).best_move
+        mcts_evaluate(board, self.iterations, &self.heuristic, self.batch_eval, &mut self.rand).best_move
     }
 }
