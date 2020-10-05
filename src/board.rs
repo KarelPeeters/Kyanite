@@ -378,7 +378,7 @@ pub fn board_to_compact_string(board: &Board) -> String {
 }
 
 pub fn board_from_compact_string(s: &str) -> Board {
-    debug_assert!(s.chars().count() == 81, "compact string should have length 81");
+    assert!(s.chars().count() == 81, "compact string should have length 81");
 
     let mut board = Board::new();
     let mut last_move = None;
