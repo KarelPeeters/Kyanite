@@ -8,13 +8,13 @@ use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
 pub mod heuristic;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-struct IdxRange {
-    start: usize,
-    end: usize,
+pub struct IdxRange {
+    pub start: usize,
+    pub end: usize,
 }
 
 impl IdxRange {
-    fn iter(self) -> std::ops::Range<usize> {
+    pub fn iter(&self) -> std::ops::Range<usize> {
         self.start..self.end
     }
 }
@@ -28,12 +28,13 @@ impl IntoIterator for IdxRange {
     }
 }
 
-struct Node {
-    coord: Coord,
-    parent: Option<usize>,
-    children: Option<IdxRange>,
-    visits: usize,
-    wins: usize,
+pub struct Node {
+    pub coord: Coord,
+    pub parent: Option<usize>,
+    pub children: Option<IdxRange>,
+    pub wins: usize,
+    pub draws: usize,
+    pub visits: usize,
 }
 
 impl Node {
@@ -42,18 +43,26 @@ impl Node {
             coord,
             parent,
             children: None,
-            visits: 0,
             wins: 0,
+            draws: 0,
+            visits: 0,
         }
     }
 
-    fn uct(&self, parent_visits: usize, heuristic: f32) -> OrderedFloat<f32> {
+    pub fn uct(&self, parent_visits: usize, heuristic: f32) -> f32 {
         let wins = self.wins as f32;
+        let draws = self.draws as f32;
         let visits = self.visits as f32;
-        let value = (wins / visits) +
+
+        //TODO is this really the best heuristic formula? maybe let the heuristic decide the weight as well?
+        (wins + 0.5 * draws) / visits +
             (2.0 * (parent_visits as f32).ln() / visits).sqrt() +
-            (heuristic / (visits + 1.0));
-        value.into()
+            (heuristic / (visits + 1.0))
+    }
+
+    /// The estimated value of this node in the range -1..1
+    pub fn signed_value(&self) -> f32 {
+        (2.0 * (self.wins as f32) + (self.draws as f32)) / (self.visits as f32) - 1.0
     }
 }
 
@@ -63,7 +72,7 @@ pub struct Evaluation {
     pub value: f32,
 }
 
-pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Evaluation {
+pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Vec<Node> {
     let mut tree: Vec<Node> = Vec::new();
 
     //the actual coord doesn't matter, just pick something
@@ -108,7 +117,8 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
 
             let selected = children.iter().max_by_key(|&child| {
                 let heuristic = heuristic.evaluate(&curr_board);
-                tree[child].uct(parent_visits, heuristic)
+                let uct = tree[child].uct(parent_visits, heuristic);
+                OrderedFloat(uct)
             }).expect("Board is not done, this node should have a child");
 
             curr_node = selected;
@@ -151,6 +161,12 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
         }
     }
 
+    tree
+}
+
+pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Evaluation {
+    let tree = mcts_build_tree(board, iterations, heuristic, rand);
+
     let best_move = match tree[0].children {
         None => board.random_available_move(rand),
         Some(children) => {
@@ -162,7 +178,7 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
         }
     };
 
-    let value = (tree[0].wins as f32) / (tree[0].visits as f32);
+    let value = tree[0].signed_value();
     Evaluation { best_move, value }
 }
 

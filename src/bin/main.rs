@@ -1,18 +1,142 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use rand::{Rng, SeedableRng};
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
+use rand::{Rng, SeedableRng, thread_rng};
 use rand::rngs::SmallRng;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 
-use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord};
+use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord, Player};
 use sttt::bot_game;
 use sttt::bot_game::Bot;
 use sttt::bots::RandomBot;
-use sttt::mcts::heuristic::MacroHeuristic;
-use sttt::mcts::MCTSBot;
+use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Node};
+use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
 
 fn main() {
-    _heuristic_bot_game()
+    _plot_evaluations()
+}
+
+fn _test_mcts_tree() {
+    let tree = mcts_build_tree(&Board::new(), 1_000_000, &ZeroHeuristic, &mut thread_rng());
+    _print_mcts_tree(&tree, 0, 0, 5);
+}
+
+fn _print_mcts_tree(tree: &Vec<Node>, node: usize, depth: usize, max_depth: usize) {
+    let node = &tree[node];
+
+    for _ in 0..=depth {
+        print!("  ")
+    }
+
+    println!("{:?}: {:.3} <- {},{}/{}", node.coord, node.signed_value(), node.wins, node.draws, node.visits);
+
+    if depth == max_depth {
+        return;
+    }
+
+    if let Some(children) = node.children {
+        let best_child = children.start + children.iter()
+            .map(|c| OrderedFloat(tree[c].signed_value()))
+            .position_max().unwrap();
+
+        for child in children {
+            let next_max_depth = if child == best_child {
+                max_depth
+            } else {
+                depth + 1
+            };
+
+            _print_mcts_tree(tree, child, depth + 1, next_max_depth)
+        }
+    }
+}
+
+fn _basic_self_play() {
+    let iterations = 100_000;
+
+    let mut board = Board::new();
+    let mut rng = thread_rng();
+
+    while !board.is_done() {
+        println!("{}", board);
+
+        let eval = mcts_evaluate(&board, iterations, &ZeroHeuristic, &mut rng);
+
+        let x_value = if board.next_player == Player::O { -eval.value } else { eval.value };
+
+        println!("{}", x_value);
+
+        board.play(eval.best_move.unwrap());
+    }
+
+    println!("{}", board);
+    println!("{:?}", board.won_by);
+}
+
+fn _plot_evaluations() {
+    let iterations = 100_000;
+
+    let counter = AtomicUsize::new(0);
+
+    let all_values: Vec<Vec<f32>> = (0..100).par_bridge().map(|_| {
+        let mut values = vec![];
+
+        let mut board = Board::new();
+        while !board.is_done() {
+            let mut rng = thread_rng();
+            let eval = mcts_evaluate(&board, iterations, &ZeroHeuristic, &mut rng);
+
+            let x_value = if board.next_player == Player::X { eval.value } else { -eval.value };
+
+            values.push(x_value);
+            board.play(eval.best_move.unwrap());
+        }
+
+        let i = counter.fetch_add(1, Ordering::SeqCst);
+        println!("{}", i);
+
+        values
+    }).collect();
+
+    fn average(values: impl IntoIterator<Item=f32>) -> f32 {
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        for value in values {
+            sum += value;
+            count += 1;
+        }
+
+        sum / (count as f32)
+    }
+
+    println!("{:?}", all_values);
+
+    println!("avg start: {}", average(all_values.iter().map(|v| v.first().unwrap()).copied()));
+    println!("avg end: {}", average(all_values.iter().map(|v| v.last().unwrap()).copied()));
+}
+
+fn _test_first_move_advantage() {
+    let res = bot_game::run(
+        || MCTSBot::new(100_000, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, SmallRng::from_entropy()),
+        100, false,
+    );
+
+    println!("{:?}", res);
+}
+
+fn _test_rng() {
+    let res = bot_game::run(
+        || MCTSBot::new(100_000, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, thread_rng()),
+        100, true,
+    );
+
+    println!("{:?}", res);
 }
 
 fn _time_mcts() {
