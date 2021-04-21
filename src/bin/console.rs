@@ -5,7 +5,7 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use regex::Regex;
 
-use sttt::board::{Board, Coord};
+use sttt::board::{Board, Coord, Player};
 use sttt::bot_game::Bot;
 use sttt::mcts::MCTSBot;
 
@@ -22,6 +22,7 @@ fn console_game<B: Bot>(mut bot: B) {
     println!("{}", board);
 
     let mut line = String::new();
+    let user_player = Player::X;
 
     loop {
         //Player move
@@ -68,7 +69,6 @@ fn console_game<B: Bot>(mut bot: B) {
         }
 
         if board.is_done() {
-            println!("You won :)");
             break;
         }
 
@@ -80,8 +80,19 @@ fn console_game<B: Bot>(mut bot: B) {
         println!("{}", board);
 
         if board.is_done() {
-            println!("You lost :(");
             break;
+        }
+    }
+
+    match board.won_by {
+        None => panic!("Game should be finished"),
+        Some(Player::Neutral) => println!("You drew :|"),
+        Some(player) => {
+            if player == user_player {
+                println!("You won :)")
+            } else {
+                println!("You lost :(")
+            }
         }
     }
 }
