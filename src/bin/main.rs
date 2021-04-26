@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use itertools::Itertools;
+use itertools::{Itertools, zip_eq};
 use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng, thread_rng};
 use rand::rngs::SmallRng;
@@ -16,10 +16,7 @@ use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
 
 fn main() {
-    println!("Node size: {}", std::mem::size_of::<Node>());
-    println!("Node align: {}", std::mem::align_of::<Node>());
-
-    time(|| mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng()) );
+    time(|| mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng()));
 }
 
 fn _test_mcts_tree() {
@@ -77,6 +74,34 @@ fn _basic_self_play() {
 
     println!("{}", board);
     println!("{:?}", board.won_by);
+}
+
+fn _plot_mismatch_evaluations() {
+    let mut board = Board::new();
+
+    let iterations = [100_000, 1_000_000, 10_000_000/*, 100_000_000*/];
+
+    let mut values = vec![vec![]; iterations.len()];
+
+    let mut sign = 1.0;
+
+    while !board.is_done() {
+        println!("{}", board);
+
+        let evals = iterations.iter()
+            .map(|&iter| mcts_evaluate(&board, iter, &ZeroHeuristic, &mut thread_rng()))
+            .collect_vec();
+
+        for (values, eval) in zip_eq(&mut values, &evals) {
+            values.push(sign * eval.value);
+        }
+
+        board.play(evals[0].best_move.unwrap());
+        sign *= -1.0;
+    }
+
+    println!("iterations = {:?}", iterations);
+    println!("values = {:?}", values);
 }
 
 fn _plot_evaluations() {
