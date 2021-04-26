@@ -171,6 +171,8 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
 }
 
 impl Board {
+    pub const MAX_AVAILABLE_MOVES: u32 = 9 * 9;
+
     const FULL_MASK: u32 = 0b111_111_111;
 
     pub fn new() -> Board {

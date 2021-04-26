@@ -1,3 +1,6 @@
+use std::num::NonZeroU64;
+use std::ops::{Index, IndexMut};
+
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
@@ -7,49 +10,51 @@ use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
 
 pub mod heuristic;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
-    pub start: usize,
-    pub end: usize,
+    pub start: NonZeroU64,
+    pub length: u8,
 }
 
 impl IdxRange {
-    pub fn iter(&self) -> std::ops::Range<usize> {
-        self.start..self.end
+    pub fn iter(&self) -> std::ops::Range<u64> {
+        self.start.get()..(self.start.get() + self.length as u64)
     }
 }
 
 impl IntoIterator for IdxRange {
-    type Item = usize;
-    type IntoIter = std::ops::Range<usize>;
+    type Item = u64;
+    type IntoIter = std::ops::Range<u64>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
+#[derive(Debug)]
 pub struct Node {
     pub coord: Coord,
-    pub parent: Option<usize>,
-    pub children: Option<IdxRange>,
-    pub wins: usize,
-    pub draws: usize,
-    pub visits: usize,
+    //this is not just a Option<IdxRange> because of struct layout inefficiencies
+    children_start: u64,
+    children_length: u8,
+    pub wins: u64,
+    pub draws: u64,
+    pub visits: u64,
 }
 
 impl Node {
-    fn new(coord: Coord, parent: Option<usize>) -> Self {
+    fn new(coord: Coord) -> Self {
         Node {
             coord,
-            parent,
-            children: None,
+            children_start: 0,
+            children_length: 0,
             wins: 0,
             draws: 0,
             visits: 0,
         }
     }
 
-    pub fn uct(&self, parent_visits: usize, heuristic: f32) -> f32 {
+    pub fn uct(&self, parent_visits: u64, heuristic: f32) -> f32 {
         let wins = self.wins as f32;
         let draws = self.draws as f32;
         let visits = self.visits as f32;
@@ -64,6 +69,16 @@ impl Node {
     pub fn signed_value(&self) -> f32 {
         (2.0 * (self.wins as f32) + (self.draws as f32)) / (self.visits as f32) - 1.0
     }
+
+    pub fn children(&self) -> Option<IdxRange> {
+        NonZeroU64::new(self.children_start)
+            .map(|start| IdxRange { start, length: self.children_length })
+    }
+
+    pub fn set_children(&mut self, children: IdxRange) {
+        self.children_start = children.start.get();
+        self.children_length = children.length;
+    }
 }
 
 #[derive(Debug)]
@@ -72,27 +87,60 @@ pub struct Evaluation {
     pub value: f32,
 }
 
-pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Vec<Node> {
-    let mut tree: Vec<Node> = Vec::new();
+/// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
+#[derive(Debug, Default)]
+pub struct Tree(pub Vec<Node>);
+
+impl Tree {
+    fn len(&self) -> u64 {
+        self.0.len() as u64
+    }
+}
+
+impl Index<u64> for Tree {
+    type Output = Node;
+
+    fn index(&self, index: u64) -> &Self::Output {
+        &self.0[index as usize]
+    }
+}
+
+impl IndexMut<u64> for Tree {
+    fn index_mut(&mut self, index: u64) -> &mut Self::Output {
+        &mut self.0[index as usize]
+    }
+}
+
+pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Tree {
+    let mut tree = Tree::default();
+    let mut parent_list = Vec::with_capacity(81);
 
     //the actual coord doesn't matter, just pick something
-    tree.push(Node::new(Coord::from_o(0), None));
+    tree.0.push(Node::new(Coord::from_o(0)));
 
     for _ in 0..iterations {
-        let mut curr_node = 0;
+        let mut curr_node: u64 = 0;
         let mut curr_board = board.clone();
 
         while !curr_board.is_done() {
+            parent_list.clear();
+            parent_list.push(curr_node);
+
             //Init children
-            let children = match tree[curr_node].children {
+            let children = match tree[curr_node].children() {
                 Some(children) => children,
                 None => {
-                    let start = tree.len();
-                    tree.extend(curr_board.available_moves().map(|c| Node::new(c, Some(curr_node))));
-                    let end = tree.len();
+                    static_assertions::const_assert!(Board::MAX_AVAILABLE_MOVES <= u8::MAX as u32);
 
-                    let children = IdxRange { start, end };
-                    tree[curr_node].children = Some(children);
+                    let start = tree.len();
+                    tree.0.extend(curr_board.available_moves().map(|c| Node::new(c)));
+                    let length = (tree.len() - start) as u8;
+
+                    let children = IdxRange {
+                        start: NonZeroU64::new(start as u64).unwrap(),
+                        length,
+                    };
+                    tree[curr_node].set_children(children);
                     children
                 }
             };
@@ -137,6 +185,8 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: usize, h
                 .expect("No winner, so board is not done yet"));
         };
 
+        parent_list.push(curr_node);
+
         //Update
         let mut won = if won_by != Player::Neutral {
             won_by == curr_player
@@ -144,30 +194,22 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: usize, h
             rand.gen()
         };
 
-        loop {
+        for &update_node in parent_list.iter().rev() {
             won = !won;
 
-            let node = &mut tree[curr_node];
+            let node = &mut tree[update_node];
             node.visits += 1;
-            if won {
-                node.wins += 1;
-            }
-
-            if let Some(parent) = node.parent {
-                curr_node = parent;
-            } else {
-                break;
-            }
+            node.wins += won as u64;
         }
     }
 
     tree
 }
 
-pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heuristic: &H, rand: &mut R) -> Evaluation {
+pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Evaluation {
     let tree = mcts_build_tree(board, iterations, heuristic, rand);
 
-    let best_move = match tree[0].children {
+    let best_move = match tree[0].children() {
         None => board.random_available_move(rand),
         Some(children) => {
             children.iter().rev().max_by_key(|&child| {
@@ -183,25 +225,20 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: usize, heu
 }
 
 pub struct MCTSBot<H: Heuristic, R: Rng> {
-    iterations: usize,
+    iterations: u64,
     heuristic: H,
-    batch_eval: bool,
     rand: R,
 }
 
 impl<R: Rng> MCTSBot<ZeroHeuristic, R> {
-    pub fn new(iterations: usize, rand: R) -> MCTSBot<ZeroHeuristic, R> {
-        MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: false, rand }
-    }
-
-    pub fn new_with_batch_eval(iterations: usize, rand: R) -> MCTSBot<ZeroHeuristic, R> {
-        MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: true, rand }
+    pub fn new(iterations: u64, rand: R) -> Self {
+        MCTSBot { iterations, heuristic: ZeroHeuristic, rand }
     }
 }
 
 impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
-    pub fn new_with_heuristic(iterations: usize, rand: R, heuristic: H) -> MCTSBot<H, R> {
-        MCTSBot { iterations, heuristic, batch_eval: false, rand }
+    pub fn new_with_heuristic(iterations: u64, rand: R, heuristic: H) -> Self {
+        MCTSBot { iterations, heuristic, rand }
     }
 }
 

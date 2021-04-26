@@ -11,20 +11,23 @@ use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coo
 use sttt::bot_game;
 use sttt::bot_game::Bot;
 use sttt::bots::RandomBot;
-use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Node};
+use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Node, Tree};
 use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
 
 fn main() {
-    _plot_evaluations()
+    println!("Node size: {}", std::mem::size_of::<Node>());
+    println!("Node align: {}", std::mem::align_of::<Node>());
+
+    time(|| mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng()) );
 }
 
 fn _test_mcts_tree() {
-    let tree = mcts_build_tree(&Board::new(), 1_000_000, &ZeroHeuristic, &mut thread_rng());
+    let tree = mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng());
     _print_mcts_tree(&tree, 0, 0, 5);
 }
 
-fn _print_mcts_tree(tree: &Vec<Node>, node: usize, depth: usize, max_depth: usize) {
+fn _print_mcts_tree(tree: &Tree, node: u64, depth: u64, max_depth: u64) {
     let node = &tree[node];
 
     for _ in 0..=depth {
@@ -37,10 +40,10 @@ fn _print_mcts_tree(tree: &Vec<Node>, node: usize, depth: usize, max_depth: usiz
         return;
     }
 
-    if let Some(children) = node.children {
-        let best_child = children.start + children.iter()
+    if let Some(children) = node.children() {
+        let best_child = children.start.get() + children.iter()
             .map(|c| OrderedFloat(tree[c].signed_value()))
-            .position_max().unwrap();
+            .position_max().unwrap() as u64;
 
         for child in children {
             let next_max_depth = if child == best_child {
