@@ -11,11 +11,15 @@ use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coo
 use sttt::bot_game;
 use sttt::bot_game::Bot;
 use sttt::bots::RandomBot;
-use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Node, Tree};
+use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Tree};
 use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
+use sttt::util::lower_process_priority;
 
 fn main() {
+    //TODO don't do this when benchmarking!
+    lower_process_priority();
+
     time(|| mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng()));
 }
 

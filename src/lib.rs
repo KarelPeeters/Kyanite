@@ -7,4 +7,4 @@ pub mod bots;
 pub mod minimax;
 pub mod mcts;
 
-mod tests;
+pub mod util;
