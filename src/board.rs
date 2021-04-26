@@ -7,9 +7,7 @@ use rand::Rng;
 
 use crate::board::Player::Neutral;
 
-#[derive(Copy, Clone)]
-#[derive(Debug)]
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Player {
     X,
     O,
@@ -34,8 +32,7 @@ impl Player {
     }
 }
 
-#[derive(Copy, Clone)]
-#[derive(Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Coord(u8);
 
 impl Coord {
@@ -89,6 +86,7 @@ impl Debug for Coord {
 //TODO implement simpler partialeq again
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Board {
+    //TODO try u16 here, that makes Board a lot smaller and maybe even feasible to store in the tree?
     grids: [u32; 9],
     main_grid: u32,
 
