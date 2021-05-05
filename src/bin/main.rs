@@ -182,7 +182,7 @@ fn _time_mcts() {
 }
 
 fn _test_compact_string() {
-    let seed: [u8; 16] = Rng::gen(&mut SmallRng::from_entropy());
+    let seed: [u8; 32] = Rng::gen(&mut SmallRng::from_entropy());
     print!("Seed: {:?}", seed);
 
     let mut rand = SmallRng::from_seed(seed);

@@ -151,7 +151,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
             let count = unexplored_children.clone().count();
 
             if count != 0 {
-                let child = unexplored_children.clone().nth(rand.gen_range(0, count))
+                let child = unexplored_children.clone().nth(rand.gen_range(0..count))
                     .expect("we specifically selected the index based on the count already");
 
                 curr_node = child;

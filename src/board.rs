@@ -215,7 +215,7 @@ impl Board {
             count += 9 - self.grids[om as usize].count_ones();
         }
 
-        let mut index = rand.gen_range(0, count);
+        let mut index = rand.gen_range(0..count);
 
         for om in BitIter::of(self.macro_mask) {
             let grid = self.grids[om as usize];

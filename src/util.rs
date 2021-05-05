@@ -5,10 +5,11 @@ mod bindings {
 
 #[cfg(windows)]
 pub fn lower_process_priority() {
+    use bindings::Windows::Win32::WindowsProgramming::PROCESS_CREATION_FLAGS;
     use bindings::Windows::Win32::SystemServices::*;
 
     unsafe {
-        SetPriorityClass(GetCurrentProcess(), PROCESS_PRIORITY_CLASS::IDLE_PRIORITY_CLASS);
+        SetPriorityClass(GetCurrentProcess(), PROCESS_CREATION_FLAGS::IDLE_PRIORITY_CLASS);
     }
 }
 
