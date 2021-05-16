@@ -28,7 +28,7 @@ fn _test_mcts_tree() {
     _print_mcts_tree(&tree, 0, 0, 5);
 }
 
-fn _print_mcts_tree(tree: &Tree, node: u64, depth: u64, max_depth: u64) {
+fn _print_mcts_tree(tree: &Tree, node: usize, depth: u64, max_depth: u64) {
     let node = &tree[node];
 
     for _ in 0..=depth {
@@ -44,7 +44,7 @@ fn _print_mcts_tree(tree: &Tree, node: u64, depth: u64, max_depth: u64) {
     if let Some(children) = node.children() {
         let best_child = children.start.get() + children.iter()
             .map(|c| OrderedFloat(tree[c].signed_value()))
-            .position_max().unwrap() as u64;
+            .position_max().unwrap();
 
         for child in children {
             let next_max_depth = if child == best_child {

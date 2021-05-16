@@ -1,4 +1,4 @@
-use std::num::NonZeroU64;
+use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
 use ordered_float::OrderedFloat;
@@ -12,19 +12,21 @@ pub mod heuristic;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
-    pub start: NonZeroU64,
+    pub start: NonZeroUsize,
     pub length: u8,
 }
 
 impl IdxRange {
-    pub fn iter(&self) -> std::ops::Range<u64> {
-        self.start.get()..(self.start.get() + self.length as u64)
+    pub fn iter(&self) -> std::ops::Range<usize> {
+        let start = self.start.get();
+        let length = self.length as usize;
+        start..(start + length)
     }
 }
 
 impl IntoIterator for IdxRange {
-    type Item = u64;
-    type IntoIter = std::ops::Range<u64>;
+    type Item = usize;
+    type IntoIter = std::ops::Range<usize>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -35,7 +37,7 @@ impl IntoIterator for IdxRange {
 pub struct Node {
     pub coord: Coord,
     //this is not just a Option<IdxRange> because of struct layout inefficiencies
-    children_start: u64,
+    children_start: usize,
     children_length: u8,
     pub wins: u64,
     pub draws: u64,
@@ -71,7 +73,7 @@ impl Node {
     }
 
     pub fn children(&self) -> Option<IdxRange> {
-        NonZeroU64::new(self.children_start)
+        NonZeroUsize::new(self.children_start)
             .map(|start| IdxRange { start, length: self.children_length })
     }
 
@@ -89,10 +91,6 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn len(&self) -> u64 {
-        self.nodes.len() as u64
-    }
-
     pub fn best_move(&self) -> Coord {
         let children = self[0].children()
             .expect("Root node must have children");
@@ -109,16 +107,16 @@ impl Tree {
     }
 }
 
-impl Index<u64> for Tree {
+impl Index<usize> for Tree {
     type Output = Node;
 
-    fn index(&self, index: u64) -> &Self::Output {
+    fn index(&self, index: usize) -> &Self::Output {
         &self.nodes[index as usize]
     }
 }
 
-impl IndexMut<u64> for Tree {
-    fn index_mut(&mut self, index: u64) -> &mut Self::Output {
+impl IndexMut<usize> for Tree {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.nodes[index as usize]
     }
 }
@@ -134,7 +132,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
     tree.nodes.push(Node::new(Coord::from_o(0)));
 
     for _ in 0..iterations {
-        let mut curr_node: u64 = 0;
+        let mut curr_node: usize = 0;
         let mut curr_board = board.clone();
 
         while !curr_board.is_done() {
@@ -147,12 +145,12 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
                 None => {
                     static_assertions::const_assert!(Board::MAX_AVAILABLE_MOVES <= u8::MAX as u32);
 
-                    let start = tree.len();
+                    let start = tree.nodes.len();
                     tree.nodes.extend(curr_board.available_moves().map(|c| Node::new(c)));
-                    let length = (tree.len() - start) as u8;
+                    let length = (tree.nodes.len() - start) as u8;
 
                     let children = IdxRange {
-                        start: NonZeroU64::new(start as u64).unwrap(),
+                        start: NonZeroUsize::new(start).unwrap(),
                         length,
                     };
                     tree[curr_node].set_children(children);
