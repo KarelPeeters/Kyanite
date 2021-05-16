@@ -23,9 +23,11 @@ class Data:
             return full[:, i - length:i]
 
         self.y_win = take(3)
+        self.y_value = self.y_win[:, 0] - self.y_win[:, 2]
         _, self.y_win_index = self.y_win.max(dim=1)
-        self.y_prob = take(81)
-        self.mask = take(81).bool()
+
+        self.y_move_prob = take(81)
+        self.mask = take(81)
 
         self.x_tiles = take(2 * 81).view(-1, 2, 81)
         self.x_macros = take(2 * 9).view(-1, 2, 9)
