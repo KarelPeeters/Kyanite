@@ -81,19 +81,31 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
-pub struct Evaluation {
-    pub best_move: Option<Coord>,
-    pub value: f32,
-}
-
 /// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
 #[derive(Debug, Default)]
-pub struct Tree(pub Vec<Node>);
+pub struct Tree {
+    pub root_board: Board,
+    pub nodes: Vec<Node>,
+}
 
 impl Tree {
-    fn len(&self) -> u64 {
-        self.0.len() as u64
+    pub fn len(&self) -> u64 {
+        self.nodes.len() as u64
+    }
+
+    pub fn best_move(&self) -> Coord {
+        let children = self[0].children()
+            .expect("Root node must have children");
+
+        let best_child = children.iter().rev().max_by_key(|&child| {
+            self[child].visits
+        }).expect("Root node must have non-empty children");
+
+        self[best_child].coord
+    }
+
+    pub fn signed_value(&self) -> f32 {
+        self[0].signed_value()
     }
 }
 
@@ -101,22 +113,25 @@ impl Index<u64> for Tree {
     type Output = Node;
 
     fn index(&self, index: u64) -> &Self::Output {
-        &self.0[index as usize]
+        &self.nodes[index as usize]
     }
 }
 
 impl IndexMut<u64> for Tree {
     fn index_mut(&mut self, index: u64) -> &mut Self::Output {
-        &mut self.0[index as usize]
+        &mut self.nodes[index as usize]
     }
 }
 
 pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Tree {
+    assert!(iterations > 0, "MCTS must run for at least 1 iteration");
+    assert!(!board.is_done(), "Cannot build MCTS tree for done board");
+
     let mut tree = Tree::default();
     let mut parent_list = Vec::with_capacity(81);
 
     //the actual coord doesn't matter, just pick something
-    tree.0.push(Node::new(Coord::from_o(0)));
+    tree.nodes.push(Node::new(Coord::from_o(0)));
 
     for _ in 0..iterations {
         let mut curr_node: u64 = 0;
@@ -133,7 +148,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
                     static_assertions::const_assert!(Board::MAX_AVAILABLE_MOVES <= u8::MAX as u32);
 
                     let start = tree.len();
-                    tree.0.extend(curr_board.available_moves().map(|c| Node::new(c)));
+                    tree.nodes.extend(curr_board.available_moves().map(|c| Node::new(c)));
                     let length = (tree.len() - start) as u8;
 
                     let children = IdxRange {
@@ -206,24 +221,6 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
     tree
 }
 
-pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Evaluation {
-    let tree = mcts_build_tree(board, iterations, heuristic, rand);
-
-    let best_move = match tree[0].children() {
-        None => board.random_available_move(rand),
-        Some(children) => {
-            children.iter().rev().max_by_key(|&child| {
-                tree[child].visits
-            }).map(|child| {
-                tree[child].coord
-            })
-        }
-    };
-
-    let value = tree[0].signed_value();
-    Evaluation { best_move, value }
-}
-
 pub struct MCTSBot<H: Heuristic, R: Rng> {
     iterations: u64,
     heuristic: H,
@@ -244,6 +241,11 @@ impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
 
 impl<H: Heuristic, R: Rng> Bot for MCTSBot<H, R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
-        mcts_evaluate(board, self.iterations, &self.heuristic, &mut self.rand).best_move
+        if board.is_done() {
+            None
+        } else {
+            let tree = mcts_build_tree(board, self.iterations, &self.heuristic, &mut self.rand);
+            Some(tree.best_move())
+        }
     }
 }

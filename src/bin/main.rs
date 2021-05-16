@@ -11,7 +11,7 @@ use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coo
 use sttt::bot_game;
 use sttt::bot_game::Bot;
 use sttt::bots::RandomBot;
-use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Tree};
+use sttt::mcts::{mcts_build_tree, MCTSBot, Tree};
 use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
 use sttt::util::lower_process_priority;
@@ -67,13 +67,14 @@ fn _basic_self_play() {
     while !board.is_done() {
         println!("{}", board);
 
-        let eval = mcts_evaluate(&board, iterations, &ZeroHeuristic, &mut rng);
+        let tree = mcts_build_tree(&board, iterations, &ZeroHeuristic, &mut rng);
+        let value = tree.signed_value();
 
-        let x_value = if board.next_player == Player::O { -eval.value } else { eval.value };
+        let x_value = if board.next_player == Player::O { -value } else { value };
 
         println!("{}", x_value);
 
-        board.play(eval.best_move.unwrap());
+        board.play(tree.best_move());
     }
 
     println!("{}", board);
@@ -93,14 +94,17 @@ fn _plot_mismatch_evaluations() {
         println!("{}", board);
 
         let evals = iterations.iter()
-            .map(|&iter| mcts_evaluate(&board, iter, &ZeroHeuristic, &mut thread_rng()))
+            .map(|&iter| {
+                let tree = mcts_build_tree(&board, iter, &ZeroHeuristic, &mut thread_rng());
+                (tree.best_move(), tree.signed_value())
+            })
             .collect_vec();
 
-        for (values, eval) in zip_eq(&mut values, &evals) {
-            values.push(sign * eval.value);
+        for (values, (_, value)) in zip_eq(&mut values, &evals) {
+            values.push(sign * value);
         }
 
-        board.play(evals[0].best_move.unwrap());
+        board.play(evals[0].0);
         sign *= -1.0;
     }
 
@@ -119,12 +123,13 @@ fn _plot_evaluations() {
         let mut board = Board::new();
         while !board.is_done() {
             let mut rng = thread_rng();
-            let eval = mcts_evaluate(&board, iterations, &ZeroHeuristic, &mut rng);
+            let tree = mcts_build_tree(&board, iterations, &ZeroHeuristic, &mut rng);
+            let value = tree.signed_value();
 
-            let x_value = if board.next_player == Player::X { eval.value } else { -eval.value };
+            let x_value = if board.next_player == Player::X { value } else { -value };
 
             values.push(x_value);
-            board.play(eval.best_move.unwrap());
+            board.play(tree.best_move());
         }
 
         let i = counter.fetch_add(1, Ordering::SeqCst);

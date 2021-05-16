@@ -8,6 +8,8 @@ use rayon::iter::ParallelIterator;
 use crate::board::{Board, Coord, Player};
 
 pub trait Bot {
+    /// Decide which move to play in the given board.
+    /// If there are no moves (because `board.is_done()`) return `None`.
     fn play(&mut self, board: &Board) -> Option<Coord>;
 }
 
