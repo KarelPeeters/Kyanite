@@ -1,0 +1,15 @@
+data layout:
+
+* 1 win   \
+* 1 draw  all from POV of board.next 0,1
+* 1 loss  /
+
+* 81 move probability 0..1
+* 81 move_mask 0/1
+
+* 81 board.next tiles 0,1
+* 81 board.next.other tiles 0,1
+
+* 9 board.next macros 0,1
+* 9 board.next.other macros 0,1
+
