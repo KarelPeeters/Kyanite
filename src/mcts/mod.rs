@@ -22,6 +22,11 @@ impl IdxRange {
         let length = self.length as usize;
         start..(start + length)
     }
+
+    pub fn get(&self, index: usize) -> usize {
+        assert!(index < (self.length as usize), "Index {} out of bounds", index);
+        self.start.get() + index
+    }
 }
 
 impl IntoIterator for IdxRange {
