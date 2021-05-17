@@ -89,13 +89,17 @@ impl Node {
 }
 
 /// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Tree {
     pub root_board: Board,
     pub nodes: Vec<Node>,
 }
 
 impl Tree {
+    pub fn new(root_board: Board) -> Tree {
+        Tree { root_board, nodes: Default::default() }
+    }
+
     pub fn best_move(&self) -> Coord {
         let children = self[0].children()
             .expect("Root node must have children");
@@ -130,7 +134,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
     assert!(iterations > 0, "MCTS must run for at least 1 iteration");
     assert!(!board.is_done(), "Cannot build MCTS tree for done board");
 
-    let mut tree = Tree::default();
+    let mut tree = Tree::new(board.clone());
     let mut parent_list = Vec::with_capacity(81);
 
     //the actual coord doesn't matter, just pick something
