@@ -194,6 +194,7 @@ impl Board {
     }
 
     pub fn macr(&self, om: u8) -> Player {
+        debug_assert!(om < 9);
         get_player(self.main_grid, om)
     }
 
