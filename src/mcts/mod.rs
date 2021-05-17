@@ -132,11 +132,12 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
     tree.nodes.push(Node::new(Coord::from_o(0)));
 
     for _ in 0..iterations {
+        parent_list.clear();
+
         let mut curr_node: usize = 0;
         let mut curr_board = board.clone();
 
         while !curr_board.is_done() {
-            parent_list.clear();
             parent_list.push(curr_node);
 
             //Init children
@@ -216,6 +217,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
         }
     }
 
+    assert_eq!(iterations, tree[0].visits, "implementation error");
     tree
 }
 
