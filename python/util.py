@@ -27,12 +27,18 @@ class Data:
         _, self.y_win_index = self.y_win.max(dim=1)
 
         self.y_move_prob = take(81)
-        self.mask = take(81)
+        self.mask_flat = take(81)
+        self.mask = self.mask_flat.view(-1, 9, 9)
 
-        self.x_tiles = take(2 * 81).view(-1, 2, 81)
-        self.x_macros = take(2 * 9).view(-1, 2, 9)
+        self.x_tiles = take(2 * 81).view(-1, 2, 9, 9)
+        self.x_macros = take(2 * 9).view(-1, 2, 3, 3)
+
+        self.x_macros_expanded = torch.kron(self.x_macros, torch.ones(3, 3, device=DEVICE))
 
         assert i == DATA_WIDTH
+
+    def pick_batch(self, indices):
+        return Data(self.full[indices, :])
 
     def __len__(self):
         return len(self.full)

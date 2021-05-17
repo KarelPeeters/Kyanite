@@ -10,24 +10,47 @@ from util import load_data, DEVICE, Data
 class Model(nn.Module):
     def __init__(self):
         super().__init__()
+
+        self.start = nn.Sequential(
+            nn.Conv2d(5, 64, kernel_size=(1, 1)),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=(1, 1)),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+        )
+
+        self.second = nn.Sequential(
+            nn.Conv2d(5 + 64, 64, kernel_size=(3, 3), stride=(3, 3)),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=(1, 1)),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 256, kernel_size=(3, 3)),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+        )
+
         self.seq = nn.Sequential(
-            nn.Linear(81 + 2 * 81 + 2 * 9, 256),
-            nn.Dropout(),
+            nn.Flatten(),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.Dropout(),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, 1 + 81),
+            nn.Linear(256, 1 + 81),
         )
 
     def forward(self, data: Data):
         input = torch.cat([
-            data.mask.flatten(start_dim=1),
-            data.x_tiles.flatten(start_dim=1),
-            data.x_macros.flatten(start_dim=1),
+            data.mask.view(-1, 1, 9, 9),
+            data.x_tiles.view(-1, 2, 9, 9),
+            data.x_macros_expanded,
         ], dim=1)
 
-        output = self.seq(input)
+        middle = self.start(input)
+        middle = torch.cat([middle, input], dim=1)
+        output = self.seq(self.second(middle))
 
         value = nn.functional.tanh(output[:, 0])
         move_prob = nn.functional.softmax(output[:, 1:], -1)
@@ -44,7 +67,7 @@ def plot_stuff(plot_data, plot_legend, trivial_win_acc, trivial_move_acc, plot_l
     pyplot.axhline(y=trivial_move_acc, linestyle="--")
 
     pyplot.plot(plot_data[:, plot_mask])
-    pyplot.legend(["trivial_acc"] + plot_legend)
+    pyplot.legend(["trivial_win_acc", "trivial_move_acc"] + plot_legend)
     pyplot.show()
 
 
@@ -68,7 +91,8 @@ def main():
     plot_data, plot_legend = train_model(
         model=model, optimizer=optimizer,
         train_data=train_data, test_data=test_data,
-        epochs=50,
+        epochs=10, train_batch_size=500,
+        eval_batch_size=500,
     )
 
     plot_stuff(
