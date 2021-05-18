@@ -24,7 +24,6 @@ class Data:
 
         self.y_win = take(3)
         self.y_value = self.y_win[:, 0] - self.y_win[:, 2]
-        _, self.y_win_index = self.y_win.max(dim=1)
 
         self.y_move_prob = take(81)
         self.mask_flat = take(81)
@@ -32,8 +31,6 @@ class Data:
 
         self.x_tiles = take(2 * 81).view(-1, 2, 9, 9)
         self.x_macros = take(2 * 9).view(-1, 2, 3, 3)
-
-        self.x_macros_expanded = torch.kron(self.x_macros, torch.ones(3, 3, device=DEVICE))
 
         assert i == DATA_WIDTH
 

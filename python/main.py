@@ -1,73 +1,82 @@
+from math import prod
+
 import torch
 from matplotlib import pyplot
 from torch import nn
 from torch.optim import Adam
 
 from core import train_model
-from util import load_data, DEVICE, Data
+from util import load_data, DEVICE
+
+
+class ResBlock(nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+
+        self.seq = nn.Sequential(
+            nn.Conv2d(channels, channels, (3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(channels),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, (3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(channels),
+        )
+
+    def forward(self, x):
+        y = self.seq(x)
+        y = torch.relu(y + x)
+        return y
 
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, channels: int, block_count: int, value_size: int):
         super().__init__()
 
-        self.start = nn.Sequential(
-            nn.Conv2d(5, 64, kernel_size=(1, 1)),
-            nn.BatchNorm2d(64),
+        self.common = nn.Sequential(
+            nn.Conv2d(5, channels, (3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(channels),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=(1, 1)),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
+            *(ResBlock(channels) for _ in range(block_count))
         )
 
-        self.second = nn.Sequential(
-            nn.Conv2d(5 + 64, 64, kernel_size=(3, 3), stride=(3, 3)),
-            nn.BatchNorm2d(64),
+        self.policy_head = nn.Sequential(
+            nn.Conv2d(channels, 2, (1, 1)),
+            nn.BatchNorm2d(2),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=(1, 1)),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 256, kernel_size=(3, 3)),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-        )
-
-        self.seq = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1 + 81),
+            nn.Linear(2 * 9 * 9, 9 * 9),
         )
 
-    def forward(self, data: Data):
+        self.value_head = nn.Sequential(
+            nn.Conv2d(channels, 1, (1, 1)),
+            nn.BatchNorm2d(1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(9 * 9, value_size),
+            nn.ReLU(),
+            nn.Linear(value_size, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, mask, x_tiles, x_macros):
+        x_macros_expanded = torch.kron(x_macros, torch.ones(3, 3, device=x_macros.device))
+
         input = torch.cat([
-            data.mask.view(-1, 1, 9, 9),
-            data.x_tiles.view(-1, 2, 9, 9),
-            data.x_macros_expanded,
+            mask.view(-1, 1, 9, 9),
+            x_tiles.view(-1, 2, 9, 9),
+            x_macros_expanded.view(-1, 2, 9, 9),
         ], dim=1)
 
-        middle = self.start(input)
-        middle = torch.cat([middle, input], dim=1)
-        output = self.seq(self.second(middle))
+        common = self.common(input)
+        value = self.value_head(common).squeeze(dim=1)
+        policy = self.policy_head(common)
 
-        value = nn.functional.tanh(output[:, 0])
-        move_prob = nn.functional.softmax(output[:, 1:], -1)
-
-        return value, move_prob
+        # value is in range -1..1, policy are the logits
+        return value, policy
 
 
-def plot_stuff(plot_data, plot_legend, trivial_win_acc, trivial_move_acc, plot_loss: bool):
-    plot_mask = torch.tensor(["loss" not in name for name in plot_legend])
-    plot_mask[:] |= plot_loss
-    plot_legend = [name for name in plot_legend if plot_loss or "loss" not in name]
-
-    pyplot.axhline(y=trivial_win_acc, linestyle="--")
-    pyplot.axhline(y=trivial_move_acc, linestyle="--")
-
-    pyplot.plot(plot_data[:, plot_mask])
-    pyplot.legend(["trivial_win_acc", "trivial_move_acc"] + plot_legend)
+def plot_stuff(plot_data, plot_legend):
+    pyplot.plot(plot_data)
+    pyplot.legend(plot_legend)
     pyplot.show()
 
 
@@ -78,28 +87,32 @@ def main():
     print(f"Train size: {len(train_data)}, test size: {len(test_data)}")
 
     trivial_win_acc = train_data.y_win.float().mean(dim=0).max()
-    trivial_move_acc = train_data.y_move_prob.mean()
+    trivial_move_acc = train_data.y_move_prob.mean(dim=0).max()
 
     print(f"Trivial win_acc: {trivial_win_acc}")
     print(f"Trivial move_acc: {trivial_move_acc}")
 
-    model = Model()
+    model = Model(channels=64, block_count=3, value_size=64)
     model.to(DEVICE)
 
-    optimizer = Adam(model.parameters())
+    model = torch.jit.script(model)
+    model.save("../data/untrained_model.pt")
+
+    param_count = sum(prod(p.shape) for p in model.parameters())
+    print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
+
+    optimizer = Adam(model.parameters(), weight_decay=1e-4)
 
     plot_data, plot_legend = train_model(
         model=model, optimizer=optimizer,
         train_data=train_data, test_data=test_data,
-        epochs=10, train_batch_size=500,
-        eval_batch_size=500,
+        epochs=5, train_batch_size=300,
+        eval_batch_size=300,
     )
 
-    plot_stuff(
-        plot_data, plot_legend,
-        trivial_win_acc, trivial_move_acc,
-        plot_loss=False
-    )
+    model.save("../data/trained_model.pt")
+
+    plot_stuff(plot_data, plot_legend)
 
 
 if __name__ == '__main__':
