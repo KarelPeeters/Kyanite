@@ -96,7 +96,7 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new(root_board: Board) -> Tree {
+    pub fn new(root_board: Board) -> Self {
         Tree { root_board, nodes: Default::default() }
     }
 

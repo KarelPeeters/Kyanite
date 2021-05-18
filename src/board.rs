@@ -48,7 +48,7 @@ impl Coord {
 
     pub fn from_o(o: u8) -> Coord {
         debug_assert!(o < 81);
-        Coord::from_oo(o / 9, o % 9)
+        Coord(o)
     }
 
     pub fn from_xy(x: u8, y: u8) -> Coord {
