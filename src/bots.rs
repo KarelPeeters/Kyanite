@@ -1,12 +1,18 @@
 use crate::bot_game::Bot;
 use crate::board::{Board, Coord};
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 
-pub struct RandomBot;
+pub struct RandomBot<R: Rng>(R);
 
-impl Bot for RandomBot {
+impl<R: Rng> RandomBot<R> {
+    pub fn new(rng: R) -> Self {
+        RandomBot(rng)
+    }
+}
+
+impl<R: Rng> Bot for RandomBot<R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
-        board.random_available_move(&mut thread_rng())
+        board.random_available_move(&mut self.0)
     }
 }
 

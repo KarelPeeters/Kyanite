@@ -241,7 +241,7 @@ fn _heuristic_bot_game() {
 
 fn _bot_game() {
     let res = bot_game::run(
-        || RandomBot,
+        || RandomBot::new(SmallRng::from_entropy()),
         || MCTSBot::new(1000, SmallRng::from_entropy()),
         100,
         true,
