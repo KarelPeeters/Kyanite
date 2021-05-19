@@ -16,8 +16,8 @@ def plot_stuff(plot_data, plot_legend):
 
 
 def main():
-    train_data = load_data("../data/train_data.csv", "../data/train_data.pt")
-    test_data = load_data("../data/test_data.csv", "../data/test_data.pt")
+    train_data = load_data("../data/esat/train_data.csv")
+    test_data = load_data("../data/test_data.csv")
 
     print(f"Train size: {len(train_data)}, test size: {len(test_data)}")
 

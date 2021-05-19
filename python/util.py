@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -41,7 +42,9 @@ class Data:
         return len(self.full)
 
 
-def load_data(path_csv, path_tensor) -> Data:
+def load_data(path_csv) -> Data:
+    path_tensor = Path(path_csv).with_suffix(".pt")
+
     if not os.path.exists(path_tensor) or os.path.getmtime(path_csv) > os.path.getmtime(path_tensor):
         print(f"Mapping data from {path_csv} to {path_tensor}")
         np_data = np.loadtxt(path_csv, delimiter=",", ndmin=2, dtype=np.float32)

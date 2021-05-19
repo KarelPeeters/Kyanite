@@ -56,6 +56,8 @@ def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int
             total_batch_value_loss += batch_value_loss.item()
             total_batch_move_loss += batch_move_loss.item()
 
+            print(f"  batch {bi} / {batch_count}, loss {batch_value_loss}, {batch_move_loss}")
+
         batch_value_loss = total_batch_value_loss / batch_count
         batch_move_loss = total_batch_move_loss / batch_count
 
