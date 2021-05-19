@@ -16,3 +16,6 @@ static_assertions = "1.1.0"
 tch = "0.4.1"
 
 sttt = { path = "../../SuperTTTApi-rs" }
+
+[profile.release]
+debug = true

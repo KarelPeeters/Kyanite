@@ -1,25 +1,27 @@
-use std::num::NonZeroU64;
-use std::ops::{Generator, Index, IndexMut};
+use std::num::NonZeroUsize;
+use std::ops::{Index, IndexMut};
 
 use ordered_float::OrderedFloat;
-use rand::{Rng, thread_rng};
 use sttt::board::{Board, Coord, Player};
+use sttt::bot_game::Bot;
+
+use crate::network::Network;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
-    pub start: NonZeroU64,
+    pub start: NonZeroUsize,
     pub length: u8,
 }
 
 impl IdxRange {
-    pub fn iter(&self) -> std::ops::Range<u64> {
-        self.start.get()..(self.start.get() + self.length as u64)
+    pub fn iter(&self) -> std::ops::Range<usize> {
+        self.start.get()..(self.start.get() + self.length as usize)
     }
 }
 
 impl IntoIterator for IdxRange {
-    type Item = u64;
-    type IntoIter = std::ops::Range<u64>;
+    type Item = usize;
+    type IntoIter = std::ops::Range<usize>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -30,42 +32,37 @@ impl IntoIterator for IdxRange {
 pub struct Node {
     pub coord: Coord,
     //this is not just a Option<IdxRange> because of struct layout inefficiencies
-    children_start: u64,
+    children_start: usize,
     children_length: u8,
-    pub wins: u64,
-    pub draws: u64,
-    pub visits: u64,
+
+    pub p: f32,
+    pub n: u64,
+    pub total_q: f32,
 }
 
 impl Node {
-    fn new(coord: Coord) -> Self {
+    fn new(coord: Coord, p: f32) -> Self {
         Node {
             coord,
             children_start: 0,
             children_length: 0,
-            wins: 0,
-            draws: 0,
-            visits: 0,
+
+            p,
+            n: 0,
+            total_q: 0.0,
         }
     }
 
-    pub fn uct(&self, parent_visits: u64) -> f32 {
-        let wins = self.wins as f32;
-        let draws = self.draws as f32;
-        let visits = self.visits as f32;
-
-        //TODO is this really the best heuristic formula? maybe let the heuristic decide the weight as well?
-        (wins + 0.5 * draws) / visits +
-            (2.0 * (parent_visits as f32).ln() / visits).sqrt()
-    }
-
-    /// The estimated value of this node in the range -1..1
-    pub fn signed_value(&self) -> f32 {
-        (2.0 * (self.wins as f32) + (self.draws as f32)) / (self.visits as f32) - 1.0
+    pub fn uct(&self) -> f32 {
+        //TODO don't they use something completely different in the AlphhaGo Zero paper?
+        
+        let q = self.total_q / self.n as f32;
+        let u = self.p / (1 + self.n) as f32;
+        q + u
     }
 
     pub fn children(&self) -> Option<IdxRange> {
-        NonZeroU64::new(self.children_start)
+        NonZeroUsize::new(self.children_start)
             .map(|start| IdxRange { start, length: self.children_length })
     }
 
@@ -75,143 +72,135 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
-pub struct Evaluation {
-    pub best_move: Option<Coord>,
-    pub value: f32,
-}
-
 /// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
-#[derive(Debug, Default)]
-pub struct Tree(pub Vec<Node>);
+#[derive(Debug)]
+pub struct Tree {
+    root_board: Board,
+    nodes: Vec<Node>,
+}
 
 impl Tree {
-    fn len(&self) -> u64 {
-        self.0.len() as u64
+    fn new(root_board: Board) -> Self {
+        Tree { root_board, nodes: Default::default() }
+    }
+
+    pub fn best_move(&self) -> Coord {
+        let children = self[0].children()
+            .expect("Root node must have children");
+
+        let best_child = children.iter().rev().max_by_key(|&child| {
+            self[child].n
+        }).expect("Root node must have non-empty children");
+
+        self[best_child].coord
     }
 }
 
-impl Index<u64> for Tree {
+impl Index<usize> for Tree {
     type Output = Node;
 
-    fn index(&self, index: u64) -> &Self::Output {
-        &self.0[index as usize]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.nodes[index]
     }
 }
 
-impl IndexMut<u64> for Tree {
-    fn index_mut(&mut self, index: u64) -> &mut Self::Output {
-        &mut self.0[index as usize]
+impl IndexMut<usize> for Tree {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.nodes[index]
     }
 }
 
-#[derive(Debug)]
-pub struct BoardEval {
+pub fn mcts_zero_build_tree(board: &Board, iterations: u64, network: &mut Network) -> Tree {
+    assert!(iterations > 0, "MCTS must run for at least 1 iteration");
+    assert!(!board.is_done(), "Cannot build MCTS tree for done board");
 
-}
+    let mut tree = Tree::new(board.clone());
+    let mut parent_list = Vec::with_capacity(81);
 
-// pub type MCTSGen = impl Generator<Option<BoardEval>, Yield=Board, Return=Tree>;
+    //the actual coord doesn't matter, just pick something
+    tree.nodes.push(Node::new(Coord::from_o(0), 1.0));
 
-pub fn mcts_build_tree_gen(board: &Board, iterations: u64) -> impl Generator<Option<BoardEval>, Yield=Board, Return=Tree> {
-    let board = board.clone();
+    for _ in 0..iterations {
+        parent_list.clear();
 
-    move |first_value: Option<BoardEval>| {
-        assert!(first_value.is_none(), "Unexpected evaluation");
-        let mut rand = thread_rng();
+        let mut curr_node: usize = 0;
+        let mut curr_board = board.clone();
 
-        let mut tree = Tree::default();
-        let mut parent_list = Vec::with_capacity(81);
-
-        //the actual coord doesn't matter, just pick something
-        tree.0.push(Node::new(Coord::from_o(0)));
-
-        for _ in 0..iterations {
-            let mut curr_node: u64 = 0;
-            let mut curr_board = board.clone();
-
-            while !curr_board.is_done() {
-                parent_list.clear();
-                parent_list.push(curr_node);
-
-                //Init children
-                let children = match tree[curr_node].children() {
-                    Some(children) => children,
-                    None => {
-                        static_assertions::const_assert!(Board::MAX_AVAILABLE_MOVES <= u8::MAX as u32);
-
-                        let eval: Option<BoardEval> = yield curr_board.clone();
-                        println!("eval: {:?}", eval);
-
-                        let start = tree.len();
-                        tree.0.extend(curr_board.available_moves().map(|c| Node::new(c)));
-                        let length = (tree.len() - start) as u8;
-
-                        let children = IdxRange {
-                            start: NonZeroU64::new(start as u64).unwrap(),
-                            length,
-                        };
-                        tree[curr_node].set_children(children);
-                        children
-                    }
-                };
-
-                //Exploration
-                let unexplored_children = children.iter()
-                    .filter(|&c| tree[c].visits == 0);
-                let count = unexplored_children.clone().count();
-
-                if count != 0 {
-                    let child = unexplored_children.clone().nth(rand.gen_range(0..count))
-                        .expect("we specifically selected the index based on the count already");
-
-                    curr_node = child;
-                    curr_board.play(tree[curr_node].coord);
-
-                    break;
-                }
-
-                //Selection
-                let parent_visits = tree[curr_node].visits;
-
-                let selected = children.iter().max_by_key(|&child| {
-                    let uct = tree[child].uct(parent_visits);
-                    OrderedFloat(uct)
-                }).expect("Board is not done, this node should have a child");
-
-                curr_node = selected;
-                curr_board.play(tree[curr_node].coord);
-            }
-
-            //Simulate
-            let curr_player = curr_board.next_player;
-
-            let won_by = loop {
-                if let Some(won_by) = curr_board.won_by {
-                    break won_by;
-                }
-
-                curr_board.play(curr_board.random_available_move(&mut rand)
-                    .expect("No winner, so board is not done yet"));
-            };
-
+        let mut value = loop {
             parent_list.push(curr_node);
 
-            //Update
-            let mut won = if won_by != Player::Neutral {
-                won_by == curr_player
-            } else {
-                rand.gen()
+            // if the game is done return the actual value
+            if let Some(won_by) = curr_board.won_by {
+                // TODO should this be 1 or -1?
+                let value = if won_by == Player::Neutral { 0.0 } else { -1.0 };
+                break value;
+            }
+
+            // expand this node if it's the first time and use the network-returned value
+            let children = match tree[curr_node].children() {
+                None => {
+                    //TODO compare with/without value/policy
+                    let evaluation = network.evaluate(&curr_board);
+
+                    let start = tree.nodes.len();
+                    tree.nodes.extend(curr_board.available_moves().map(|c| {
+                        Node::new(c, evaluation.policy[c.o() as usize])
+                    }));
+                    let length = (tree.nodes.len() - start) as u8;
+
+                    assert!(length > 0);
+
+                    let children = IdxRange {
+                        start: NonZeroUsize::new(start).unwrap(),
+                        length,
+                    };
+                    tree[curr_node].set_children(children);
+
+                    break evaluation.value;
+                }
+                Some(children) => children,
             };
 
-            for &update_node in parent_list.iter().rev() {
-                won = !won;
+            //continue with the best child
+            let selected = children.iter().max_by_key(|&child| {
+                OrderedFloat(tree[child].uct())
+            }).expect("Board is not done, this node should have a child");
 
-                let node = &mut tree[update_node];
-                node.visits += 1;
-                node.wins += won as u64;
-            }
+            curr_node = selected;
+            curr_board.play(tree[curr_node].coord);
+        };
+
+        for &update_node in parent_list.iter().rev() {
+            value = -value;
+
+            let node = &mut tree[update_node];
+            node.n += 1;
+            node.total_q += value;
         }
+    }
 
-        tree
+    assert_eq!(iterations, tree[0].n, "implementation error");
+    tree
+}
+
+pub struct MCTSZeroBot {
+    iterations: u64,
+    network: Network,
+}
+
+impl MCTSZeroBot {
+    pub fn new(iterations: u64, network: Network) -> Self {
+        MCTSZeroBot { iterations, network }
+    }
+}
+
+impl Bot for MCTSZeroBot {
+    fn play(&mut self, board: &Board) -> Option<Coord> {
+        if board.is_done() {
+            None
+        } else {
+            let tree = mcts_zero_build_tree(board, self.iterations, &mut self.network);
+            Some(tree.best_move())
+        }
     }
 }

@@ -11,7 +11,6 @@ use rand::distributions::WeightedIndex;
 use sttt::board::{Board, Player, Coord};
 use sttt::mcts::heuristic::ZeroHeuristic;
 use sttt::mcts::mcts_build_tree;
-use std::path::Path;
 
 struct Simulation {
     won_by: Player,
@@ -26,7 +25,8 @@ struct Position {
 fn main() -> std::io::Result<()> {
     sttt::util::lower_process_priority();
 
-    generate_file("../data/new.csv", 200_000, 1_000)?;
+    generate_file("../data/train_data.csv", 200_000, 1_000)?;
+    generate_file("../data/test_data.csv", 10_000, 1_000)?;
 
     Ok(())
 }
@@ -53,7 +53,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
 
         full_child_probabilities.fill(0.0);
         for (i, coord) in board.available_moves().enumerate() {
-            full_child_probabilities[coord.om() as usize] = child_probabilities[i];
+            full_child_probabilities[coord.o() as usize] = child_probabilities[i];
         }
 
         data.clear();
@@ -65,6 +65,8 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
         data.extend_from_slice(&full_child_probabilities);
         data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));
 
+        // TODO check whether this is the correct order, probably not
+        //  we want XY order, not OO order! Maybe add Coord::all_i()?
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
 
@@ -100,6 +102,7 @@ fn generate_positions<F, E>(min_position_count: usize, mcts_iterations: u64, han
             s.spawn(|_| generate_positions_thread(sender, &request_stop, mcts_iterations));
         }
 
+        // collect results until we have enough
         let mut counter = 0;
         for simulation in &receiver {
             counter += simulation.positions.len();
