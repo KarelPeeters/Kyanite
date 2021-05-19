@@ -15,9 +15,11 @@ itertools = "0.10.0"
 rayon = "1.5.0"
 derive_more = "0.99.13"
 static_assertions = "1.1.0"
+
+[target.'cfg(windows)'.dependencies]
 windows = "0.9.1"
 
-[build-dependencies]
+[target.'cfg(windows)'.build-dependencies]
 windows = "0.9.1"
 
 [profile.release]
