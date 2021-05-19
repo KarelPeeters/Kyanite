@@ -1,4 +1,6 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::ops::Add;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
 
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
@@ -22,14 +24,19 @@ impl<F: FnMut(&Board) -> Option<Coord>> Bot for F {
 pub fn run<A: Bot, B: Bot>(
     bot_a: impl Fn() -> A + Sync,
     bot_b: impl Fn() -> B + Sync,
-    games: usize,
+    games: u32,
     shuffle: bool,
 ) -> BotGameResult {
-    let progress_counter = AtomicUsize::default();
+    let progress_counter = AtomicU32::default();
 
-    let score = (0..games).into_par_iter().map(|_i| {
+    let result: ReductionResult = (0..games).into_par_iter().map(|_i| {
         let mut bot_a = bot_a();
         let mut bot_b = bot_b();
+
+        let mut total_time_a = 0.0;
+        let mut total_time_b = 0.0;
+        let mut move_count_a: u32 = 0;
+        let mut move_count_b: u32 = 0;
 
         let mut rand = SmallRng::from_entropy();
 
@@ -41,59 +48,90 @@ pub fn run<A: Bot, B: Bot>(
                 break;
             }
 
+            let start = Instant::now();
             let mv = if flip ^ (i % 2 == 0) {
-                bot_a.play(&board).expect("bot A didn't return move in unfinished game")
+                let mv = bot_a.play(&board).expect("bot A didn't return move in unfinished game");
+                total_time_a += (Instant::now() - start).as_secs_f32();
+                move_count_a += 1;
+                mv
             } else {
-                bot_b.play(&board).expect("bot B didn't return move in unfinished game")
+                let mv = bot_b.play(&board).expect("bot B didn't return move in unfinished game");
+                total_time_b += (Instant::now() - start).as_secs_f32();
+                move_count_b += 1;
+                mv
             };
 
             board.play(mv);
         }
 
-        let score = match board.won_by.unwrap() {
+        let (win_x, win_o) = match board.won_by.unwrap() {
             Player::X => (1, 0),
             Player::O => (0, 1),
             Player::Neutral => (0, 0)
         };
 
-        let score = if flip { (score.1, score.0) } else { score };
+        let (win_a, win_b) = if flip { (win_o, win_x) } else { (win_x, win_o) };
 
         let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
         if progress % (games / 10) == 0 {
             println!("Progress: {}", progress as f32 / games as f32);
         }
 
-        score
-    }).reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        ReductionResult { wins_a: win_a, wins_b: win_b, total_time_a, total_time_b, move_count_a, move_count_b }
+    }).reduce(ReductionResult::default, ReductionResult::add);
 
-    BotGameResult::new(score.0, score.1, games)
+    let ties = games - result.wins_a - result.wins_b;
+    BotGameResult {
+        games,
+        wins_a: result.wins_a,
+        wins_b: result.wins_b,
+        ties,
+        rate_a: (result.wins_a as f32) / (games as f32),
+        rate_b: (result.wins_b as f32) / (games as f32),
+        rate_tie: (ties as f32) / (games as f32),
+        time_a: result.total_time_a / (result.move_count_a as f32),
+        time_b: result.total_time_b / (result.move_count_b as f32),
+    }
 }
 
-#[allow(dead_code)]
+#[derive(Default, Debug, Copy, Clone)]
+struct ReductionResult {
+    wins_a: u32,
+    wins_b: u32,
+    total_time_a: f32,
+    total_time_b: f32,
+    move_count_a: u32,
+    move_count_b: u32,
+}
+
+impl std::ops::Add for ReductionResult {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ReductionResult {
+            wins_a: self.wins_a + rhs.wins_a,
+            wins_b: self.wins_b + rhs.wins_b,
+            total_time_a: self.total_time_a + rhs.total_time_a,
+            total_time_b: self.total_time_b + rhs.total_time_b,
+            move_count_a: self.move_count_a + rhs.move_count_a,
+            move_count_b: self.move_count_b + rhs.move_count_b,
+        }
+    }
+}
+
 #[derive(Debug)]
 #[must_use]
 pub struct BotGameResult {
-    games: usize,
-    wins_a: usize,
-    wins_b: usize,
-    ties: usize,
+    games: u32,
+    wins_a: u32,
+    wins_b: u32,
+    ties: u32,
 
     rate_a: f32,
     rate_b: f32,
     rate_tie: f32,
-}
 
-impl BotGameResult {
-    fn new(wins_a: usize, wins_b: usize, games: usize) -> BotGameResult {
-        let ties = games - wins_a - wins_b;
-        BotGameResult {
-            games,
-            wins_a,
-            wins_b,
-            ties,
-            rate_a: wins_a as f32 / games as f32,
-            rate_b: wins_b as f32 / games as f32,
-            rate_tie: ties as f32 / games as f32,
-        }
-    }
+    //time per move in seconds
+    time_a: f32,
+    time_b: f32,
 }
