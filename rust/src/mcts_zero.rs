@@ -31,13 +31,17 @@ impl IntoIterator for IdxRange {
 #[derive(Debug)]
 pub struct Node {
     pub coord: Coord,
+
     //this is not just a Option<IdxRange> because of struct layout inefficiencies
     children_start: usize,
     children_length: u8,
 
-    pub p: f32,
-    pub n: u64,
-    pub total_q: f32,
+    /// The prior probability as evaluated by the network when the parent node was expanded. Called `P` in the paper.
+    pub policy: f32,
+    /// The number of times this node has been visited. Called `N` in the paper.
+    pub visits: u64,
+    /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value. Called `W` in the paper.
+    pub total_value: f32,
 }
 
 impl Node {
@@ -47,18 +51,16 @@ impl Node {
             children_start: 0,
             children_length: 0,
 
-            p,
-            n: 0,
-            total_q: 0.0,
+            policy: p,
+            visits: 0,
+            total_value: 0.0,
         }
     }
 
-    pub fn uct(&self) -> f32 {
-        //TODO don't they use something completely different in the AlphhaGo Zero paper?
-        
-        let q = self.total_q / self.n as f32;
-        let u = self.p / (1 + self.n) as f32;
-        q + u
+    pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
+        let q = self.total_value / self.visits as f32;
+        let u = self.policy * (parent_visits as f32).sqrt() /  (1 + self.visits) as f32;
+        q + exploration_weight * u
     }
 
     pub fn children(&self) -> Option<IdxRange> {
@@ -89,7 +91,7 @@ impl Tree {
             .expect("Root node must have children");
 
         let best_child = children.iter().rev().max_by_key(|&child| {
-            self[child].n
+            self[child].visits
         }).expect("Root node must have non-empty children");
 
         self[best_child].coord
@@ -110,7 +112,7 @@ impl IndexMut<usize> for Tree {
     }
 }
 
-pub fn mcts_zero_build_tree(board: &Board, iterations: u64, network: &mut Network) -> Tree {
+pub fn mcts_zero_build_tree(board: &Board, iterations: u64, exploration_weight: f32, network: &mut Network) -> Tree {
     assert!(iterations > 0, "MCTS must run for at least 1 iteration");
     assert!(!board.is_done(), "Cannot build MCTS tree for done board");
 
@@ -131,7 +133,6 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, network: &mut Networ
 
             // if the game is done return the actual value
             if let Some(won_by) = curr_board.won_by {
-                // TODO should this be 1 or -1?
                 let value = if won_by == Player::Neutral { 0.0 } else { -1.0 };
                 break value;
             }
@@ -162,8 +163,9 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, network: &mut Networ
             };
 
             //continue with the best child
+            let parent_visits = tree[curr_node].visits;
             let selected = children.iter().max_by_key(|&child| {
-                OrderedFloat(tree[child].uct())
+                OrderedFloat(tree[child].uct(exploration_weight, parent_visits))
             }).expect("Board is not done, this node should have a child");
 
             curr_node = selected;
@@ -174,23 +176,24 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, network: &mut Networ
             value = -value;
 
             let node = &mut tree[update_node];
-            node.n += 1;
-            node.total_q += value;
+            node.visits += 1;
+            node.total_value += value;
         }
     }
 
-    assert_eq!(iterations, tree[0].n, "implementation error");
+    assert_eq!(iterations, tree[0].visits, "implementation error");
     tree
 }
 
 pub struct MCTSZeroBot {
     iterations: u64,
+    exploration_weight: f32,
     network: Network,
 }
 
 impl MCTSZeroBot {
-    pub fn new(iterations: u64, network: Network) -> Self {
-        MCTSZeroBot { iterations, network }
+    pub fn new(iterations: u64, exploration_weight: f32, network: Network) -> Self {
+        MCTSZeroBot { iterations, exploration_weight, network }
     }
 }
 
@@ -199,7 +202,7 @@ impl Bot for MCTSZeroBot {
         if board.is_done() {
             None
         } else {
-            let tree = mcts_zero_build_tree(board, self.iterations, &mut self.network);
+            let tree = mcts_zero_build_tree(board, self.iterations, self.exploration_weight, &mut self.network);
             Some(tree.best_move())
         }
     }

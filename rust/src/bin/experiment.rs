@@ -12,15 +12,14 @@ fn main() {
     //  and think about batching and even gpu processing
     sttt::util::lower_process_priority();
 
-    ThreadPoolBuilder::new()
-        .num_threads(8)
-        .build_global()
-        .expect("Failed to set global thread pool");
+    for i in 1..10 {
+        let c = (i as f32) / 10.0;
 
-    println!("trained vs 50k");
-    println!("{:?}", bot_game::run(
-        || MCTSZeroBot::new(1_000, Network::load("../data/esat/trained_model.pt")),
-        || MCTSBot::new(50_000, thread_rng()),
-        20, true,
-    ));
+        println!("zero-10e-1k(c={:.2}) vs mcts-100k", c);
+        println!("{:?}", bot_game::run(
+            || MCTSZeroBot::new(1_000, c, Network::load("../data/esat/trained_model_10_epochs.pt")),
+            || MCTSBot::new(100_000, thread_rng()),
+            20, true,
+        ));
+    }
 }
