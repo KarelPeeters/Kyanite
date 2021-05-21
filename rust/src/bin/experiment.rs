@@ -1,11 +1,9 @@
 use rand::thread_rng;
 use sttt::bot_game;
-use sttt::bots::RandomBot;
+use sttt::mcts::MCTSBot;
 
 use sttt_zero::mcts_zero::MCTSZeroBot;
 use sttt_zero::network::Network;
-use rayon::ThreadPoolBuilder;
-use sttt::mcts::MCTSBot;
 
 fn main() {
     //TODO try to profile this program, see if all time is spent inside of libtorch

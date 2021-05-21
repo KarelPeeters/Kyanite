@@ -17,6 +17,11 @@ impl IdxRange {
     pub fn iter(&self) -> std::ops::Range<usize> {
         self.start.get()..(self.start.get() + self.length as usize)
     }
+    
+    pub fn get(&self, index: usize) -> usize {
+        assert!(index < self.length as usize);
+        self.start.get() + index
+    }
 }
 
 impl IntoIterator for IdxRange {
@@ -36,8 +41,11 @@ pub struct Node {
     children_start: usize,
     children_length: u8,
 
+    /// The evaluation returned by the network for this position.
+    pub evaluation: Option<f32>,
     /// The prior probability as evaluated by the network when the parent node was expanded. Called `P` in the paper.
     pub policy: f32,
+    
     /// The number of times this node has been visited. Called `N` in the paper.
     pub visits: u64,
     /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value. Called `W` in the paper.
@@ -51,14 +59,20 @@ impl Node {
             children_start: 0,
             children_length: 0,
 
+            evaluation: None,
             policy: p,
+            
             visits: 0,
             total_value: 0.0,
         }
     }
+    
+    pub fn value(&self) -> f32 {
+        self.total_value / self.visits as f32
+    }
 
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
-        let q = self.total_value / self.visits as f32;
+        let q = self.value();
         let u = self.policy * (parent_visits as f32).sqrt() /  (1 + self.visits) as f32;
         q + exploration_weight * u
     }
@@ -157,6 +171,7 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, exploration_weight: 
                     };
                     tree[curr_node].set_children(children);
 
+                    tree[curr_node].evaluation = Some(evaluation.value);
                     break evaluation.value;
                 }
                 Some(children) => children,
