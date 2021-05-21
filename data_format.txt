@@ -13,3 +13,5 @@ data layout:
 * 9 board.next macros 0,1
 * 9 board.next.other macros 0,1
 
+mask, move probability and tiles are all in o-order, not yx-order!
+they need to be rearranged before being used as a 2D tensor

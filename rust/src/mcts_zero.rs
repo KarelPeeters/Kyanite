@@ -210,6 +210,10 @@ impl MCTSZeroBot {
     pub fn new(iterations: u64, exploration_weight: f32, network: Network) -> Self {
         MCTSZeroBot { iterations, exploration_weight, network }
     }
+    
+    pub fn build_tree(&mut self, board: &Board) -> Tree {
+        mcts_zero_build_tree(board, self.iterations, self.exploration_weight, &mut self.network)
+    }
 }
 
 impl Bot for MCTSZeroBot {

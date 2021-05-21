@@ -8,9 +8,10 @@ use crossbeam::channel::Sender;
 use itertools::Itertools;
 use rand::{Rng, thread_rng};
 use rand::distributions::WeightedIndex;
-use sttt::board::{Board, Player, Coord};
-use sttt::mcts::heuristic::ZeroHeuristic;
-use sttt::mcts::mcts_build_tree;
+use sttt::board::{Board, Coord, Player};
+
+use sttt_zero::mcts_zero::MCTSZeroBot;
+use sttt_zero::network::Network;
 
 struct Simulation {
     won_by: Player,
@@ -25,17 +26,22 @@ struct Position {
 fn main() -> std::io::Result<()> {
     sttt::util::lower_process_priority();
 
-    generate_file("../data/train_data.csv", 200_000, 1_000)?;
-    generate_file("../data/test_data.csv", 10_000, 1_000)?;
+    let bot = || {
+        let network = Network::load("../data/esat/trained_model_10_epochs.pt");
+        MCTSZeroBot::new(100, 1.0, network)
+    };
+
+    generate_file("../data/esat2/train_data.csv", 200_000, &bot)?;
+    generate_file("../data/esat2/test_data.csv", 10_000, &bot)?;
 
     Ok(())
 }
 
-fn generate_file(path: &str, min_position_count: usize, mcts_iterations: u64)  -> std::io::Result<()> {
+fn generate_file(path: &str, min_position_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync)) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(&file);
 
-    generate_positions(min_position_count, mcts_iterations, &mut |simulation| {
+    generate_positions(min_position_count, bot, &mut |simulation| {
         append_simulation_to_file(&mut writer, simulation)
     })
 }
@@ -65,8 +71,6 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
         data.extend_from_slice(&full_child_probabilities);
         data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));
 
-        // TODO check whether this is the correct order, probably not
-        //  we want XY order, not OO order! Maybe add Coord::all_i()?
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
 
@@ -89,7 +93,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
     Ok(())
 }
 
-fn generate_positions<F, E>(min_position_count: usize, mcts_iterations: u64, handler: &mut F) -> Result<(), E>
+fn generate_positions<F, E>(min_position_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync), handler: &mut F) -> Result<(), E>
     where F: FnMut(Simulation) -> Result<(), E>
 {
     let (sender, receiver) = channel::bounded(1);
@@ -99,7 +103,7 @@ fn generate_positions<F, E>(min_position_count: usize, mcts_iterations: u64, han
         //spawn a bunch of threads
         for _ in 0..num_cpus::get() {
             let sender = sender.clone();
-            s.spawn(|_| generate_positions_thread(sender, &request_stop, mcts_iterations));
+            s.spawn(|_| generate_positions_thread(sender, &request_stop, bot));
         }
 
         // collect results until we have enough
@@ -127,7 +131,8 @@ fn generate_positions<F, E>(min_position_count: usize, mcts_iterations: u64, han
     }).expect("Threading issue")
 }
 
-fn generate_positions_thread(sender: Sender<Simulation>, request_stop: &AtomicBool, mcts_iterations: u64) {
+fn generate_positions_thread(sender: Sender<Simulation>, request_stop: &AtomicBool, bot: &impl Fn() -> MCTSZeroBot) {
+    let mut bot = bot();
     let mut rng = thread_rng();
 
     loop {
@@ -145,7 +150,7 @@ fn generate_positions_thread(sender: Sender<Simulation>, request_stop: &AtomicBo
                     break player;
                 }
                 None => {
-                    let tree = mcts_build_tree(&board, mcts_iterations, &ZeroHeuristic, &mut rng);
+                    let tree = bot.build_tree(&board);
 
                     let root = &tree[0];
                     let children = root.children().unwrap();
