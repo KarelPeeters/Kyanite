@@ -12,6 +12,7 @@ use sttt::board::{Board, Coord, Player};
 
 use sttt_zero::mcts_zero::MCTSZeroBot;
 use sttt_zero::network::Network;
+use rayon::ThreadPoolBuilder;
 
 struct Simulation {
     won_by: Player,
@@ -26,22 +27,24 @@ struct Position {
 fn main() -> std::io::Result<()> {
     sttt::util::lower_process_priority();
 
+    let thread_count = num_cpus::get() * 2;
+
     let bot = || {
         let network = Network::load("../data/esat/trained_model_10_epochs.pt");
         MCTSZeroBot::new(100, 1.0, network)
     };
 
-    generate_file("../data/esat2/train_data.csv", 200_000, &bot)?;
-    generate_file("../data/esat2/test_data.csv", 10_000, &bot)?;
+    generate_file("../data/esat2/train_data.csv", 200_000, thread_count, &bot)?;
+    generate_file("../data/esat2/test_data.csv", 10_000, thread_count, &bot)?;
 
     Ok(())
 }
 
-fn generate_file(path: &str, min_position_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync)) -> std::io::Result<()> {
+fn generate_file(path: &str, min_position_count: usize, thread_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync)) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(&file);
 
-    generate_positions(min_position_count, bot, &mut |simulation| {
+    generate_positions(min_position_count, thread_count, bot, &mut |simulation| {
         append_simulation_to_file(&mut writer, simulation)
     })
 }
@@ -93,7 +96,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
     Ok(())
 }
 
-fn generate_positions<F, E>(min_position_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync), handler: &mut F) -> Result<(), E>
+fn generate_positions<F, E>(min_position_count: usize, thread_count: usize, bot: &(impl Fn() -> MCTSZeroBot + Sync), handler: &mut F) -> Result<(), E>
     where F: FnMut(Simulation) -> Result<(), E>
 {
     let (sender, receiver) = channel::bounded(1);
@@ -101,7 +104,8 @@ fn generate_positions<F, E>(min_position_count: usize, bot: &(impl Fn() -> MCTSZ
 
     scope(|s| {
         //spawn a bunch of threads
-        for _ in 0..num_cpus::get() {
+        println!("Spawning {} threads", thread_count);
+        for _ in 0..thread_count {
             let sender = sender.clone();
             s.spawn(|_| generate_positions_thread(sender, &request_stop, bot));
         }
