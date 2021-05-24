@@ -3,10 +3,12 @@ use std::path::Path;
 use itertools::Itertools;
 use sttt::board::{Board, Coord};
 use tch::{CModule, Device, IValue, TchError, Tensor};
+use std::time::Instant;
 
 #[derive(Debug)]
 pub struct Network {
     model: CModule,
+    pub pytorch_time: f32,
 }
 
 #[derive(Debug)]
@@ -19,7 +21,7 @@ impl Network {
     pub fn load(path: impl AsRef<Path>) -> Self {
         let model = CModule::load_on_device(path.as_ref(), Device::Cpu)
             .expect("Failed to load model");
-        Network { model }
+        Network { model, pytorch_time: 0.0 }
     }
 
     pub fn evaluate(&mut self, board: &Board) -> NetworkEvaluation {
@@ -49,7 +51,10 @@ impl Network {
         let batch_macros = Tensor::of_slice(&macros).view([batch_size, 2, 3, 3]);
 
         let input = [IValue::Tensor(batch_mask), IValue::Tensor(batch_tiles), IValue::Tensor(batch_macros)];
+
+        let start = Instant::now();
         let result = self.model.forward_is(&input);
+        self.pytorch_time += (Instant::now() - start).as_secs_f32();
 
         let output = match result {
             Ok(IValue::Tuple(output)) => output,
