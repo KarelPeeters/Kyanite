@@ -1,3 +1,4 @@
+import os
 from math import prod
 
 import torch
@@ -27,11 +28,12 @@ def main():
     print(f"Trivial win_acc: {trivial_win_acc}")
     print(f"Trivial move_acc: {trivial_move_acc}")
 
-    model = GoogleModel(channels=64, block_count=3, value_size=64)
+    model = GoogleModel(channels=64, block_count=3, value_size=64, res=False)
     model.to(DEVICE)
 
     model = torch.jit.script(model)
-    model.save("../data/untrained_model.pt")
+    os.makedirs("../data/esat/resless/")
+    model.save("../data/esat/resless/untrained_model.pt")
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
@@ -41,11 +43,11 @@ def main():
     plot_data, plot_legend = train_model(
         model=model, optimizer=optimizer,
         train_data=train_data, test_data=test_data,
-        epochs=5, train_batch_size=300,
+        epochs=10, train_batch_size=300,
         eval_batch_size=300,
     )
 
-    model.save("../data/trained_model.pt")
+    model.save("../data/esat/resless/trained_model_10_epochs.pt")
 
     plot_stuff(plot_data, plot_legend)
 

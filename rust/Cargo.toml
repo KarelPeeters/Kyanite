@@ -14,6 +14,7 @@ rand = "0.8.3"
 rayon = "1.5.0"
 static_assertions = "1.1.0"
 tch = "0.4.1"
+torch-sys= "0.4.1"
 
 sttt = { path = "../../SuperTTTApi-rs" }
 

@@ -35,6 +35,9 @@ class Data:
 
         assert i == DATA_WIDTH
 
+    def to(self, device):
+        return Data(self.full.to(device))
+
     def pick_batch(self, indices):
         return Data(self.full[indices, :])
 

@@ -1,6 +1,8 @@
+use std::convert::TryInto;
 use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use sttt::board::{Board, Coord, Player};
 use sttt::bot_game::Bot;
@@ -14,10 +16,17 @@ pub struct IdxRange {
 }
 
 impl IdxRange {
+    pub fn new(start: usize, end: usize) -> IdxRange {
+        IdxRange {
+            start: NonZeroUsize::new(start).expect("start cannot be 0"),
+            length: (end - start).try_into().expect("length doesn't fit"),
+        }
+    }
+
     pub fn iter(&self) -> std::ops::Range<usize> {
         self.start.get()..(self.start.get() + self.length as usize)
     }
-    
+
     pub fn get(&self, index: usize) -> usize {
         assert!(index < self.length as usize);
         self.start.get() + index
@@ -33,7 +42,7 @@ impl IntoIterator for IdxRange {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub coord: Coord,
 
@@ -45,7 +54,7 @@ pub struct Node {
     pub evaluation: Option<f32>,
     /// The prior probability as evaluated by the network when the parent node was expanded. Called `P` in the paper.
     pub policy: f32,
-    
+
     /// The number of times this node has been visited. Called `N` in the paper.
     pub visits: u64,
     /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value. Called `W` in the paper.
@@ -61,19 +70,19 @@ impl Node {
 
             evaluation: None,
             policy: p,
-            
+
             visits: 0,
             total_value: 0.0,
         }
     }
-    
+
     pub fn value(&self) -> f32 {
         self.total_value / self.visits as f32
     }
 
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
         let q = self.value();
-        let u = self.policy * (parent_visits as f32).sqrt() /  (1 + self.visits) as f32;
+        let u = self.policy * (parent_visits as f32).sqrt() / (1 + self.visits) as f32;
         q + exploration_weight * u
     }
 
@@ -100,6 +109,10 @@ impl Tree {
         Tree { root_board, nodes: Default::default() }
     }
 
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn best_move(&self) -> Coord {
         let children = self[0].children()
             .expect("Root node must have children");
@@ -109,6 +122,69 @@ impl Tree {
         }).expect("Root node must have non-empty children");
 
         self[best_child].coord
+    }
+
+    fn print_impl(&self, parent_visits: u64, node: usize, depth: usize, max_depth: usize) {
+        let node = &self[node];
+
+        for _ in 0..=depth { print!("  ") }
+        println!(
+            "{:?}: zero({:.3}, {:.3}) net({:.3}, {:.3})", node.coord,
+            node.value(), (node.visits as f32) / (parent_visits as f32),
+            node.evaluation.unwrap_or(f32::NAN), node.policy,
+        );
+
+        if depth == max_depth { return; }
+
+        if let Some(children) = node.children() {
+            let best_child = children.start.get() + children.iter()
+                .map(|c| OrderedFloat(self[c].value()))
+                .position_max().unwrap();
+
+            for child in children {
+                let next_max_depth = if child == best_child {
+                    max_depth
+                } else {
+                    depth + 1
+                };
+
+                self.print_impl(node.visits, child, depth + 1, next_max_depth)
+            }
+        }
+    }
+
+    pub fn print(&self, max_depth: usize) {
+        self.print_impl(self[0].visits, 0, 0, max_depth)
+    }
+
+    pub fn keep_move(&self, coord: Coord) -> Tree {
+        let mut new_root_board = self.root_board.clone();
+        new_root_board.play(coord);
+
+        let picked_child = self[0].children().unwrap().iter()
+            .find(|&c| self[c].coord == coord)
+            .unwrap();
+
+        let old_nodes = &self.nodes;
+        let mut new_nodes = vec![old_nodes[picked_child].clone()];
+
+        let mut i = 0;
+
+        while i < new_nodes.len() {
+            match new_nodes[i].children() {
+                None => {}
+                Some(old_children) => {
+                    let new_start = new_nodes.len();
+                    new_nodes.extend(old_children.iter().map(|c| old_nodes[c].clone()));
+                    let new_end = new_nodes.len();
+                    new_nodes[i].set_children(IdxRange::new(new_start, new_end));
+                }
+            }
+
+            i += 1;
+        }
+
+        Tree { root_board: new_root_board, nodes: new_nodes }
     }
 }
 
@@ -131,16 +207,25 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, exploration_weight: 
     assert!(!board.is_done(), "Cannot build MCTS tree for done board");
 
     let mut tree = Tree::new(board.clone());
-    let mut parent_list = Vec::with_capacity(81);
 
     //the actual coord doesn't matter, just pick something
     tree.nodes.push(Node::new(Coord::from_o(0), 1.0));
+
+    mcts_zero_expand_tree(&mut tree, iterations, exploration_weight, network);
+
+    tree
+}
+
+pub fn mcts_zero_expand_tree(tree: &mut Tree, iterations: u64, exploration_weight: f32, network: &mut Network) {
+    let visits_before = tree[0].visits;
+
+    let mut parent_list = Vec::new();
 
     for _ in 0..iterations {
         parent_list.clear();
 
         let mut curr_node: usize = 0;
-        let mut curr_board = board.clone();
+        let mut curr_board = tree.root_board.clone();
 
         let mut value = loop {
             parent_list.push(curr_node);
@@ -196,8 +281,7 @@ pub fn mcts_zero_build_tree(board: &Board, iterations: u64, exploration_weight: 
         }
     }
 
-    assert_eq!(iterations, tree[0].visits, "implementation error");
-    tree
+    assert_eq!(iterations, tree[0].visits - visits_before, "implementation error");
 }
 
 pub struct MCTSZeroBot {
@@ -210,7 +294,7 @@ impl MCTSZeroBot {
     pub fn new(iterations: u64, exploration_weight: f32, network: Network) -> Self {
         MCTSZeroBot { iterations, exploration_weight, network }
     }
-    
+
     pub fn build_tree(&mut self, board: &Board) -> Tree {
         mcts_zero_build_tree(board, self.iterations, self.exploration_weight, &mut self.network)
     }

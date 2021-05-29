@@ -4,11 +4,19 @@ use itertools::Itertools;
 use sttt::board::{Board, Coord};
 use tch::{CModule, Device, IValue, TchError, Tensor};
 use std::time::Instant;
+use std::collections::HashSet;
+
+use torch_sys::dummy_cuda_dependency;
 
 #[derive(Debug)]
 pub struct Network {
     model: CModule,
+    device: Device,
+
     pub pytorch_time: f32,
+
+    pub cache: HashSet<Board>,
+    pub total_eval_count: usize,
 }
 
 #[derive(Debug)]
@@ -18,10 +26,13 @@ pub struct NetworkEvaluation {
 }
 
 impl Network {
-    pub fn load(path: impl AsRef<Path>) -> Self {
-        let model = CModule::load_on_device(path.as_ref(), Device::Cpu)
+    pub fn load(path: impl AsRef<Path>, device : Device) -> Self {
+        //ensure CUDA support isn't "optimized" away by the linker
+        unsafe { dummy_cuda_dependency(); }
+        
+        let model = CModule::load_on_device(path.as_ref(), device)
             .expect("Failed to load model");
-        Network { model, pytorch_time: 0.0 }
+        Network { model, device, pytorch_time: 0.0, cache: Default::default(), total_eval_count: 0 }
     }
 
     pub fn evaluate(&mut self, board: &Board) -> NetworkEvaluation {
@@ -31,6 +42,9 @@ impl Network {
     }
 
     pub fn evaluate_all(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
+        self.total_eval_count += boards.len();
+        self.cache.extend(boards.iter().cloned());
+
         let mut mask = Vec::new();
         let mut tiles = Vec::new();
         let mut macros = Vec::new();
@@ -46,9 +60,9 @@ impl Network {
         }
 
         let batch_size = boards.len() as i64;
-        let batch_mask = Tensor::of_slice(&mask).view([batch_size, 9, 9]);
-        let batch_tiles = Tensor::of_slice(&tiles).view([batch_size, 2, 9, 9]);
-        let batch_macros = Tensor::of_slice(&macros).view([batch_size, 2, 3, 3]);
+        let batch_mask = Tensor::of_slice(&mask).view([batch_size, 9, 9]).to_device(self.device);
+        let batch_tiles = Tensor::of_slice(&tiles).view([batch_size, 2, 9, 9]).to_device(self.device);
+        let batch_macros = Tensor::of_slice(&macros).view([batch_size, 2, 3, 3]).to_device(self.device);
 
         let input = [IValue::Tensor(batch_mask), IValue::Tensor(batch_tiles), IValue::Tensor(batch_macros)];
 

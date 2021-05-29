@@ -13,6 +13,8 @@ use sttt::board::{Board, Coord, Player};
 use sttt_zero::mcts_zero::MCTSZeroBot;
 use sttt_zero::network::Network;
 use rayon::ThreadPoolBuilder;
+use sttt::mcts::MCTSBot;
+use sttt::bot_game;
 
 struct Simulation {
     won_by: Player,
@@ -27,11 +29,20 @@ struct Position {
 fn main() -> std::io::Result<()> {
     sttt::util::lower_process_priority();
 
-    let thread_count = num_cpus::get() * 2;
+    println!("{:?}", bot_game::run(
+        || MCTSBot::new(50_000, thread_rng()),
+        || MCTSZeroBot::new(5_000, 1.0, Network::load("../data/esat/trained_model_10_epochs.pt")),
+        1, true,
+    ));
+
+    return Ok(());
+
+
+    let thread_count = num_cpus::get();
 
     let bot = || {
         let network = Network::load("../data/esat/trained_model_10_epochs.pt");
-        MCTSZeroBot::new(100, 1.0, network)
+        MCTSZeroBot::new(5_000, 1.0, network)
     };
 
     generate_file("../data/esat2/train_data.csv", 200_000, thread_count, &bot)?;

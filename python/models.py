@@ -11,8 +11,10 @@ class ValuePolicyModel(ABC, nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channels: int):
+    def __init__(self, channels: int, res: bool):
         super().__init__()
+
+        self.res = res
 
         self.seq = nn.Sequential(
             nn.Conv2d(channels, channels, (3, 3), padding=(1, 1)),
@@ -24,19 +26,20 @@ class ResBlock(nn.Module):
 
     def forward(self, x):
         y = self.seq(x)
-        y = torch.relu(y + x)
+        if self.res:
+            y.relu_()
         return y
 
 
 class GoogleModel(ValuePolicyModel):
-    def __init__(self, channels: int, block_count: int, value_size: int):
+    def __init__(self, channels: int, block_count: int, value_size: int, res: bool):
         super().__init__()
 
         self.common = nn.Sequential(
             nn.Conv2d(5, channels, (3, 3), padding=(1, 1)),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
-            *(ResBlock(channels) for _ in range(block_count))
+            *(ResBlock(channels, res) for _ in range(block_count))
         )
 
         self.policy_head = nn.Sequential(
@@ -61,13 +64,12 @@ class GoogleModel(ValuePolicyModel):
     def forward(self, mask, x_tiles, x_macros):
         device = mask.device
 
-        kron_mask = torch.ones(3, 3, dtype=torch.int, device=device)
         range = torch.arange(9, device=device)
         os = range.view(3, 3).repeat(3, 3)
-        om = range.view(3, 3).kron(kron_mask)
+        om = range.view(3, 3).repeat_interleave(3, 0).repeat_interleave(3, 1)
         o = (9 * om + os).view(81)
 
-        x_macros_expanded = x_macros.kron(kron_mask)
+        x_macros_expanded = x_macros.repeat_interleave(3, 0).repeat_interleave(3, 1)
         x_tiles_xy = x_tiles.view(-1, 2, 81)[:, :, o].view(-1, 2, 9, 9)
 
         input = torch.cat([

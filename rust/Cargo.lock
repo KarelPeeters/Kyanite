@@ -619,6 +619,7 @@ dependencies = [
  "static_assertions",
  "sttt",
  "tch",
+ "torch-sys",
 ]
 
 [[package]]
