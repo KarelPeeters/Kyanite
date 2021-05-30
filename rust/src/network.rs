@@ -4,7 +4,6 @@ use itertools::Itertools;
 use sttt::board::{Board, Coord};
 use tch::{CModule, Device, IValue, TchError, Tensor};
 use std::time::Instant;
-use std::collections::HashSet;
 
 use torch_sys::dummy_cuda_dependency;
 
@@ -14,9 +13,6 @@ pub struct Network {
     device: Device,
 
     pub pytorch_time: f32,
-
-    pub cache: HashSet<Board>,
-    pub total_eval_count: usize,
 }
 
 #[derive(Debug)]
@@ -32,7 +28,7 @@ impl Network {
         
         let model = CModule::load_on_device(path.as_ref(), device)
             .expect("Failed to load model");
-        Network { model, device, pytorch_time: 0.0, cache: Default::default(), total_eval_count: 0 }
+        Network { model, device, pytorch_time: 0.0 }
     }
 
     pub fn evaluate(&mut self, board: &Board) -> NetworkEvaluation {
@@ -42,9 +38,6 @@ impl Network {
     }
 
     pub fn evaluate_all(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
-        self.total_eval_count += boards.len();
-        self.cache.extend(boards.iter().cloned());
-
         let mut mask = Vec::new();
         let mut tiles = Vec::new();
         let mut macros = Vec::new();
@@ -60,6 +53,11 @@ impl Network {
         }
 
         let batch_size = boards.len() as i64;
+
+        //TODO figure out a way to do copying concurrently
+        //  or alternatively figure out a way to compress these tensors:
+        //  right now they are 81 * 3 + 9 * 2 = 261 floats = 1044 bytes
+        //  while they can easily be represented as 261 bits ~= 32 bytes
         let batch_mask = Tensor::of_slice(&mask).view([batch_size, 9, 9]).to_device(self.device);
         let batch_tiles = Tensor::of_slice(&tiles).view([batch_size, 2, 9, 9]).to_device(self.device);
         let batch_macros = Tensor::of_slice(&macros).view([batch_size, 2, 3, 3]).to_device(self.device);
