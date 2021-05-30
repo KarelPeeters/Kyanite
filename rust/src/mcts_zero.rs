@@ -135,6 +135,10 @@ impl Tree {
         self.nodes.len()
     }
 
+    pub fn root_board(&self) -> &Board {
+        &self.root_board
+    }
+
     pub fn best_move(&self) -> Coord {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
@@ -145,6 +149,15 @@ impl Tree {
         }).expect("Root node must have non-empty children");
 
         self[best_child].coord
+    }
+
+    /// Return the policy vector for the root node.
+    pub fn policy(&self) -> impl Iterator<Item=f32> + '_ {
+        assert!(self.len() > 1, "Must have run for at least 1 iteration");
+
+        self[0].children().unwrap().iter().map(move |c| {
+            (self[c].visits as f32) / (self[0].visits as f32)
+        })
     }
 
     /// Return a new tree containing the nodes that are still relevant after playing the given move.
@@ -236,23 +249,27 @@ impl Display for TreeDisplay<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct ZeroState {
-    tree: Tree,
+    pub tree: Tree,
     iterations: u64,
     exploration_weight: f32,
     parent_list: Vec<usize>,
 }
 
+#[derive(Debug)]
 pub enum RunResult {
     Request(Request),
     Done,
 }
 
+#[derive(Debug)]
 pub struct Request {
     pub board: Board,
     pub node: usize,
 }
 
+#[derive(Debug)]
 pub struct Response {
     pub request: Request,
     pub evaluation: NetworkEvaluation,
@@ -264,7 +281,7 @@ impl ZeroState {
     }
 
     /// Run until finished or a network evaluation is needed.
-    pub fn run(&mut self, response: Option<Response>) -> RunResult {
+    pub fn run_until_result(&mut self, response: Option<Response>) -> RunResult {
         //apply the previous network evaluation if any
         match response {
             None => assert!(self.parent_list.is_empty(), "Expected evaluation response"),
@@ -275,10 +292,11 @@ impl ZeroState {
         }
 
         //continue running
-        self.run_until_result()
+        self.run_until_result_from_root()
     }
 
-    fn run_until_result(&mut self) -> RunResult {
+    /// Continue running, starting from the selection phase at the root of the tree.
+    fn run_until_result_from_root(&mut self) -> RunResult {
         while self.tree[0].visits < self.iterations {
             //start walking down the tree
             assert!(self.parent_list.is_empty());
@@ -353,16 +371,16 @@ impl ZeroState {
 pub fn mcts_zero_state_build_tree(board: &Board, iterations: u64, exploration_weight: f32, network: &mut Network) -> Tree {
     let mut state = ZeroState::new(Tree::new(board.clone()), iterations, exploration_weight);
 
-    let mut respose = None;
+    let mut response = None;
 
     loop {
-        let result = state.run(respose);
+        let result = state.run_until_result(response);
 
         match result {
             RunResult::Done => break,
             RunResult::Request(request) => {
                 let evaluation = network.evaluate(&request.board);
-                respose = Some(Response { request, evaluation })
+                response = Some(Response { request, evaluation })
             }
         }
     }
