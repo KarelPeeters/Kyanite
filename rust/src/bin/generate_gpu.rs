@@ -12,6 +12,7 @@ use itertools::izip;
 use crossbeam::{scope, channel};
 use ta::indicators::ExponentialMovingAverage;
 use ta::Next;
+use ordered_float::OrderedFloat;
 
 
 #[derive(Debug, Clone)]
@@ -24,6 +25,8 @@ struct Settings {
     iterations: u64,
     exploration_weight: f32,
 
+    inf_temp_move_count: u32,
+
     // move_caching: bool,
     // tree_reuse: bool,
 
@@ -33,12 +36,14 @@ struct Settings {
 fn main() {
     let settings = Settings {
         thread_count: 1,
-        batch_size: 500,
+        batch_size: 200,
         device: Device::Cuda(0),
 
-        iterations: 200,
+        iterations: 1000,
         exploration_weight: 1.0,
         network_path: "../data/esat/trained_model_10_epochs.pt".to_owned(),
+
+        inf_temp_move_count: 20,
 
         position_count: 100_000,
     };
@@ -77,11 +82,11 @@ fn main() {
             //print metrics every second
             if (now() - last_print).as_secs_f64() > 1.0 {
                 last_print = now();
-                println!("Evals:     {:.2} evals/s => {}", eval_throughput_cached, total_eval_count);
-                println!("Moves:     {:.2} moves/s => {}", move_throughput_cached, total_move_count);
-                println!("Games:     {:.2} games/s => {}", game_throughput.next((total_game_count as f64) / elapsed), total_game_count);
-                println!("Positions: {:.2} pos/s => {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count);
-                println!();
+                // println!("Evals:     {:.2} evals/s => {}", eval_throughput_cached, total_eval_count);
+                // println!("Moves:     {:.2} moves/s => {}", move_throughput_cached, total_move_count);
+                // println!("Games:     {:.2} games/s => {}", game_throughput.next((total_game_count as f64) / elapsed), total_game_count);
+                // println!("Positions: {:.2} pos/s => {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count);
+                // println!();
             }
 
             //handle incoming message
@@ -89,6 +94,16 @@ fn main() {
                 Message::Simulation(simulation) => {
                     total_pos_count += simulation.positions.len();
                     total_game_count += 1;
+
+                    let mut values = vec![];
+                    let mut factor = 1.0;
+
+                    for p in &simulation.positions {
+                        values.push(factor * p.value);
+                        factor *= -1.0;
+                    }
+
+                    println!("{:?} => {}", values, simulation.won_by.sign());
                 }
                 Message::Counter { moves, evals } => {
                     total_eval_count += evals;
@@ -123,6 +138,7 @@ struct Simulation {
 
 struct Position {
     board: Board,
+    value: f32,
     policy: Vec<f32>,
 }
 
@@ -164,14 +180,20 @@ impl GameState {
                     let policy = tree.policy().collect_vec();
 
                     //pick a move to play
-                    let distr = WeightedIndex::new(&policy).unwrap();
-                    let picked_index = distr.sample(rng);
+                    let picked_index = if tree.root_board().count_tiles() > settings.inf_temp_move_count {
+                        //pick the best move
+                        policy.iter().copied().map(OrderedFloat).position_max().unwrap()
+                    } else {
+                        //pick a random move following the policy
+                        WeightedIndex::new(&policy).unwrap().sample(rng)
+                    };
                     let picked_child = tree[0].children().unwrap().get(picked_index);
                     let picked_move = tree[picked_child].coord;
 
                     //store this position
                     self.positions.push(Position {
                         board: self.zero.tree.root_board().clone(),
+                        value: tree[0].value(),
                         policy,
                     });
 
@@ -179,8 +201,6 @@ impl GameState {
                     let mut next_board = tree.root_board().clone();
                     next_board.play(picked_move);
                     move_count += 1;
-
-                    println!("{}", board_to_compact_string(&next_board));
 
                     match next_board.won_by {
                         None => {
