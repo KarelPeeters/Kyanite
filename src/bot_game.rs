@@ -72,10 +72,10 @@ pub fn run<A: Bot, B: Bot>(
 
         let (win_a, win_b) = if flip { (win_o, win_x) } else { (win_x, win_o) };
 
-        let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-        if progress % (games / 10) == 0 {
-            println!("Progress: {}", progress as f32 / games as f32);
-        }
+        // let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        // if progress % (games / 10) == 0 {
+        //     println!("Progress: {}", progress as f32 / games as f32);
+        // }
 
         ReductionResult { wins_a: win_a, wins_b: win_b, total_time_a, total_time_b, move_count_a, move_count_b }
     }).reduce(ReductionResult::default, ReductionResult::add);

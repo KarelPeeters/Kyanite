@@ -7,7 +7,7 @@ use rand::Rng;
 
 use crate::board::Player::Neutral;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Player {
     X,
     O,
@@ -23,6 +23,14 @@ impl Player {
         }
     }
 
+    pub fn sign(self) -> f32 {
+        match self {
+            Player::X => 1.0,
+            Player::O => -1.0,
+            Player::Neutral => 0.0,
+        }
+    }
+
     fn index(self) -> u32 {
         match self {
             Player::X => 0,
@@ -32,7 +40,7 @@ impl Player {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Coord(u8);
 
 impl Coord {
@@ -84,7 +92,7 @@ impl Debug for Coord {
 }
 
 //TODO implement simpler partialeq again
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     //TODO try u16 here, that makes Board a lot smaller and maybe even feasible to store in the tree?
     grids: [u32; 9],
@@ -196,6 +204,11 @@ impl Board {
     pub fn macr(&self, om: u8) -> Player {
         debug_assert!(om < 9);
         get_player(self.main_grid, om)
+    }
+
+    /// Return the number of non-empty tiles.
+    pub fn count_tiles(&self) -> u32 {
+        self.grids.iter().map(|tile| tile.count_ones()).sum()
     }
 
     pub fn available_moves(&self) -> impl Iterator<Item=Coord> + '_ {
