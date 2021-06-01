@@ -1,6 +1,6 @@
 use sttt_zero::network::Network;
 use tch::{Device, Cuda};
-use sttt_zero::mcts_zero::{ZeroState, Tree, RunResult, Response, Request};
+use sttt_zero::mcts_zero::{ZeroState, Tree, RunResult, Response, Request, KeepResult};
 use sttt::board::{Board, Player};
 use itertools::Itertools;
 use std::time::Instant;
@@ -18,34 +18,34 @@ use closure::closure;
 
 #[derive(Debug, Clone)]
 struct Settings {
+    // performance settings
     threads_per_device: usize,
     batch_size: usize,
+    // cache_depth: u32,
 
+    // how many positions to generate
+    position_count: usize,
+
+    // settings that effect the generated games
     network_path: String,
     iterations: u64,
     exploration_weight: f32,
-
     inf_temp_move_count: u32,
-
-    // move_caching: bool,
-    // tree_reuse: bool,
-
-    position_count: usize,
 }
 
+//TODO move most of this code out of the bin folder
 fn main() {
     let devices = (0..Cuda::device_count() as usize).map(Device::Cuda).collect_vec();
     let settings = Settings {
         threads_per_device: 2,
         batch_size: 200,
 
+        position_count: 100_000,
+
+        network_path: "../data/esat/trained_model_10_epochs.pt".to_owned(),
         iterations: 1000,
         exploration_weight: 1.0,
-        network_path: "../data/esat/trained_model_10_epochs.pt".to_owned(),
-
         inf_temp_move_count: 20,
-
-        position_count: 100_000,
     };
 
     println!("Devices {{ {:?} }}", devices);
@@ -155,8 +155,8 @@ impl Settings {
         Network::load(&self.network_path, device)
     }
 
-    fn new_zero(&self, board: Board) -> ZeroState {
-        ZeroState::new(Tree::new(board), self.iterations, self.exploration_weight)
+    fn new_zero(&self, tree: Tree) -> ZeroState {
+        ZeroState::new(tree, self.iterations, self.exploration_weight)
     }
 }
 
@@ -168,7 +168,7 @@ struct GameState {
 impl GameState {
     fn new(settings: &Settings) -> Self {
         GameState {
-            zero: settings.new_zero(Board::new()),
+            zero: settings.new_zero(Tree::new(Board::new())),
             positions: Default::default(),
         }
     }
@@ -204,24 +204,21 @@ impl GameState {
                         value: tree[0].value(),
                         policy,
                     });
-
-                    //actually play the move
-                    let mut next_board = tree.root_board().clone();
-                    next_board.play(picked_move);
                     move_count += 1;
 
-                    match next_board.won_by {
-                        None => {
+                    //keep the tree for the picked move
+                    match tree.keep_move(picked_move) {
+                        KeepResult::Tree(tree) => {
                             //continue playing this game
-                            self.zero = settings.new_zero(next_board)
+                            self.zero = settings.new_zero(tree)
                         }
-                        Some(won_by) => {
+                        KeepResult::Done(won_by) => {
                             //record this game
                             let simulation = Simulation { won_by, positions: std::mem::take(&mut self.positions) };
                             sender.send(Message::Simulation(simulation)).unwrap();
 
                             //start a new game
-                            self.zero = settings.new_zero(Board::new());
+                            self.zero = settings.new_zero(Tree::new(Board::new()));
                         }
                     }
                 }

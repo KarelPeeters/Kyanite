@@ -121,6 +121,11 @@ impl IndexMut<usize> for Tree {
     }
 }
 
+pub enum KeepResult {
+    Done(Player),
+    Tree(Tree),
+}
+
 impl Tree {
     pub fn new(root_board: Board) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
@@ -162,11 +167,14 @@ impl Tree {
 
     /// Return a new tree containing the nodes that are still relevant after playing the given move.
     /// Effectively this copies the part of the tree starting from the selected child.
-    pub fn keep_move(&self, coord: Coord) -> Tree {
+    pub fn keep_move(&self, coord: Coord) -> KeepResult {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         let mut new_root_board = self.root_board.clone();
         new_root_board.play(coord);
+        if let Some(won_by) = new_root_board.won_by {
+            return KeepResult::Done(won_by);
+        }
 
         let picked_child = self[0].children().unwrap().iter()
             .find(|&c| self[c].coord == coord)
@@ -191,7 +199,8 @@ impl Tree {
             i += 1;
         }
 
-        Tree { root_board: new_root_board, nodes: new_nodes }
+        let tree = Tree { root_board: new_root_board, nodes: new_nodes };
+        KeepResult::Tree(tree)
     }
 
     pub fn display(&self, max_depth: usize) -> TreeDisplay {
