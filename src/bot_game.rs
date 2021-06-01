@@ -1,5 +1,4 @@
 use std::ops::Add;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 use rand::{Rng, SeedableRng};
@@ -27,7 +26,7 @@ pub fn run<A: Bot, B: Bot>(
     games: u32,
     shuffle: bool,
 ) -> BotGameResult {
-    let progress_counter = AtomicU32::default();
+    // let progress_counter = AtomicU32::default();
 
     let result: ReductionResult = (0..games).into_par_iter().map(|_i| {
         let mut bot_a = bot_a();
