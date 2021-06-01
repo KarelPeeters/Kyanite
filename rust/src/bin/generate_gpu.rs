@@ -1,7 +1,7 @@
 use sttt_zero::network::Network;
-use tch::Device;
+use tch::{Device, Cuda};
 use sttt_zero::mcts_zero::{ZeroState, Tree, RunResult, Response, Request};
-use sttt::board::{Board, Player, board_to_compact_string};
+use sttt::board::{Board, Player};
 use itertools::Itertools;
 use std::time::Instant;
 use crossbeam::channel::Sender;
@@ -13,13 +13,13 @@ use crossbeam::{scope, channel};
 use ta::indicators::ExponentialMovingAverage;
 use ta::Next;
 use ordered_float::OrderedFloat;
+use closure::closure;
 
 
 #[derive(Debug, Clone)]
 struct Settings {
-    thread_count: usize,
+    threads_per_device: usize,
     batch_size: usize,
-    device: Device,
 
     network_path: String,
     iterations: u64,
@@ -34,10 +34,10 @@ struct Settings {
 }
 
 fn main() {
+    let devices = (0..Cuda::device_count() as usize).map(Device::Cuda).collect_vec();
     let settings = Settings {
-        thread_count: 1,
+        threads_per_device: 2,
         batch_size: 200,
-        device: Device::Cuda(0),
 
         iterations: 1000,
         exploration_weight: 1.0,
@@ -48,6 +48,7 @@ fn main() {
         position_count: 100_000,
     };
 
+    println!("Devices {{ {:?} }}", devices);
     println!("{:#?}", settings);
 
     let start = Instant::now();
@@ -58,8 +59,13 @@ fn main() {
 
     scope(|s| {
         //spawn threads
-        for _ in 0..settings.thread_count {
-            s.spawn(|_| thread_main(&settings, &request_stop, &sender));
+        for &device in &devices {
+            for _ in 0..settings.threads_per_device {
+                s.spawn(closure!(
+                    ref settings, ref request_stop, ref sender,
+                    |_| thread_main(settings, device, request_stop, sender)
+                ));
+            }
         }
 
         //performance metrics
@@ -131,11 +137,13 @@ enum Message {
     Counter { evals: usize, moves: usize },
 }
 
+#[allow(dead_code)]
 struct Simulation {
     won_by: Player,
     positions: Vec<Position>,
 }
 
+#[allow(dead_code)]
 struct Position {
     board: Board,
     value: f32,
@@ -143,8 +151,8 @@ struct Position {
 }
 
 impl Settings {
-    fn load_network(&self) -> Network {
-        Network::load(&self.network_path, self.device)
+    fn load_network(&self, device: Device) -> Network {
+        Network::load(&self.network_path, device)
     }
 
     fn new_zero(&self, board: Board) -> ZeroState {
@@ -167,7 +175,7 @@ impl GameState {
 
     fn run_until_request(&mut self, rng: &mut impl Rng, settings: &Settings, response: Option<Response>, sender: &Sender<Message>) -> (usize, Request) {
         let mut response = response;
-        let mut move_count= 0;
+        let mut move_count = 0;
 
         loop {
             let result = self.zero.run_until_result(response.take());
@@ -222,9 +230,9 @@ impl GameState {
     }
 }
 
-fn thread_main(settings: &Settings, request_stop: &AtomicBool, sender: &Sender<Message>) {
+fn thread_main(settings: &Settings, device: Device, request_stop: &AtomicBool, sender: &Sender<Message>) {
     let batch_size = settings.batch_size;
-    let mut network = settings.load_network();
+    let mut network = settings.load_network(device);
     let mut rng = thread_rng();
 
     let mut states = (0..batch_size).map(|_| GameState::new(settings)).collect_vec();
