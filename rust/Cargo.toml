@@ -6,6 +6,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sttt = { path = "../../SuperTTTApi-rs" }
+
 crossbeam = "0.8.0"
 itertools = "0.10.0"
 num_cpus = "1.13.0"
@@ -16,9 +18,9 @@ static_assertions = "1.1.0"
 tch = "0.4.1"
 torch-sys= "0.4.1"
 ta = "0.4.0"
-
-sttt = { path = "../../SuperTTTApi-rs" }
 closure = "0.3.0"
+onnxruntime = "0.0.12"
+ndarray = "0.15.3"
 
 [profile.release]
 debug = true

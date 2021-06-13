@@ -2,30 +2,30 @@ import time
 
 import torch
 from matplotlib import pyplot
-from torch import nn
 
-from models import GoogleModel
-from util import load_data
+from models import GoogleModel, ValuePolicyModel
+from util import load_data, o_tensor
 
 
-class ModelWrapper(nn.Module):
+class ModelWrapper(ValuePolicyModel):
     def __init__(self, inner):
         super().__init__()
         self.inner = inner
 
-    def forward(self, mask, tiles, macros):
-        return self.inner(mask.float(), tiles.float(), macros.float())
+    def forward(self, o, mask, tiles, macros):
+        return self.inner(o, mask.float(), tiles.float(), macros.float())
 
 
 def main():
     data = load_data("../../data/esat/test_data.csv")
+    o = o_tensor("cpu")
 
     ROUNDS = 20
     DEVICES = ["cuda"]
     BATCH_SIZES = [100, 200, 500, 1000]
     PARALLEL_COUNT = 1
 
-    google = GoogleModel(channels=64, block_count=5, value_size=64, res=True)
+    google = GoogleModel(channels=64, blocks=5, value_channels=1, value_size=64, res=True)
     DTYPES = [
         (torch.int8, torch.jit.script(ModelWrapper(google))),
         (torch.float16, torch.jit.script(ModelWrapper(google))),
@@ -39,9 +39,10 @@ def main():
             data = data.to(device)
             model.eval()
             model.to(device)
+            o = o.to(device)
 
             for bi, batch_size in enumerate(BATCH_SIZES):
-                print(f"Trying batch size {batch_size} on {device} with type {dtype}")
+                print(f"Trying batch size {batch_size} on {device} with type {dtype}: ", end="")
 
                 totals = [torch.tensor(0)] * PARALLEL_COUNT
 
@@ -53,7 +54,7 @@ def main():
                 start = time.perf_counter()
 
                 for _ in range(ROUNDS):
-                    value, _ = model(mask.to(device), x_tiles.to(device), x_macros.to(device))
+                    value, _ = model(o, mask.to(device), x_tiles.to(device), x_macros.to(device))
 
                     # force synchronization to prevent out of memory
                     totals[:-1] = totals[1:]
@@ -61,7 +62,10 @@ def main():
                     totals[0].item()
 
                 delta = time.perf_counter() - start
-                throughputs[ti, di, bi] = batch_size * ROUNDS / delta
+                throughput = batch_size * ROUNDS / delta
+                throughputs[ti, di, bi] = throughput
+
+                print(throughput)
 
     for di, device in enumerate(DEVICES):
         for ti, (dtype, _) in enumerate(DTYPES):

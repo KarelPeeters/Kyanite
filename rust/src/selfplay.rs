@@ -1,5 +1,5 @@
 use tch::{Device, Cuda};
-use sttt::board::{Board, Player, board_to_compact_string};
+use sttt::board::{Board, Player};
 use itertools::Itertools;
 use std::time::Instant;
 use crossbeam::channel::Sender;
@@ -14,6 +14,7 @@ use ordered_float::OrderedFloat;
 use closure::closure;
 use crate::mcts_zero::{Response, Tree, ZeroState, RunResult, KeepResult, Request, zero_build_tree};
 use crate::network::Network;
+use crate::network::google_torch::GoogleTorchNetwork;
 
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,8 @@ struct GameState {
     zero: ZeroState,
     positions: Vec<Position>,
 }
+
+type Net = GoogleTorchNetwork;
 
 impl Settings {
     pub fn all_cuda_devices() -> Vec<Device> {
@@ -157,8 +160,8 @@ impl Settings {
         }).unwrap();
     }
 
-    fn load_network(&self, device: Device) -> Network {
-        Network::load(&self.network_path, device)
+    fn load_network(&self, device: Device) -> Net {
+        Net::load(&self.network_path, device)
     }
 
     fn new_zero(&self, tree: Tree) -> ZeroState {
@@ -202,7 +205,7 @@ fn thread_main(
 
         //pass requests to network
         let boards = requests.iter().map(|r| r.board.clone()).collect_vec();
-        let mut evaluations = network.evaluate_all(&boards);
+        let mut evaluations = network.evaluate_batch(&boards);
 
         //construct responses
         let iter = izip!(&mut responses, requests.drain(..), evaluations.drain(..));

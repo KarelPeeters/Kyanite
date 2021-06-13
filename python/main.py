@@ -3,11 +3,11 @@ from math import prod
 
 import torch
 from matplotlib import pyplot
-from torch.optim import Adam
+from torch.optim import AdamW
 
 from core import train_model
 from models import GoogleModel
-from util import load_data, DEVICE
+from util import load_data, DEVICE, GoogleData
 
 
 def plot_stuff(plot_data, plot_legend):
@@ -17,39 +17,37 @@ def plot_stuff(plot_data, plot_legend):
 
 
 def main():
-    train_data = load_data("../data/esat/train_data.csv")
-    test_data = load_data("../data/test_data.csv")
+    train_data = GoogleData.from_generic(load_data("../data/esat/train_data.csv")).to(DEVICE)
+    test_data = GoogleData.from_generic(load_data("../data/esat/test_data.csv")).to(DEVICE)
 
     print(f"Train size: {len(train_data)}, test size: {len(test_data)}")
 
-    trivial_win_acc = train_data.y_win.float().mean(dim=0).max()
-    trivial_move_acc = train_data.y_move_prob.mean(dim=0).max()
+    OUTPUT_FOLDER = "../data/esat/deeper"
+    EPOCHS = 5
 
-    print(f"Trivial win_acc: {trivial_win_acc}")
-    print(f"Trivial move_acc: {trivial_move_acc}")
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    model = GoogleModel(channels=64, block_count=3, value_size=64, res=False)
+    model = GoogleModel(channels=32, blocks=8, value_channels=8, value_size=32, policy_channels=8, res=True)
     model.to(DEVICE)
-
-    model = torch.jit.script(model)
-    os.makedirs("../data/esat/resless/")
-    model.save("../data/esat/resless/untrained_model.pt")
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
 
-    optimizer = Adam(model.parameters(), weight_decay=1e-4)
+    model = torch.jit.script(model)
+    model.save(f"{OUTPUT_FOLDER}/{0}_epochs.pt")
 
-    plot_data, plot_legend = train_model(
-        model=model, optimizer=optimizer,
-        train_data=train_data, test_data=test_data,
-        epochs=10, train_batch_size=300,
-        eval_batch_size=300,
-    )
+    optimizer = AdamW(model.parameters(), weight_decay=1e-5)
 
-    model.save("../data/esat/resless/trained_model_10_epochs.pt")
+    for e in range(EPOCHS):
+        _, _ = train_model(
+            model=model, optimizer=optimizer,
+            policy_weight=1,
+            train_data=train_data, test_data=test_data,
+            epochs=1, train_batch_size=256,
+            eval_batch_size=128,
+        )
 
-    plot_stuff(plot_data, plot_legend)
+        model.save(f"{OUTPUT_FOLDER}/{e + 1}_epochs.pt")
 
 
 if __name__ == '__main__':

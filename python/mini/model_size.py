@@ -7,7 +7,7 @@ def count_params(model):
     return sum(prod(param.shape) for param in model.parameters())
 
 
-param_count = count_params(GoogleModel(channels=64, block_count=3, value_size=64, res=False))
+param_count = count_params(GoogleModel(channels=64, blocks=3, value_size=64, res=False))
 
 
 print(f"param count: {param_count}")

@@ -237,7 +237,7 @@ impl Display for TreeDisplay<'_> {
                     node: child,
                     curr_depth: self.curr_depth + 1,
                     max_depth: next_max_depth,
-                    parent_visits: node.visits
+                    parent_visits: node.visits,
                 };
                 write!(f, "{}", child_display)?;
             }
@@ -371,7 +371,7 @@ impl ZeroState {
 }
 
 /// Build a new evaluation tree search from scratch for the given `board`.
-pub fn zero_build_tree(board: &Board, iterations: u64, exploration_weight: f32, network: &mut Network) -> Tree {
+pub fn zero_build_tree(board: &Board, iterations: u64, exploration_weight: f32, network: &mut impl Network) -> Tree {
     let mut state = ZeroState::new(Tree::new(board.clone()), iterations, exploration_weight);
 
     let mut response = None;
@@ -391,15 +391,15 @@ pub fn zero_build_tree(board: &Board, iterations: u64, exploration_weight: f32, 
     return state.tree;
 }
 
-pub struct MCTSZeroBot {
+pub struct ZeroBot<N: Network> {
     iterations: u64,
     exploration_weight: f32,
-    network: Network,
+    network: N,
 }
 
-impl MCTSZeroBot {
-    pub fn new(iterations: u64, exploration_weight: f32, network: Network) -> Self {
-        MCTSZeroBot { iterations, exploration_weight, network }
+impl<N: Network> ZeroBot<N> {
+    pub fn new(iterations: u64, exploration_weight: f32, network: N) -> Self {
+        ZeroBot { iterations, exploration_weight, network }
     }
 
     pub fn build_tree(&mut self, board: &Board) -> Tree {
@@ -407,7 +407,7 @@ impl MCTSZeroBot {
     }
 }
 
-impl Bot for MCTSZeroBot {
+impl<N: Network> Bot for ZeroBot<N> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
         if board.is_done() {
             None

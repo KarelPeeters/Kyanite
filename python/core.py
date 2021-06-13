@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from util import Data, DEVICE
+from util import DEVICE, GoogleData
 
 
 def cross_entropy_masked(logits, target, mask):
@@ -11,23 +11,32 @@ def cross_entropy_masked(logits, target, mask):
     log = torch.log_softmax(logits + mask.log(), dim=1)
     loss = -(target * log).nansum(dim=1)
 
+    assert not loss.isinf().any(), \
+        "inf values in policy loss, maybe the mask and target contain impossible combinations?"
+
     # average over batch dimension
     return loss.mean(dim=0)
 
 
-def evaluate_model(model, data: Data):
+def evaluate_model(model, data: GoogleData):
     # TODO try predicting win/loss/draw again
     #   maybe also use those to predict a value and add that as an 3rd term to the loss
-    y_value_pred, y_move_pred_logit = model(data.mask, data.x_tiles, data.x_macros)
+    value_pred, policy_logit = model(data.input)
 
-    value_loss = nn.functional.mse_loss(y_value_pred, data.y_value)
-    move_loss = cross_entropy_masked(y_move_pred_logit, data.y_move_prob, data.mask_flat)
+    value_loss = nn.functional.mse_loss(value_pred, data.value)
+    move_loss = cross_entropy_masked(policy_logit, data.policy, data.mask.view(-1, 81))
 
     return value_loss, move_loss
 
 
-def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int, train_batch_size: int,
-                eval_batch_size: int):
+def train_model(
+        model,
+        train_data: GoogleData, test_data: GoogleData,
+        optimizer, policy_weight: float,
+        epochs: int,
+        train_batch_size: int,
+        eval_batch_size: int
+):
     plot_legend = [
         "batch_value_loss", "batch_move_loss",
         "train_value_loss", "train_move_loss",
@@ -35,7 +44,7 @@ def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int
     ]
     plot_data = torch.zeros(epochs, len(plot_legend))
 
-    for epoch in range(epochs):
+    for ei in range(epochs):
         batch_count = len(train_data) // train_batch_size
         indices = torch.randperm(len(train_data), device=DEVICE)
 
@@ -47,7 +56,7 @@ def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int
 
             model.train()
             batch_value_loss, batch_move_loss = evaluate_model(model, batch_data)
-            total_loss = batch_value_loss + batch_move_loss
+            total_loss = batch_value_loss + policy_weight * batch_move_loss
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -56,7 +65,7 @@ def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int
             total_batch_value_loss += batch_value_loss.item()
             total_batch_move_loss += batch_move_loss.item()
 
-            print(f"  batch {bi} / {batch_count}, loss {batch_value_loss}, {batch_move_loss}")
+            print(f"  epchs {ei} batch {bi} / {batch_count}, loss {batch_value_loss:.5}, {batch_move_loss:.5}")
 
         batch_value_loss = total_batch_value_loss / batch_count
         batch_move_loss = total_batch_move_loss / batch_count
@@ -73,9 +82,9 @@ def train_model(model, optimizer, train_data: Data, test_data: Data, epochs: int
             train_value_loss, train_move_loss,
             test_value_loss, test_move_loss
         ]
-        plot_data[epoch, :] = torch.tensor(values)
+        plot_data[ei, :] = torch.tensor(values)
 
         log = ", ".join((f"{name}={value:.2f}" for name, value in zip(plot_legend, values)))
-        print(f"Epoch {epoch} {log}")
+        print(f"Epoch {ei} {log}")
 
     return plot_data, plot_legend

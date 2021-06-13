@@ -1,11 +1,12 @@
-import matplotlib.pyplot as plt
+import torch
 
-xpoints = [0.2, 0.4, 0.6]
+from util import o_tensor
 
-colors = ['g', 'c', 'm']
+o = o_tensor("cpu")
+a = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -2, -3, -4, -5, -6, -7, -8, -9])
+a = a.view(1, 2, 3, 3)
 
-for p, c in zip(xpoints, colors):
+print(a)
+print(a.repeat_interleave(3, 1).repeat_interleave(3, 2))
 
-    plt.axvline(p)
-
-plt.show()
+print(a.view(-1, 9, 1).expand(-1, 9, 9).reshape(-1, 2, 9 * 9)[:, :, o].view(-1, 2, 9, 9))

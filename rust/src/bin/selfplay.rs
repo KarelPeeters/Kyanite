@@ -1,6 +1,11 @@
 use sttt_zero::selfplay::Settings;
+use sttt::util::lower_process_priority;
 
 fn main() {
+    lower_process_priority();
+
+    //TODO re-add support for generating mcts games instead
+    //TODO actually write generated games to the output file!
     let settings = Settings {
         devices: Settings::all_cuda_devices(),
         threads_per_device: 2,
