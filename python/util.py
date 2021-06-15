@@ -108,3 +108,22 @@ def o_tensor(device):
     om = r.view(3, 3).repeat_interleave(3, 0).repeat_interleave(3, 1)
     o = (9 * om + os).view(81)
     return o
+
+
+def linspace_int(stop: int, num: int) -> np.array:
+    assert 0 < stop and 0 < num
+
+    if num >= stop:
+        return np.arange(stop)
+    else:
+        return np.linspace(0, stop - 1, num).astype(int)
+
+
+def uniform_window_filter(data: np.array, window_size: int) -> np.array:
+    if window_size == 1:
+        return data
+
+    from scipy.signal import filtfilt
+    a = 1
+    b = [1 / window_size] * window_size
+    return filtfilt(b, a, data)

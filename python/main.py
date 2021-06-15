@@ -1,11 +1,10 @@
-import os
 from math import prod
 
 import torch
 from matplotlib import pyplot
 from torch.optim import AdamW
 
-from core import train_model
+from core import TrainSettings, train_model
 from models import GoogleModel
 from util import load_data, DEVICE, GoogleData
 
@@ -20,34 +19,51 @@ def main():
     train_data = GoogleData.from_generic(load_data("../data/esat/train_data.csv")).to(DEVICE)
     test_data = GoogleData.from_generic(load_data("../data/esat/test_data.csv")).to(DEVICE)
 
-    print(f"Train size: {len(train_data)}, test size: {len(test_data)}")
+    print(f"train size: {len(train_data)}")
+    print(f"test size: {len(test_data)}")
 
-    OUTPUT_FOLDER = "../data/esat/deeper"
-    EPOCHS = 5
-
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-    model = GoogleModel(channels=32, blocks=8, value_channels=8, value_size=32, policy_channels=8, res=True)
-    model.to(DEVICE)
+    model = GoogleModel(channels=32, blocks=16, value_channels=1, value_size=32, policy_channels=2, res=True)
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
+    for name, child in model.named_children():
+        child_param_count = sum(prod(p.shape) for p in child.parameters())
+        print(f"  {name}: {child_param_count / param_count:.2f}")
 
     model = torch.jit.script(model)
-    model.save(f"{OUTPUT_FOLDER}/{0}_epochs.pt")
+    model.to(DEVICE)
+
+    batch_size = 256
+    cycles_per_epoch = 2
 
     optimizer = AdamW(model.parameters(), weight_decay=1e-5)
+    # scheduler = CyclicLR(
+    #     optimizer,
+    #     base_lr=1e-4, max_lr=1e-2,
+    #     cycle_momentum=True,
+    #     base_momentum=0.8, max_momentum=0.9,
+    #     step_size_up=len(train_data) // (batch_size * cycles_per_epoch)
+    # )
 
-    for e in range(EPOCHS):
-        _, _ = train_model(
-            model=model, optimizer=optimizer,
-            policy_weight=1,
-            train_data=train_data, test_data=test_data,
-            epochs=1, train_batch_size=256,
-            eval_batch_size=128,
-        )
+    settings = TrainSettings(
+        output_path="../data/esat/deeper_16_adam",
+        train_data=train_data,
+        test_data=test_data,
+        epochs=5,
+        optimizer=optimizer,
+        scheduler=None,
+        policy_weight=1.0,
+        batch_size=batch_size,
+        plot_points=100,
+        plot_window_size=5,
+    )
 
-        model.save(f"{OUTPUT_FOLDER}/{e + 1}_epochs.pt")
+    train_model(model, settings)
+    # plot_train_data(settings)
+
+    # TODO plot loss(number of times a state appears in the train data)
+    #   remove train states from the test set? currently a lot of them are repeating
+    #   or maybe this doesn't matter that much? check again how many duplicate states we have
 
 
 if __name__ == '__main__':
