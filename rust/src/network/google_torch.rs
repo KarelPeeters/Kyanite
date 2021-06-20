@@ -1,12 +1,12 @@
 use std::path::Path;
+use std::time::Instant;
 
 use itertools::Itertools;
 use sttt::board::{Board, Coord};
-use tch::{CModule, Device, IValue, TchError, Tensor};
-use std::time::Instant;
-
+use tch::{CModule, Cuda, Device, IValue, TchError, Tensor};
 use torch_sys::dummy_cuda_dependency;
-use crate::network::{NetworkEvaluation, Network, encode_google_input};
+
+use crate::network::{encode_google_input, Network, NetworkEvaluation};
 
 #[derive(Debug)]
 pub struct GoogleTorchNetwork {
@@ -14,6 +14,10 @@ pub struct GoogleTorchNetwork {
     device: Device,
 
     pub pytorch_time: f32,
+}
+
+pub fn all_cuda_devices() -> Vec<Device> {
+    (0..Cuda::device_count() as usize).map(Device::Cuda).collect_vec()
 }
 
 impl GoogleTorchNetwork {

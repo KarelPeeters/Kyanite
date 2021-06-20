@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
@@ -8,7 +9,6 @@ use sttt::board::{Board, Coord, Player};
 use sttt::bot_game::Bot;
 
 use crate::network::{Network, NetworkEvaluation};
-use std::fmt::{Display, Formatter};
 use crate::util::EqF32;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -145,6 +145,8 @@ impl Tree {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         self[0].children.unwrap().iter().map(move |c| {
+            //TODO isn't this a wrong normalization?
+            // the root node is always visited one more time than the sum of the children, right?
             (self[c].visits as f32) / (self[0].visits as f32)
         })
     }
