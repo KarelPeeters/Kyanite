@@ -6,7 +6,7 @@ use tch::{CModule, Device, IValue, TchError, Tensor};
 use std::time::Instant;
 
 use torch_sys::dummy_cuda_dependency;
-use crate::network::{NetworkEvaluation, Network};
+use crate::network::{NetworkEvaluation, Network, encode_google_input};
 
 #[derive(Debug)]
 pub struct GoogleTorchNetwork {
@@ -29,22 +29,9 @@ impl GoogleTorchNetwork {
 
 impl Network for GoogleTorchNetwork {
     fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
-        let mut input = Vec::new();
-
-        for board in boards {
-            input.extend(Coord::all_yx().map(|c| board.is_available_move(c) as u8 as f32));
-            input.extend(Coord::all_yx().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
-            input.extend(Coord::all_yx().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
-            input.extend(Coord::all_yx().map(|c| (board.macr(c.om()) == board.next_player) as u8 as f32));
-            input.extend(Coord::all_yx().map(|c| (board.macr(c.om()) == board.next_player.other()) as u8 as f32));
-        }
-
         let batch_size = boards.len() as i64;
 
-        //TODO figure out a way to do copying concurrently
-        //  or alternatively figure out a way to compress these tensors:
-        //  right now they are 81 * 3 + 9 * 2 = 261 floats = 1044 bytes
-        //  while they can easily be represented as 261 bits ~= 32 bytes
+        let input = encode_google_input(boards);
         let input = Tensor::of_slice(&input).view([batch_size, 5, 9, 9]).to_device(self.device);
         let input = [IValue::Tensor(input)];
 
@@ -81,6 +68,10 @@ impl Network for GoogleTorchNetwork {
 
             mask_and_softmax(&mut policy, board);
 
+            //TODO - sign here? check the learning code again
+            //  printing trees, it appears that the model is trying to lose!
+
+            //TODO way to little exploration! eg. the empty board tree only visits most moves once!
             NetworkEvaluation {
                 value: batch_value[i],
                 policy,

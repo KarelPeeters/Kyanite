@@ -1,7 +1,6 @@
-use sttt::board::Board;
+use sttt::board::{Board, Coord};
 
 pub mod google_torch;
-pub mod google_onnx;
 
 #[derive(Debug)]
 pub struct NetworkEvaluation {
@@ -18,4 +17,20 @@ pub trait Network {
         assert_eq!(result.len(), 1);
         result.pop().unwrap()
     }
+}
+
+fn encode_google_input(boards: &[Board]) -> Vec<f32> {
+    let capacity = boards.len() * 5 * 9 * 9;
+    let mut result = Vec::with_capacity(capacity);
+
+    for board in boards {
+        result.extend(Coord::all_yx().map(|c| board.is_available_move(c) as u8 as f32));
+        result.extend(Coord::all_yx().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
+        result.extend(Coord::all_yx().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
+        result.extend(Coord::all_yx().map(|c| (board.macr(c.om()) == board.next_player) as u8 as f32));
+        result.extend(Coord::all_yx().map(|c| (board.macr(c.om()) == board.next_player.other()) as u8 as f32));
+    }
+
+    assert_eq!(capacity, result.len());
+    result
 }
