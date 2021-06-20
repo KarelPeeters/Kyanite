@@ -8,3 +8,4 @@ pub mod minimax;
 pub mod mcts;
 
 pub mod util;
+pub mod board_gen;

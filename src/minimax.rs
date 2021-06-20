@@ -5,7 +5,7 @@ use crate::bot_game::Bot;
 
 #[derive(Constructor)]
 pub struct MiniMaxBot {
-    depth: u32
+    depth: u32,
 }
 
 impl Bot for MiniMaxBot {
@@ -19,7 +19,13 @@ pub struct Evaluation {
     pub value: i64,
 }
 
-fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
+impl Evaluation {
+    pub fn is_forced_win(&self) -> bool {
+        self.value >= WIN_VALUE
+    }
+}
+
+pub(crate) fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
     negamax(board, value(board), depth,
             -BOUND_VALUE, BOUND_VALUE,
             player_sign(board.next_player),
