@@ -5,8 +5,6 @@ use std::fmt::{self, Debug, Write};
 use itertools::Itertools;
 use rand::Rng;
 
-use crate::board::Player::Neutral;
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Player {
     X,
@@ -127,12 +125,17 @@ impl fmt::Display for Board {
                 }
 
                 let coord = Coord::from_xy(x, y);
-                let symbol = match (Some(coord) == self.last_move, self.tile(coord)) {
-                    (false, Player::X) => 'X',
-                    (true, Player::X) => 'x',
-                    (false, Player::O) => 'O',
-                    (true, Player::O) => 'o',
-                    (_, Player::Neutral) => ' ',
+                let is_last = Some(coord) == self.last_move;
+                let is_available = self.is_available_move(coord);
+
+                let symbol = match (is_available, is_last, self.tile(coord)) {
+                    (false, false, Player::X) => 'x',
+                    (false, true, Player::X) => 'X',
+                    (false, false, Player::O) => 'o',
+                    (false, true, Player::O) => 'O',
+                    (true, false, Player::Neutral) => '.',
+                    (false, false, Player::Neutral) => ' ',
+                    _ => unreachable!()
                 };
 
                 f.write_char(symbol)?;
@@ -299,7 +302,7 @@ impl Board {
         if grid_win || new_grid.count_ones() == 9 {
             self.macro_open &= !(1 << om);
             if self.macro_open == 0 && self.won_by.is_none() {
-                self.won_by = Some(Neutral);
+                self.won_by = Some(Player::Neutral);
             }
         }
         self.macro_mask = self.calc_macro_mask(os);
@@ -364,7 +367,7 @@ fn get_player(grid: u32, index: u8) -> Player {
 }
 
 struct BitIter {
-    left: u32
+    left: u32,
 }
 
 impl BitIter {
