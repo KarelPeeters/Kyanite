@@ -48,6 +48,10 @@ impl Coord {
         (0..81).map(|o| Self::from_o(o))
     }
 
+    pub fn all_yx() -> impl Iterator<Item=Coord> {
+        (0..81).map(|i| Self::from_xy(i % 9, i / 9))
+    }
+
     pub fn from_oo(om: u8, os: u8) -> Coord {
         debug_assert!(om < 9);
         debug_assert!(os < 9);
@@ -74,6 +78,10 @@ impl Coord {
 
     pub fn o(self) -> u8 {
         9 * self.om() + self.os()
+    }
+
+    pub fn yx(self) -> u8 {
+        9 * self.y() + self.x()
     }
 
     pub fn x(self) -> u8 {
