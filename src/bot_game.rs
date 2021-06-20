@@ -7,6 +7,7 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::board::{Board, Coord, Player};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub trait Bot {
     /// Decide which move to play in the given board.
@@ -25,8 +26,9 @@ pub fn run<A: Bot, B: Bot>(
     bot_b: impl Fn() -> B + Sync,
     games: u32,
     shuffle: bool,
+    print_progress: Option<u32>,
 ) -> BotGameResult {
-    // let progress_counter = AtomicU32::default();
+    let progress_counter = AtomicU32::default();
 
     let result: ReductionResult = (0..games).into_par_iter().map(|_i| {
         let mut bot_a = bot_a();
@@ -71,10 +73,12 @@ pub fn run<A: Bot, B: Bot>(
 
         let (win_a, win_b) = if flip { (win_o, win_x) } else { (win_x, win_o) };
 
-        // let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-        // if progress % (games / 10) == 0 {
-        //     println!("Progress: {}", progress as f32 / games as f32);
-        // }
+        if let Some(print_progress) = print_progress {
+            let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+            if progress % print_progress == 0 {
+                println!("Progress: {}", progress as f32 / games as f32);
+            }
+        }
 
         ReductionResult { wins_a: win_a, wins_b: win_b, total_time_a, total_time_b, move_count_a, move_count_b }
     }).reduce(ReductionResult::default, ReductionResult::add);

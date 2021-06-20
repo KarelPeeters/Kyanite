@@ -160,7 +160,7 @@ fn _test_first_move_advantage() {
     let res = bot_game::run(
         || MCTSBot::new(100_000, SmallRng::from_entropy()),
         || MCTSBot::new(100_000, SmallRng::from_entropy()),
-        100, false,
+        100, false, Some(10),
     );
 
     println!("{:?}", res);
@@ -170,7 +170,7 @@ fn _test_rng() {
     let res = bot_game::run(
         || MCTSBot::new(100_000, SmallRng::from_entropy()),
         || MCTSBot::new(100_000, thread_rng()),
-        100, true,
+        100, true, Some(10),
     );
 
     println!("{:?}", res);
@@ -232,8 +232,7 @@ fn _heuristic_bot_game() {
     let res = bot_game::run(
         || MCTSBot::new(50_000, SmallRng::from_entropy()),
         || MCTSBot::new_with_heuristic(50_000, SmallRng::from_entropy(), MacroHeuristic { weight: 1.0 }),
-        50,
-        true,
+        50, true, Some(10),
     );
 
     println!("{:?}", res);
@@ -243,8 +242,7 @@ fn _bot_game() {
     let res = bot_game::run(
         || RandomBot::new(SmallRng::from_entropy()),
         || MCTSBot::new(1000, SmallRng::from_entropy()),
-        100,
-        true,
+        100, true, Some(10),
     );
 
     println!("{:?}", res);
