@@ -22,7 +22,13 @@ def main():
     print(f"train size: {len(train_data)}")
     print(f"test size: {len(test_data)}")
 
-    model = GoogleModel(channels=32, blocks=16, value_channels=1, value_size=32, policy_channels=2, res=True)
+    model = GoogleModel(
+        channels=32, blocks=8,
+        value_channels=1, value_size=16,
+        policy_channels=4,
+        res=True,
+        squeeze_size=None, squeeze_bias=False
+    )
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
@@ -34,7 +40,7 @@ def main():
     model.to(DEVICE)
 
     batch_size = 256
-    cycles_per_epoch = 2
+    # cycles_per_epoch = 2
 
     optimizer = AdamW(model.parameters(), weight_decay=1e-5)
     # scheduler = CyclicLR(
@@ -46,7 +52,7 @@ def main():
     # )
 
     settings = TrainSettings(
-        output_path="../data/esat/deeper_16_adam",
+        output_path="../data/esat/modest",
         train_data=train_data,
         test_data=test_data,
         epochs=5,

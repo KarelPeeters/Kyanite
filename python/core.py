@@ -30,7 +30,7 @@ def evaluate_model(model, data: GoogleData):
     #   maybe also use those to predict a value and add that as an 3rd term to the loss
     value_pred, policy_logit = model(data.input)
 
-    value_loss = nn.functional.mse_loss(value_pred, data.value)
+    value_loss = nn.functional.mse_loss(value_pred, data.final_value)
     move_loss = cross_entropy_masked(policy_logit, data.policy, data.mask.view(-1, 81))
 
     return value_loss, move_loss
@@ -115,28 +115,28 @@ def plot_train_data(s: TrainSettings):
     all_plot_data = np.load(f"{output_path}/plot_data.npy")
     all_plot_axis = np.load(f"{output_path}/plot_axis.npy")
 
-    fig, axes = pyplot.subplots(4)
+    has_schedule = s.scheduler is not None
+
     for i in range(3):
-        ax = axes[i]
+        pyplot.figure()
 
         train_smooth_values = uniform_window_filter(all_plot_data[:, i], s.plot_window_size)
-        ax.plot(all_plot_axis, train_smooth_values)
+        pyplot.plot(all_plot_axis, train_smooth_values)
 
         test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], s.plot_window_size)
-        ax.plot(all_plot_axis, test_smooth_values)
+        pyplot.plot(all_plot_axis, test_smooth_values)
 
-        ax.set_title(TRAIN_PLOT_TITLES[i])
+        pyplot.title(TRAIN_PLOT_TITLES[i])
+        pyplot.savefig(f"{output_path}/plot_{TRAIN_PLOT_TITLES[i]}.png")
+        pyplot.show()
 
-    ax = axes[3]
-    ax.plot(all_plot_axis, all_plot_data[:, 6])
-    ax.set_title("learning_rate")
+    if has_schedule:
+        pyplot.figure()
+        pyplot.plot(all_plot_axis, all_plot_data[:, 6])
+        pyplot.title("Learning rate schedule")
 
-    fig.legend(TRAIN_PLOT_LEGEND)
-    fig.suptitle(f"Training progress")
-    fig.tight_layout()
-
-    fig.savefig(f"{output_path}/plot.png")
-    fig.show()
+        pyplot.savefig(f"{output_path}/plot_lr_schedule.png")
+        pyplot.show()
 
 
 def train_model(model: nn.Module, s: TrainSettings):

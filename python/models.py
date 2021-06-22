@@ -1,14 +1,21 @@
+from typing import Optional
+
 import torch
 from torch import nn
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channels: int, res: bool):
+    def __init__(self, channels: int, res: bool, squeeze_size: Optional[int], squeeze_bias: bool):
         super().__init__()
 
-        self.res = res
+        if squeeze_bias:
+            assert squeeze_size is not None, "squeeze_bias without squeeze doesn't make sense"
 
-        self.seq = nn.Sequential(
+        self.res = res
+        self.squeeze_bias = squeeze_bias
+        self.channels = channels
+
+        self.convs = nn.Sequential(
             nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), bias=False),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
@@ -16,10 +23,31 @@ class ResBlock(nn.Module):
             nn.BatchNorm2d(channels),
         )
 
+        if squeeze_size is None:
+            self.squeeze = None
+        else:
+            self.squeeze = nn.Sequential(
+                nn.AvgPool2d(9),
+                nn.Flatten(),
+                nn.Linear(channels, squeeze_size),
+                nn.ReLU(),
+                nn.Linear(squeeze_size, channels * (1 + squeeze_bias)),
+            )
+
     def forward(self, x):
-        y = self.seq(x)
+        y = self.convs(x)
+
+        if self.squeeze is not None:
+            weights = self.squeeze(y)
+
+            factor = torch.sigmoid(weights[:, :self.channels, None, None])
+            bias = weights[:, self.channels:, None, None]
+
+            y = y * factor + bias
+
         if self.res:
             y = y + x
+
         y = y.relu()
         return y
 
@@ -31,7 +59,8 @@ class GoogleModel(nn.Module):
             blocks: int,
             value_channels: int, value_size: int,
             policy_channels: int,
-            res: bool
+            res: bool,
+            squeeze_size: Optional[int], squeeze_bias: bool,
     ):
         """
         Parameters used in AlphaZero:
@@ -50,7 +79,7 @@ class GoogleModel(nn.Module):
             nn.Conv2d(5, channels, (3, 3), padding=(1, 1), bias=False),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
-            *(ResBlock(channels, res) for _ in range(blocks))
+            *(ResBlock(channels, res, squeeze_size, squeeze_bias) for _ in range(blocks))
         )
 
         self.policy_head = nn.Sequential(
