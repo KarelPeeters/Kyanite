@@ -1,11 +1,14 @@
-use derive_more::Constructor;
-
 use crate::board::{Board, Coord, Player};
 use crate::bot_game::Bot;
 
-#[derive(Constructor)]
 pub struct MiniMaxBot {
     depth: u32,
+}
+
+impl MiniMaxBot {
+    pub fn new(depth: u32) -> Self {
+        MiniMaxBot { depth }
+    }
 }
 
 impl Bot for MiniMaxBot {

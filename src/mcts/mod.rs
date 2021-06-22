@@ -1,15 +1,12 @@
 use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
 use crate::board::{Board, Coord, Player};
 use crate::bot_game::Bot;
-use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
-use itertools::Itertools;
-
-pub mod heuristic;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
@@ -50,6 +47,27 @@ pub struct Node {
     pub visits: u64,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Evaluation {
+    win: f32,
+    draw: f32,
+    loss: f32,
+}
+
+impl std::ops::Neg for Evaluation {
+    type Output = Evaluation;
+
+    fn neg(self) -> Self::Output {
+        Evaluation { win: self.loss, draw: self.draw, loss: self.win }
+    }
+}
+
+impl Evaluation {
+    pub fn value(&self) -> f32 {
+        self.win - self.loss
+    }
+}
+
 impl Node {
     fn new(coord: Coord) -> Self {
         Node {
@@ -62,20 +80,21 @@ impl Node {
         }
     }
 
-    pub fn uct(&self, parent_visits: u64, heuristic: f32) -> f32 {
-        let wins = self.wins as f32;
-        let draws = self.draws as f32;
+    pub fn uct(&self, parent_visits: u64, exploration_weight: f32) -> f32 {
         let visits = self.visits as f32;
+        let value_unit = (self.eval().value() + 1.0) / 2.0;
+        let explore = ((parent_visits as f32).ln() / visits).sqrt();
 
-        //TODO is this really the best heuristic formula? maybe let the heuristic decide the weight as well?
-        (wins + 0.5 * draws) / visits +
-            (2.0 * (parent_visits as f32).ln() / visits).sqrt() +
-            (heuristic / (visits + 1.0))
+        value_unit + exploration_weight * explore
     }
 
-    /// The estimated value of this node in the range -1..1
-    pub fn signed_value(&self) -> f32 {
-        (2.0 * (self.wins as f32) + (self.draws as f32)) / (self.visits as f32) - 1.0
+    pub fn eval(&self) -> Evaluation {
+        let visits = self.visits as f32;
+        Evaluation {
+            win: self.wins as f32 / visits,
+            draw: self.draws as f32 / visits,
+            loss: (self.visits - self.wins - self.draws) as f32 / visits,
+        }
     }
 
     pub fn children(&self) -> Option<IdxRange> {
@@ -112,12 +131,12 @@ impl Tree {
         self[best_child].coord
     }
 
-    pub fn signed_value(&self) -> f32 {
-        self[0].signed_value()
+    pub fn eval(&self) -> Evaluation {
+        self[0].eval()
     }
 
     pub fn print(&self, depth: u64) {
-        println!("move: value <- W,D,L / visits");
+        println!("move: visits, value <- W,D,L");
         self.print_impl(0, 0, depth);
     }
 
@@ -125,14 +144,14 @@ impl Tree {
         let node = &self[node];
 
         for _ in 0..depth { print!("  ") }
-        let losses = node.visits - node.wins - node.draws;
-        println!("{:?}: {:.3} <- {},{},{} / {}", node.coord, node.signed_value(), node.wins, node.draws, losses, node.visits);
+        let eval = node.eval();
+        println!("{:?}: {}, {:.3} <- {:.3},{:.3},{:.3}", node.coord, node.visits, eval.value(), eval.win, eval.draw, eval.loss);
 
         if depth == max_depth { return; }
 
         if let Some(children) = node.children() {
             let best_child = children.start.get() + children.iter()
-                .map(|c| OrderedFloat(self[c].signed_value()))
+                .map(|c| OrderedFloat(self[c].eval().value()))
                 .position_max().unwrap();
 
             for child in children {
@@ -162,7 +181,7 @@ impl IndexMut<usize> for Tree {
     }
 }
 
-pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Tree {
+pub fn mcts_build_tree<R: Rng>(board: &Board, iterations: u64, exploration_weight: f32, rand: &mut R) -> Tree {
     assert!(iterations > 0, "MCTS must run for at least 1 iteration");
     assert!(!board.is_done(), "Cannot build MCTS tree for done board");
 
@@ -219,8 +238,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
             let parent_visits = tree[curr_node].visits;
 
             let selected = children.iter().max_by_key(|&child| {
-                let heuristic = heuristic.evaluate(&curr_board);
-                let uct = tree[child].uct(parent_visits, heuristic);
+                let uct = tree[child].uct(parent_visits, exploration_weight);
                 OrderedFloat(uct)
             }).expect("Board is not done, this node should have a child");
 
@@ -262,30 +280,25 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heu
     tree
 }
 
-pub struct MCTSBot<H: Heuristic, R: Rng> {
+pub struct MCTSBot<R: Rng> {
     iterations: u64,
-    heuristic: H,
+    exploration_weight: f32,
     rand: R,
 }
 
-impl<R: Rng> MCTSBot<ZeroHeuristic, R> {
-    pub fn new(iterations: u64, rand: R) -> Self {
-        MCTSBot { iterations, heuristic: ZeroHeuristic, rand }
+impl<R: Rng> MCTSBot<R> {
+    pub fn new(iterations: u64, exploration_weight: f32, rand: R) -> Self {
+        MCTSBot { iterations, exploration_weight, rand }
     }
 }
 
-impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
-    pub fn new_with_heuristic(iterations: u64, rand: R, heuristic: H) -> Self {
-        MCTSBot { iterations, heuristic, rand }
-    }
-}
 
-impl<H: Heuristic, R: Rng> Bot for MCTSBot<H, R> {
+impl<R: Rng> Bot for MCTSBot<R> {
     fn play(&mut self, board: &Board) -> Option<Coord> {
         if board.is_done() {
             None
         } else {
-            let tree = mcts_build_tree(board, self.iterations, &self.heuristic, &mut self.rand);
+            let tree = mcts_build_tree(board, self.iterations, self.exploration_weight, &mut self.rand);
             Some(tree.best_move())
         }
     }

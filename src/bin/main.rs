@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use itertools::{Itertools, zip_eq};
-use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng, thread_rng};
 use rand::rngs::SmallRng;
 use rayon::iter::{ParallelBridge, ParallelIterator};
@@ -11,8 +10,7 @@ use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coo
 use sttt::bot_game;
 use sttt::bot_game::Bot;
 use sttt::bots::RandomBot;
-use sttt::mcts::{mcts_build_tree, MCTSBot, Tree};
-use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
+use sttt::mcts::{mcts_build_tree, MCTSBot};
 use sttt::minimax::MiniMaxBot;
 use sttt::util::lower_process_priority;
 
@@ -20,13 +18,13 @@ fn main() {
     //TODO don't do this when benchmarking!
     lower_process_priority();
 
-    // time(|| mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng()));
+    // time(|| mcts_build_tree(&Board::new(), 10_000_000, 2.0, &mut thread_rng()));
 
     _test_mcts_tree()
 }
 
 fn _test_mcts_tree() {
-    let tree = mcts_build_tree(&Board::new(), 10_000_000, &ZeroHeuristic, &mut thread_rng());
+    let tree = mcts_build_tree(&Board::new(), 10_000_000, 2.0, &mut thread_rng());
     tree.print(5);
 }
 
@@ -39,8 +37,8 @@ fn _basic_self_play() {
     while !board.is_done() {
         println!("{}", board);
 
-        let tree = mcts_build_tree(&board, iterations, &ZeroHeuristic, &mut rng);
-        let value = tree.signed_value();
+        let tree = mcts_build_tree(&board, iterations, 2.0, &mut rng);
+        let value = tree.eval().value();
 
         let x_value = if board.next_player == Player::O { -value } else { value };
 
@@ -67,8 +65,8 @@ fn _plot_mismatch_evaluations() {
 
         let evals = iterations.iter()
             .map(|&iter| {
-                let tree = mcts_build_tree(&board, iter, &ZeroHeuristic, &mut thread_rng());
-                (tree.best_move(), tree.signed_value())
+                let tree = mcts_build_tree(&board, iter, 2.0, &mut thread_rng());
+                (tree.best_move(), tree.eval().value())
             })
             .collect_vec();
 
@@ -95,8 +93,8 @@ fn _plot_evaluations() {
         let mut board = Board::new();
         while !board.is_done() {
             let mut rng = thread_rng();
-            let tree = mcts_build_tree(&board, iterations, &ZeroHeuristic, &mut rng);
-            let value = tree.signed_value();
+            let tree = mcts_build_tree(&board, iterations, 2.0, &mut rng);
+            let value = tree.eval().value();
 
             let x_value = if board.next_player == Player::X { value } else { -value };
 
@@ -130,8 +128,8 @@ fn _plot_evaluations() {
 
 fn _test_first_move_advantage() {
     let res = bot_game::run(
-        || MCTSBot::new(100_000, SmallRng::from_entropy()),
-        || MCTSBot::new(100_000, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, 2.0, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, 2.0, SmallRng::from_entropy()),
         100, false, Some(10),
     );
 
@@ -140,8 +138,8 @@ fn _test_first_move_advantage() {
 
 fn _test_rng() {
     let res = bot_game::run(
-        || MCTSBot::new(100_000, SmallRng::from_entropy()),
-        || MCTSBot::new(100_000, thread_rng()),
+        || MCTSBot::new(100_000, 2.0, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, 2.0, thread_rng()),
         100, true, Some(10),
     );
 
@@ -154,7 +152,7 @@ fn _time_mcts() {
     board.play(Coord::from_oo(4, 0));
 
     time(|| {
-        MCTSBot::new(1_000_000, SmallRng::from_entropy()).play(&board);
+        MCTSBot::new(1_000_000, 2.0, SmallRng::from_entropy()).play(&board);
     })
 }
 
@@ -200,20 +198,10 @@ fn _follow_playout() {
     }
 }
 
-fn _heuristic_bot_game() {
-    let res = bot_game::run(
-        || MCTSBot::new(50_000, SmallRng::from_entropy()),
-        || MCTSBot::new_with_heuristic(50_000, SmallRng::from_entropy(), MacroHeuristic { weight: 1.0 }),
-        50, true, Some(10),
-    );
-
-    println!("{:?}", res);
-}
-
 fn _bot_game() {
     let res = bot_game::run(
         || RandomBot::new(SmallRng::from_entropy()),
-        || MCTSBot::new(1000, SmallRng::from_entropy()),
+        || MCTSBot::new(1000, 2.0, SmallRng::from_entropy()),
         100, true, Some(10),
     );
 

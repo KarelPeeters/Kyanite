@@ -11,7 +11,7 @@ use sttt::bot_game::Bot;
 use sttt::mcts::MCTSBot;
 
 fn main() -> Result<(), Error> {
-    server_loop(MCTSBot::new(10_000, SmallRng::from_entropy()))
+    server_loop(MCTSBot::new(10_000, 2.0, SmallRng::from_entropy()))
 }
 
 #[derive(Debug, From)]

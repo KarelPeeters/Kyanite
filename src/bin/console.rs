@@ -10,7 +10,7 @@ use sttt::bot_game::Bot;
 use sttt::mcts::MCTSBot;
 
 fn main() {
-    console_game(MCTSBot::new(10_000, SmallRng::from_entropy()))
+    console_game(MCTSBot::new(10_000, 2.0, SmallRng::from_entropy()))
 }
 
 fn console_game<B: Bot>(mut bot: B) {
