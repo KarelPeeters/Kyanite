@@ -88,6 +88,7 @@ impl Node {
         value_unit + exploration_weight * explore
     }
 
+    /// The value of this node from the POV of the player that could play this move.
     pub fn eval(&self) -> Evaluation {
         let visits = self.visits as f32;
         Evaluation {
@@ -131,8 +132,11 @@ impl Tree {
         self[best_child].coord
     }
 
+    /// The value of `root_board` from the POV of `root_board.next_player`.
     pub fn eval(&self) -> Evaluation {
-        self[0].eval()
+        // the evaluation of the starting board is the opposite of the the evaluation of the root node,
+        //   since that is the evaluation from the POV of the "previous" player
+        -self[0].eval()
     }
 
     pub fn print(&self, depth: u64) {
