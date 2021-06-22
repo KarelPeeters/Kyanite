@@ -14,6 +14,7 @@ impl Bot for MiniMaxBot {
     }
 }
 
+#[derive(Debug)]
 pub struct Evaluation {
     pub best_move: Option<Coord>,
     pub value: i64,
@@ -25,7 +26,7 @@ impl Evaluation {
     }
 }
 
-pub(crate) fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
+pub fn evaluate_minimax(board: &Board, depth: u32) -> Evaluation {
     negamax(board, value(board), depth,
             -BOUND_VALUE, BOUND_VALUE,
             player_sign(board.next_player),
