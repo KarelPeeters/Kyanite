@@ -7,6 +7,7 @@ use rand::Rng;
 use crate::board::{Board, Coord, Player};
 use crate::bot_game::Bot;
 use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
+use itertools::Itertools;
 
 pub mod heuristic;
 
@@ -113,6 +114,37 @@ impl Tree {
 
     pub fn signed_value(&self) -> f32 {
         self[0].signed_value()
+    }
+
+    pub fn print(&self, depth: u64) {
+        println!("move: value <- W,D,L / visits");
+        self.print_impl(0, 0, depth);
+    }
+
+    fn print_impl(&self, node: usize, depth: u64, max_depth: u64) {
+        let node = &self[node];
+
+        for _ in 0..depth { print!("  ") }
+        let losses = node.visits - node.wins - node.draws;
+        println!("{:?}: {:.3} <- {},{},{} / {}", node.coord, node.signed_value(), node.wins, node.draws, losses, node.visits);
+
+        if depth == max_depth { return; }
+
+        if let Some(children) = node.children() {
+            let best_child = children.start.get() + children.iter()
+                .map(|c| OrderedFloat(self[c].signed_value()))
+                .position_max().unwrap();
+
+            for child in children {
+                let next_max_depth = if child == best_child {
+                    max_depth
+                } else {
+                    depth + 1
+                };
+
+                self.print_impl(child, depth + 1, next_max_depth)
+            }
+        }
     }
 }
 
