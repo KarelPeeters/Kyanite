@@ -35,7 +35,6 @@ pub fn random_board_with_forced_win(depth: u32, rng: &mut impl Rng) -> Board {
     let certain_moves = FASTEST_POSSIBLE_WIN.saturating_sub(depth);
 
     loop {
-        println!("Starting new attempt");
         let mut board = random_board_with_moves(certain_moves, rng);
 
         loop {
