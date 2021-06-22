@@ -62,17 +62,16 @@ pub(super) fn collect(writer: &mut impl Write, position_count: u64, receiver: &R
     }
 }
 
-const OUTPUT_FORMAT_SIZE: usize = 3 + 4 * 81 + 2 * 9;
+const OUTPUT_FORMAT_SIZE: usize = 3 + 1 + 4 * 81 + 2 * 9;
 
 fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) -> std::io::Result<()> {
     let won_by = simulation.won_by;
 
     let mut full_policy = vec![0.0; 81];
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(OUTPUT_FORMAT_SIZE);
 
     for position in simulation.positions {
-        //TODO add value to the output file format once we start using that
-        let Position { board, value: _, policy } = position;
+        let Position { board, value, policy } = position;
 
         assert_eq!(policy.len(), board.available_moves().count());
         full_policy.fill(0.0);
@@ -85,6 +84,8 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
         data.push((won_by == board.next_player) as u8 as f32);
         data.push((won_by == Player::Neutral) as u8 as f32);
         data.push((won_by == board.next_player.other()) as u8 as f32);
+
+        data.push(value);
 
         data.extend_from_slice(&full_policy);
         data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));

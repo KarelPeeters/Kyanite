@@ -148,7 +148,7 @@ impl GameState {
                     //store this position
                     self.positions.push(Position {
                         board: self.zero.tree.root_board().clone(),
-                        value: tree[0].value(),
+                        value: tree.value(),
                         policy,
                     });
                     move_count += 1;

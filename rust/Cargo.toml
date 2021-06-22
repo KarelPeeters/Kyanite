@@ -16,7 +16,7 @@ rand = "0.8.3"
 rayon = "1.5.0"
 static_assertions = "1.1.0"
 tch = "0.4.1"
-torch-sys= "0.4.1"
+torch-sys = "0.4.1"
 ta = "0.4.0"
 closure = "0.3.0"
 onnxruntime = "0.0.12"
@@ -25,3 +25,6 @@ rental = "0.5.6"
 
 [profile.release]
 debug = true
+
+[profile.dev]
+opt-level = 1

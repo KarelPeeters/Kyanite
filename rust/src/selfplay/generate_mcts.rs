@@ -4,7 +4,6 @@ use crossbeam::channel::{Sender, SendError};
 use itertools::Itertools;
 use rand::thread_rng;
 use sttt::board::Board;
-use sttt::mcts::heuristic::ZeroHeuristic;
 use sttt::mcts::mcts_build_tree;
 
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
@@ -51,7 +50,7 @@ impl Generator for MCTSGenerator {
                         break player;
                     }
                     None => {
-                        let tree = mcts_build_tree(&board, self.iterations, &ZeroHeuristic, &mut thread_rng());
+                        let tree = mcts_build_tree(&board, self.iterations, 2.0, &mut thread_rng());
                         sender.send(Message::Counter { evals: self.iterations, moves: 1 })?;
 
                         let root = &tree[0];
@@ -68,7 +67,7 @@ impl Generator for MCTSGenerator {
 
                         positions.push(Position {
                             board: board.clone(),
-                            value: tree.signed_value(),
+                            value: tree.eval().value(),
                             policy,
                         });
 

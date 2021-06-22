@@ -75,6 +75,7 @@ impl Node {
         }
     }
 
+    /// The value of this node from the POV of the player that could play this move.
     pub fn value(&self) -> f32 {
         *self.total_value / self.visits as f32
     }
@@ -138,6 +139,11 @@ impl Tree {
         }).expect("Root node must have non-empty children");
 
         self[best_child].coord.unwrap()
+    }
+
+    /// The value of `root_board` from the POV of `root_board.next_player`.
+    pub fn value(&self) -> f32 {
+        -self[0].value()
     }
 
     /// Return the policy vector for the root node.
