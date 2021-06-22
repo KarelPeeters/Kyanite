@@ -38,9 +38,16 @@ pub fn random_board_with_forced_win(depth: u32, rng: &mut impl Rng) -> Board {
         let mut board = random_board_with_moves(certain_moves, rng);
 
         loop {
-            let eval = evaluate_minimax(&board, depth);
-            if eval.is_forced_win() {
-                return board;
+            let deep_eval = evaluate_minimax(&board, depth);
+
+            if deep_eval.is_forced_win() {
+                let shallow_win = depth > 1 && evaluate_minimax(&board, depth - 1).is_forced_win();
+
+                if !shallow_win {
+                    return board;
+                } else {
+                    break
+                }
             }
 
             match board.random_available_move(rng) {
