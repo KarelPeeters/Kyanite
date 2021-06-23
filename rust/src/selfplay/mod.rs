@@ -13,8 +13,11 @@ use rand::distributions::WeightedIndex;
 use rand::Rng;
 use sttt::board::{Board, Player};
 
-pub use generate_mcts::MCTSGenerator;
-pub use generate_zero::ZeroGenerator;
+pub use generate_mcts::MCTSGeneratorSettings;
+pub use generate_zero::GoogleOnnxSettings;
+pub use generate_zero::GoogleTorchSettings;
+pub use generate_zero::NetworkSettings;
+pub use generate_zero::ZeroGeneratorSettings;
 
 mod collect;
 mod generate_zero;
@@ -34,7 +37,7 @@ pub trait Generator: Debug + Sync {
     type ThreadInit: Send;
 
     fn initialize(&self) -> Self::Init;
-    fn thread_initialize(&self) -> Vec<Self::ThreadInit>;
+    fn thread_params(&self) -> Vec<Self::ThreadInit>;
 
     fn thread_main(
         &self,
@@ -93,9 +96,10 @@ impl<G: Generator> Settings<G> {
         let request_stop = AtomicBool::new(false);
 
         scope(|s| {
-            println!("Spawning threads");
+            let thread_params = self.generator.thread_params();
+            println!("Spawning {} threads", thread_params.len());
 
-            for (i, thread_init) in self.generator.thread_initialize().into_iter().enumerate() {
+            for (i, thread_init) in thread_params.into_iter().enumerate() {
                 s.builder()
                     .name(format!("worker-{}", i))
                     .spawn(closure!(

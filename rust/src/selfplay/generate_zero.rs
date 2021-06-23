@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam::channel::{Sender, SendError};
@@ -8,58 +9,113 @@ use sttt::board::Board;
 use tch::Device;
 
 use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, zero_build_tree, ZeroState};
+use crate::network::google_onnx::GoogleOnnxNetwork;
 use crate::network::google_torch::GoogleTorchNetwork;
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
 
 #[derive(Debug)]
-pub struct ZeroGenerator {
+pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     // performance settings
-    pub devices: Vec<Device>,
-    pub threads_per_device: usize,
     pub batch_size: usize,
 
     // settings that effect the generated games
-    pub network_path: String,
+    pub network: S,
     pub iterations: u64,
     pub exploration_weight: f32,
 }
 
-type Net = GoogleTorchNetwork;
+pub trait NetworkSettings: Debug + Sync {
+    type Network: Network;
+    type LoadParam: Send;
 
-impl ZeroGenerator {
-    fn load_network(&self, device: Device) -> Net {
-        Net::load(&self.network_path, device)
+    /// Load the network used for shared initialization
+    fn load_network(&self, init: Self::LoadParam) -> Self::Network;
+
+    /// The initialization parameter used to load the initialization network.
+    fn init_param(&self) -> Self::LoadParam;
+
+    /// Initialization parameters to give to each thread. This function effectively decides the
+    /// number of threads that will be launched.
+    fn thread_params(&self) -> Vec<Self::LoadParam>;
+}
+
+#[derive(Debug)]
+pub struct GoogleTorchSettings {
+    pub path: String,
+    pub devices: Vec<Device>,
+    pub threads_per_device: usize,
+}
+
+impl NetworkSettings for GoogleTorchSettings {
+    type Network = GoogleTorchNetwork;
+    type LoadParam = Device;
+
+    fn load_network(&self, init: Self::LoadParam) -> Self::Network {
+        GoogleTorchNetwork::load(&self.path, init)
     }
 
+    fn init_param(&self) -> Self::LoadParam {
+        Device::Cpu
+    }
+
+    fn thread_params(&self) -> Vec<Self::LoadParam> {
+        self.devices.repeat(self.threads_per_device)
+    }
+}
+
+#[derive(Debug)]
+pub struct GoogleOnnxSettings {
+    pub path: String,
+    pub num_threads: usize,
+}
+
+impl NetworkSettings for GoogleOnnxSettings {
+    type Network = GoogleOnnxNetwork;
+    type LoadParam = ();
+
+    fn load_network(&self, _: ()) -> Self::Network {
+        GoogleOnnxNetwork::load(&self.path)
+    }
+
+    fn init_param(&self) -> () {
+        ()
+    }
+
+    fn thread_params(&self) -> Vec<()> {
+        vec![(); self.num_threads]
+    }
+}
+
+impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
     fn new_zero(&self, tree: Tree) -> ZeroState {
         ZeroState::new(tree, self.iterations, self.exploration_weight)
     }
 }
 
-impl Generator for ZeroGenerator {
+impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
     type Init = Tree;
-    type ThreadInit = Device;
+    type ThreadInit = S::LoadParam;
 
     fn initialize(&self) -> Self::Init {
-        let mut network = self.load_network(Device::Cpu);
+        let mut network = self.network.load_network(self.network.init_param());
         zero_build_tree(&Board::new(), self.iterations, self.exploration_weight, &mut network)
     }
 
-    fn thread_initialize(&self) -> Vec<Self::ThreadInit> {
-        self.devices.repeat(self.threads_per_device)
+    fn thread_params(&self) -> Vec<Self::ThreadInit> {
+        self.network.thread_params()
     }
 
     fn thread_main(
         &self,
         move_selector: &MoveSelector,
         root_tree: &Tree,
-        device: Device,
+        load_param: S::LoadParam,
         request_stop: &AtomicBool,
         sender: &Sender<Message>,
     ) -> Result<(), SendError<Message>> {
         let batch_size = self.batch_size;
-        let mut network = self.load_network(device);
+        let mut network = self.network.load_network(load_param);
         let mut rng = thread_rng();
 
         let mut states = vec![GameState::new(self.new_zero(root_tree.clone())); batch_size];
@@ -122,7 +178,7 @@ impl GameState {
         &mut self,
         rng: &mut impl Rng,
         move_selector: &MoveSelector,
-        settings: &ZeroGenerator,
+        settings: &ZeroGeneratorSettings<impl NetworkSettings>,
         root_tree: &Tree,
         response: Option<Response>,
         sender: &Sender<Message>,

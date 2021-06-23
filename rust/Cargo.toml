@@ -21,7 +21,7 @@ ta = "0.4.0"
 closure = "0.3.0"
 onnxruntime = "0.0.12"
 ndarray = "0.15.3"
-rental = "0.5.6"
+self_cell = "0.9.0"
 
 [profile.release]
 debug = true

@@ -1,32 +1,22 @@
-use sttt_zero::network::Network;
-use tch::Device;
-use sttt_zero::mcts_zero::{zero_build_tree, ZeroBot};
-use sttt::board::{Board, Coord};
-use sttt::mcts::{mcts_build_tree, MCTSBot};
-use sttt::mcts::heuristic::ZeroHeuristic;
 use rand::thread_rng;
-use sttt::mcts;
-use ordered_float::OrderedFloat;
-use itertools::Itertools;
-use sttt::bot_game::run;
-use sttt::util::lower_process_priority;
 use rayon::ThreadPoolBuilder;
-use sttt_zero::network::google_torch::GoogleTorchNetwork;
+use sttt::bot_game;
+use sttt::mcts::MCTSBot;
+use sttt::util::lower_process_priority;
+
+use sttt_zero::mcts_zero::ZeroBot;
+use sttt_zero::network::google_onnx::GoogleOnnxNetwork;
 
 fn main() {
     lower_process_priority();
 
-    let mut network = GoogleTorchNetwork::load("../data/esat/deeper_adam/model_5_epochs.pt", Device::Cpu);
+    ThreadPoolBuilder::new()
+        .num_threads(2)
+        .build_global().unwrap();
 
-    let mut board = Board::new();
-    println!("{}", board);
-    println!("{}", zero_build_tree(&board, 10_000, 1.0, &mut network).display(4));
-
-    board.play(Coord::from_oo(4, 4));
-    println!("{}", board);
-    println!("{}", zero_build_tree(&board, 10_000, 1.0, &mut network).display(4));
-
-    board.play(Coord::from_oo(4, 0));
-    println!("{}", board);
-    println!("{}", zero_build_tree(&board, 10_000, 1.0, &mut network).display(4));
+    println!("{:?}", bot_game::run(
+        || MCTSBot::new(100_000, 2.0, thread_rng()),
+        || ZeroBot::new(1_000, 2.0, GoogleOnnxNetwork::load("../data/esat/modest/model_4_epochs.onnx")),
+        20, true, Some(1),
+    ));
 }

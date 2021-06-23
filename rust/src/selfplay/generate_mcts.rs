@@ -9,14 +9,14 @@ use sttt::mcts::mcts_build_tree;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
 
 #[derive(Debug)]
-pub struct MCTSGenerator {
+pub struct MCTSGeneratorSettings {
     pub thread_count: usize,
 
     pub iterations: u64,
     pub exploration_weight: f32,
 }
 
-impl Generator for MCTSGenerator {
+impl Generator for MCTSGeneratorSettings {
     type Init = ();
     type ThreadInit = ();
 
@@ -24,7 +24,7 @@ impl Generator for MCTSGenerator {
         ()
     }
 
-    fn thread_initialize(&self) -> Vec<Self::ThreadInit> {
+    fn thread_params(&self) -> Vec<Self::ThreadInit> {
         vec![(); self.thread_count]
     }
 

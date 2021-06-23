@@ -2,8 +2,8 @@
 
 use sttt::util::lower_process_priority;
 
-use sttt_zero::network::google_torch::all_cuda_devices;
-use sttt_zero::selfplay::{MCTSGenerator, MoveSelector, Settings, ZeroGenerator};
+use sttt_zero::network::google_torch::{all_cuda_devices, GoogleTorchNetwork};
+use sttt_zero::selfplay::{GoogleOnnxSettings, MCTSGeneratorSettings, MoveSelector, Settings, ZeroGeneratorSettings};
 
 fn main() {
     lower_process_priority();
@@ -16,18 +16,29 @@ fn main() {
             inf_temp_move_count: 20
         },
 
-        generator: ZeroGenerator {
-            devices: all_cuda_devices(),
-            threads_per_device: 2,
-            batch_size: 400,
+        generator: ZeroGeneratorSettings {
+            /*
+            network: GoogleTorchNetworkSettings {
+                devices: all_cuda_devices(),
+                threads_per_device: 2,
+                path: "../data/esat/modest/resave_2_epochs.onnx".to_owned(),
+            },
+            */
 
-            network_path: "../data/esat/deeper_adam/model_5_epochs.pt".to_owned(),
+            //TODO figure out why onnx is not running on the GPU
+            network: GoogleOnnxSettings {
+                // path: "../data/esat/modest/resave_2_epochs.onnx".to_owned(),
+                path: "../data/onnx/small.onnx".to_owned(),
+                num_threads: 1,
+            },
+
+            batch_size: 1000,
             iterations: 1000,
             exploration_weight: 1.0,
         },
 
         /*
-        generator: MCTSGenerator {
+        generator: MCTSGeneratorSettings {
             thread_count: 4,
 
             iterations: 1_000,

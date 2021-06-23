@@ -2,11 +2,11 @@ use std::path::Path;
 use std::time::Instant;
 
 use itertools::Itertools;
-use sttt::board::{Board, Coord};
+use sttt::board::Board;
 use tch::{CModule, Cuda, Device, IValue, TchError, Tensor};
 use torch_sys::dummy_cuda_dependency;
 
-use crate::network::{encode_google_input, Network, NetworkEvaluation};
+use crate::network::{collect_google_output, encode_google_input, Network, NetworkEvaluation};
 
 #[derive(Debug)]
 pub struct GoogleTorchNetwork {
@@ -60,29 +60,13 @@ impl Network for GoogleTorchNetwork {
         let batch_value = unwrap_tensor_with_shape(&output[0], &[batch_size, 1]);
         let batch_policy = unwrap_tensor_with_shape(&output[1], &[batch_size, 81]);
 
-        let batch_value = Vec::<f32>::from(batch_value);
-        let batch_policy = Vec::<f32>::from(batch_policy);
+        let batch_values = Vec::<f32>::from(batch_value);
+        let batch_policies = Vec::<f32>::from(batch_policy);
 
-        boards.iter().enumerate().map(|(i, board)| {
-            let range = (81 * i)..(81 * (i + 1));
-            let policy_yx = &batch_policy[range];
-            let mut policy = Coord::all()
-                .map(|c| policy_yx[c.yx() as usize])
-                .collect_vec();
-
-            mask_and_softmax(&mut policy, board);
-
-            //TODO - sign here? check the learning code again
-            //  printing trees, it appears that the model is trying to lose!
-
-            //TODO way to little exploration! eg. the empty board tree only visits most moves once!
-            NetworkEvaluation {
-                value: batch_value[i],
-                policy,
-            }
-        }).collect_vec()
+        collect_google_output(boards, &batch_values, &batch_policies)
     }
 }
+
 
 fn unwrap_tensor_with_shape<'i>(value: &'i IValue, size: &[i64]) -> &'i Tensor {
     match value {
@@ -91,23 +75,5 @@ fn unwrap_tensor_with_shape<'i>(value: &'i IValue, size: &[i64]) -> &'i Tensor {
             tensor
         }
         _ => panic!("Expected Tensor, got {:?}", value)
-    }
-}
-
-fn mask_and_softmax(slice: &mut [f32], board: &Board) {
-    assert_eq!(81, slice.len());
-
-    let mut sum = 0.0;
-    for (o, v) in slice.iter_mut().enumerate() {
-        if !board.is_available_move(Coord::from_o(o as u8)) {
-            *v = 0.0;
-        } else {
-            *v = v.exp();
-            sum += *v;
-        }
-    }
-
-    for v in slice.iter_mut() {
-        *v /= sum;
     }
 }
