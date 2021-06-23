@@ -9,7 +9,7 @@ from models import GoogleModel
 
 
 def main():
-    model = GoogleModel(64, 5, 2, 32, 8, True)
+    model = GoogleModel(64, 5, 2, 32, 8, True, None, False)
 
     batch_size = 1000
     input = torch.randn(batch_size, 5, 9, 9)
