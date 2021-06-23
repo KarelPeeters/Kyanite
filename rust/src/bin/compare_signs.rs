@@ -6,7 +6,7 @@ use sttt::mcts::mcts_build_tree;
 use sttt::minimax::evaluate_minimax;
 
 use sttt_zero::mcts_zero::zero_build_tree;
-use sttt_zero::network::DummyNetwork;
+use sttt_zero::network::dummy::DummyNetwork;
 use sttt_zero::network::google_onnx::GoogleOnnxNetwork;
 
 fn main() {
@@ -25,13 +25,13 @@ fn main() {
     println!("{:?}", mm_eval);
 
     println!("\nMCTS:");
-    let mcts_tree = mcts_build_tree(&board, 10_000_000, 2.0, &mut rng);
+    let mcts_tree = mcts_build_tree(&board, 1_000_000, 2.0, &mut rng);
     println!("value: {}", mcts_tree.eval().value());
     println!("best move: {:?}", mcts_tree.best_move());
     mcts_tree.print(1);
 
     println!("\nZero:");
-    let mut network = GoogleOnnxNetwork::load("../data/esat/modest/model_4_epochs.onnx.onnx");
+    let mut network = GoogleOnnxNetwork::load("../data/esat/modest/model_4_epochs.onnx");
     let zero_tree = zero_build_tree(&board, 100_000, 2.0, &mut network);
     println!("value: {}", zero_tree.value());
     println!("best move: {:?}", zero_tree.best_move());

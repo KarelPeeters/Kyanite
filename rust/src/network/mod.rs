@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use sttt::board::{Board, Coord};
 
+pub mod dummy;
 pub mod google_torch;
 pub mod google_onnx;
 
@@ -18,22 +19,6 @@ pub trait Network {
         let mut result = self.evaluate_batch(&[board.clone()]);
         assert_eq!(result.len(), 1);
         result.pop().unwrap()
-    }
-}
-
-/// A `Network` that always returns value and policy logits 0.
-pub struct DummyNetwork;
-
-impl Network for DummyNetwork {
-    fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
-        boards.iter().map(|board| {
-            let policy_value = 1.0 / (board.available_moves().count() as f32);
-            let policy = Coord::all()
-                .map(|c| if board.is_available_move(c) { policy_value } else { 0.0 })
-                .collect();
-
-            NetworkEvaluation { value: 0.0, policy }
-        }).collect()
     }
 }
 
@@ -73,7 +58,7 @@ fn collect_google_output(boards: &[Board], batch_values: &[f32], batch_policies:
     }).collect_vec()
 }
 
-fn mask_and_softmax(slice: &mut [f32], board: &Board) {
+pub fn mask_and_softmax(slice: &mut [f32], board: &Board) {
     assert_eq!(81, slice.len());
 
     let mut sum = 0.0;
