@@ -6,11 +6,8 @@ use itertools::Itertools;
 use itertools::izip;
 use rand::{Rng, thread_rng};
 use sttt::board::Board;
-use tch::Device;
 
 use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, zero_build_tree, ZeroState};
-use crate::network::google_onnx::GoogleOnnxNetwork;
-use crate::network::google_torch::GoogleTorchNetwork;
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
 
@@ -40,50 +37,64 @@ pub trait NetworkSettings: Debug + Sync {
     fn thread_params(&self) -> Vec<Self::LoadParam>;
 }
 
-#[derive(Debug)]
-pub struct GoogleTorchSettings {
-    pub path: String,
-    pub devices: Vec<Device>,
-    pub threads_per_device: usize,
+#[cfg(feature = "torch")]
+mod settings_torch {
+    use tch::Device;
+
+    use crate::network::google_torch::GoogleTorchNetwork;
+    use crate::selfplay::generate_zero::NetworkSettings;
+
+    #[derive(Debug)]
+    pub struct GoogleTorchSettings {
+        pub path: String,
+        pub devices: Vec<Device>,
+        pub threads_per_device: usize,
+    }
+
+    impl NetworkSettings for GoogleTorchSettings {
+        type Network = GoogleTorchNetwork;
+        type LoadParam = Device;
+
+        fn load_network(&self, init: Self::LoadParam) -> Self::Network {
+            GoogleTorchNetwork::load(&self.path, init)
+        }
+
+        fn init_param(&self) -> Self::LoadParam {
+            Device::Cpu
+        }
+
+        fn thread_params(&self) -> Vec<Self::LoadParam> {
+            self.devices.repeat(self.threads_per_device)
+        }
+    }
 }
 
-impl NetworkSettings for GoogleTorchSettings {
-    type Network = GoogleTorchNetwork;
-    type LoadParam = Device;
+#[cfg(feature = "onnx")]
+mod settings_onnx {
+    use crate::network::google_onnx::GoogleOnnxNetwork;
+    use crate::selfplay::generate_zero::NetworkSettings;
 
-    fn load_network(&self, init: Self::LoadParam) -> Self::Network {
-        GoogleTorchNetwork::load(&self.path, init)
+    #[derive(Debug)]
+    pub struct GoogleOnnxSettings {
+        pub path: String,
+        pub num_threads: usize,
     }
 
-    fn init_param(&self) -> Self::LoadParam {
-        Device::Cpu
-    }
+    impl NetworkSettings for GoogleOnnxSettings {
+        type Network = GoogleOnnxNetwork;
+        type LoadParam = ();
 
-    fn thread_params(&self) -> Vec<Self::LoadParam> {
-        self.devices.repeat(self.threads_per_device)
-    }
-}
+        fn load_network(&self, _: ()) -> Self::Network {
+            GoogleOnnxNetwork::load(&self.path)
+        }
 
-#[derive(Debug)]
-pub struct GoogleOnnxSettings {
-    pub path: String,
-    pub num_threads: usize,
-}
+        fn init_param(&self) -> () {
+            ()
+        }
 
-impl NetworkSettings for GoogleOnnxSettings {
-    type Network = GoogleOnnxNetwork;
-    type LoadParam = ();
-
-    fn load_network(&self, _: ()) -> Self::Network {
-        GoogleOnnxNetwork::load(&self.path)
-    }
-
-    fn init_param(&self) -> () {
-        ()
-    }
-
-    fn thread_params(&self) -> Vec<()> {
-        vec![(); self.num_threads]
+        fn thread_params(&self) -> Vec<()> {
+            vec![(); self.num_threads]
+        }
     }
 }
 

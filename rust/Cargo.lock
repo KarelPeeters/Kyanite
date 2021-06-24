@@ -885,7 +885,6 @@ dependencies = [
  "closure",
  "crossbeam",
  "itertools",
- "ndarray 0.15.3",
  "num_cpus",
  "onnxruntime",
  "ordered-float",
@@ -896,7 +895,6 @@ dependencies = [
  "sttt",
  "ta",
  "tch",
- "torch-sys",
 ]
 
 [[package]]

@@ -2,7 +2,10 @@ use itertools::Itertools;
 use sttt::board::{Board, Coord};
 
 pub mod dummy;
+
+#[cfg(feature = "torch")]
 pub mod google_torch;
+#[cfg(feature = "onnx")]
 pub mod google_onnx;
 
 #[derive(Debug)]
@@ -22,6 +25,7 @@ pub trait Network {
     }
 }
 
+#[allow(dead_code)]
 fn encode_google_input(boards: &[Board]) -> Vec<f32> {
     let capacity = boards.len() * 5 * 9 * 9;
     let mut result = Vec::with_capacity(capacity);
@@ -38,6 +42,7 @@ fn encode_google_input(boards: &[Board]) -> Vec<f32> {
     result
 }
 
+#[allow(dead_code)]
 fn collect_google_output(boards: &[Board], batch_values: &[f32], batch_policies: &[f32]) -> Vec<NetworkEvaluation> {
     assert_eq!(boards.len(), batch_values.len());
     assert_eq!(boards.len() * 81, batch_policies.len());
@@ -55,9 +60,10 @@ fn collect_google_output(boards: &[Board], batch_values: &[f32], batch_policies:
             value: batch_values[i],
             policy,
         }
-    }).collect_vec()
+    }).collect()
 }
 
+#[allow(dead_code)]
 pub fn mask_and_softmax(slice: &mut [f32], board: &Board) {
     assert_eq!(81, slice.len());
 

@@ -3,8 +3,7 @@ use std::time::Instant;
 
 use itertools::Itertools;
 use sttt::board::Board;
-use tch::{CModule, Cuda, Device, IValue, TchError, Tensor};
-use torch_sys::dummy_cuda_dependency;
+use tch::{CModule, Cuda, Device, IValue, maybe_init_cuda, TchError, Tensor};
 
 use crate::network::{collect_google_output, encode_google_input, Network, NetworkEvaluation};
 
@@ -23,7 +22,7 @@ pub fn all_cuda_devices() -> Vec<Device> {
 impl GoogleTorchNetwork {
     pub fn load(path: impl AsRef<Path>, device: Device) -> Self {
         //ensure CUDA support isn't "optimized" away by the linker
-        unsafe { dummy_cuda_dependency(); }
+        maybe_init_cuda();
 
         let model = CModule::load_on_device(path.as_ref(), device)
             .expect("Failed to load model");

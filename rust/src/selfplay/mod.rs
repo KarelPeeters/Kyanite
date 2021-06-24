@@ -13,15 +13,9 @@ use rand::distributions::WeightedIndex;
 use rand::Rng;
 use sttt::board::{Board, Player};
 
-pub use generate_mcts::MCTSGeneratorSettings;
-pub use generate_zero::GoogleOnnxSettings;
-pub use generate_zero::GoogleTorchSettings;
-pub use generate_zero::NetworkSettings;
-pub use generate_zero::ZeroGeneratorSettings;
-
 mod collect;
-mod generate_zero;
-mod generate_mcts;
+pub mod generate_zero;
+pub mod generate_mcts;
 
 #[derive(Debug)]
 pub struct Settings<G: Generator> {

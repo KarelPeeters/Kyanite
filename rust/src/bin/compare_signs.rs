@@ -1,6 +1,6 @@
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
-use sttt::board::{Board, board_to_compact_string};
+use sttt::board::board_to_compact_string;
 use sttt::board_gen::random_board_with_forced_win;
 use sttt::mcts::mcts_build_tree;
 use sttt::minimax::evaluate_minimax;
