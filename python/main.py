@@ -4,8 +4,8 @@ import torch
 from matplotlib import pyplot
 from torch.optim import AdamW
 
-from core import TrainSettings, train_model, ValueTarget
 from models import GoogleModel
+from train import TrainSettings, train_model, ValueTarget
 from util import load_data, DEVICE, GoogleData
 
 
