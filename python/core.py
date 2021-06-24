@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 
 import numpy as np
@@ -36,6 +37,21 @@ def evaluate_model(model, data: GoogleData):
     return value_loss, move_loss
 
 
+class ValueTarget(Enum):
+    Value = auto()
+    FinalValue = auto()
+    Mean = auto()
+
+    def get_target(self, data: GoogleData):
+        if self == ValueTarget.Value:
+            return data.value
+        if self == ValueTarget.FinalValue:
+            return data.final_value
+        if self == ValueTarget.Mean:
+            return (data.value + data.final_value) / 2
+        assert False, self
+
+
 @dataclass
 class TrainSettings:
     output_path: str
@@ -46,6 +62,7 @@ class TrainSettings:
     epochs: int
     optimizer: Optimizer
     scheduler: Any
+    value_target: ValueTarget
     policy_weight: float
     batch_size: int
 

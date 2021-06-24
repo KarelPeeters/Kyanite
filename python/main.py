@@ -4,7 +4,7 @@ import torch
 from matplotlib import pyplot
 from torch.optim import AdamW
 
-from core import TrainSettings, train_model
+from core import TrainSettings, train_model, ValueTarget
 from models import GoogleModel
 from util import load_data, DEVICE, GoogleData
 
@@ -16,8 +16,9 @@ def plot_stuff(plot_data, plot_legend):
 
 
 def main():
-    train_data = GoogleData.from_generic(load_data("../data/esat/train_data.csv")).to(DEVICE)
-    test_data = GoogleData.from_generic(load_data("../data/esat/test_data.csv")).to(DEVICE)
+    all_data = load_data("../data/esat2/all_data.csv")
+    train_data = GoogleData.from_generic(all_data.pick_batch(slice(0, 2_000_000))).to(DEVICE)
+    test_data = GoogleData.from_generic(all_data.pick_batch(slice(2_000_000, 2_100_000))).to(DEVICE)
 
     print(f"train size: {len(train_data)}")
     print(f"test size: {len(test_data)}")
@@ -58,6 +59,7 @@ def main():
         epochs=5,
         optimizer=optimizer,
         scheduler=None,
+        value_target=ValueTarget.FinalValue,
         policy_weight=1.0,
         batch_size=batch_size,
         plot_points=100,
