@@ -38,7 +38,7 @@ pub trait NetworkSettings: Debug + Sync {
 }
 
 #[cfg(feature = "torch")]
-mod settings_torch {
+pub mod settings_torch {
     use tch::Device;
 
     use crate::network::google_torch::GoogleTorchNetwork;
@@ -70,7 +70,7 @@ mod settings_torch {
 }
 
 #[cfg(feature = "onnx")]
-mod settings_onnx {
+pub mod settings_onnx {
     use crate::network::google_onnx::GoogleOnnxNetwork;
     use crate::selfplay::generate_zero::NetworkSettings;
 
