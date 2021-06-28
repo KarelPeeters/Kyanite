@@ -71,7 +71,7 @@ class TrainSettings:
     plot_window_size: int
 
 
-def train_model_epoch(model: nn.Module, s: TrainSettings) -> (np.array, np.array):
+def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array, np.array):
     batch_size = s.batch_size
     batch_count = len(s.train_data) // batch_size
 
@@ -110,7 +110,7 @@ def train_model_epoch(model: nn.Module, s: TrainSettings) -> (np.array, np.array
 
             next_plot_i += 1
 
-        print(f"Train batch {bi}/{batch_count}: {train_loss:.2f}, {train_value_loss:.2f}, {train_policy_loss:.2f}")
+        print(f"Epoch {ei}, train batch {bi}/{batch_count}: {train_loss:.2f}, {train_value_loss:.2f}, {train_policy_loss:.2f}")
 
         s.optimizer.zero_grad()
         train_loss.backward()
@@ -163,12 +163,12 @@ def train_model(model: nn.Module, s: TrainSettings):
     all_plot_data = None
 
     os.makedirs(s.output_path, exist_ok=True)
-    model.save(f"{s.output_path}/{0}_epochs.pt")
+    model.save(f"{s.output_path}/model_0_epochs.pt")
 
     for ei in range(epochs):
         print(f"Starting epoch {ei + 1}/{epochs}")
 
-        plot_data = train_model_epoch(model, s)
+        plot_data = train_model_epoch(ei, model, s)
         model.save(f"{output_path}/model_{ei + 1}_epochs.pt")
 
         if all_plot_data is None:

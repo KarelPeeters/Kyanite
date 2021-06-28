@@ -24,7 +24,7 @@ def main():
     print(f"test size: {len(test_data)}")
 
     model = GoogleModel(
-        channels=32, blocks=8,
+        channels=32, blocks=6,
         value_channels=1, value_size=16,
         policy_channels=4,
         res=True,
@@ -53,14 +53,14 @@ def main():
     # )
 
     settings = TrainSettings(
-        output_path="../data/esat/modest",
+        output_path="../data/esat2/modest",
         train_data=train_data,
         test_data=test_data,
         epochs=5,
         optimizer=optimizer,
         scheduler=None,
         value_target=ValueTarget.FinalValue,
-        policy_weight=1.0,
+        policy_weight=2.0,
         batch_size=batch_size,
         plot_points=100,
         plot_window_size=5,
