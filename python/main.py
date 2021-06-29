@@ -4,7 +4,6 @@ import torch
 from matplotlib import pyplot
 from torch.optim import AdamW
 
-from models import GoogleModel
 from train import TrainSettings, train_model, ValueTarget
 from util import load_data, DEVICE, GoogleData
 
@@ -17,20 +16,22 @@ def plot_stuff(plot_data, plot_legend):
 
 def main():
     # shuffle to avoid biasing test data towards longer games
-    all_data = load_data("../data/esat2/all_data.csv", shuffle=True)
+    all_data = load_data("../data/loop/games.csv", shuffle=True)
     train_data = GoogleData.from_generic(all_data.pick_batch(slice(0, 2_000_000))).to(DEVICE)
     test_data = GoogleData.from_generic(all_data.pick_batch(slice(2_000_000, 2_100_000))).to(DEVICE)
 
     print(f"train size: {len(train_data)}")
     print(f"test size: {len(test_data)}")
 
-    model = GoogleModel(
-        channels=32, blocks=6,
-        value_channels=1, value_size=16,
-        policy_channels=4,
-        res=True,
-        squeeze_size=None, squeeze_bias=False
-    )
+    # model = GoogleModel(
+    #     channels=32, blocks=6,
+    #     value_channels=1, value_size=16,
+    #     policy_channels=4,
+    #     res=True,
+    #     squeeze_size=None, squeeze_bias=False
+    # )
+
+    model = torch.jit.load("../data/esat2/modest/model_5_epochs.pt")
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
@@ -54,10 +55,10 @@ def main():
     # )
 
     settings = TrainSettings(
-        output_path="../data/esat2/modest",
+        output_path="../data/loop/modest_cont",
         train_data=train_data,
         test_data=test_data,
-        epochs=5,
+        epochs=15,
         optimizer=optimizer,
         scheduler=None,
         value_target=ValueTarget.FinalValue,

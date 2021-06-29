@@ -3,7 +3,7 @@ import os
 import torch.jit
 from torch.onnx import TrainingMode
 
-folder = "../../data/esat2/modest/"
+folder = "../../data/loop/modest_cont/"
 device = "cpu"
 
 for file_pt in os.listdir(folder):
