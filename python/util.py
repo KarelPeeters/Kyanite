@@ -95,7 +95,7 @@ class GoogleData:
         return len(self.input)
 
 
-def load_data(path_csv) -> GenericData:
+def load_data(path_csv, shuffle: bool) -> GenericData:
     path_tensor = Path(path_csv).with_suffix(".pt")
 
     if not os.path.exists(path_tensor) or os.path.getmtime(path_csv) > os.path.getmtime(path_tensor):
@@ -106,6 +106,9 @@ def load_data(path_csv) -> GenericData:
     else:
         print(f"Using cached data {path_tensor}")
         data = torch.load(path_tensor)
+
+    if shuffle:
+        data = data[torch.randperm(len(data))]
 
     return GenericData(data)
 

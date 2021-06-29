@@ -16,7 +16,8 @@ def plot_stuff(plot_data, plot_legend):
 
 
 def main():
-    all_data = load_data("../data/esat2/all_data.csv")
+    # shuffle to avoid biasing test data towards longer games
+    all_data = load_data("../data/esat2/all_data.csv", shuffle=True)
     train_data = GoogleData.from_generic(all_data.pick_batch(slice(0, 2_000_000))).to(DEVICE)
     test_data = GoogleData.from_generic(all_data.pick_batch(slice(2_000_000, 2_100_000))).to(DEVICE)
 
