@@ -28,17 +28,16 @@ pub struct Settings<G: Generator> {
 }
 
 pub trait Generator: Debug + Sync {
-    type Init: Sync;
-    type ThreadInit: Send;
+    type ThreadParam: Send;
 
-    fn initialize(&self) -> Self::Init;
-    fn thread_params(&self) -> Vec<Self::ThreadInit>;
+    /// The parameter given to each launched thread.
+    /// The length of the returned vec decides the number of threads launched;
+    fn thread_params(&self) -> Vec<Self::ThreadParam>;
 
     fn thread_main(
         &self,
         move_selector: &MoveSelector,
-        init: &Self::Init,
-        thread_init: Self::ThreadInit,
+        thread_param: Self::ThreadParam,
         request_stop: &AtomicBool,
         sender: &Sender<Message>,
     ) -> Result<(), SendError<Message>>;
@@ -88,10 +87,6 @@ impl<G: Generator> Settings<G> {
             .expect("Failed to open output file");
         let mut writer = BufWriter::new(&file);
 
-        //allow for some generator initial state that is later shared between threads
-        println!("Initializing generator");
-        let init = self.generator.initialize();
-
         let (sender, receiver) = channel::unbounded();
         let request_stop = AtomicBool::new(false);
 
@@ -99,14 +94,14 @@ impl<G: Generator> Settings<G> {
             let thread_params = self.generator.thread_params();
             println!("Spawning {} threads", thread_params.len());
 
-            for (i, thread_init) in thread_params.into_iter().enumerate() {
+            for (i, thread_param) in thread_params.into_iter().enumerate() {
                 s.builder()
                     .name(format!("worker-{}", i))
                     .spawn(closure!(
-                            ref self.move_selector, ref init, ref request_stop, ref sender,
+                            ref self.move_selector, ref request_stop, ref sender,
                             |_| {
                                 // ignore "sender disconnected" errors, that just means
-                                let _ = self.generator.thread_main(move_selector, init, thread_init, request_stop, sender);
+                                let _ = self.generator.thread_main(move_selector, thread_param, request_stop, sender);
                             }
                         ))
                     .expect("Failed to spawn thread");

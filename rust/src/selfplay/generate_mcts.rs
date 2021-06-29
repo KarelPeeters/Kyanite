@@ -17,21 +17,16 @@ pub struct MCTSGeneratorSettings {
 }
 
 impl Generator for MCTSGeneratorSettings {
-    type Init = ();
-    type ThreadInit = ();
+    type ThreadParam = ();
 
-    fn initialize(&self) -> Self::Init {
-        ()
-    }
-
-    fn thread_params(&self) -> Vec<Self::ThreadInit> {
+    fn thread_params(&self) -> Vec<Self::ThreadParam> {
         vec![(); self.thread_count]
     }
 
     fn thread_main(
         &self,
         move_selector: &MoveSelector,
-        _: &(), _: (),
+        _thread_param: (),
         request_stop: &AtomicBool,
         sender: &Sender<Message>,
     ) -> Result<(), SendError<Message>> {

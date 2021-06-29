@@ -7,7 +7,7 @@ use itertools::izip;
 use rand::{Rng, thread_rng};
 use sttt::board::Board;
 
-use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, zero_build_tree, ZeroSettings, ZeroState};
+use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
 
@@ -17,24 +17,19 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     pub batch_size: usize,
 
     // settings that effect the generated games
+    //TODO add random moves with less visits to reduce value overfitting
     pub network: S,
     pub iterations: u64,
     pub zero_settings: ZeroSettings,
 }
 
 pub trait NetworkSettings: Debug + Sync {
+    type ThreadParam: Send;
     type Network: Network;
-    type LoadParam: Send;
 
-    /// Load the network used for shared initialization
-    fn load_network(&self, init: Self::LoadParam) -> Self::Network;
+    fn load_network(&self, param: Self::ThreadParam) -> Self::Network;
 
-    /// The initialization parameter used to load the initialization network.
-    fn init_param(&self) -> Self::LoadParam;
-
-    /// Initialization parameters to give to each thread. This function effectively decides the
-    /// number of threads that will be launched.
-    fn thread_params(&self) -> Vec<Self::LoadParam>;
+    fn thread_params(&self) -> Vec<Self::ThreadParam>;
 }
 
 #[cfg(feature = "torch")]
@@ -52,18 +47,14 @@ pub mod settings_torch {
     }
 
     impl NetworkSettings for GoogleTorchSettings {
+        type ThreadParam = Device;
         type Network = GoogleTorchNetwork;
-        type LoadParam = Device;
 
-        fn load_network(&self, init: Self::LoadParam) -> Self::Network {
+        fn load_network(&self, init: Self::ThreadParam) -> Self::Network {
             GoogleTorchNetwork::load(&self.path, init)
         }
 
-        fn init_param(&self) -> Self::LoadParam {
-            Device::Cpu
-        }
-
-        fn thread_params(&self) -> Vec<Self::LoadParam> {
+        fn thread_params(&self) -> Vec<Self::ThreadParam> {
             self.devices.repeat(self.threads_per_device)
         }
     }
@@ -81,15 +72,11 @@ pub mod settings_onnx {
     }
 
     impl NetworkSettings for GoogleOnnxSettings {
+        type ThreadParam = ();
         type Network = GoogleOnnxNetwork;
-        type LoadParam = ();
 
         fn load_network(&self, _: ()) -> Self::Network {
             GoogleOnnxNetwork::load(&self.path)
-        }
-
-        fn init_param(&self) -> () {
-            ()
         }
 
         fn thread_params(&self) -> Vec<()> {
@@ -102,35 +89,31 @@ impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
     fn new_zero(&self, tree: Tree) -> ZeroState {
         ZeroState::new(tree, self.iterations, self.zero_settings)
     }
+
+    fn new_zero_root(&self) -> ZeroState {
+        self.new_zero(Tree::new(Board::new()))
+    }
 }
 
 impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
-    type Init = Tree;
-    type ThreadInit = S::LoadParam;
+    type ThreadParam = S::ThreadParam;
 
-    fn initialize(&self) -> Self::Init {
-        let mut network = self.network.load_network(self.network.init_param());
-        let mut rng = thread_rng();
-        zero_build_tree(&Board::new(), self.iterations, self.zero_settings, &mut network, &mut rng)
-    }
-
-    fn thread_params(&self) -> Vec<Self::ThreadInit> {
+    fn thread_params(&self) -> Vec<Self::ThreadParam> {
         self.network.thread_params()
     }
 
     fn thread_main(
         &self,
         move_selector: &MoveSelector,
-        root_tree: &Tree,
-        load_param: S::LoadParam,
+        thread_param: S::ThreadParam,
         request_stop: &AtomicBool,
         sender: &Sender<Message>,
     ) -> Result<(), SendError<Message>> {
         let batch_size = self.batch_size;
-        let mut network = self.network.load_network(load_param);
+        let mut network = self.network.load_network(thread_param);
         let mut rng = thread_rng();
 
-        let mut states = vec![GameState::new(self.new_zero(root_tree.clone())); batch_size];
+        let mut states = vec![GameState::new(self.new_zero_root()); batch_size];
         let mut responses = (0..batch_size).map(|_| None).collect_vec();
         let mut requests = Vec::new();
 
@@ -149,7 +132,6 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
                     &mut rng,
                     move_selector,
                     self,
-                    root_tree,
                     response,
                     sender,
                 )?;
@@ -191,7 +173,6 @@ impl GameState {
         rng: &mut impl Rng,
         move_selector: &MoveSelector,
         settings: &ZeroGeneratorSettings<impl NetworkSettings>,
-        root_tree: &Tree,
         response: Option<Response>,
         sender: &Sender<Message>,
     ) -> Result<(u64, Request), SendError<Message>> {
@@ -224,6 +205,9 @@ impl GameState {
                     //keep the tree for the picked move
                     match tree.keep_move(picked_move) {
                         KeepResult::Tree(tree) => {
+                            //TODO maybe remove this when dirichlet noise is added since it's not equivalent any more?
+                            //  or still do this but add the dirichlet anyway? could be interesting
+                            //  this will become a lot less relevant once we add random moves with less iterations anyway
                             //continue playing this game
                             self.zero = settings.new_zero(tree)
                         }
@@ -233,7 +217,7 @@ impl GameState {
                             sender.send(Message::Simulation(simulation))?;
 
                             //start a new game
-                            *self = GameState::new(settings.new_zero(root_tree.clone()));
+                            *self = GameState::new(settings.new_zero_root());
                         }
                     }
                 }
