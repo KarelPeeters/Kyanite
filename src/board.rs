@@ -3,6 +3,7 @@
 use std::fmt::{self, Debug, Write};
 
 use itertools::Itertools;
+use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -128,14 +129,15 @@ impl fmt::Display for Board {
                 let is_last = Some(coord) == self.last_move;
                 let is_available = self.is_available_move(coord);
 
-                let symbol = match (is_available, is_last, self.tile(coord)) {
+                let m = (is_available, is_last, self.tile(coord));
+                let symbol = match m {
                     (false, false, Player::X) => 'x',
                     (false, true, Player::X) => 'X',
                     (false, false, Player::O) => 'o',
                     (false, true, Player::O) => 'O',
                     (true, false, Player::Neutral) => '.',
                     (false, false, Player::Neutral) => ' ',
-                    _ => unreachable!()
+                    _ => unreachable!("{:?}", m)
                 };
 
                 f.write_char(symbol)?;
@@ -187,6 +189,54 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Symmetry {
+    pub transpose: bool,
+    pub flip_0: bool,
+    pub flip_1: bool,
+}
+
+impl Default for Symmetry {
+    fn default() -> Self {
+        Symmetry { transpose: false, flip_0: false, flip_1: false }
+    }
+}
+
+impl Distribution<Symmetry> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Symmetry {
+        Symmetry { transpose: rng.gen(), flip_0: rng.gen(), flip_1: rng.gen() }
+    }
+}
+
+impl Symmetry {
+    pub fn map_coord(self, coord: Coord) -> Coord {
+        Coord::from_oo(self.map_oo(coord.om()), self.map_oo(coord.os()))
+    }
+
+    pub fn map_oo(self, oo: u8) -> u8 {
+        let (mut x, mut y) = (oo % 3, oo / 3);
+        if self.transpose { std::mem::swap(&mut x, &mut y) };
+        if self.flip_0 { x = 2 - x };
+        if self.flip_1 { y = 2 - y };
+        let r = x + y * 3;
+        // println!("{:?}: {} -> {}", self, oo, r);
+        r
+    }
+
+    pub fn map_grid(self, grid: u32) -> u32 {
+        let mut result = 0;
+        for oo_input in 0..9 {
+            let oo_result = self.map_oo(oo_input);
+            let get = (grid >> oo_input) & 0b1_000_000_001;
+            result |= get << oo_result;
+        }
+
+        println!("{:?}: {:018b} -> {:018b}", self, grid, result);
+
+        result
+    }
+}
+
 impl Board {
     pub const MAX_AVAILABLE_MOVES: u32 = 9 * 9;
 
@@ -215,6 +265,23 @@ impl Board {
     pub fn macr(&self, om: u8) -> Player {
         debug_assert!(om < 9);
         get_player(self.main_grid, om)
+    }
+
+    pub fn map_symmetry(&self, sym: Symmetry) -> Board {
+        let mut grids = [0; 9];
+        for oo in 0..9 {
+            grids[sym.map_oo(oo) as usize] = sym.map_grid(self.grids[oo as usize])
+        }
+
+        Board {
+            grids,
+            main_grid: 0,
+            last_move: self.last_move.map(|c| sym.map_coord(c)),
+            next_player: self.next_player,
+            won_by: self.won_by,
+            macro_mask: sym.map_grid(self.macro_mask),
+            macro_open: sym.map_grid(self.macro_open),
+        }
     }
 
     /// Return the number of non-empty tiles.
@@ -442,4 +509,74 @@ pub fn board_from_compact_string(s: &str) -> Board {
     }
 
     board
+}
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+    use rand::rngs::SmallRng;
+    use rand::SeedableRng;
+    use rand::seq::SliceRandom;
+
+    use crate::board::{Board, Coord, Symmetry};
+    use crate::board_gen::random_board_with_moves;
+
+    #[test]
+    fn test_random_distribution() {
+        let mut board = Board::new();
+        let mut rand = SmallRng::seed_from_u64(0);
+
+        while !board.is_done() {
+            let moves: Vec<Coord> = board.available_moves().collect();
+
+            let mut counts: [i32; 81] = [0; 81];
+            for _ in 0..1_000_000 {
+                counts[board.random_available_move(&mut rand).unwrap().o() as usize] += 1;
+            }
+
+            let avg = (1_000_000 / moves.len()) as i32;
+
+            for (mv, &count) in counts.iter().enumerate() {
+                if moves.contains(&Coord::from_o(mv as u8)) {
+                    debug_assert!((count.wrapping_sub(avg)).abs() < 10_000, "uniformly distributed")
+                } else {
+                    assert_eq!(count, 0, "only actual moves returned")
+                }
+            }
+
+            let mv = moves.choose(&mut rand).unwrap().o();
+            board.play(Coord::from_o(mv as u8));
+        }
+    }
+
+    #[test]
+    fn symmetries() {
+        let mut rng = SmallRng::seed_from_u64(5);
+        let board = random_board_with_moves(10, &mut rng);
+        println!("{}", board);
+
+        for i in 0..8 {
+            let sym = Symmetry {
+                transpose: i & 0b001 != 0,
+                flip_0: i & 0b010 != 0,
+                flip_1: i & 0b100 != 0,
+            };
+
+            let mapped = board.map_symmetry(sym);
+            if i == 0 {
+                assert_eq!(board, mapped);
+            }
+
+            let expected = board.available_moves().map(|c| sym.map_coord(c)).sorted_by_key(|c| c.o()).collect_vec();
+            let actual = mapped.available_moves().sorted_by_key(|c| c.o()).collect_vec();
+
+            assert_eq!(expected, actual);
+
+            println!("{:?}", sym);
+            println!("{:?}", mapped);
+
+            // this println tests that the board is consistent enough to print it
+            println!("{}", mapped);
+        }
+    }
 }
