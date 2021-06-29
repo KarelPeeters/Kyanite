@@ -113,43 +113,6 @@ pub struct Board {
     macro_open: u32,
 }
 
-impl fmt::Display for Board {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for y in 0..9 {
-            if y == 3 || y == 6 {
-                f.write_str("---+---+---\n")?;
-            }
-
-            for x in 0..9 {
-                if x == 3 || x == 6 {
-                    f.write_char('|')?;
-                }
-
-                let coord = Coord::from_xy(x, y);
-                let is_last = Some(coord) == self.last_move;
-                let is_available = self.is_available_move(coord);
-
-                let m = (is_available, is_last, self.tile(coord));
-                let symbol = match m {
-                    (false, false, Player::X) => 'x',
-                    (false, true, Player::X) => 'X',
-                    (false, false, Player::O) => 'o',
-                    (false, true, Player::O) => 'O',
-                    (true, false, Player::Neutral) => '.',
-                    (false, false, Player::Neutral) => ' ',
-                    _ => unreachable!("{:?}", m)
-                };
-
-                f.write_char(symbol)?;
-            }
-
-            f.write_char('\n')?;
-        }
-
-        Ok(())
-    }
-}
-
 //TODO implement a size hint
 //TODO look into other iterator speedup functions that can be implemented
 pub struct BoardMoveIterator<'a> {
@@ -473,16 +436,57 @@ impl Iterator for BitIter {
     }
 }
 
-pub fn board_to_compact_string(board: &Board) -> String {
-    Coord::all().map(|coord| {
-        match (Some(coord) == board.last_move, board.tile(coord)) {
-            (false, Player::X) => 'X',
-            (true, Player::X) => 'x',
-            (false, Player::O) => 'O',
-            (true, Player::O) => 'o',
-            (_, Player::Neutral) => ' ',
+fn symbol_from_tile(board: &Board, coord: Coord) -> char {
+    let is_last = Some(coord) == board.last_move;
+    let is_available = board.is_available_move(coord);
+
+    let tuple = (is_available, is_last, board.tile(coord));
+    match tuple {
+        (false, false, Player::X) => 'x',
+        (false, true, Player::X) => 'X',
+        (false, false, Player::O) => 'o',
+        (false, true, Player::O) => 'O',
+        (true, false, Player::Neutral) => '.',
+        (false, false, Player::Neutral) => ' ',
+        _ => unreachable!("Invalid tile state {:?}", tuple)
+    }
+}
+
+fn symbol_to_tile(c: char) -> (bool, bool, Player) {
+    match c {
+        'X' => (false, false, Player::X),
+        'x' => (false, true, Player::X),
+        'O' => (false, false, Player::O),
+        'o' => (false, true, Player::O),
+        ' ' => (false, false, Player::Neutral),
+        '.' => (true, false, Player::Neutral),
+        _ => panic!("unexpected character '{}'", c)
+    }
+}
+
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for y in 0..9 {
+            if y == 3 || y == 6 {
+                f.write_str("---+---+---\n")?;
+            }
+
+            for x in 0..9 {
+                if x == 3 || x == 6 {
+                    f.write_char('|')?;
+                }
+                f.write_char(symbol_from_tile(self, Coord::from_xy(x, y)))?;
+            }
+
+            f.write_char('\n')?;
         }
-    }).join("")
+
+        Ok(())
+    }
+}
+
+pub fn board_to_compact_string(board: &Board) -> String {
+    Coord::all().map(|coord| symbol_from_tile(board, coord)).join("")
 }
 
 pub fn board_from_compact_string(s: &str) -> Board {
@@ -493,15 +497,7 @@ pub fn board_from_compact_string(s: &str) -> Board {
 
     for (o, c) in s.chars().enumerate() {
         let coord = Coord::from_o(o as u8);
-
-        let (player, last) = match c {
-            'X' => (Player::X, false),
-            'x' => (Player::X, true),
-            'O' => (Player::O, false),
-            'o' => (Player::O, true),
-            ' ' => (Player::Neutral, false),
-            _ => panic!("unexpected character '{}' in compact string", c)
-        };
+        let (_, last, player) = symbol_to_tile(c);
 
         if last {
             last_move = Some((player, coord));
