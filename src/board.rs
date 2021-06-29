@@ -189,26 +189,41 @@ impl<'a> Iterator for BoardMoveIterator<'a> {
     }
 }
 
+/// A symmetry group element for Board transformations. Can represent any combination of
+/// flips, rotating and transposing, which result in 8 distinct elements.
+///
+/// The `Default::default()` value means no transformation.
+///
+/// The internal representation is such that first x and y are transposed,
+/// then each axis is flipped separately.
 #[derive(Debug, Copy, Clone)]
 pub struct Symmetry {
     pub transpose: bool,
-    pub flip_0: bool,
-    pub flip_1: bool,
+    pub flip_x: bool,
+    pub flip_y: bool,
 }
 
 impl Default for Symmetry {
     fn default() -> Self {
-        Symmetry { transpose: false, flip_0: false, flip_1: false }
+        Symmetry { transpose: false, flip_x: false, flip_y: false }
     }
 }
 
 impl Distribution<Symmetry> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Symmetry {
-        Symmetry { transpose: rng.gen(), flip_0: rng.gen(), flip_1: rng.gen() }
+        Symmetry { transpose: rng.gen(), flip_x: rng.gen(), flip_y: rng.gen() }
     }
 }
 
 impl Symmetry {
+    pub fn inverse(self) -> Symmetry {
+        Symmetry {
+            transpose: self.transpose,
+            flip_x: if self.transpose { self.flip_y } else { self.flip_x },
+            flip_y: if self.transpose { self.flip_x } else { self.flip_y },
+        }
+    }
+
     pub fn map_coord(self, coord: Coord) -> Coord {
         Coord::from_oo(self.map_oo(coord.om()), self.map_oo(coord.os()))
     }
@@ -216,23 +231,18 @@ impl Symmetry {
     pub fn map_oo(self, oo: u8) -> u8 {
         let (mut x, mut y) = (oo % 3, oo / 3);
         if self.transpose { std::mem::swap(&mut x, &mut y) };
-        if self.flip_0 { x = 2 - x };
-        if self.flip_1 { y = 2 - y };
-        let r = x + y * 3;
-        // println!("{:?}: {} -> {}", self, oo, r);
-        r
+        if self.flip_x { x = 2 - x };
+        if self.flip_y { y = 2 - y };
+        x + y * 3
     }
 
-    pub fn map_grid(self, grid: u32) -> u32 {
+    fn map_grid(self, grid: u32) -> u32 {
         let mut result = 0;
         for oo_input in 0..9 {
             let oo_result = self.map_oo(oo_input);
             let get = (grid >> oo_input) & 0b1_000_000_001;
             result |= get << oo_result;
         }
-
-        println!("{:?}: {:018b} -> {:018b}", self, grid, result);
-
         result
     }
 }
@@ -553,30 +563,34 @@ mod test {
     fn symmetries() {
         let mut rng = SmallRng::seed_from_u64(5);
         let board = random_board_with_moves(10, &mut rng);
-        println!("{}", board);
+        println!("Original:\n{}", board);
 
         for i in 0..8 {
             let sym = Symmetry {
                 transpose: i & 0b001 != 0,
-                flip_0: i & 0b010 != 0,
-                flip_1: i & 0b100 != 0,
+                flip_x: i & 0b010 != 0,
+                flip_y: i & 0b100 != 0,
             };
+            let sym_inv = sym.inverse();
+
+            println!("{:?}", sym);
+            println!("inverse: {:?}", sym_inv);
 
             let mapped = board.map_symmetry(sym);
+            let back = mapped.map_symmetry(sym_inv);
+
+            // these prints test that the board is consistent enough to print it
+            println!("Mapped:\n{}", mapped);
+            println!("Back:\n{}", back);
+
             if i == 0 {
                 assert_eq!(board, mapped);
             }
+            assert_eq!(board, back);
 
-            let expected = board.available_moves().map(|c| sym.map_coord(c)).sorted_by_key(|c| c.o()).collect_vec();
-            let actual = mapped.available_moves().sorted_by_key(|c| c.o()).collect_vec();
-
-            assert_eq!(expected, actual);
-
-            println!("{:?}", sym);
-            println!("{:?}", mapped);
-
-            // this println tests that the board is consistent enough to print it
-            println!("{}", mapped);
+            let expected_moves = board.available_moves().map(|c| sym.map_coord(c)).sorted_by_key(|c| c.o()).collect_vec();
+            let actual_moves = mapped.available_moves().sorted_by_key(|c| c.o()).collect_vec();
+            assert_eq!(expected_moves, actual_moves);
         }
     }
 }
