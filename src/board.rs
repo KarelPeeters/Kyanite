@@ -179,6 +179,14 @@ impl Distribution<Symmetry> for Standard {
 }
 
 impl Symmetry {
+    pub fn all() -> impl Iterator<Item=Symmetry> {
+        (0..8).map(|i| Symmetry {
+            transpose: i & 0b100 != 0,
+            flip_x: i & 0b010 != 0,
+            flip_y: i & 0b001 != 0,
+        })
+    }
+
     pub fn inverse(self) -> Symmetry {
         Symmetry {
             transpose: self.transpose,
