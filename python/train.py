@@ -138,12 +138,14 @@ def plot_train_data(s: TrainSettings):
         pyplot.figure()
 
         train_smooth_values = uniform_window_filter(all_plot_data[:, i], s.plot_window_size)
-        pyplot.plot(all_plot_axis, train_smooth_values)
+        pyplot.plot(all_plot_axis, train_smooth_values, label="train")
 
         test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], s.plot_window_size)
-        pyplot.plot(all_plot_axis, test_smooth_values)
+        pyplot.plot(all_plot_axis, test_smooth_values, label="test")
 
         pyplot.title(TRAIN_PLOT_TITLES[i])
+        pyplot.legend()
+
         pyplot.savefig(f"{output_path}/plot_{TRAIN_PLOT_TITLES[i]}.png")
         pyplot.show()
 
