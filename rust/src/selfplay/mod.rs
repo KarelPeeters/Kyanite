@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufWriter;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use closure::closure;
@@ -78,6 +79,11 @@ impl<G: Generator> Settings<G> {
         println!("{:#?}", self);
 
         //open output file
+        let output_path = PathBuf::from(&self.output_path);
+        let output_folder = output_path.parent()
+            .expect("Output should be in a folder");
+        std::fs::create_dir_all(output_folder)
+            .expect("Failed to create output directory");
         let file = File::create(&self.output_path)
             .expect("Failed to open output file");
         let mut writer = BufWriter::new(&file);

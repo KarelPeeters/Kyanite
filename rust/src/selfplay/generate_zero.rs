@@ -7,7 +7,7 @@ use itertools::izip;
 use rand::{Rng, thread_rng};
 use sttt::board::Board;
 
-use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, zero_build_tree, ZeroState};
+use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, zero_build_tree, ZeroSettings, ZeroState};
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
 
@@ -19,7 +19,7 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     // settings that effect the generated games
     pub network: S,
     pub iterations: u64,
-    pub exploration_weight: f32,
+    pub zero_settings: ZeroSettings,
 }
 
 pub trait NetworkSettings: Debug + Sync {
@@ -100,7 +100,7 @@ pub mod settings_onnx {
 
 impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
     fn new_zero(&self, tree: Tree) -> ZeroState {
-        ZeroState::new(tree, self.iterations, self.exploration_weight)
+        ZeroState::new(tree, self.iterations, self.zero_settings)
     }
 }
 
@@ -110,7 +110,8 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
 
     fn initialize(&self) -> Self::Init {
         let mut network = self.network.load_network(self.network.init_param());
-        zero_build_tree(&Board::new(), self.iterations, self.exploration_weight, &mut network)
+        let mut rng = thread_rng();
+        zero_build_tree(&Board::new(), self.iterations, self.zero_settings, &mut network, &mut rng)
     }
 
     fn thread_params(&self) -> Vec<Self::ThreadInit> {
@@ -157,7 +158,7 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             }
 
             //pass requests to network
-            let boards = requests.iter().map(|r| r.board.clone()).collect_vec();
+            let boards = requests.iter().map(|r| r.board()).collect_vec();
             let mut evaluations = network.evaluate_batch(&boards);
 
             //construct responses
@@ -198,7 +199,7 @@ impl GameState {
         let mut move_count = 0;
 
         loop {
-            let result = self.zero.run_until_result(response.take());
+            let result = self.zero.run_until_result(response.take(), rng);
 
             match result {
                 RunResult::Request(request) =>

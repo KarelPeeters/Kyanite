@@ -1,22 +1,21 @@
 use rand::thread_rng;
-use rayon::ThreadPoolBuilder;
-use sttt::bot_game;
-use sttt::mcts::MCTSBot;
+use sttt::board::Board;
 use sttt::util::lower_process_priority;
 
-use sttt_zero::mcts_zero::ZeroBot;
+use sttt_zero::mcts_zero::{zero_build_tree, ZeroSettings};
 use sttt_zero::network::google_onnx::GoogleOnnxNetwork;
 
 fn main() {
     lower_process_priority();
 
-    ThreadPoolBuilder::new()
-        .num_threads(2)
-        .build_global().unwrap();
+    let mut rng = thread_rng();
+    let mut network = GoogleOnnxNetwork::load("../data/loop/modest_cont/model_5_epochs.onnx");
 
-    println!("{:?}", bot_game::run(
-        || MCTSBot::new(100_000, 2.0, thread_rng()),
-        || ZeroBot::new(1_000, 2.0, GoogleOnnxNetwork::load("../data/esat/modest/model_4_epochs.onnx")),
-        20, true, Some(1),
-    ));
+    let zero_settings = ZeroSettings::new(2.0, true);
+
+    for _ in 0..16 {
+        let tree = zero_build_tree(&Board::new(), 10_000, zero_settings, &mut network, &mut rng);
+        // println!("{}", tree.display(100));
+        println!("{}, {:?}", tree.value(), tree.best_move());
+    }
 }

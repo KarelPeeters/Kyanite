@@ -11,6 +11,9 @@ pub mod google_onnx;
 #[derive(Debug)]
 pub struct NetworkEvaluation {
     pub value: f32,
+
+    /// The full policy vector, in **o-order**.
+    /// Must be zero for non-available moves and have sum `1.0`.
     pub policy: Vec<f32>,
 }
 
