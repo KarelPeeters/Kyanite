@@ -85,12 +85,12 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array,
         is_plot_batch = bi in plot_batches
 
         train_batch_i = train_shuffle[bi * batch_size:(bi + 1) * batch_size]
-        train_data_batch = s.train_data.pick_batch(train_batch_i)
+        train_data_batch = s.train_data.pick_batch(train_batch_i).random_symmetry()
 
         if is_plot_batch:
             model.eval()
             test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
-            test_data_batch = s.test_data.pick_batch(test_batch_i)
+            test_data_batch = s.test_data.pick_batch(test_batch_i).random_symmetry()
 
             test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch)
             test_loss = test_value_loss + s.policy_weight * test_policy_loss

@@ -1,27 +1,34 @@
 from math import prod
 
 import torch
-from matplotlib import pyplot
 from torch.optim import AdamW
 
 from train import TrainSettings, train_model, ValueTarget
 from util import load_data, DEVICE, GoogleData
 
 
-def plot_stuff(plot_data, plot_legend):
-    pyplot.plot(plot_data)
-    pyplot.legend(plot_legend)
-    pyplot.show()
+def print_data_stats(test_data, train_data):
+    print(f"train size: {len(train_data)}")
+    print(f"test size: {len(test_data)}")
+
+    train_unique_count = len(torch.unique(train_data.input, dim=0))
+    test_unique_count = len(torch.unique(test_data.input, dim=0))
+    both_unique_count = len(torch.unique(torch.cat([train_data.input, test_data.input], dim=0), dim=0))
+
+    test_unique = test_unique_count / len(test_data)
+    test_unique_different = (both_unique_count - train_unique_count) / test_unique_count
+
+    print(f"train unique: {train_unique_count / len(train_data):.3f}")
+    print(f"test unique & not in test: {test_unique * test_unique_different:.3f}")
 
 
 def main():
     # shuffle to avoid biasing test data towards longer games
     all_data = load_data("../data/loop/games.csv", shuffle=True)
-    train_data = GoogleData.from_generic(all_data.pick_batch(slice(0, 2_000_000))).to(DEVICE)
-    test_data = GoogleData.from_generic(all_data.pick_batch(slice(2_000_000, 2_100_000))).to(DEVICE)
+    train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, 290_000))).to(DEVICE)
+    test_data = GoogleData.from_generic(all_data.pick_batch(slice(290_000, None))).to(DEVICE)
 
-    print(f"train size: {len(train_data)}")
-    print(f"test size: {len(test_data)}")
+    print_data_stats(test_data, train_data)
 
     # model = GoogleModel(
     #     channels=32, blocks=6,
@@ -55,7 +62,7 @@ def main():
     # )
 
     settings = TrainSettings(
-        output_path="../data/loop/modest_cont",
+        output_path="../data/loop/modest_cont_sym",
         train_data=train_data,
         test_data=test_data,
         epochs=15,
