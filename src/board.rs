@@ -265,6 +265,12 @@ impl Board {
             !has_bit(compact_grid(self.grids[om as usize]), os)
     }
 
+    pub fn clone_and_play(&self, coord: Coord) -> Board {
+        let mut next = self.clone();
+        next.play(coord);
+        next
+    }
+
     pub fn play(&mut self, coord: Coord) -> bool {
         debug_assert!(!self.is_done(), "can't play on done board");
         debug_assert!(self.is_available_move(coord), "move not available");
