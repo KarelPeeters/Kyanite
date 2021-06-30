@@ -23,12 +23,19 @@ def print_data_stats(test_data, train_data):
 
 
 def main():
+    test_fraction = 0.02
+
     # shuffle to avoid biasing test data towards longer games
     all_data = load_data("../data/loop/games.csv", shuffle=True)
-    train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, 290_000))).to(DEVICE)
-    test_data = GoogleData.from_generic(all_data.pick_batch(slice(290_000, None))).to(DEVICE)
+
+    split_index = int((1 - test_fraction) * len(all_data))
+    train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, split_index)))
+    test_data = GoogleData.from_generic(all_data.pick_batch(slice(split_index, None)))
 
     print_data_stats(test_data, train_data)
+
+    train_data = train_data.to(DEVICE)
+    test_data = test_data.to(DEVICE)
 
     # model = GoogleModel(
     #     channels=32, blocks=6,
