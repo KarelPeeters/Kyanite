@@ -34,7 +34,7 @@ pub(super) fn collect(writer: &mut impl Write, position_count: u64, receiver: &R
             println!("Evals:     {:.2} evals/s => {}", eval_throughput_cached, total_eval_count);
             println!("Moves:     {:.2} moves/s => {}", move_throughput_cached, total_move_count);
             println!("Games:     {:.2} games/s => {}", game_throughput.next((total_game_count as f64) / elapsed), total_game_count);
-            println!("Positions: {:.2} pos/s => {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count);
+            println!("Positions: {:.2} pos/s => {} / {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count, position_count);
             println!();
         }
 
