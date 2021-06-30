@@ -14,8 +14,8 @@ use crate::util::EqF32;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
-    exploration_weight: f32,
-    random_symmetries: bool,
+    pub exploration_weight: f32,
+    pub random_symmetries: bool,
 }
 
 impl ZeroSettings {
