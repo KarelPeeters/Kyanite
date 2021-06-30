@@ -68,7 +68,7 @@ class TrainSettings:
 
     # the number of plot points per epoch, for both test and train data
     plot_points: int
-    plot_window_size: int
+    plot_smooth_points: int
 
 
 def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array, np.array):
@@ -137,10 +137,12 @@ def plot_train_data(s: TrainSettings):
     for i in range(3):
         pyplot.figure()
 
-        train_smooth_values = uniform_window_filter(all_plot_data[:, i], s.plot_window_size)
+        smooth_window_size = int(len(all_plot_data) / s.plot_smooth_points) + 1
+
+        train_smooth_values = uniform_window_filter(all_plot_data[:, i], smooth_window_size)
         pyplot.plot(all_plot_axis, train_smooth_values, label="train")
 
-        test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], s.plot_window_size)
+        test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], smooth_window_size)
         pyplot.plot(all_plot_axis, test_smooth_values, label="test")
 
         pyplot.title(TRAIN_PLOT_TITLES[i])

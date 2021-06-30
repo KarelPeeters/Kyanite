@@ -79,7 +79,7 @@ def main():
         policy_weight=2.0,
         batch_size=batch_size,
         plot_points=100,
-        plot_window_size=5,
+        plot_smooth_points=50,
     )
 
     train_model(model, settings)
