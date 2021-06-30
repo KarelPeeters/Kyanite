@@ -3,7 +3,7 @@ from math import prod
 import torch
 from torch.optim import AdamW
 
-from train import TrainSettings, train_model, ValueTarget
+from train import TrainState, train_model, ValueTarget, TrainSettings
 from util import load_data, DEVICE, GoogleData
 
 
@@ -26,7 +26,7 @@ def main():
     test_fraction = 0.02
 
     # shuffle to avoid biasing test data towards longer games
-    all_data = load_data("../data/loop/games.csv", shuffle=True)
+    all_data = load_data("../data/loop2/games.csv", shuffle=True)
 
     split_index = int((1 - test_fraction) * len(all_data))
     train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, split_index)))
@@ -45,7 +45,7 @@ def main():
     #     squeeze_size=None, squeeze_bias=False
     # )
 
-    model = torch.jit.load("../data/esat2/modest/model_5_epochs.pt")
+    model = torch.jit.load("../data/loop/modest_cont22/model_15_epochs.pt")
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
@@ -69,12 +69,7 @@ def main():
     # )
 
     settings = TrainSettings(
-        output_path="../data/loop/modest_cont_sym",
-        train_data=train_data,
-        test_data=test_data,
         epochs=15,
-        optimizer=optimizer,
-        scheduler=None,
         value_target=ValueTarget.FinalValue,
         policy_weight=2.0,
         batch_size=batch_size,
@@ -82,7 +77,16 @@ def main():
         plot_smooth_points=50,
     )
 
-    train_model(model, settings)
+    state = TrainState(
+        settings=settings,
+        output_path="../data/loop2/derp",
+        train_data=train_data,
+        test_data=test_data,
+        optimizer=optimizer,
+        scheduler=None,
+    )
+
+    train_model(model, state)
     # plot_train_data(settings)
 
     # TODO plot loss(number of times a state appears in the train data)

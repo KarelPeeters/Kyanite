@@ -54,14 +54,7 @@ class ValueTarget(Enum):
 
 @dataclass
 class TrainSettings:
-    output_path: str
-
-    train_data: GoogleData
-    test_data: GoogleData
-
     epochs: int
-    optimizer: Optimizer
-    scheduler: Any
     value_target: ValueTarget
     policy_weight: float
     batch_size: int
@@ -71,11 +64,24 @@ class TrainSettings:
     plot_smooth_points: int
 
 
-def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array, np.array):
-    batch_size = s.batch_size
+@dataclass
+class TrainState:
+    settings: TrainSettings
+
+    output_path: str
+
+    train_data: GoogleData
+    test_data: GoogleData
+
+    optimizer: Optimizer
+    scheduler: Any
+
+
+def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np.array):
+    batch_size = s.settings.batch_size
     batch_count = len(s.train_data) // batch_size
 
-    plot_batches = linspace_int(batch_count, s.plot_points)
+    plot_batches = linspace_int(batch_count, s.settings.plot_points)
     plot_data = torch.full((len(plot_batches), 7), np.nan, device=DEVICE)
     next_plot_i = 0
 
@@ -93,14 +99,14 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array,
             test_data_batch = s.test_data.pick_batch(test_batch_i).random_symmetry()
 
             test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch)
-            test_loss = test_value_loss + s.policy_weight * test_policy_loss
+            test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
             plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss], device=DEVICE)
 
             print(f"Test batch: {test_loss:.2f}, {test_value_loss:.2f}, {test_policy_loss:.2f}")
 
         model.train()
         train_value_loss, train_policy_loss = evaluate_model(model, train_data_batch)
-        train_loss = train_value_loss + s.policy_weight * train_policy_loss
+        train_loss = train_value_loss + s.settings.policy_weight * train_policy_loss
 
         if is_plot_batch:
             plot_data[next_plot_i, 0:3] = torch.tensor([train_loss, train_value_loss, train_policy_loss], device=DEVICE)
@@ -110,7 +116,9 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainSettings) -> (np.array,
 
             next_plot_i += 1
 
-        print(f"Epoch {ei}, train batch {bi}/{batch_count}: {train_loss:.2f}, {train_value_loss:.2f}, {train_policy_loss:.2f}")
+        print(
+            f"Epoch {ei}, train batch {bi}/{batch_count}: {train_loss:.2f},"
+            f" {train_value_loss:.2f}, {train_policy_loss:.2f}")
 
         s.optimizer.zero_grad()
         train_loss.backward()
@@ -126,7 +134,7 @@ TRAIN_PLOT_TITLES = ["total", "value", "policy"]
 TRAIN_PLOT_LEGEND = ["train", "test"]
 
 
-def plot_train_data(s: TrainSettings):
+def plot_train_data(s: TrainState):
     output_path = s.output_path
 
     all_plot_data = np.load(f"{output_path}/plot_data.npy")
@@ -137,7 +145,7 @@ def plot_train_data(s: TrainSettings):
     for i in range(3):
         pyplot.figure()
 
-        smooth_window_size = int(len(all_plot_data) / s.plot_smooth_points) + 1
+        smooth_window_size = int(len(all_plot_data) / s.settings.plot_smooth_points) + 1
 
         train_smooth_values = uniform_window_filter(all_plot_data[:, i], smooth_window_size)
         pyplot.plot(all_plot_axis, train_smooth_values, label="train")
@@ -160,8 +168,8 @@ def plot_train_data(s: TrainSettings):
         pyplot.show()
 
 
-def train_model(model: nn.Module, s: TrainSettings):
-    epochs = s.epochs
+def train_model(model: nn.Module, s: TrainState):
+    epochs = s.settings.epochs
     output_path = s.output_path
 
     all_plot_data = None

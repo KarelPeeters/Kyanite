@@ -147,7 +147,7 @@ def linspace_int(stop: int, num: int) -> np.array:
 
 
 def uniform_window_filter(data: np.array, window_size: int) -> np.array:
-    if len(data) <= window_size * 3:
+    if len(data) <= window_size * 3 or window_size < 2:
         return data
 
     from scipy.signal import filtfilt
