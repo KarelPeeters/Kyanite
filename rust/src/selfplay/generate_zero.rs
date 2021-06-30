@@ -5,6 +5,7 @@ use crossbeam::channel::{Sender, SendError};
 use itertools::Itertools;
 use itertools::izip;
 use rand::{Rng, thread_rng};
+use rand_distr::Dirichlet;
 use sttt::board::Board;
 
 use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
@@ -21,6 +22,9 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     pub network: S,
     pub iterations: u64,
     pub zero_settings: ZeroSettings,
+
+    pub dirichlet_alpha: f32,
+    pub dirichlet_eps: f32,
 }
 
 pub trait NetworkSettings: Debug + Sync {
@@ -93,6 +97,20 @@ impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
     fn new_zero_root(&self) -> ZeroState {
         self.new_zero(Tree::new(Board::new()))
     }
+
+    fn add_dirichlet_noise(&self, tree: &mut Tree, rng: &mut impl Rng) {
+        let children = tree[0].children
+            .expect("root node has no children yet, it must have been visited at least once");
+
+        if children.length > 1 {
+            let distr = Dirichlet::new_with_size(self.dirichlet_alpha, children.length as usize).unwrap();
+            let noise = rng.sample(distr);
+
+            for (child, n) in izip!(children, noise) {
+                tree[child].policy.0 += n
+            }
+        }
+    }
 }
 
 impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
@@ -159,13 +177,14 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
 // The state kept while generating a new game.
 #[derive(Debug, Clone)]
 struct GameState {
+    needs_dirichlet: bool,
     zero: ZeroState,
     positions: Vec<Position>,
 }
 
 impl GameState {
     fn new(zero: ZeroState) -> Self {
-        GameState { zero, positions: vec![] }
+        GameState { needs_dirichlet: true, zero, positions: vec![] }
     }
 
     fn run_until_request(
@@ -180,7 +199,14 @@ impl GameState {
         let mut move_count = 0;
 
         loop {
+            let had_respose = response.is_some();
             let result = self.zero.run_until_result(response.take(), rng);
+
+            if had_respose && self.needs_dirichlet {
+                // at this point we're sure that the tree has at least one visit, se we can add the noise
+                settings.add_dirichlet_noise(&mut self.zero.tree, rng);
+                self.needs_dirichlet = false;
+            }
 
             match result {
                 RunResult::Request(request) =>
