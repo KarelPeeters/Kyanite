@@ -23,6 +23,7 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     pub iterations: u64,
     pub zero_settings: ZeroSettings,
 
+    pub keep_tree: bool,
     pub dirichlet_alpha: f32,
     pub dirichlet_eps: f32,
 }
@@ -230,12 +231,13 @@ impl GameState {
 
                     //keep the tree for the picked move
                     match tree.keep_move(picked_move) {
-                        KeepResult::Tree(tree) => {
-                            //TODO maybe remove this when dirichlet noise is added since it's not equivalent any more?
-                            //  or still do this but add the dirichlet anyway? could be interesting
-                            //  this will become a lot less relevant once we add random moves with less iterations anyway
-                            //continue playing this game
-                            self.zero = settings.new_zero(tree)
+                        KeepResult::Tree(next_tree) => {
+                            //continue playing this game, either by keeping part of the tree or starting a new one on the next board
+                            if settings.keep_tree {
+                                self.zero = settings.new_zero(next_tree)
+                            } else {
+                                self.zero = settings.new_zero(Tree::new(next_tree.root_board().clone()))
+                            }
                         }
                         KeepResult::Done(won_by) => {
                             //record this game

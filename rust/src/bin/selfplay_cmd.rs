@@ -20,6 +20,7 @@ struct Args {
 
     // move selection
     inf_temp_move_count: u32,
+    keep_tree: bool,
     dirichlet_alpha: f32,
     dirichlet_eps: f32,
 
@@ -54,6 +55,7 @@ fn main() {
                 exploration_weight: args.exploration_weight,
                 random_symmetries: true,
             },
+            keep_tree: args.keep_tree,
             dirichlet_alpha: args.dirichlet_alpha,
             dirichlet_eps: args.dirichlet_eps,
             network: GoogleTorchSettings {

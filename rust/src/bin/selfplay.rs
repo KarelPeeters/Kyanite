@@ -26,6 +26,7 @@ fn main() {
             iterations: 5_000,
             zero_settings: ZeroSettings::new(2.0, true),
 
+            keep_tree: false,
             dirichlet_alpha: 1.0,
             dirichlet_eps: 0.25,
 
