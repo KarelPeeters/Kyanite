@@ -1,2 +1,4 @@
 /target/
 /ignored/
+
+/src/bin/exp_*.rs
