@@ -236,7 +236,7 @@ impl Display for TreeDisplay<'_> {
             "{:?}: {} zero({:.3}, {:.3}) net({:.3}, {:.3})",
             node.coord, node.visits,
             node.value(), (node.visits as f32) / (self.parent_visits as f32),
-            node.evaluation.as_deref().copied().unwrap_or(f32::NAN), node.policy,
+            -node.evaluation.as_deref().copied().unwrap_or(f32::NAN), node.policy,
         )?;
 
         if self.curr_depth == self.max_depth { return Ok(()); }
