@@ -15,9 +15,10 @@ from util import DATA_WIDTH, GenericData, load_data, DEVICE, GoogleData
 
 @dataclass
 class SelfplaySettings:
-    position_count: int
+    game_count: int
 
     inf_temp_move_count: int
+    keep_tree: bool
     dirichlet_alpha: float
     dirichlet_eps: float
 

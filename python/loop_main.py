@@ -4,8 +4,9 @@ from train import TrainSettings, ValueTarget
 
 def main():
     selfplay_settings = SelfplaySettings(
-        position_count=1000,
+        game_count=100,
         inf_temp_move_count=20,
+        keep_tree=False,
         dirichlet_alpha=1.0,
         dirichlet_eps=0.25,
         iterations=100,

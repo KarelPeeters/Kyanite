@@ -16,7 +16,7 @@ struct Args {
     output_path: String,
     network_path: String,
 
-    position_count: u64,
+    game_count: u64,
 
     // move selection
     inf_temp_move_count: u32,
@@ -45,7 +45,7 @@ fn main() {
     let settings_output_path = output_path.with_extension("txt");
 
     let settings = Settings {
-        position_count: args.position_count,
+        game_count: args.game_count,
         output_path: args.output_path,
         move_selector: MoveSelector { inf_temp_move_count: args.inf_temp_move_count },
         generator: ZeroGeneratorSettings {
