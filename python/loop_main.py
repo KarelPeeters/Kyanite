@@ -14,7 +14,7 @@ def main():
         keep_tree=False,
         dirichlet_alpha=1.0,
         dirichlet_eps=0.25,
-        iterations=100,
+        iterations=1000,
         exploration_weight=2.0,
         batch_size=256,
         threads_per_device=2,
