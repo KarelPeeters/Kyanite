@@ -1,4 +1,5 @@
 import dataclasses
+import itertools
 import json
 import os
 import subprocess
@@ -45,6 +46,9 @@ class LoopSettings:
     train_settings: TrainSettings
     train_weight_decay: float
 
+    def new_buffer(self):
+        return Buffer(self.buffer_gen_count, self.test_fraction, self.train_settings.batch_size)
+
 
 @dataclass
 class Generation:
@@ -55,14 +59,13 @@ class Generation:
     gen_folder: str
     games_path: str
     prev_network_path: str
+    next_network_path: str
 
     @classmethod
     def from_gi(cls, gi: int, settings: LoopSettings):
         gen_folder = path.join(settings.root_path, f"gen_{gi}")
         prev_gen_folder = path.join(settings.root_path, f"gen_{gi - 1}") \
             if gi != 0 else None
-
-        os.makedirs(gen_folder, exist_ok=True)
 
         return Generation(
             settings=settings,
@@ -72,6 +75,7 @@ class Generation:
             games_path=path.join(gen_folder, "games_from_prev.csv"),
             prev_network_path=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
             if gi != 0 else settings.initial_network,
+            next_network_path=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
         )
 
 
@@ -88,7 +92,6 @@ class Buffer:
         self.test_data: Optional[GoogleData] = None
 
     def push(self, data: GenericData):
-        print("Push call")
         split_index = min(int(self.test_fraction * len(data)), self.min_test_size)
         test_data = data.pick_batch(slice(None, split_index))
         train_data = data.pick_batch(slice(split_index, None))
@@ -145,16 +148,44 @@ def train_new_network(buffer: Buffer, gen: Generation):
     train_model(model, state)
 
 
+def find_last_finished_gen(settings: LoopSettings) -> Optional[int]:
+    for gi in itertools.count():
+        gen = Generation.from_gi(gi, settings)
+
+        if not os.path.exists(gen.next_network_path):
+            if gi >= 1:
+                return gi - 1
+            return None
+
+
+def load_resume_buffer(settings: LoopSettings, last_finished_gi: int) -> Buffer:
+    buffer = settings.new_buffer()
+    for gi in range(last_finished_gi + 1):
+        gen = Generation.from_gi(gi, settings)
+        buffer.push(load_data(gen.games_path, shuffle=True))
+    return buffer
+
+
 def run_loop(settings: LoopSettings):
     print(f"Starting loop in directory {os.getcwd()}")
     assert os.path.exists("./rust") and os.path.exists("./python"), "should be run in root STTTZero folder"
 
-    buffer = Buffer(settings.buffer_gen_count, settings.test_fraction, settings.train_settings.batch_size)
+    # check if we're resuming a run and restore the buffer if so
+    last_finished_gi = find_last_finished_gen(settings)
+    if last_finished_gi is not None:
+        start_gi = last_finished_gi + 1
+        print(f"Resuming {settings.root_path}, restarting with gen {start_gi}")
+        buffer = load_resume_buffer(settings, last_finished_gi)
+    else:
+        print("Starting new run from gen 0")
+        start_gi = 0
+        buffer = settings.new_buffer()
 
-    for gi in range(settings.generations):
+    for gi in range(start_gi, settings.generations):
         print(f"Starting generation {gi}")
 
         gen = Generation.from_gi(gi, settings)
+        os.makedirs(gen.gen_folder, exist_ok=True)
 
         new_games = generate_selfplay_games(gen)
         buffer.push(new_games)
