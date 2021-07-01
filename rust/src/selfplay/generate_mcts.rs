@@ -1,12 +1,10 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use crossbeam::channel::{Sender, SendError};
+use crossbeam::channel::Sender;
 use itertools::Itertools;
 use rand::thread_rng;
 use sttt::board::Board;
 use sttt::mcts::mcts_build_tree;
 
-use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
+use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
 
 #[derive(Debug)]
 pub struct MCTSGeneratorSettings {
@@ -27,26 +25,28 @@ impl Generator for MCTSGeneratorSettings {
         &self,
         move_selector: &MoveSelector,
         _thread_param: (),
-        request_stop: &AtomicBool,
+        start_counter: &StartGameCounter,
         sender: &Sender<Message>,
-    ) -> Result<(), SendError<Message>> {
+    ) {
         let mut rng = thread_rng();
 
         loop {
+            // check if we should stop
+            if start_counter.request_up_to(1) == 0 {
+                return;
+            }
+
             let mut positions = Vec::new();
             let mut board = Board::new();
 
             let final_won_by = loop {
-                //early exit
-                if request_stop.load(Ordering::Relaxed) { return Ok(()); }
-
                 match board.won_by {
                     Some(player) => {
                         break player;
                     }
                     None => {
                         let tree = mcts_build_tree(&board, self.iterations, 2.0, &mut thread_rng());
-                        sender.send(Message::Counter { evals: self.iterations, moves: 1 })?;
+                        sender.send(Message::Counter { evals: self.iterations, moves: 1 }).unwrap();
 
                         let root = &tree[0];
                         let children = root.children().unwrap();
@@ -72,7 +72,7 @@ impl Generator for MCTSGeneratorSettings {
             };
 
             let simulation = Simulation { won_by: final_won_by, positions };
-            sender.send(Message::Simulation(simulation))?;
+            sender.send(Message::Simulation(simulation)).unwrap();
         }
     }
 }

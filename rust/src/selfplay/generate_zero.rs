@@ -1,7 +1,6 @@
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crossbeam::channel::{Sender, SendError};
+use crossbeam::channel::Sender;
 use itertools::Itertools;
 use itertools::izip;
 use rand::{Rng, thread_rng};
@@ -10,7 +9,7 @@ use sttt::board::Board;
 
 use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::network::Network;
-use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation};
+use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
 
 #[derive(Debug)]
 pub struct ZeroGeneratorSettings<S: NetworkSettings> {
@@ -125,69 +124,85 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
         &self,
         move_selector: &MoveSelector,
         thread_param: S::ThreadParam,
-        request_stop: &AtomicBool,
+        start_counter: &StartGameCounter,
         sender: &Sender<Message>,
-    ) -> Result<(), SendError<Message>> {
-        let batch_size = self.batch_size;
+    ) {
         let mut network = self.network.load_network(thread_param);
         let mut rng = thread_rng();
 
-        let mut states = vec![GameState::new(self.new_zero_root()); batch_size];
-        let mut responses = (0..batch_size).map(|_| None).collect_vec();
-        let mut requests = Vec::new();
+        let mut games: Vec<GameState> = vec![];
+        let mut requests: Vec<Request> = vec![];
+        let mut responses: Vec<Response> = vec![];
 
         loop {
-            //early exit
-            if request_stop.load(Ordering::SeqCst) { return Ok(()); };
-
             let mut total_move_count = 0;
 
-            //advance all games and collect the next batch of requests
-            for i in 0..batch_size {
-                let state = &mut states[i];
+            // run all existing games and collect the requests
+            assert_eq!(games.len(), responses.len());
+            assert!(requests.is_empty());
+            let mut kept_games = vec![];
 
-                let response = responses[i].take();
-                let (move_count, request) = state.run_until_request(
-                    &mut rng,
-                    move_selector,
-                    self,
-                    response,
-                    sender,
-                )?;
+            for (mut game, response) in izip!(games.drain(..), responses.drain(..)) {
+                let (request, move_count) = game.run_until_request(&mut rng, move_selector, self, Some(response), sender);
                 total_move_count += move_count;
+
+                if let Some(request) = request {
+                    // this game is not done, keep it and its request
+                    kept_games.push(game);
+                    requests.push(request);
+                }
+            }
+
+            games = kept_games;
+
+            // create new games until we have enough and run them once
+            let new_game_count = start_counter.request_up_to((self.batch_size - games.len()) as u64);
+            for _ in 0..new_game_count {
+                let mut game = GameState::new(self.new_zero_root());
+                let (request, move_count) = game.run_until_request(&mut rng, move_selector, self, None, sender);
+
+                total_move_count += move_count;
+                let request = request.expect("The first run of a gamestate should always returns a request");
+
+                games.push(game);
                 requests.push(request);
             }
+
+            let request_count = requests.len();
+            if request_count == 0 { break; }
 
             //pass requests to network
             let boards = requests.iter().map(|r| r.board()).collect_vec();
             let mut evaluations = network.evaluate_batch(&boards);
 
-            //construct responses
-            let iter = izip!(&mut responses, requests.drain(..), evaluations.drain(..));
-            for (response, request, evaluation) in iter {
-                assert!(response.is_none());
-                *response = Some(Response { request, evaluation });
-            }
+            assert!(responses.is_empty());
+            responses.extend(
+                izip!(requests.drain(..), evaluations.drain(..))
+                    .map(|(request, evaluation)| Response { request, evaluation })
+            );
 
             //send the number of evaluations that happened
-            sender.send(Message::Counter { evals: batch_size as u64, moves: total_move_count })?;
+            sender.send(Message::Counter { evals: request_count as u64, moves: total_move_count }).unwrap();
         }
     }
 }
 
 // The state kept while generating a new game.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct GameState {
-    needs_dirichlet: bool,
     zero: ZeroState,
+    needs_dirichlet: bool,
     positions: Vec<Position>,
 }
 
 impl GameState {
     fn new(zero: ZeroState) -> Self {
-        GameState { needs_dirichlet: true, zero, positions: vec![] }
+        GameState { zero, needs_dirichlet: true, positions: vec![] }
     }
 
+    /// Run this game until either:
+    /// * a request is made, in which case that request is returned
+    /// * the game is done, in which case `None` is returned
     fn run_until_request(
         &mut self,
         rng: &mut impl Rng,
@@ -195,23 +210,24 @@ impl GameState {
         settings: &ZeroGeneratorSettings<impl NetworkSettings>,
         response: Option<Response>,
         sender: &Sender<Message>,
-    ) -> Result<(u64, Request), SendError<Message>> {
+    ) -> (Option<Request>, u64) {
         let mut response = response;
         let mut move_count = 0;
 
         loop {
-            let had_respose = response.is_some();
+            let had_response = response.is_some();
             let result = self.zero.run_until_result(response.take(), rng);
 
-            if had_respose && self.needs_dirichlet {
+            if had_response && self.needs_dirichlet {
                 // at this point we're sure that the tree has at least one visit, se we can add the noise
                 settings.add_dirichlet_noise(&mut self.zero.tree, rng);
                 self.needs_dirichlet = false;
             }
 
             match result {
-                RunResult::Request(request) =>
-                    return Ok((move_count, request)),
+                RunResult::Request(request) => {
+                    return (Some(request), move_count);
+                }
                 RunResult::Done => {
                     let tree = &self.zero.tree;
                     let policy = tree.policy().collect_vec();
@@ -242,10 +258,10 @@ impl GameState {
                         KeepResult::Done(won_by) => {
                             //record this game
                             let simulation = Simulation { won_by, positions: std::mem::take(&mut self.positions) };
-                            sender.send(Message::Simulation(simulation))?;
+                            sender.send(Message::Simulation(simulation)).unwrap();
 
-                            //start a new game
-                            *self = GameState::new(settings.new_zero_root());
+                            //report that this game is done
+                            return (None, move_count);
                         }
                     }
                 }

@@ -13,8 +13,8 @@ fn main() {
     lower_process_priority();
 
     let settings = Settings {
-        position_count: 200_000,
-        output_path: "../data/loop2/games.csv".to_owned(),
+        game_count: 4_000,
+        output_path: "../data/derp/derp_games.csv".to_owned(),
 
         move_selector: MoveSelector {
             inf_temp_move_count: 20

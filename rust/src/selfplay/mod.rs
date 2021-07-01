@@ -1,12 +1,13 @@
+use std::cmp::min;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use closure::closure;
 use crossbeam::{channel, scope};
-use crossbeam::channel::{Sender, SendError};
+use crossbeam::channel::Sender;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::distributions::Distribution;
@@ -20,7 +21,7 @@ pub mod generate_mcts;
 
 #[derive(Debug)]
 pub struct Settings<G: Generator> {
-    pub position_count: u64,
+    pub game_count: u64,
     pub output_path: String,
 
     pub move_selector: MoveSelector,
@@ -38,9 +39,9 @@ pub trait Generator: Debug + Sync {
         &self,
         move_selector: &MoveSelector,
         thread_param: Self::ThreadParam,
-        request_stop: &AtomicBool,
+        start_counter: &StartGameCounter,
         sender: &Sender<Message>,
-    ) -> Result<(), SendError<Message>>;
+    );
 }
 
 #[derive(Debug)]
@@ -50,6 +51,26 @@ pub struct MoveSelector {
     //TODO add temperature?
     //TODO add dirichlet noise? or is that somewhere else?
 }
+
+#[derive(Debug)]
+pub struct StartGameCounter {
+    left: Mutex<u64>,
+}
+
+impl StartGameCounter {
+    pub fn new(left: u64) -> Self {
+        StartGameCounter { left: Mutex::new(left) }
+    }
+
+    #[must_use]
+    pub fn request_up_to(&self, max_count: u64) -> u64 {
+        let mut left = self.left.lock().unwrap();
+        let picked = min(*left, max_count);
+        *left -= picked;
+        picked
+    }
+}
+
 
 // A message sent back from a worker thread to the main collector thread.
 #[derive(Debug)]
@@ -88,7 +109,7 @@ impl<G: Generator> Settings<G> {
         let mut writer = BufWriter::new(&file);
 
         let (sender, receiver) = channel::unbounded();
-        let request_stop = AtomicBool::new(false);
+        let start_counter_left = StartGameCounter::new(self.game_count);
 
         scope(|s| {
             let thread_params = self.generator.thread_params();
@@ -98,23 +119,20 @@ impl<G: Generator> Settings<G> {
                 s.builder()
                     .name(format!("worker-{}", i))
                     .spawn(closure!(
-                            ref self.move_selector, ref request_stop, ref sender,
+                            ref self.move_selector, ref start_counter_left, ref sender,
                             |_| {
                                 // ignore "sender disconnected" errors, that just means
-                                let _ = self.generator.thread_main(move_selector, thread_param, request_stop, sender);
+                                let _ = self.generator.thread_main(move_selector, thread_param, start_counter_left, sender);
                             }
                         ))
                     .expect("Failed to spawn thread");
             }
 
             println!("Start collecting");
-            collect::collect(&mut writer, self.position_count, &receiver);
-
-            //stop threads
-            drop(receiver);
-            request_stop.store(true, Ordering::SeqCst);
+            collect::collect(&mut writer, self.game_count, &receiver);
 
             //scope automatically joins the threads
+            //  they should all stop automatically once there are no more games to start
         }).unwrap();
     }
 }

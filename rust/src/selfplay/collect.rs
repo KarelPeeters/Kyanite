@@ -8,7 +8,7 @@ use ta::Next;
 
 use crate::selfplay::{Message, Position, Simulation};
 
-pub(super) fn collect(writer: &mut impl Write, position_count: u64, receiver: &Receiver<Message>) {
+pub(super) fn collect(writer: &mut impl Write, game_count: u64, receiver: &Receiver<Message>) {
     //performance metrics
     let mut total_eval_count = 0;
     let mut total_move_count = 0;
@@ -33,8 +33,8 @@ pub(super) fn collect(writer: &mut impl Write, position_count: u64, receiver: &R
             last_print = now();
             println!("Evals:     {:.2} evals/s => {}", eval_throughput_cached, total_eval_count);
             println!("Moves:     {:.2} moves/s => {}", move_throughput_cached, total_move_count);
-            println!("Games:     {:.2} games/s => {}", game_throughput.next((total_game_count as f64) / elapsed), total_game_count);
-            println!("Positions: {:.2} pos/s => {} / {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count, position_count);
+            println!("Games:     {:.2} games/s => {} / {}", game_throughput.next((total_game_count as f64) / elapsed), total_game_count, game_count);
+            println!("Positions: {:.2} pos/s => {}", pos_throughput.next((total_pos_count as f64) / elapsed), total_pos_count);
             println!();
         }
 
@@ -56,7 +56,7 @@ pub(super) fn collect(writer: &mut impl Write, position_count: u64, receiver: &R
         }
 
         //we have enough positions, stop
-        if total_pos_count >= position_count {
+        if total_game_count >= game_count {
             break;
         }
     }
