@@ -121,7 +121,10 @@ def generate_selfplay_games(gen: Generation) -> GenericData:
     p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
     for line in p.stdout:
         print(line, end="")
+    p.wait()
     if p.returncode != 0:
+        print(f"Process exited with error code {p.returncode}")
+        print(p.stderr)
         raise subprocess.CalledProcessError(p.returncode, command)
 
     return load_data(gen.games_path, shuffle=True)
