@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use itertools::Itertools;
 use serde::Deserialize;
 
-use sttt_zero::mcts_zero::ZeroSettings;
 use sttt_zero::network::google_torch::all_cuda_devices;
 use sttt_zero::selfplay::{MoveSelector, Settings};
 use sttt_zero::selfplay::generate_zero::settings_torch::GoogleTorchSettings;
 use sttt_zero::selfplay::generate_zero::ZeroGeneratorSettings;
+use sttt_zero::zero::ZeroSettings;
 
 #[derive(Debug, Deserialize)]
 struct Args {

@@ -1,5 +1,8 @@
 use itertools::Itertools;
+use itertools::izip;
 use sttt::board::{Board, Coord};
+
+use crate::zero::{Request, Response};
 
 pub mod dummy;
 
@@ -20,6 +23,14 @@ pub struct NetworkEvaluation {
 
 pub trait Network {
     fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation>;
+
+    fn evaluate_batch_requests(&mut self, requests: &[Request]) -> Vec<Response> {
+        let boards = requests.iter().map(|r| r.board()).collect_vec();
+        let evaluations = self.evaluate_batch(&boards);
+        izip!(requests, evaluations)
+            .map(|(request, evaluation)| Response { request: request.clone(), evaluation })
+            .collect_vec()
+    }
 
     fn evaluate(&mut self, board: &Board) -> NetworkEvaluation {
         let mut result = self.evaluate_batch(&[board.clone()]);

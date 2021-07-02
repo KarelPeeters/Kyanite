@@ -284,7 +284,7 @@ pub enum RunResult {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Request {
     curr_board: Board,
     curr_node: usize,

@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter, Display};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
 /// A wrapper around `f32` that implements `Eq`.
@@ -49,4 +49,20 @@ impl Display for EqF32 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.0, f)
     }
+}
+
+/// Like `Option::unwrap` but for arbitrary enums.
+/// ```
+/// assert_eq!(5, unwrap_match!(Some(5), Some(x) => x));
+/// ```
+#[allow(unused_macros)]
+macro_rules! unwrap_match {
+    ($value: expr, $($pattern: pat)|+ => $result: expr) => {
+        match $value {
+            $($pattern)|+ =>
+                $result,
+            ref value =>
+                panic!("unwrap_match failed: `{:?}` does not match `{}`", value, stringify!($($pattern)|+)),
+        }
+    };
 }

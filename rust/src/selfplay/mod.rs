@@ -46,6 +46,7 @@ pub trait Generator: Debug + Sync {
 
 #[derive(Debug)]
 pub struct MoveSelector {
+    //TODO this should be called zero_temp, inf temp is random play
     pub inf_temp_move_count: u32,
 
     //TODO add temperature?

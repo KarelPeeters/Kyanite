@@ -2,12 +2,12 @@
 
 use sttt::util::lower_process_priority;
 
-use sttt_zero::mcts_zero::ZeroSettings;
 use sttt_zero::network::google_torch::all_cuda_devices;
 use sttt_zero::selfplay::{MoveSelector, Settings};
 use sttt_zero::selfplay::generate_mcts::MCTSGeneratorSettings;
 use sttt_zero::selfplay::generate_zero::settings_torch::GoogleTorchSettings;
 use sttt_zero::selfplay::generate_zero::ZeroGeneratorSettings;
+use sttt_zero::zero::ZeroSettings;
 
 fn main() {
     lower_process_priority();

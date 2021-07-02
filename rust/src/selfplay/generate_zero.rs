@@ -7,9 +7,9 @@ use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
 use sttt::board::Board;
 
-use crate::mcts_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
+use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 
 #[derive(Debug)]
 pub struct ZeroGeneratorSettings<S: NetworkSettings> {
@@ -172,14 +172,9 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             if request_count == 0 { break; }
 
             //pass requests to network
-            let boards = requests.iter().map(|r| r.board()).collect_vec();
-            let mut evaluations = network.evaluate_batch(&boards);
-
             assert!(responses.is_empty());
-            responses.extend(
-                izip!(requests.drain(..), evaluations.drain(..))
-                    .map(|(request, evaluation)| Response { request, evaluation })
-            );
+            responses = network.evaluate_batch_requests(&requests);
+            requests.clear();
 
             //send the number of evaluations that happened
             sender.send(Message::Counter { evals: request_count as u64, moves: total_move_count }).unwrap();
