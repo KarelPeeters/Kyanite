@@ -3,7 +3,7 @@ from math import prod
 import torch
 from torch.optim import AdamW
 
-from train import TrainState, train_model, ValueTarget, TrainSettings
+from train import TrainState, train_model, WdlTarget, TrainSettings
 from util import load_data, DEVICE, GoogleData
 
 
@@ -70,7 +70,7 @@ def main():
 
     settings = TrainSettings(
         epochs=15,
-        value_target=ValueTarget.FinalValue,
+        value_target=WdlTarget.Final,
         policy_weight=2.0,
         batch_size=batch_size,
         plot_points=100,

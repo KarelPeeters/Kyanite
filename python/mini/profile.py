@@ -30,7 +30,7 @@ with torch.profiler.profile(
         # use_cuda=True,
 ) as profiler:
     for _ in range(10):
-        _ = model(o, batch.mask, batch.x_tiles, batch.x_macros)
+        _ = model(o, batch.mask_o, batch.tiles_o, batch.macros)
         profiler.step()
         print("step done")
 

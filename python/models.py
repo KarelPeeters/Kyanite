@@ -52,12 +52,13 @@ class ResBlock(nn.Module):
         return y
 
 
+# TODO think about not allowing the policy computation to access the mask?
 class GoogleModel(nn.Module):
     def __init__(
             self,
             channels: int,
             blocks: int,
-            value_channels: int, value_size: int,
+            wdl_channels: int, wdl_size: int,
             policy_channels: int,
             res: bool,
             squeeze_size: Optional[int], squeeze_bias: bool,
@@ -66,8 +67,8 @@ class GoogleModel(nn.Module):
         Parameters used in AlphaZero:
         channels=256
         blocks=19 or 39
-        value_channels=1
-        value_size=256
+        wdl_channels=1
+        wdl_size=256
         policy_channels=2
 
         Oracle uses 32 channels for both heads.
@@ -90,41 +91,26 @@ class GoogleModel(nn.Module):
             nn.Linear(policy_channels * 9 * 9, 9 * 9),
         )
 
-        self.value_head = nn.Sequential(
-            nn.Conv2d(channels, value_channels, (1, 1), bias=False),
-            nn.BatchNorm2d(value_channels),
+        self.wdl_head = nn.Sequential(
+            nn.Conv2d(channels, wdl_channels, (1, 1), bias=False),
+            nn.BatchNorm2d(wdl_channels),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(value_channels * 9 * 9, value_size),
+            nn.Linear(wdl_channels * 9 * 9, wdl_size),
             nn.ReLU(),
-            nn.Linear(value_size, 1),
-            nn.Tanh(),
+            nn.Linear(wdl_size, 3),
         )
 
     def forward(self, input):
-        """ Returns (value, policy) where value is in the range -1..1 and policy are the raw logits before masking."""
+        """
+        Returns `(wdl, policy)`
+         * `input` is a tensor of shape (B, 5, 9, 9)
+         * `wdl` is a tensor of shape (B, 3) with win/draw/loss logits
+         * `policy` is a tensor of shape (B, 9, 9)
+        """
 
         common = self.common_tower(input)
-        value = self.value_head(common)
-        policy = self.policy_head(common)
+        wdl = self.wdl_head(common)
+        policy = self.policy_head(common).view(-1, 9, 9)
 
-        return value, policy
-
-
-class TrivialModel:
-    def __init__(self, include_mask: bool):
-        super().__init__()
-        self.linear = nn.Linear(include_mask * 81 + 2 * 81 + 2 * 9, 1)
-        self.include_mask = include_mask
-
-    def forward(self, mask, x_tiles, x_macros):
-        input = []
-        if self.include_mask:
-            input.append(mask.view(-1, 81))
-        input.append(x_tiles.view(-1, 2 * 81))
-        input.append(x_macros.view(-1, 2 * 9))
-        input = torch.cat(input, dim=1)
-
-        value = torch.tanh(self.linear(input).squeeze(dim=1))
-        policy = torch.ones(mask.shape[0], 81, device=mask.device)
-        return value, policy
+        return wdl, policy

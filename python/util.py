@@ -9,15 +9,13 @@ from torch import Tensor
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device {DEVICE}")
 
-DATA_WIDTH = 3 + 1 + 4 * 81 + 2 * 9
+DATA_WIDTH = 3 + 3 + 81 + (3 * 81 + 2 * 9)
 
 
 class GenericData:
     def __init__(self, full):
         assert len(full.shape) == 2
-        width = full.shape[1]
-        assert width == DATA_WIDTH or width + 1 == DATA_WIDTH
-        has_value = width == DATA_WIDTH
+        assert full.shape[1] == DATA_WIDTH
 
         self.full = full
 
@@ -28,16 +26,16 @@ class GenericData:
             i += length
             return full[:, i - length:i]
 
-        self.y_win = take(3)
-        self.y_final_value = self.y_win[:, 0] - self.y_win[:, 2]
-        self.y_value = take(1) if has_value else None
+        self.wdl_final = take(3)
+        self.wdl_est = take(3)
+        self.policy_o = take(81)
 
-        self.y_move_prob = take(81)
-        self.mask_flat = take(81)
-        self.x_tiles = take(2 * 81).view(-1, 2, 81)
-        self.x_macros = take(2 * 9).view(-1, 2, 9)
+        self.mask_o = take(81)
+        self.tiles_o = take(2 * 81).view(-1, 2, 81)
+        # for macros o and yx order are the same
+        self.macros = take(2 * 9).view(-1, 2, 9)
 
-        assert i == DATA_WIDTH or i + 1 == DATA_WIDTH
+        assert i == DATA_WIDTH
 
     def to(self, device):
         return GenericData(self.full.to(device))
@@ -52,38 +50,40 @@ class GenericData:
 @dataclass
 class GoogleData:
     input: Tensor
-    value: Tensor
-    final_value: Tensor
+    wdl_final: Tensor
+    wdl_est: Tensor
     policy: Tensor
 
     @staticmethod
     def from_generic(data: GenericData):
         o = o_tensor(data.full.device)
         input = torch.cat([
-            data.mask_flat[:, o].view(-1, 1, 9, 9),
-            data.x_tiles[:, :, o].view(-1, 2, 9, 9),
-            data.x_macros.repeat_interleave(9, 2)[:, :, o].view(-1, 2, 9, 9)
+            data.mask_o[:, o].view(-1, 1, 9, 9),
+            data.tiles_o[:, :, o].view(-1, 2, 9, 9),
+            data.macros.repeat_interleave(9, 2)[:, :, o].view(-1, 2, 9, 9)
         ], dim=1)
+        pred_policy = data.policy_o.view(-1, 81)[:, o].view(-1, 9, 9)
 
-        value = data.y_value.view(-1, 1)
-        final_value = data.y_final_value.view(-1, 1)
-        # the shape of policy doesn't really matter, because the model ends in a dense layer anyway
-        policy = data.y_move_prob.view(-1, 81)[:, o]
-        return GoogleData(input=input, value=value, final_value=final_value, policy=policy)
+        return GoogleData(
+            input=input,
+            wdl_final=data.wdl_final,
+            wdl_est=data.wdl_est,
+            policy=pred_policy
+        )
 
     def to(self, device):
         return GoogleData(
             input=self.input.to(device),
-            value=self.value.to(device),
-            final_value=self.final_value.to(device),
-            policy=self.policy.to(device)
+            wdl_final=self.wdl_final.to(device),
+            wdl_est=self.wdl_est.to(device),
+            policy=self.policy.to(device),
         )
 
     def pick_batch(self, indices):
         return GoogleData(
             input=self.input[indices],
-            value=self.value[indices],
-            final_value=self.final_value[indices],
+            wdl_final=self.wdl_final[indices],
+            wdl_est=self.wdl_est[indices],
             policy=self.policy[indices],
         )
 
@@ -94,12 +94,12 @@ class GoogleData:
         view = indices.view(-1, 1, 81).expand(-1, 5, -1)
         input_sym = torch.gather(self.input.view(-1, 5, 81), 2, view).view(-1, 5, 9, 9)
 
-        policy_sym = torch.gather(self.policy, 1, indices)
+        policy_sym = torch.gather(self.policy.view(-1, 81), 1, indices).view(-1, 9, 9)
 
         return GoogleData(
             input=input_sym,
-            value=self.value,
-            final_value=self.final_value,
+            wdl_final=self.wdl_final,
+            wdl_est=self.wdl_est,
             policy=policy_sym,
         )
 

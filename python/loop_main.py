@@ -4,7 +4,7 @@ import torch.jit
 
 from loop import LoopSettings, SelfplaySettings, run_loop
 from models import GoogleModel
-from train import TrainSettings, ValueTarget
+from train import TrainSettings, WdlTarget
 
 
 def main():
@@ -25,14 +25,14 @@ def main():
 
     train_settings = TrainSettings(
         epochs=2,
-        value_target=ValueTarget.FinalValue,
+        wdl_target=WdlTarget.Final,
         policy_weight=2.0,
         batch_size=256,
         plot_points=100,
         plot_smooth_points=50,
     )
 
-    root_path = "data/loop_scratch"
+    root_path = "data/loop_derp"
     os.makedirs(root_path, exist_ok=True)
     initial_path = os.path.join(root_path, "initial_network.pt")
 

@@ -27,7 +27,7 @@ def main():
 
     google = GoogleModel(
         channels=64, blocks=5,
-        value_channels=1, value_size=64,
+        wdl_channels=1, wdl_size=64,
         policy_channels=2,
         res=True, squeeze_size=None
     )

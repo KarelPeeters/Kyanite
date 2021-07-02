@@ -16,46 +16,45 @@ def cross_entropy_masked(logits, target, mask):
     assert len(logits.shape) == 2
     assert logits.shape == target.shape
 
-    log = torch.log_softmax(logits + mask.log(), dim=1)
+    mask_log = mask.log() if mask is not None else 0
+    log = torch.log_softmax(logits + mask_log, dim=1)
     loss = -(target * log).nansum(dim=1)
 
     assert not loss.isinf().any(), \
-        "inf values in policy loss, maybe the mask and target contain impossible combinations?"
+        "inf values in loss, maybe the mask and target contain impossible combinations?"
 
     # average over batch dimension
     return loss.mean(dim=0)
 
 
-def evaluate_model(model, data: GoogleData):
-    # TODO try predicting win/loss/draw again
-    #   maybe also use those to predict a value and add that as an 3rd term to the loss
-    value_pred, policy_logit = model(data.input)
+def evaluate_model(model, data: GoogleData, target: 'WdlTarget'):
+    wdl_logit, policy_logit = model(data.input)
 
-    value_loss = nn.functional.mse_loss(value_pred, data.final_value)
+    value_loss = cross_entropy_masked(wdl_logit, target.get_target(data), None)
     move_loss = cross_entropy_masked(policy_logit, data.policy, data.mask.view(-1, 81))
 
     return value_loss, move_loss
 
 
-class ValueTarget(Enum):
-    Value = auto()
-    FinalValue = auto()
+class WdlTarget(Enum):
+    Final = auto()
+    Estimate = auto()
     Mean = auto()
 
     def get_target(self, data: GoogleData):
-        if self == ValueTarget.Value:
-            return data.value
-        if self == ValueTarget.FinalValue:
-            return data.final_value
-        if self == ValueTarget.Mean:
-            return (data.value + data.final_value) / 2
+        if self == WdlTarget.Final:
+            return data.wdl_final
+        if self == WdlTarget.Estimate:
+            return data.wdl_est
+        if self == WdlTarget.Mean:
+            return (data.wdl_final + data.wdl_est) / 2
         assert False, self
 
 
 @dataclass
 class TrainSettings:
     epochs: int
-    value_target: ValueTarget
+    wdl_target: WdlTarget
     policy_weight: float
     batch_size: int
 
@@ -98,14 +97,14 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
             test_data_batch = s.test_data.pick_batch(test_batch_i).random_symmetry()
 
-            test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch)
+            test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch, s.settings.wdl_target)
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
             plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss], device=DEVICE)
 
             print(f"Test batch: {test_loss:.2f}, {test_value_loss:.2f}, {test_policy_loss:.2f}")
 
         model.train()
-        train_value_loss, train_policy_loss = evaluate_model(model, train_data_batch)
+        train_value_loss, train_policy_loss = evaluate_model(model, train_data_batch, s.settings.wdl_target)
         train_loss = train_value_loss + s.settings.policy_weight * train_policy_loss
 
         if is_plot_batch:

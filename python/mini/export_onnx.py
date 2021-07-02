@@ -5,7 +5,7 @@ from torch.onnx import TrainingMode
 
 from models import GoogleModel
 
-model = GoogleModel(channels=64, blocks=4, value_channels=4, value_size=32, policy_channels=8, res=True)
+model = GoogleModel(channels=64, blocks=4, wdl_channels=4, wdl_size=32, policy_channels=8, res=True)
 # model = torch.jit.script(model)
 
 model.to("cpu")
