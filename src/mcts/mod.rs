@@ -265,11 +265,8 @@ pub fn mcts_build_tree<R: Rng>(board: &Board, iterations: u64, exploration_weigh
         parent_list.push(curr_node);
 
         //Update
-        let mut won = if won_by != Player::Neutral {
-            won_by == curr_player
-        } else {
-            rand.gen()
-        };
+        let mut won = won_by == curr_player;
+        let draw = won_by == Player::Neutral;
 
         for &update_node in parent_list.iter().rev() {
             won = !won;
@@ -277,6 +274,7 @@ pub fn mcts_build_tree<R: Rng>(board: &Board, iterations: u64, exploration_weigh
             let node = &mut tree[update_node];
             node.visits += 1;
             node.wins += won as u64;
+            node.draws += draw as u64;
         }
     }
 
