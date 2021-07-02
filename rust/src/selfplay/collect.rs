@@ -62,7 +62,7 @@ pub(super) fn collect(writer: &mut impl Write, game_count: u64, receiver: &Recei
     }
 }
 
-const OUTPUT_FORMAT_SIZE: usize = 3 + 1 + 4 * 81 + 2 * 9;
+const OUTPUT_FORMAT_SIZE: usize = 3 + 3 + 81 + (3 * 81 + 2 * 9);
 
 fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) -> std::io::Result<()> {
     let won_by = simulation.won_by;
@@ -71,7 +71,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
     let mut data = Vec::with_capacity(OUTPUT_FORMAT_SIZE);
 
     for position in simulation.positions {
-        let Position { board, should_store, value, policy } = position;
+        let Position { board, should_store, eval, policy } = position;
 
         assert_eq!(policy.len(), board.available_moves().count());
         full_policy.fill(0.0);
@@ -81,18 +81,23 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
 
         data.clear();
 
+        // wdl_final
         data.push((won_by == board.next_player) as u8 as f32);
         data.push((won_by == Player::Neutral) as u8 as f32);
         data.push((won_by == board.next_player.other()) as u8 as f32);
 
-        data.push(value);
+        // wdl_pred
+        data.push(eval.win);
+        data.push(eval.draw);
+        data.push(eval.loss);
 
+        // policy
         data.extend_from_slice(&full_policy);
-        data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));
 
+        // board state
+        data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
         data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
-
         data.extend((0..9).map(|om| (board.macr(om) == board.next_player) as u8 as f32));
         data.extend((0..9).map(|om| (board.macr(om) == board.next_player.other()) as u8 as f32));
 

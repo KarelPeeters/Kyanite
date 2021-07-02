@@ -246,12 +246,13 @@ impl GameState {
                     assert!(iterations == settings.full_iterations || iterations == settings.part_iterations);
                     let should_store = iterations == settings.full_iterations;
 
-                    self.positions.push(Position {
-                        board: self.zero.tree.root_board().clone(),
-                        should_store,
-                        value: tree.value(),
-                        policy,
-                    });
+                    todo!();
+                    // self.positions.push(Position {
+                    //     board: self.zero.tree.root_board().clone(),
+                    //     should_store,
+                    //     value: tree.value(),
+                    //     policy,
+                    // });
                     move_count += 1;
 
                     //keep the tree for the picked move

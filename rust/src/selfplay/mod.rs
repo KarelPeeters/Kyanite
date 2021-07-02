@@ -14,6 +14,7 @@ use rand::distributions::Distribution;
 use rand::distributions::WeightedIndex;
 use rand::Rng;
 use sttt::board::{Board, Player};
+use sttt::mcts::Evaluation;
 
 mod collect;
 pub mod generate_zero;
@@ -92,7 +93,8 @@ pub struct Simulation {
 pub struct Position {
     board: Board,
     should_store: bool,
-    value: f32,
+
+    eval: Evaluation,
     policy: Vec<f32>,
 }
 
