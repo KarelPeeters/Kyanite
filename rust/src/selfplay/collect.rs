@@ -71,7 +71,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
     let mut data = Vec::with_capacity(OUTPUT_FORMAT_SIZE);
 
     for position in simulation.positions {
-        let Position { board, value, policy } = position;
+        let Position { board, should_store, value, policy } = position;
 
         assert_eq!(policy.len(), board.available_moves().count());
         full_policy.fill(0.0);
@@ -97,6 +97,10 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
         data.extend((0..9).map(|om| (board.macr(om) == board.next_player.other()) as u8 as f32));
 
         assert_eq!(OUTPUT_FORMAT_SIZE, data.len());
+
+        if !should_store {
+            write!(writer, "#")?;
+        }
 
         for (i, x) in data.iter().enumerate() {
             if i != 0 {

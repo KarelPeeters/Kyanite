@@ -6,7 +6,6 @@ use sttt::board::{Board, Coord, Player};
 use sttt::bot_game::Bot;
 
 use crate::network::Network;
-use crate::util::EqF32;
 use crate::zero::{RunResult, Tree, ZeroSettings, ZeroState};
 
 struct GameState {

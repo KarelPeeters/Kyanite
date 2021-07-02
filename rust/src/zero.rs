@@ -272,7 +272,7 @@ impl Display for TreeDisplay<'_> {
 #[derive(Debug, Clone)]
 pub struct ZeroState {
     pub tree: Tree,
-    iterations: u64,
+    pub target_iterations: u64,
     settings: ZeroSettings,
 
     parent_list: Vec<usize>,
@@ -305,8 +305,8 @@ pub struct Response {
 
 impl ZeroState {
     /// Create a new state that will expand the given tree until its root node has been visited `iterations` times.
-    pub fn new(tree: Tree, iterations: u64, settings: ZeroSettings) -> ZeroState {
-        Self { tree, iterations, settings, parent_list: Vec::with_capacity(81) }
+    pub fn new(tree: Tree, target_iterations: u64, settings: ZeroSettings) -> ZeroState {
+        Self { tree, target_iterations, settings, parent_list: Vec::with_capacity(81) }
     }
 
     /// Run until finished or a network evaluation is needed.
@@ -334,7 +334,7 @@ impl ZeroState {
 
     /// Continue running, starting from the selection phase at the root of the tree.
     fn run_until_result_from_root(&mut self, rng: &mut impl Rng) -> RunResult {
-        while self.tree[0].visits < self.iterations {
+        while self.tree[0].visits < self.target_iterations {
             //start walking down the tree
             assert!(self.parent_list.is_empty());
             let mut curr_node = 0;

@@ -23,8 +23,12 @@ class SelfplaySettings:
     dirichlet_alpha: float
     dirichlet_eps: float
 
-    iterations: int
+    full_search_prob: float
+    full_iterations: int
+    part_iterations: int
+
     exploration_weight: float
+    random_symmetries: bool
 
     batch_size: int
     threads_per_device: int

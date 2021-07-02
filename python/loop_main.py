@@ -14,8 +14,11 @@ def main():
         keep_tree=False,
         dirichlet_alpha=1.0,
         dirichlet_eps=0.25,
-        iterations=1000,
+        full_search_prob=1.0,
+        full_iterations=1000,
+        part_iterations=1000,
         exploration_weight=2.0,
+        random_symmetries=True,
         batch_size=256,
         threads_per_device=2,
     )

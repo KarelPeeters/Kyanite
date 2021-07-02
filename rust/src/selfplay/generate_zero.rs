@@ -19,8 +19,11 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     // settings that effect the generated games
     //TODO add random moves with less visits to reduce value overfitting
     pub network: S,
-    pub iterations: u64,
     pub zero_settings: ZeroSettings,
+
+    pub full_search_prob: f64,
+    pub full_iterations: u64,
+    pub part_iterations: u64,
 
     pub keep_tree: bool,
     pub dirichlet_alpha: f32,
@@ -90,12 +93,18 @@ pub mod settings_onnx {
 }
 
 impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
-    fn new_zero(&self, tree: Tree) -> ZeroState {
-        ZeroState::new(tree, self.iterations, self.zero_settings)
+    fn new_zero(&self, tree: Tree, rng: &mut impl Rng) -> ZeroState {
+        let iterations = if rng.gen_bool(self.full_search_prob) {
+            self.full_iterations
+        } else {
+            self.part_iterations
+        };
+
+        ZeroState::new(tree, iterations, self.zero_settings)
     }
 
-    fn new_zero_root(&self) -> ZeroState {
-        self.new_zero(Tree::new(Board::new()))
+    fn new_zero_root(&self, rng: &mut impl Rng) -> ZeroState {
+        self.new_zero(Tree::new(Board::new()), rng)
     }
 
     fn add_dirichlet_noise(&self, tree: &mut Tree, rng: &mut impl Rng) {
@@ -128,7 +137,7 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
         sender: &Sender<Message>,
     ) {
         let mut network = self.network.load_network(thread_param);
-        let mut rng = thread_rng();
+        let rng = &mut thread_rng();
 
         let mut games: Vec<GameState> = vec![];
         let mut requests: Vec<Request> = vec![];
@@ -143,7 +152,7 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             let mut kept_games = vec![];
 
             for (mut game, response) in izip!(games.drain(..), responses.drain(..)) {
-                let (request, move_count) = game.run_until_request(&mut rng, move_selector, self, Some(response), sender);
+                let (request, move_count) = game.run_until_request(rng, move_selector, self, Some(response), sender);
                 total_move_count += move_count;
 
                 if let Some(request) = request {
@@ -158,8 +167,8 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             // create new games until we have enough and run them once
             let new_game_count = start_counter.request_up_to((self.batch_size - games.len()) as u64);
             for _ in 0..new_game_count {
-                let mut game = GameState::new(self.new_zero_root());
-                let (request, move_count) = game.run_until_request(&mut rng, move_selector, self, None, sender);
+                let mut game = GameState::new(self.new_zero_root(rng));
+                let (request, move_count) = game.run_until_request(rng, move_selector, self, None, sender);
 
                 total_move_count += move_count;
                 let request = request.expect("The first run of a gamestate should always returns a request");
@@ -233,8 +242,13 @@ impl GameState {
                     let picked_move = tree[picked_child].coord.unwrap();
 
                     //store this position
+                    let iterations = self.zero.target_iterations;
+                    assert!(iterations == settings.full_iterations || iterations == settings.part_iterations);
+                    let should_store = iterations == settings.full_iterations;
+
                     self.positions.push(Position {
                         board: self.zero.tree.root_board().clone(),
+                        should_store,
                         value: tree.value(),
                         policy,
                     });
@@ -245,9 +259,9 @@ impl GameState {
                         KeepResult::Tree(next_tree) => {
                             //continue playing this game, either by keeping part of the tree or starting a new one on the next board
                             if settings.keep_tree {
-                                self.zero = settings.new_zero(next_tree)
+                                self.zero = settings.new_zero(next_tree, rng)
                             } else {
-                                self.zero = settings.new_zero(Tree::new(next_tree.root_board().clone()))
+                                self.zero = settings.new_zero(Tree::new(next_tree.root_board().clone()), rng)
                             }
                         }
                         KeepResult::Done(won_by) => {

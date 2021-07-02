@@ -91,6 +91,7 @@ pub struct Simulation {
 #[derive(Debug, Clone)]
 pub struct Position {
     board: Board,
+    should_store: bool,
     value: f32,
     policy: Vec<f32>,
 }

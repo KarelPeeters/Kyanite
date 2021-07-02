@@ -62,6 +62,7 @@ impl Generator for MCTSGeneratorSettings {
 
                         positions.push(Position {
                             board: board.clone(),
+                            should_store: true,
                             value: tree.eval().value(),
                             policy,
                         });

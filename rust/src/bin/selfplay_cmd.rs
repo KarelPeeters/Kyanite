@@ -25,8 +25,11 @@ struct Args {
     dirichlet_eps: f32,
 
     // zero search
-    iterations: u64,
+    full_search_prob: f64,
+    full_iterations: u64,
+    part_iterations: u64,
     exploration_weight: f32,
+    random_symmetries: bool,
 
     // performance
     batch_size: usize,
@@ -50,10 +53,12 @@ fn main() {
         move_selector: MoveSelector { inf_temp_move_count: args.inf_temp_move_count },
         generator: ZeroGeneratorSettings {
             batch_size: args.batch_size,
-            iterations: args.iterations,
+            full_search_prob: args.full_search_prob,
+            full_iterations: args.full_iterations,
+            part_iterations: args.part_iterations,
             zero_settings: ZeroSettings {
                 exploration_weight: args.exploration_weight,
-                random_symmetries: true,
+                random_symmetries: args.random_symmetries,
             },
             keep_tree: args.keep_tree,
             dirichlet_alpha: args.dirichlet_alpha,
