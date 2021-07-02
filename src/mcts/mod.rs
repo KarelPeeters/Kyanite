@@ -49,9 +49,9 @@ pub struct Node {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Evaluation {
-    win: f32,
-    draw: f32,
-    loss: f32,
+    pub win: f32,
+    pub draw: f32,
+    pub loss: f32,
 }
 
 impl std::ops::Neg for Evaluation {
