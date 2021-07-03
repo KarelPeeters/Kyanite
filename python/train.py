@@ -31,7 +31,7 @@ def evaluate_model(model, data: GoogleData, target: 'WdlTarget'):
     wdl_logit, policy_logit = model(data.input)
 
     value_loss = cross_entropy_masked(wdl_logit, target.get_target(data), None)
-    move_loss = cross_entropy_masked(policy_logit, data.policy, data.mask.view(-1, 81))
+    move_loss = cross_entropy_masked(policy_logit.view(-1, 81), data.policy.view(-1, 81), data.mask.view(-1, 81))
 
     return value_loss, move_loss
 
@@ -116,7 +116,7 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             next_plot_i += 1
 
         print(
-            f"Epoch {ei}, train batch {bi}/{batch_count}: {train_loss:.2f},"
+            f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.2f},"
             f" {train_value_loss:.2f}, {train_policy_loss:.2f}")
 
         s.optimizer.zero_grad()
