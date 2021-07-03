@@ -1,5 +1,6 @@
 use rand::Rng;
-use crate::board::Board;
+
+use crate::board::{Board, Player};
 use crate::minimax::evaluate_minimax;
 
 /// Generate a `Board` by playing `n` random moves.
@@ -46,7 +47,7 @@ pub fn random_board_with_forced_win(depth: u32, rng: &mut impl Rng) -> Board {
                 if !shallow_win {
                     return board;
                 } else {
-                    break
+                    break;
                 }
             }
 
@@ -57,6 +58,37 @@ pub fn random_board_with_forced_win(depth: u32, rng: &mut impl Rng) -> Board {
                 Some(mv) => {
                     board.play(mv);
                 }
+            }
+        }
+    }
+}
+
+fn is_double_forced_draw(board: &Board, depth: u32) -> bool {
+    if board.won_by == Some(Player::Neutral) { return true; }
+    if board.won_by.is_some() || depth == 0 { return false; }
+
+    board.available_moves()
+        .all(|mv| is_double_forced_draw(&board.clone_and_play(mv), depth - 1))
+}
+
+/// Generate a random board with a *double forced draw* in `depth` moves, meaning that no matter what either player does
+/// it's impossible for someone to win.
+pub fn random_board_with_double_forced_draw(depth: u32, rng: &mut impl Rng) -> Board {
+    assert!(depth < 81);
+
+    loop {
+        let mut board = Board::new();
+
+        loop {
+            if is_double_forced_draw(&board, depth) {
+                if depth > 0 && is_double_forced_draw(&board, depth - 1) { break; }
+
+                return board;
+            };
+
+            match board.random_available_move(rng) {
+                Some(mv) => { board.play(mv); }
+                None => break,
             }
         }
     }
