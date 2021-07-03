@@ -15,8 +15,8 @@ def main():
         dirichlet_alpha=0.5,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=1000,
-        part_iterations=1000,
+        full_iterations=500,
+        part_iterations=500,
         exploration_weight=2.0,
         random_symmetries=True,
         batch_size=256,
@@ -24,7 +24,7 @@ def main():
     )
 
     train_settings = TrainSettings(
-        epochs=2,
+        epochs=1,
         wdl_target=WdlTarget.Final,
         policy_weight=2.0,
         batch_size=256,
