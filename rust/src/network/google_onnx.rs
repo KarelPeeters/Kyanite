@@ -63,8 +63,8 @@ impl Network for GoogleOnnxNetwork {
             let value = &outputs[0];
             let policy = &outputs[1];
 
-            assert_eq!(value.dim(), IxDyn(&[batch_size, 1]));
-            assert_eq!(policy.dim(), IxDyn(&[batch_size, 81]));
+            assert_eq!(value.dim(), IxDyn(&[batch_size, 3]));
+            assert_eq!(policy.dim(), IxDyn(&[batch_size, 9, 9]));
 
             let value = value.as_slice().unwrap();
             let policy = policy.as_slice().unwrap();

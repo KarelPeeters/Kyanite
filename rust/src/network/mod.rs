@@ -11,11 +11,19 @@ pub mod google_torch;
 #[cfg(feature = "onnx")]
 pub mod google_onnx;
 
+#[derive(Default, Debug, Copy, Clone)]
+pub struct WDL {
+    pub win: f32,
+    pub draw: f32,
+    pub loss: f32,
+}
+
 #[derive(Debug)]
 pub struct NetworkEvaluation {
-    pub value: f32,
+    /// The win, draw and loss probabilities, after normalization.
+    pub wdl: WDL,
 
-    /// The full policy vector, in **o-order**.
+    /// The full policy probability vector, in **o-order**, after masking and normalization.
     /// Must be zero for non-available moves and have sum `1.0`.
     pub policy: Vec<f32>,
 }
@@ -57,24 +65,37 @@ fn encode_google_input(boards: &[Board]) -> Vec<f32> {
 }
 
 #[allow(dead_code)]
-fn collect_google_output(boards: &[Board], batch_values: &[f32], batch_policies: &[f32]) -> Vec<NetworkEvaluation> {
-    assert_eq!(boards.len(), batch_values.len());
+fn collect_google_output(boards: &[Board], batch_wdl: &[f32], batch_policies: &[f32]) -> Vec<NetworkEvaluation> {
+    assert_eq!(boards.len() * 3, batch_wdl.len());
     assert_eq!(boards.len() * 81, batch_policies.len());
 
     boards.iter().enumerate().map(|(i, board)| {
-        let range = (81 * i)..(81 * (i + 1));
-        let policy_yx = &batch_policies[range];
+        let policy_range = (81 * i)..(81 * (i + 1));
+        let policy_yx = &batch_policies[policy_range];
         let mut policy = Coord::all()
             .map(|c| policy_yx[c.yx() as usize])
             .collect_vec();
 
         mask_and_softmax(&mut policy, board);
 
-        NetworkEvaluation {
-            value: batch_values[i],
-            policy,
-        }
+        let mut wdl = batch_wdl[3 * i..(3 * i + 3)].to_vec();
+        softmax(&mut wdl);
+        let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
+
+        NetworkEvaluation { wdl, policy }
     }).collect()
+}
+
+#[allow(dead_code)]
+pub fn softmax(slice: &mut [f32]) {
+    let mut sum = 0.0;
+    for v in slice.iter_mut() {
+        *v = v.exp();
+        sum += *v;
+    }
+    for v in slice.iter_mut() {
+        *v /= sum;
+    }
 }
 
 #[allow(dead_code)]
@@ -93,5 +114,53 @@ pub fn mask_and_softmax(slice: &mut [f32], board: &Board) {
 
     for v in slice.iter_mut() {
         *v /= sum;
+    }
+}
+
+impl WDL {
+    pub fn nan() -> WDL {
+        WDL { win: f32::NAN, draw: f32::NAN, loss: f32::NAN }
+    }
+
+    pub fn value(self) -> f32 {
+        self.win - self.loss
+    }
+}
+
+impl std::ops::Neg for WDL {
+    type Output = WDL;
+
+    fn neg(self) -> WDL {
+        WDL { win: self.loss, draw: self.draw, loss: self.win }
+    }
+}
+
+impl std::ops::Add<WDL> for WDL {
+    type Output = WDL;
+
+    fn add(self, rhs: WDL) -> WDL {
+        WDL {
+            win: self.win + rhs.win,
+            draw: self.draw + rhs.draw,
+            loss: self.loss + rhs.loss,
+        }
+    }
+}
+
+impl std::ops::Div<f32> for WDL {
+    type Output = WDL;
+
+    fn div(self, rhs: f32) -> WDL {
+        WDL {
+            win: self.win / rhs,
+            draw: self.draw / rhs,
+            loss: self.loss / rhs,
+        }
+    }
+}
+
+impl std::ops::AddAssign<WDL> for WDL {
+    fn add_assign(&mut self, rhs: WDL) {
+        *self = *self + rhs
     }
 }

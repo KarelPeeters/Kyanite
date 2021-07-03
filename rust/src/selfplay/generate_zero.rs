@@ -116,7 +116,7 @@ impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
             let noise = rng.sample(distr);
 
             for (child, n) in izip!(children, noise) {
-                tree[child].policy.0 += n
+                tree[child].net_policy += n
             }
         }
     }

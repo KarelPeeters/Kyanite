@@ -56,8 +56,8 @@ impl Network for GoogleTorchNetwork {
         };
 
         assert_eq!(2, output.len(), "Return value count mismatch");
-        let batch_value = unwrap_tensor_with_shape(&output[0], &[batch_size, 1]);
-        let batch_policy = unwrap_tensor_with_shape(&output[1], &[batch_size, 81]);
+        let batch_value = unwrap_tensor_with_shape(&output[0], &[batch_size, 3]);
+        let batch_policy = unwrap_tensor_with_shape(&output[1], &[batch_size, 9, 9]);
 
         let batch_values = Vec::<f32>::from(batch_value);
         let batch_policies = Vec::<f32>::from(batch_policy);

@@ -9,8 +9,7 @@ use rand::Rng;
 use sttt::board::{Board, Coord, Player, Symmetry};
 use sttt::bot_game::Bot;
 
-use crate::network::{Network, NetworkEvaluation};
-use crate::util::EqF32;
+use crate::network::{Network, NetworkEvaluation, WDL};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
@@ -58,20 +57,21 @@ impl IntoIterator for IdxRange {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub coord: Option<Coord>,
     pub children: Option<IdxRange>,
 
     /// The evaluation returned by the network for this position.
-    pub evaluation: Option<EqF32>,
+    pub net_wdl: Option<WDL>,
     /// The prior probability as evaluated by the network when the parent node was expanded. Called `P` in the paper.
-    pub policy: EqF32,
+    pub net_policy: f32,
 
     /// The number of times this node has been visited. Called `N` in the paper.
     pub visits: u64,
-    /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value. Called `W` in the paper.
-    pub total_value: EqF32,
+    /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value.
+    /// Called `W` in the paper.
+    pub total_wdl: WDL,
 }
 
 impl Node {
@@ -80,28 +80,29 @@ impl Node {
             coord,
             children: None,
 
-            evaluation: None,
-            policy: p.into(),
+            net_wdl: None,
+            net_policy: p.into(),
 
             visits: 0,
-            total_value: 0.0.into(),
+            total_wdl: WDL::default(),
         }
     }
 
-    /// The value of this node from the POV of the player that could play this move.
-    pub fn value(&self) -> f32 {
-        *self.total_value / self.visits as f32
+    /// The WDL of this node from the POV of the player that could play this move.
+    pub fn wdl(&self) -> WDL {
+        self.total_wdl / self.visits as f32
     }
 
+
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
-        let q = self.value();
-        let u = *self.policy * (parent_visits as f32).sqrt() / (1 + self.visits) as f32;
+        let q = self.wdl().value();
+        let u = self.net_policy * (parent_visits as f32).sqrt() / (1 + self.visits) as f32;
         q + exploration_weight * u
     }
 }
 
 /// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Tree {
     root_board: Board,
     nodes: Vec<Node>,
@@ -154,9 +155,9 @@ impl Tree {
         self[best_child].coord.unwrap()
     }
 
-    /// The value of `root_board` from the POV of `root_board.next_player`.
-    pub fn value(&self) -> f32 {
-        -self[0].value()
+    /// The WDL of `root_board` from the POV of `root_board.next_player`.
+    pub fn wdl(&self) -> WDL {
+        -self[0].wdl()
     }
 
     /// Return the policy vector for the root node.
@@ -225,26 +226,33 @@ pub struct TreeDisplay<'a> {
 impl Display for TreeDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.curr_depth == 0 {
-            writeln!(f, "move: visits zero(value, policy) net(value, policy)")?;
+            writeln!(f, "move: visits zero(w/d/l, policy) net(w/d/l, policy)")?;
         }
 
         let node = &self.tree[self.node];
 
         for _ in 0..self.curr_depth { write!(f, "  ")? }
+
+        let node_wdl = node.wdl();
+        let net_wdl = -node.net_wdl.unwrap_or(WDL::nan());
+
         writeln!(
             f,
-            "{:?}: {} zero({:.3}, {:.3}) net({:.3}, {:.3})",
+            "{:?}: {} zero({:.3}/{:.3}/{:.3}, {:.3}) net({:.3}/{:.3}/{:.3}, {:.3})",
             node.coord, node.visits,
-            node.value(), (node.visits as f32) / (self.parent_visits as f32),
-            -node.evaluation.as_deref().copied().unwrap_or(f32::NAN), node.policy,
+            node_wdl.win, node_wdl.draw, node_wdl.loss,
+            (node.visits as f32) / (self.parent_visits as f32),
+            net_wdl.win, net_wdl.draw, net_wdl.loss,
+            node.net_policy,
         )?;
 
         if self.curr_depth == self.max_depth { return Ok(()); }
 
         if let Some(children) = node.children {
-            let best_child = children.start.get() + children.iter()
-                .map(|c| OrderedFloat(self.tree[c].value()))
-                .position_max().unwrap();
+            let best_child_index = children.iter()
+                .position_max_by_key(|&c| self.tree[c].visits)
+                .unwrap();
+            let best_child = children.get(best_child_index);
 
             for child in children {
                 let next_max_depth = if child == best_child {
@@ -340,13 +348,14 @@ impl ZeroState {
             let mut curr_node = 0;
             let mut curr_board = self.tree.root_board.clone();
 
-            let value = loop {
+            let wdl = loop {
                 self.parent_list.push(curr_node);
 
                 //if the game is done use the real value
                 if let Some(won_by) = curr_board.won_by {
-                    let value = if won_by == Player::Neutral { 0.0 } else { -1.0 };
-                    break value;
+                    let draw = if won_by == Player::Neutral { 1.0 } else { 0.0 };
+                    let wdl = WDL { win: 0.0, draw, loss: 1.0 - draw };
+                    break wdl;
                 }
 
                 //get the children or call the network if this is the first time we visit this node
@@ -368,7 +377,7 @@ impl ZeroState {
                 curr_board.play(self.tree[curr_node].coord.unwrap());
             };
 
-            self.propagate_value(value);
+            self.propagate_wdl(wdl);
         }
 
         RunResult::Done
@@ -378,7 +387,7 @@ impl ZeroState {
     fn apply_eval(&mut self, response: Response) {
         // unwrap everything
         let Response { request, evaluation } = response;
-        let NetworkEvaluation { value, policy: sym_policy } = evaluation;
+        let NetworkEvaluation { wdl, policy: sym_policy } = evaluation;
         let Request { curr_board, curr_node, sym } = request;
 
         // safety check: is this actually our request?
@@ -394,21 +403,21 @@ impl ZeroState {
         let end = self.tree.len();
 
         self.tree[curr_node].children = Some(IdxRange::new(start, end));
-        self.tree[curr_node].evaluation = Some(value.into());
+        self.tree[curr_node].net_wdl = Some(wdl);
 
-        self.propagate_value(value);
+        self.propagate_wdl(wdl);
     }
 
     /// Propagate the given final value for a game backwards through the tree using `parent_list`.
-    fn propagate_value(&mut self, mut value: f32) {
+    fn propagate_wdl(&mut self, mut wdl: WDL) {
         assert!(!self.parent_list.is_empty());
 
         for &node in self.parent_list.iter().rev() {
-            value = -value;
+            wdl = -wdl;
 
             let node = &mut self.tree[node];
             node.visits += 1;
-            *node.total_value += value;
+            node.total_wdl += wdl;
         }
 
         self.parent_list.clear();
