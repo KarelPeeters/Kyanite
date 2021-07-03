@@ -9,10 +9,10 @@ from train import TrainSettings, WdlTarget
 
 def main():
     selfplay_settings = SelfplaySettings(
-        game_count=10_000,
+        game_count=512,
         inf_temp_move_count=20,
         keep_tree=False,
-        dirichlet_alpha=1.0,
+        dirichlet_alpha=0.5,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
         full_iterations=1000,
@@ -32,7 +32,7 @@ def main():
         plot_smooth_points=50,
     )
 
-    root_path = "data/loop_derp"
+    root_path = "data/loop_wdl_0"
     os.makedirs(root_path, exist_ok=True)
     initial_path = os.path.join(root_path, "initial_network.pt")
 
