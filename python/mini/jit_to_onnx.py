@@ -3,7 +3,7 @@ import os
 import torch.jit
 from torch.onnx import TrainingMode
 
-folder = "../../data/loop/modest_cont/"
+folder = "../../data/esat3/modest/"
 device = "cpu"
 
 for file_pt in os.listdir(folder):
@@ -30,7 +30,7 @@ for file_pt in os.listdir(folder):
         example_outputs=outputs,
         opset_version=12,
         input_names=["input"],
-        output_names=["value", "policy"],
-        dynamic_axes={"input": {0: "batch_size"}, "value": {0: "batch_size"}, "policy": {0: "batch_size"}},
+        output_names=["wdl", "policy"],
+        dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
         training=TrainingMode.EVAL,
     )

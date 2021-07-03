@@ -3,6 +3,7 @@ from math import prod
 import torch
 from torch.optim import AdamW
 
+from models import GoogleModel
 from train import TrainState, train_model, WdlTarget, TrainSettings
 from util import load_data, DEVICE, GoogleData
 
@@ -26,7 +27,7 @@ def main():
     test_fraction = 0.02
 
     # shuffle to avoid biasing test data towards longer games
-    all_data = load_data("../data/loop2/games.csv", shuffle=True)
+    all_data = load_data("../data/esat3/games_part.csv", shuffle=True)
 
     split_index = int((1 - test_fraction) * len(all_data))
     train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, split_index)))
@@ -37,15 +38,13 @@ def main():
     train_data = train_data.to(DEVICE)
     test_data = test_data.to(DEVICE)
 
-    # model = GoogleModel(
-    #     channels=32, blocks=6,
-    #     value_channels=1, value_size=16,
-    #     policy_channels=4,
-    #     res=True,
-    #     squeeze_size=None, squeeze_bias=False
-    # )
-
-    model = torch.jit.load("../data/loop/modest_cont22/model_15_epochs.pt")
+    model = GoogleModel(
+        channels=32, blocks=6,
+        wdl_channels=1, wdl_size=16,
+        policy_channels=4,
+        res=True,
+        squeeze_size=None, squeeze_bias=False
+    )
 
     param_count = sum(prod(p.shape) for p in model.parameters())
     print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
@@ -70,7 +69,7 @@ def main():
 
     settings = TrainSettings(
         epochs=15,
-        value_target=WdlTarget.Final,
+        wdl_target=WdlTarget.Final,
         policy_weight=2.0,
         batch_size=batch_size,
         plot_points=100,
@@ -79,7 +78,7 @@ def main():
 
     state = TrainState(
         settings=settings,
-        output_path="../data/loop2/derp",
+        output_path="../data/esat3/modest",
         train_data=train_data,
         test_data=test_data,
         optimizer=optimizer,
