@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::fmt::{self, Debug, Write};
+use std::fmt::{self, Debug};
 
 use itertools::Itertools;
 use rand::distributions::{Distribution, Standard};
@@ -34,7 +34,7 @@ impl Player {
         match self {
             Player::X => 0,
             Player::O => 1,
-            Player::Neutral => panic!(),
+            Player::Neutral => panic!("Player::Neural doesn't have an index"),
         }
     }
 }
@@ -123,9 +123,6 @@ pub struct BoardMoveIterator<'a> {
 }
 
 impl<'a> BoardMoveIterator<'a> {
-    fn empty(board: &Board) -> BoardMoveIterator {
-        BoardMoveIterator { board, macro_left: 0, curr_om: 0, grid_left: 0 }
-    }
     fn new(board: &Board) -> BoardMoveIterator {
         BoardMoveIterator { board, macro_left: board.macro_mask, curr_om: 0, grid_left: 0 }
     }
@@ -248,6 +245,11 @@ impl Board {
         get_player(self.main_grid, om)
     }
 
+    pub fn is_macro_open(&self, om: u8) -> bool {
+        debug_assert!(om < 9);
+        has_bit(self.macro_open, om)
+    }
+
     pub fn map_symmetry(&self, sym: Symmetry) -> Board {
         let mut grids = [0; 9];
         for oo in 0..9 {
@@ -270,12 +272,11 @@ impl Board {
         self.grids.iter().map(|tile| tile.count_ones()).sum()
     }
 
+    /// Get an iterator over the available moves. Panics if this board is done,
+    /// so there will always be at least one move.
     pub fn available_moves(&self) -> impl Iterator<Item=Coord> + '_ {
-        return if self.is_done() {
-            BoardMoveIterator::empty(&self)
-        } else {
-            BoardMoveIterator::new(&self)
-        };
+        assert!(!self.is_done(), "Cannot get available moves for done board");
+        BoardMoveIterator::new(&self)
     }
 
     pub fn random_available_move<R: Rng>(&self, rand: &mut R) -> Option<Coord> {
@@ -447,8 +448,12 @@ impl Iterator for BitIter {
 fn symbol_from_tile(board: &Board, coord: Coord) -> char {
     let is_last = Some(coord) == board.last_move;
     let is_available = board.is_available_move(coord);
+    let player = board.tile(coord);
+    symbol_from_tuple(is_available, is_last, player)
+}
 
-    let tuple = (is_available, is_last, board.tile(coord));
+fn symbol_from_tuple(is_available: bool, is_last: bool, player: Player) -> char {
+    let tuple = (is_available, is_last, player);
     match tuple {
         (false, false, Player::X) => 'x',
         (false, true, Player::X) => 'X',
@@ -460,12 +465,12 @@ fn symbol_from_tile(board: &Board, coord: Coord) -> char {
     }
 }
 
-fn symbol_to_tile(c: char) -> (bool, bool, Player) {
+fn symbol_to_tuple(c: char) -> (bool, bool, Player) {
     match c {
-        'X' => (false, false, Player::X),
-        'x' => (false, true, Player::X),
-        'O' => (false, false, Player::O),
-        'o' => (false, true, Player::O),
+        'x' => (false, false, Player::X),
+        'X' => (false, true, Player::X),
+        'o' => (false, false, Player::O),
+        'O' => (false, true, Player::O),
         ' ' => (false, false, Player::Neutral),
         '.' => (true, false, Player::Neutral),
         _ => panic!("unexpected character '{}'", c)
@@ -476,17 +481,27 @@ impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for y in 0..9 {
             if y == 3 || y == 6 {
-                f.write_str("---+---+---\n")?;
+                writeln!(f, "---+---+---     +---+")?;
             }
 
             for x in 0..9 {
                 if x == 3 || x == 6 {
-                    f.write_char('|')?;
+                    write!(f, "|")?;
                 }
-                f.write_char(symbol_from_tile(self, Coord::from_xy(x, y)))?;
+                write!(f, "{}", symbol_from_tile(self, Coord::from_xy(x, y)))?;
             }
 
-            f.write_char('\n')?;
+            if (3..6).contains(&y) {
+                write!(f, "     |")?;
+                let ym = y - 3;
+                for xm in 0..3 {
+                    let om = xm + 3 * ym;
+                    write!(f, "{}", symbol_from_tuple(self.is_macro_open(om), false, self.macr(om)))?;
+                }
+                write!(f, "|")?;
+            }
+
+            writeln!(f)?;
         }
 
         Ok(())
@@ -505,9 +520,10 @@ pub fn board_from_compact_string(s: &str) -> Board {
 
     for (o, c) in s.chars().enumerate() {
         let coord = Coord::from_o(o as u8);
-        let (_, last, player) = symbol_to_tile(c);
+        let (_, last, player) = symbol_to_tuple(c);
 
         if last {
+            assert!(last_move.is_none(), "Compact string cannot contain multiple last moves");
             last_move = Some((player, coord));
         }
 
