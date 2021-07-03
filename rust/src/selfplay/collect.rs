@@ -71,7 +71,7 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
     let mut data = Vec::with_capacity(OUTPUT_FORMAT_SIZE);
 
     for position in simulation.positions {
-        let Position { board, should_store, eval, policy } = position;
+        let Position { board, should_store, wdl, policy } = position;
 
         assert_eq!(policy.len(), board.available_moves().count());
         full_policy.fill(0.0);
@@ -86,10 +86,10 @@ fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) ->
         data.push((won_by == Player::Neutral) as u8 as f32);
         data.push((won_by == board.next_player.other()) as u8 as f32);
 
-        // wdl_pred
-        data.push(eval.win);
-        data.push(eval.draw);
-        data.push(eval.loss);
+        // wdl_est
+        data.push(wdl.win);
+        data.push(wdl.draw);
+        data.push(wdl.loss);
 
         // policy
         data.extend_from_slice(&full_policy);

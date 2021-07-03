@@ -16,6 +16,8 @@ use rand::Rng;
 use sttt::board::{Board, Player};
 use sttt::mcts::Evaluation;
 
+use crate::network::WDL;
+
 mod collect;
 pub mod generate_zero;
 pub mod generate_mcts;
@@ -94,7 +96,7 @@ pub struct Position {
     board: Board,
     should_store: bool,
 
-    eval: Evaluation,
+    wdl: WDL,
     policy: Vec<f32>,
 }
 

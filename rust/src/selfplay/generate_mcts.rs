@@ -4,6 +4,7 @@ use rand::thread_rng;
 use sttt::board::Board;
 use sttt::mcts::mcts_build_tree;
 
+use crate::network::WDL;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
 
 #[derive(Debug)]
@@ -60,10 +61,11 @@ impl Generator for MCTSGeneratorSettings {
                         let picked_child = children.get(picked_index);
                         let picked_move = tree[picked_child].coord;
 
+                        let eval = tree.eval();
                         positions.push(Position {
                             board: board.clone(),
                             should_store: true,
-                            eval: tree.eval(),
+                            wdl: WDL { win: eval.win, draw: eval.draw, loss: eval.loss },
                             policy,
                         });
 
