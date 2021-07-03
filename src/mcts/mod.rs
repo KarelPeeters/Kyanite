@@ -269,7 +269,7 @@ pub fn mcts_build_tree<R: Rng>(board: &Board, iterations: u64, exploration_weigh
         let draw = won_by == Player::Neutral;
 
         for &update_node in parent_list.iter().rev() {
-            won = !won;
+            won = !won && !draw;
 
             let node = &mut tree[update_node];
             node.visits += 1;
