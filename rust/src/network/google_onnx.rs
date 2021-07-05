@@ -7,9 +7,9 @@ use onnxruntime::ndarray::IxDyn;
 use onnxruntime::session::Session;
 use onnxruntime::tensor::OrtOwnedTensor;
 use self_cell::self_cell;
-use sttt::board::Board;
+use sttt::board::{Board, Coord};
 
-use crate::network::{collect_google_output, encode_google_input, Network, NetworkEvaluation};
+use crate::network::{collect_evaluations, encode_google_input, Network, NetworkEvaluation};
 
 pub struct GoogleOnnxNetwork {
     inner: Inner,
@@ -25,7 +25,10 @@ self_cell!(
 );
 
 impl GoogleOnnxNetwork {
+    #[allow(dead_code)]
     pub fn load(path: impl AsRef<Path>) -> Self {
+        panic!("There is currently a bug in the pt -> onnx conversion, don't use this!");
+
         let path = path.as_ref().to_owned();
 
         let env = Environment::builder()
@@ -68,7 +71,7 @@ impl Network for GoogleOnnxNetwork {
 
             let value = value.as_slice().unwrap();
             let policy = policy.as_slice().unwrap();
-            collect_google_output(boards, value, policy)
+            collect_evaluations(boards, value, policy, Coord::yx)
         })
     }
 }

@@ -9,7 +9,7 @@ from matplotlib import pyplot
 from torch import nn
 from torch.optim import Optimizer
 
-from util import DEVICE, GoogleData, linspace_int, uniform_window_filter
+from util import DEVICE, GoogleData, linspace_int, uniform_window_filter, GenericData
 
 
 def cross_entropy_masked(logits, target, mask):
@@ -27,13 +27,18 @@ def cross_entropy_masked(logits, target, mask):
     return loss.mean(dim=0)
 
 
-def evaluate_model(model, data: GoogleData, target: 'WdlTarget'):
-    wdl_logit, policy_logit = model(data.input)
+def evaluate_model(model, data: GenericData, target: 'WdlTarget'):
+    input = torch.cat([
+        data.tiles_o.view(-1, 2, 9, 9),
+        data.macros.view(-1, 2, 1, 9),
+    ], dim=2)
+    wdl_logit, policy_logit = model(data.mask_o.view(-1, 9, 9), input)
 
-    value_loss = cross_entropy_masked(wdl_logit, target.get_target(data), None)
-    move_loss = cross_entropy_masked(policy_logit.view(-1, 81), data.policy.view(-1, 81), data.mask.view(-1, 81))
+    wdl_target = target.get_target(data.wdl_final, data.wdl_est)
+    wdl_loss = cross_entropy_masked(wdl_logit, wdl_target, None)
+    move_loss = cross_entropy_masked(policy_logit, data.policy_o, data.mask_o)
 
-    return value_loss, move_loss
+    return wdl_loss, move_loss
 
 
 class WdlTarget(Enum):
@@ -41,13 +46,13 @@ class WdlTarget(Enum):
     Estimate = auto()
     Mean = auto()
 
-    def get_target(self, data: GoogleData):
+    def get_target(self, final, est):
         if self == WdlTarget.Final:
-            return data.wdl_final
+            return final
         if self == WdlTarget.Estimate:
-            return data.wdl_est
+            return est
         if self == WdlTarget.Mean:
-            return (data.wdl_final + data.wdl_est) / 2
+            return (final + est) / 2
         assert False, self
 
 
@@ -89,13 +94,15 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
     for bi in range(batch_count):
         is_plot_batch = bi in plot_batches
 
+        # todo bring random symmetry back
+
         train_batch_i = train_shuffle[bi * batch_size:(bi + 1) * batch_size]
-        train_data_batch = s.train_data.pick_batch(train_batch_i).random_symmetry()
+        train_data_batch = s.train_data.pick_batch(train_batch_i)  # .random_symmetry()
 
         if is_plot_batch:
             model.eval()
             test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
-            test_data_batch = s.test_data.pick_batch(test_batch_i).random_symmetry()
+            test_data_batch = s.test_data.pick_batch(test_batch_i)  # .random_symmetry()
 
             test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch, s.settings.wdl_target)
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss

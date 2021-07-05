@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::time::Instant;
 
-use itertools::Itertools;
-use sttt::board::Board;
-use tch::{CModule, Cuda, Device, IValue, maybe_init_cuda, TchError, Tensor};
+use sttt::board::{Board, Coord};
+use tch::{CModule, Device, IValue, maybe_init_cuda, Tensor};
 
-use crate::network::{collect_google_output, encode_google_input, Network, NetworkEvaluation};
+use crate::network::{collect_evaluations, encode_google_input, Network, NetworkEvaluation};
+use crate::network::torch_utils::{unwrap_ivalue_pair, unwrap_tensor_with_shape};
 
 #[derive(Debug)]
 pub struct GoogleTorchNetwork {
@@ -13,10 +13,6 @@ pub struct GoogleTorchNetwork {
     device: Device,
 
     pub pytorch_time: f32,
-}
-
-pub fn all_cuda_devices() -> Vec<Device> {
-    (0..Cuda::device_count() as usize).map(Device::Cuda).collect_vec()
 }
 
 impl GoogleTorchNetwork {
@@ -42,37 +38,11 @@ impl Network for GoogleTorchNetwork {
         let result = self.model.forward_is(&input);
         self.pytorch_time += (Instant::now() - start).as_secs_f32();
 
-        let output = match result {
-            Ok(IValue::Tuple(output)) => output,
-            Ok(value) =>
-                panic!("Expected tuple, got {:?}", value),
-            //TODO create issue in tch repo to ask for better error printing
-            Err(TchError::Torch(error)) =>
-                panic!("Failed to call model, torch error:\n{}", error),
-            err => {
-                err.expect("Failed to call model");
-                unreachable!();
-            }
-        };
+        let (wdls, policies) = unwrap_ivalue_pair(&result);
 
-        assert_eq!(2, output.len(), "Return value count mismatch");
-        let batch_value = unwrap_tensor_with_shape(&output[0], &[batch_size, 3]);
-        let batch_policy = unwrap_tensor_with_shape(&output[1], &[batch_size, 9, 9]);
+        let wdls: Vec<f32> = unwrap_tensor_with_shape(wdls, &[batch_size, 3]).into();
+        let policies: Vec<f32> = unwrap_tensor_with_shape(policies, &[batch_size, 9, 9]).into();
 
-        let batch_values = Vec::<f32>::from(batch_value);
-        let batch_policies = Vec::<f32>::from(batch_policy);
-
-        collect_google_output(boards, &batch_values, &batch_policies)
-    }
-}
-
-
-fn unwrap_tensor_with_shape<'i>(value: &'i IValue, size: &[i64]) -> &'i Tensor {
-    match value {
-        IValue::Tensor(tensor) => {
-            assert_eq!(size, tensor.size(), "Tensor size mismatch");
-            tensor
-        }
-        _ => panic!("Expected Tensor, got {:?}", value)
+        collect_evaluations(boards, &wdls, &policies, Coord::yx)
     }
 }

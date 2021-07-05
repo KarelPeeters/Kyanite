@@ -8,6 +8,11 @@ pub mod dummy;
 
 #[cfg(feature = "torch")]
 pub mod google_torch;
+#[cfg(feature = "torch")]
+pub mod mix_torch;
+#[cfg(feature = "torch")]
+pub mod torch_utils;
+
 #[cfg(feature = "onnx")]
 pub mod google_onnx;
 
@@ -65,20 +70,20 @@ fn encode_google_input(boards: &[Board]) -> Vec<f32> {
 }
 
 #[allow(dead_code)]
-fn collect_google_output(boards: &[Board], batch_wdl: &[f32], batch_policies: &[f32]) -> Vec<NetworkEvaluation> {
-    assert_eq!(boards.len() * 3, batch_wdl.len());
-    assert_eq!(boards.len() * 81, batch_policies.len());
+fn collect_evaluations(boards: &[Board], wdls: &[f32], policies: &[f32], coord_map: impl Fn(Coord) -> u8) -> Vec<NetworkEvaluation> {
+    assert_eq!(boards.len() * 3, wdls.len());
+    assert_eq!(boards.len() * 81, policies.len());
 
     boards.iter().enumerate().map(|(i, board)| {
         let policy_range = (81 * i)..(81 * (i + 1));
-        let policy_yx = &batch_policies[policy_range];
+        let policy_before = &policies[policy_range];
         let mut policy = Coord::all()
-            .map(|c| policy_yx[c.yx() as usize])
+            .map(|c| policy_before[coord_map(c) as usize])
             .collect_vec();
 
         mask_and_softmax(&mut policy, board);
 
-        let mut wdl = batch_wdl[3 * i..(3 * i + 3)].to_vec();
+        let mut wdl = wdls[3 * i..(3 * i + 3)].to_vec();
         softmax(&mut wdl);
         let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
 

@@ -3,9 +3,9 @@ from math import prod
 import torch
 from torch.optim import AdamW
 
-from models import GoogleModel
+from models import MixModel
 from train import TrainState, train_model, WdlTarget, TrainSettings
-from util import load_data, DEVICE, GoogleData
+from util import load_data, DEVICE
 
 
 def print_data_stats(test_data, train_data):
@@ -30,20 +30,19 @@ def main():
     all_data = load_data("../data/esat3/games_part.csv", shuffle=True)
 
     split_index = int((1 - test_fraction) * len(all_data))
-    train_data = GoogleData.from_generic(all_data.pick_batch(slice(None, split_index)))
-    test_data = GoogleData.from_generic(all_data.pick_batch(slice(split_index, None)))
+    train_data = all_data.pick_batch(slice(None, split_index))
+    test_data = all_data.pick_batch(slice(split_index, None))
 
-    print_data_stats(test_data, train_data)
+    # print_data_stats(test_data, train_data)
 
     train_data = train_data.to(DEVICE)
     test_data = test_data.to(DEVICE)
 
-    model = GoogleModel(
-        channels=32, blocks=6,
-        wdl_channels=1, wdl_size=16,
-        policy_channels=4,
-        res=True,
-        squeeze_size=None, squeeze_bias=False
+    # TODO this is okay for value, but policy is struggling :(
+    #   hypothesis: the messages (with relu!) are too small to carry the required information
+    #       maybe make messages smaller and instead carry a lot of state within each macro?
+    model = MixModel(
+        depth=8, message_size=32, wdl_size=32,
     )
 
     param_count = sum(prod(p.shape) for p in model.parameters())
@@ -78,7 +77,7 @@ def main():
 
     state = TrainState(
         settings=settings,
-        output_path="../data/esat3/modest",
+        output_path="../data/esat3/mix_large",
         train_data=train_data,
         test_data=test_data,
         optimizer=optimizer,
