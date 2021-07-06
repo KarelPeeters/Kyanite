@@ -120,6 +120,9 @@ class MixLayer(nn.Module):
     def __init__(self, message_size: int):
         super().__init__()
 
+        # TODO try a simple fully connected network (maybe with repeated board input) and see if that performs good
+        #   to see if we're onto something here or literally anything works
+
         # TODO look into implementing this with convolutions instead, maybe that's easier/faster
         #   convolutions? doesn't that imply weight sharing? maybe we want that, maybe not
         #   probably using transpose to flip the messages?

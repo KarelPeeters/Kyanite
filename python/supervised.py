@@ -24,14 +24,12 @@ def print_data_stats(test_data, train_data):
 
 
 def main():
-    test_fraction = 0.02
+    # TODO this is completely wrong! we need to keep games separate between test and train sets!
+    #   right now we're leaking like crazy!
 
     # shuffle to avoid biasing test data towards longer games
-    all_data = load_data("../data/esat3/games_part.csv", shuffle=True)
-
-    split_index = int((1 - test_fraction) * len(all_data))
-    train_data = all_data.pick_batch(slice(None, split_index))
-    test_data = all_data.pick_batch(slice(split_index, None))
+    # train_data, test_data = load_data("../data/esat3/games.csv", test_fraction=0.02)
+    train_data, test_data = load_data("../data/esat3/games.csv", test_fraction=0.02)
 
     # print_data_stats(test_data, train_data)
 

@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 from torch import Tensor
@@ -111,22 +112,73 @@ class GoogleData:
         return len(self.input)
 
 
-def load_data(path_csv, shuffle: bool) -> GenericData:
-    path_tensor = Path(path_csv).with_suffix(".pt")
+def convert_csv_to_h5(csv_path: str):
+    h5_path = os.path.splitext(csv_path)[0] + ".hdf5"
+    print(f"Converting {csv_path} to {h5_path}")
 
-    if not os.path.exists(path_tensor) or os.path.getmtime(path_csv) > os.path.getmtime(path_tensor):
-        print(f"Mapping data from {path_csv} to {path_tensor}")
-        np_data = np.loadtxt(path_csv, delimiter=",", ndmin=2, dtype=np.float32)
-        data = torch.tensor(np_data)
-        torch.save(data, path_tensor)
+    data = []
+    last_used_game_id = 0
+
+    with open(csv_path, "r") as f_in:
+        game_id = 0
+
+        for line in f_in:
+            line = line.strip()
+            if line == "":
+                game_id += 1
+                continue
+
+            a = np.fromstring(line, sep=",", dtype=np.single)
+            a = np.insert(a, 0, game_id)
+            data.append(a)
+            last_used_game_id = game_id
+
+    data = np.stack(data, axis=0)
+
+    with h5py.File(h5_path, "w") as f:
+        s = f.create_dataset("games", data=data, compression="gzip")
+        s.attrs["game_count"] = last_used_game_id + 1
+
+    return h5_path
+
+
+def load_data(path, test_fraction: float) -> (GenericData, GenericData):
+    """
+    Path must be either a csv of hdf5 file, the former is automatically converted to the latter.
+
+    This function does not actually shuffle train and test data itself, but games are randomly split between them.
+    This is okay because they're shuffled during training anyway.
+    """
+
+    path = Path(path)
+
+    assert path.suffix in [".hdf5", ".csv"], f"Unexpected extension '{path.suffix}'"
+
+    if path.suffix == ".csv":
+        csv_path = path
+        path = path.with_suffix(".hdf5")
+
+        if not path.exists() or os.path.getmtime(csv_path) > os.path.getmtime(path):
+            print(f"Converting {csv_path} to {path}")
+            convert_csv_to_h5(str(csv_path))
+        else:
+            print(f"Loading cached file {path}")
     else:
-        print(f"Using cached data {path_tensor}")
-        data = torch.load(path_tensor)
+        print(f"Loading existing file {path}")
 
-    if shuffle:
-        data = data[torch.randperm(len(data))]
+    with h5py.File(path, "r") as f:
+        games = f["games"]
+        game_count = games.attrs["game_count"]
+        games = torch.tensor(games)
 
-    return GenericData(data)
+    game_ids = games[:, 0].round().long()
+    full = games[:, 1:]
+
+    perm_games = torch.randperm(game_count)
+    split_index = int((1 - test_fraction) * game_count)
+
+    train_mask = perm_games[game_ids] < split_index
+    return GenericData(full[train_mask, :]), GenericData(full[~train_mask, :])
 
 
 def o_tensor(device):
