@@ -114,11 +114,11 @@ class GoogleData:
 
 def convert_csv_to_h5(csv_path: str):
     h5_path = os.path.splitext(csv_path)[0] + ".hdf5"
-    print(f"Converting {csv_path} to {h5_path}")
 
     data = []
     last_used_game_id = 0
 
+    print("Loading from CSV")
     with open(csv_path, "r") as f_in:
         game_id = 0
 
@@ -135,6 +135,7 @@ def convert_csv_to_h5(csv_path: str):
 
     data = np.stack(data, axis=0)
 
+    print("Writing to hdf5")
     with h5py.File(h5_path, "w") as f:
         s = f.create_dataset("games", data=data, compression="gzip")
         s.attrs["game_count"] = last_used_game_id + 1
@@ -162,15 +163,16 @@ def load_data(path, test_fraction: float) -> (GenericData, GenericData):
             print(f"Converting {csv_path} to {path}")
             convert_csv_to_h5(str(csv_path))
         else:
-            print(f"Loading cached file {path}")
-    else:
-        print(f"Loading existing file {path}")
+            print(f"Using cached data {path}")
+
+    print(f"Loading data")
 
     with h5py.File(path, "r") as f:
         games = f["games"]
         game_count = games.attrs["game_count"]
-        games = torch.tensor(games)
+        games = torch.tensor(games[()])
 
+    print("Splitting data")
     game_ids = games[:, 0].round().long()
     full = games[:, 1:]
 
