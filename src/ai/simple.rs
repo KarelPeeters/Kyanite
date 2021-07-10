@@ -2,6 +2,7 @@ use rand::Rng;
 
 use crate::ai::Bot;
 use crate::board::Board;
+use internal_iterator::InternalIterator;
 
 pub struct RandomBot<R: Rng> {
     rng: R,

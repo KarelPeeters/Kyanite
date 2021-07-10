@@ -1,11 +1,13 @@
 use std::fmt;
 use std::fmt::Debug;
 
+use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
+use crate::util::bit_iter::BitIter;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Coord(u8);
@@ -144,13 +146,13 @@ impl Board for STTTBoard {
         assert!(!self.is_done(), "Board must not be done");
 
         let mut count = 0;
-        for om in BitIter::of(self.macro_mask) {
+        for om in BitIter::new(self.macro_mask) {
             count += 9 - self.grids[om as usize].count_ones();
         }
 
         let mut index = rng.gen_range(0..count);
 
-        for om in BitIter::of(self.macro_mask) {
+        for om in BitIter::new(self.macro_mask) {
             let grid = self.grids[om as usize];
             let grid_count = 9 - grid.count_ones();
 
@@ -187,7 +189,7 @@ impl<'a> BoardAvailableMoves<'a, STTTBoard> for STTTBoard {
 
     fn available_moves(&'a self) -> Self::MoveIterator {
         assert!(!self.is_done(), "Board must not be done");
-        STTTMoveIterator::new(self)
+        STTTMoveIterator { board: self }
     }
 }
 
@@ -251,35 +253,22 @@ impl Debug for Coord {
 //TODO look into other iterator speedup functions that can be implemented
 pub struct STTTMoveIterator<'a> {
     board: &'a STTTBoard,
-    macro_left: u32,
-    curr_om: u32,
-    grid_left: u32,
 }
 
-impl<'a> STTTMoveIterator<'a> {
-    fn new(board: &STTTBoard) -> STTTMoveIterator {
-        STTTMoveIterator { board, macro_left: board.macro_mask, curr_om: 0, grid_left: 0 }
-    }
-}
-
-impl<'a> Iterator for STTTMoveIterator<'a> {
+impl<'a> InternalIterator for STTTMoveIterator<'a> {
     type Item = Coord;
 
-    fn next(&mut self) -> Option<Coord> {
-        if self.grid_left == 0 {
-            if self.macro_left == 0 {
-                return None;
-            } else {
-                self.curr_om = self.macro_left.trailing_zeros();
-                self.macro_left &= self.macro_left - 1;
-                self.grid_left = !compact_grid(self.board.grids[self.curr_om as usize]) & STTTBoard::FULL_MASK;
+    fn find_map<R, F>(self, mut f: F) -> Option<R> where F: FnMut(Self::Item) -> Option<R> {
+        for om in BitIter::new(self.board.macro_mask) {
+            let free_grid = (!compact_grid(self.board.grids[om as usize])) & STTTBoard::FULL_MASK;
+            for os in BitIter::new(free_grid) {
+                if let Some(r) = f(Coord::from_oo(om as u8, os as u8)) {
+                    return Some(r);
+                }
             }
         }
 
-        let os = self.grid_left.trailing_zeros();
-        self.grid_left &= self.grid_left - 1;
-
-        Some(Coord::from_oo(self.curr_om as u8, os as u8))
+        None
     }
 }
 
@@ -349,15 +338,6 @@ impl Symmetry {
     }
 }
 
-impl STTTBoard {
-    /// Get an iterator over the available moves. Panics if this board is done,
-    /// so there will always be at least one move.
-    pub fn available_moves(&self) -> impl Iterator<Item=Coord> + '_ {
-        assert!(!self.is_done(), "Cannot get available moves for done board");
-        STTTMoveIterator::new(&self)
-    }
-}
-
 fn is_win_grid(grid: u32) -> bool {
     debug_assert!(has_mask(STTTBoard::FULL_MASK, grid));
 
@@ -396,30 +376,6 @@ fn get_player(grid: u32, index: u8) -> Option<Player> {
         Some(Player::B)
     } else {
         None
-    }
-}
-
-struct BitIter {
-    left: u32,
-}
-
-impl BitIter {
-    fn of(int: u32) -> BitIter {
-        BitIter { left: int }
-    }
-}
-
-impl Iterator for BitIter {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        if self.left == 0 {
-            None
-        } else {
-            let index = self.left.trailing_zeros();
-            self.left &= self.left - 1;
-            Some(index)
-        }
     }
 }
 
@@ -522,12 +478,12 @@ pub fn board_from_compact_string(s: &str) -> STTTBoard {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
+    use internal_iterator::InternalIterator;
     use rand::rngs::SmallRng;
     use rand::SeedableRng;
     use rand::seq::SliceRandom;
 
-    use crate::board::Board;
+    use crate::board::{Board, BoardAvailableMoves};
     use crate::games::sttt::{Coord, STTTBoard, Symmetry};
     use crate::util::board_gen::random_board_with_moves;
 
@@ -589,8 +545,12 @@ mod test {
             }
             assert_eq!(board, back);
 
-            let expected_moves = board.available_moves().map(|c| sym.map_coord(c)).sorted_by_key(|c| c.o()).collect_vec();
-            let actual_moves = mapped.available_moves().sorted_by_key(|c| c.o()).collect_vec();
+            let mut expected_moves: Vec<Coord> = board.available_moves().map(|c| sym.map_coord(c)).collect();
+            let mut actual_moves: Vec<Coord> = mapped.available_moves().collect();
+
+            expected_moves.sort_by_key(|c| c.o());
+            actual_moves.sort_by_key(|c| c.o());
+
             assert_eq!(expected_moves, actual_moves);
         }
     }

@@ -1,3 +1,5 @@
+use internal_iterator::InternalIterator;
+
 use crate::ai::minimax::{Heuristic, minimax};
 use crate::board::{Board, Outcome, Player};
 
@@ -36,12 +38,21 @@ pub fn is_double_forced_draw(board: &impl Board, depth: u32) -> Result<bool, ()>
     if board.outcome().is_some() { return Ok(false); }
     if depth == 0 { return Err(()); }
 
-    for mv in board.available_moves() {
+    //TODO this is kind of ugly, consider writing a function try_fold or something
+    //  that handles this back and forth convertion
+    let result = board.available_moves().find_map(|mv| {
         let child = board.clone_and_play(mv);
-        if !is_double_forced_draw(&child, depth - 1)? {
-            return Ok(false);
-        }
-    }
 
-    Ok(true)
+        match is_double_forced_draw(&child, depth - 1) {
+            Ok(true) => None,
+            Ok(false) => Some(false),
+            Err(()) => Some(true),
+        }
+    });
+
+    match result {
+        Some(true) => Err(()),
+        Some(false) => Ok(false),
+        None => Ok(true)
+    }
 }

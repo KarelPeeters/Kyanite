@@ -1,9 +1,11 @@
+use std::cmp::max;
 use std::marker::PhantomData;
+use std::ops::Neg;
+
+use internal_iterator::InternalIterator;
 
 use crate::ai::Bot;
 use crate::board::Board;
-use std::ops::Neg;
-use std::cmp::max;
 
 pub trait Heuristic<B: Board> {
     /// The type used to represent the heuristic value of a board.
@@ -47,7 +49,7 @@ pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) 
         heuristic.value(board),
         depth,
         -heuristic.bound(),
-        heuristic.bound()
+        heuristic.bound(),
     );
 
     if result.best_move.is_none() {
@@ -75,7 +77,7 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
     let mut best_move: Option<B::Move> = None;
     let mut alpha = alpha;
 
-    for mv in board.available_moves() {
+    let early = board.available_moves().find_map(|mv: B::Move| {
         let child = board.clone_and_play(mv);
         let child_heuristic = heuristic.value_update(board, board_heuristic, mv, &child);
 
@@ -89,7 +91,8 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
         ).value;
 
         if child_value >= beta {
-            return MinimaxResult { value: child_value, best_move: Some(mv) };
+            //early return, this stops looping over the available moves
+            return Some(MinimaxResult { value: child_value, best_move: Some(mv) });
         }
 
         if child_value > best_value || best_move.is_none() {
@@ -98,9 +101,15 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
 
             alpha = max(alpha, child_value)
         }
-    }
 
-    MinimaxResult { value: best_value, best_move: Some(best_move.unwrap()) }
+        None
+    });
+
+    if let Some(early) = early {
+        early
+    } else {
+        MinimaxResult { value: best_value, best_move: Some(best_move.unwrap()) }
+    }
 }
 
 pub struct MiniMaxBot<B: Board, H: Heuristic<B>> {

@@ -7,6 +7,7 @@ use rand::Rng;
 
 use crate::ai::Bot;
 use crate::board::{Board, Outcome};
+use internal_iterator::InternalIterator;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
@@ -196,10 +197,9 @@ pub fn mcts_build_tree<B: Board>(board: &B, iterations: u64, exploration_weight:
                 Some(children) => children,
                 None => {
                     let start = tree.nodes.len();
-                    tree.nodes.extend(
-                        curr_board.available_moves()
-                            .map(|c| Node::new(Some(c)))
-                    );
+                    curr_board.available_moves().for_each(|mv| {
+                        tree.nodes.push(Node::new(Some(mv)))
+                    });
                     let length = tree.nodes.len() - start;
 
                     let children = IdxRange {

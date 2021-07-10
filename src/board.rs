@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
+use internal_iterator::InternalIterator;
 use rand::Rng;
-use rand::seq::IteratorRandom;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Player {
@@ -20,9 +20,11 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
 
     /// Whether the player who plays a move can lose by playing that move.
     /// Symbolically whether `b.won_by() == Some(Winner::Player(b.next_player()))` can ever be true.
+    /// This may be pessimistic, returning `false` is always correct.
     fn can_lose_after_move() -> bool;
 
-    /// Return minimum and maximum possible games lengths.
+    /// Return minimum and maximum possible games lengths. These bounds may be pessimistic,
+    /// returning `(0, None)` is always correct.
     fn game_length_bounds() -> (u32, Option<u32>);
 
     /// Return the next player to make a move.
@@ -35,7 +37,9 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
     /// Pick a random move from the `available_moves` with a uniform distribution. Panics if this board is done.
     /// Can be overridden for better performance.
     fn random_available_move(&self, rng: &mut impl Rng) -> Self::Move {
-        self.available_moves().choose(rng).unwrap()
+        let count = self.available_moves().count();
+        let index = rng.gen_range(0..count);
+        self.available_moves().nth(index).unwrap()
     }
 
     /// Play the move `mv`, modifying this board.
@@ -61,7 +65,7 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
 /// Trait to fake generic associated types, can be removed once that's stable.
 /// See https://github.com/rust-lang/rust/issues/44265.
 pub trait BoardAvailableMoves<'a, B: Board> {
-    type MoveIterator: Iterator<Item=B::Move>;
+    type MoveIterator: InternalIterator<Item=B::Move>;
 
     /// Return an iterator over available moves, is always nonempty.
     /// Panics if this board is done.
@@ -76,7 +80,7 @@ impl Player {
         }
     }
 
-    pub fn index(self) -> u32 {
+    pub fn index(self) -> u8 {
         match self {
             Player::A => 0,
             Player::B => 1,
