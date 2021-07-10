@@ -7,19 +7,19 @@ license-file = "NONE.md"
 edition = "2018"
 
 [dependencies]
-rand = { version = "0.8.3", features = ["small_rng"] }
-ordered-float = "2.2.0"
-regex = "1.5.3"
-itertools = "0.10.0"
-rayon = "1.5.0"
-derive_more = "0.99.13"
+rand = { version = "0.8.4", features = ["small_rng"] }
+regex = "1.5.4"
+itertools = "0.10.1"
+rayon = "1.5.1"
+derive_more = "0.99.16"
 static_assertions = "1.1.0"
+decorum = { version = "0.3.1", default-features=false, features=["std"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = "0.9.1"
+windows = "0.17.2"
 
 [target.'cfg(windows)'.build-dependencies]
-windows = "0.9.1"
+windows = "0.17.2"
 
 [profile.release]
 lto = true

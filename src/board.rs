@@ -63,7 +63,8 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
 pub trait BoardAvailableMoves<'a, B: Board> {
     type MoveIterator: Iterator<Item=B::Move>;
 
-    /// Return an iterator over available moves. Panics if this board is done.
+    /// Return an iterator over available moves, is always nonempty.
+    /// Panics if this board is done.
     fn available_moves(&'a self) -> Self::MoveIterator;
 }
 

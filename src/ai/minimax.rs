@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::board::Board;
-use crate::util::bot_game::Bot;
+use crate::ai::Bot;
 
 /// The value heuristic used in a minimax search.
 ///
