@@ -109,5 +109,12 @@ impl Outcome {
             Outcome::Draw => 0.0,
         }
     }
+
+    pub fn inf_sign(self, pov: Player) -> f32 {
+        match self {
+            Outcome::WonBy(player) => player.sign(pov) * f32::INFINITY,
+            Outcome::Draw => 0.0,
+        }
+    }
 }
 

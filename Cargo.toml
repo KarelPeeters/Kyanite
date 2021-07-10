@@ -22,5 +22,5 @@ windows = "0.17.2"
 windows = "0.17.2"
 
 [profile.release]
-lto = true
+#lto = true
 debug = true

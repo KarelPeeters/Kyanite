@@ -1,20 +1,26 @@
 use std::marker::PhantomData;
 
-use crate::board::Board;
 use crate::ai::Bot;
+use crate::board::Board;
 
 /// The value heuristic used in a minimax search.
 ///
 /// * `value` returns the value of the given board from the next player POV.
-///      This value must be antisymmetric, if the players are flipped the value should be inverted.
-/// * `value_delta` is used to speed up value calculations.
-///
-/// Both functions together must satisfy `value(&b.clone_and_move(mv)) = -value(b) + value_delta(b, mv)`.
+///      This value must induce a zero-sum game, if the players are flipped the value should be negated.
+/// * `value_update` can be overridden to incrementally update the value to speed up calculations.
 pub trait Heuristic<B: Board> {
     fn value(&self, board: &B) -> f32;
 
-    fn value_delta(&self, board: &B, mv: B::Move) -> f32 {
-        self.value(&board.clone_and_play(mv)) - self.value(board)
+    /// Return the value of `child`, given the previous board, its value and the move that was just played.
+    /// Given:
+    /// * `board.clone_and_play(mv) == child`
+    /// * `value(board) == board_value`
+    ///
+    /// This function must ensure that
+    /// * `value(child) == value_update(board, board_value, mv, child)`
+    #[allow(unused_variables)]
+    fn value_update(&self, board: &B, board_value: f32, mv: B::Move, child: &B) -> f32 {
+        self.value(child)
     }
 }
 
@@ -27,7 +33,10 @@ pub struct MinimaxResult<B: Board> {
 
 /// Evaluate the board using minimax with the given heuristic up to the given depth.
 pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) -> MinimaxResult<B> {
-    let result = negamax_recurse(heuristic, board, heuristic.value(board), depth, -f32::INFINITY, f32::INFINITY);
+    let board_value = heuristic.value(board);
+    assert!(!board_value.is_nan());
+
+    let result = negamax_recurse(heuristic, board, board_value, depth, -f32::INFINITY, f32::INFINITY);
 
     if result.best_move.is_none() {
         assert!(board.is_done() || depth == 0, "Implementation error in negamax");
@@ -56,7 +65,8 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
 
     for mv in board.available_moves() {
         let child = board.clone_and_play(mv);
-        let child_heuristic = -board_heuristic + heuristic.value_delta(board, mv);
+        let child_heuristic = heuristic.value_update(board, board_heuristic, mv, &child);
+        assert!(!child_heuristic.is_nan());
 
         let child_value = -negamax_recurse(
             heuristic,
@@ -68,7 +78,7 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
         ).value;
 
         if child_value >= beta {
-            return MinimaxResult { value: child_value, best_move: None };
+            return MinimaxResult { value: child_value, best_move: Some(mv) };
         }
 
         if child_value > best_value || best_move.is_none() {

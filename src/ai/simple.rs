@@ -8,6 +8,12 @@ pub struct RandomBot<R: Rng> {
     rng: R,
 }
 
+impl<R: Rng> RandomBot<R> {
+    pub fn new(rng: R) -> Self {
+        RandomBot { rng }
+    }
+}
+
 impl<B: Board, R: Rng> Bot<B> for RandomBot<R> {
     fn select_move(&mut self, board: &B) -> B::Move {
         board.random_available_move(&mut self.rng)
@@ -15,8 +21,14 @@ impl<B: Board, R: Rng> Bot<B> for RandomBot<R> {
 }
 
 pub struct RolloutBot<R: Rng> {
-    rng: R,
     rollouts_per_move: u32,
+    rng: R,
+}
+
+impl<R: Rng> RolloutBot<R> {
+    pub fn new(rollouts_per_move: u32, rng: R) -> Self {
+        RolloutBot { rollouts_per_move, rng }
+    }
 }
 
 impl<B: Board, R: Rng> Bot<B> for RolloutBot<R> {
