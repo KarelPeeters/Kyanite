@@ -2,16 +2,23 @@ use std::marker::PhantomData;
 
 use crate::ai::Bot;
 use crate::board::Board;
+use std::ops::Neg;
+use std::cmp::max;
 
-/// The value heuristic used in a minimax search.
-///
-/// * `value` returns the value of the given board from the next player POV.
-///      This value must induce a zero-sum game, if the players are flipped the value should be negated.
-/// * `value_update` can be overridden to incrementally update the value to speed up calculations.
 pub trait Heuristic<B: Board> {
-    fn value(&self, board: &B) -> f32;
+    /// The type used to represent the heuristic value of a board.
+    type V: Copy + Ord + Neg<Output=Self::V>;
+
+    /// Return a value V that such that for any possible value `v`: `-bound <= v <= bound`.
+    fn bound(&self) -> Self::V;
+
+    /// Return the heuristic value for the given board from the the next player POV.
+    /// This value must induce a zero-sum game.
+    fn value(&self, board: &B) -> Self::V;
 
     /// Return the value of `child`, given the previous board, its value and the move that was just played.
+    /// This function can be overridden to improve performance.
+    ///
     /// Given:
     /// * `board.clone_and_play(mv) == child`
     /// * `value(board) == board_value`
@@ -19,24 +26,29 @@ pub trait Heuristic<B: Board> {
     /// This function must ensure that
     /// * `value(child) == value_update(board, board_value, mv, child)`
     #[allow(unused_variables)]
-    fn value_update(&self, board: &B, board_value: f32, mv: B::Move, child: &B) -> f32 {
+    fn value_update(&self, board: &B, board_value: Self::V, mv: B::Move, child: &B) -> Self::V {
         self.value(child)
     }
 }
 
-pub struct MinimaxResult<B: Board> {
-    pub value: f32,
+pub struct MinimaxResult<V, M> {
+    /// The value of this board.
+    pub value: V,
 
     /// The best move to play, `None` is the board is done or the search depth was 0
-    pub best_move: Option<B::Move>,
+    pub best_move: Option<M>,
 }
 
 /// Evaluate the board using minimax with the given heuristic up to the given depth.
-pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) -> MinimaxResult<B> {
-    let board_value = heuristic.value(board);
-    assert!(!board_value.is_nan());
-
-    let result = negamax_recurse(heuristic, board, board_value, depth, -f32::INFINITY, f32::INFINITY);
+pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) -> MinimaxResult<H::V, B::Move> {
+    let result = negamax_recurse(
+        heuristic,
+        board,
+        heuristic.value(board),
+        depth,
+        -heuristic.bound(),
+        heuristic.bound()
+    );
 
     if result.best_move.is_none() {
         assert!(board.is_done() || depth == 0, "Implementation error in negamax");
@@ -50,23 +62,22 @@ pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) 
 fn negamax_recurse<B: Board, H: Heuristic<B>>(
     heuristic: &H,
     board: &B,
-    board_heuristic: f32,
+    board_heuristic: H::V,
     depth_left: u32,
-    alpha: f32,
-    beta: f32,
-) -> MinimaxResult<B> {
+    alpha: H::V,
+    beta: H::V,
+) -> MinimaxResult<H::V, B::Move> {
     if depth_left == 0 || board.is_done() {
         return MinimaxResult { value: board_heuristic, best_move: None };
     }
 
-    let mut best_value = -f32::INFINITY;
+    let mut best_value = -heuristic.bound();
     let mut best_move: Option<B::Move> = None;
     let mut alpha = alpha;
 
     for mv in board.available_moves() {
         let child = board.clone_and_play(mv);
         let child_heuristic = heuristic.value_update(board, board_heuristic, mv, &child);
-        assert!(!child_heuristic.is_nan());
 
         let child_value = -negamax_recurse(
             heuristic,
@@ -85,7 +96,7 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
             best_value = child_value;
             best_move = Some(mv);
 
-            alpha = f32::max(alpha, child_value)
+            alpha = max(alpha, child_value)
         }
     }
 

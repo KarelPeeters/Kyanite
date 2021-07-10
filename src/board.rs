@@ -16,7 +16,7 @@ pub enum Outcome {
 }
 
 pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailableMoves<'a, Self> {
-    type Move: Debug + Copy + Clone + Eq + PartialEq;
+    type Move: Debug + Copy + Eq + PartialEq;
 
     /// Whether the player who plays a move can lose by playing that move.
     /// Symbolically whether `b.won_by() == Some(Winner::Player(b.next_player()))` can ever be true.
@@ -83,8 +83,8 @@ impl Player {
         }
     }
 
-    pub fn sign(self, pov: Player) -> f32 {
-        if self == pov { 1.0 } else { -1.0 }
+    pub fn sign(self, pov: Player) -> i8 {
+        if self == pov { 1 } else { -1 }
     }
 }
 
@@ -103,16 +103,16 @@ impl Outcome {
         }
     }
 
-    pub fn sign(self, pov: Player) -> f32 {
+    pub fn sign(self, pov: Player) -> i8 {
         match self {
             Outcome::WonBy(player) => player.sign(pov),
-            Outcome::Draw => 0.0,
+            Outcome::Draw => 0,
         }
     }
 
     pub fn inf_sign(self, pov: Player) -> f32 {
         match self {
-            Outcome::WonBy(player) => player.sign(pov) * f32::INFINITY,
+            Outcome::WonBy(player) => player.sign(pov) as f32 * f32::INFINITY,
             Outcome::Draw => 0.0,
         }
     }

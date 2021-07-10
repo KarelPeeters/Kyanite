@@ -1,4 +1,3 @@
-use decorum::NotNan;
 use rand::Rng;
 
 use crate::ai::Bot;
@@ -36,15 +35,15 @@ impl<B: Board, R: Rng> Bot<B> for RolloutBot<R> {
         board.available_moves().max_by_key(|&mv| {
             let child = board.clone_and_play(mv);
 
-            let score: f32 = (0..self.rollouts_per_move).map(|_| {
+            let score: i64 = (0..self.rollouts_per_move).map(|_| {
                 let mut copy = child.clone();
                 while !copy.is_done() {
                     copy.play(copy.random_available_move(&mut self.rng))
                 }
-                copy.outcome().unwrap().sign(board.next_player())
+                copy.outcome().unwrap().sign(board.next_player()) as i64
             }).sum();
 
-            NotNan::from(score)
+            score
         }).unwrap()
     }
 }
