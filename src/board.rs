@@ -1,15 +1,16 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 
 use internal_iterator::InternalIterator;
 use rand::Rng;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Player {
     A,
     B,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Outcome {
     WonBy(Player),
     Draw,

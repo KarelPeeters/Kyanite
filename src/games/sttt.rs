@@ -158,7 +158,7 @@ impl Board for STTTBoard {
 
             if index < grid_count {
                 let os = get_nth_set_bit(!compact_grid(grid), index as u32);
-                return Coord::from_oo(om as u8, os as u8);
+                return Coord::from_oo(om, os as u8);
             }
 
             index -= grid_count;
@@ -262,7 +262,7 @@ impl<'a> InternalIterator for STTTMoveIterator<'a> {
         for om in BitIter::new(self.board.macro_mask) {
             let free_grid = (!compact_grid(self.board.grids[om as usize])) & STTTBoard::FULL_MASK;
             for os in BitIter::new(free_grid) {
-                if let Some(r) = f(Coord::from_oo(om as u8, os as u8)) {
+                if let Some(r) = f(Coord::from_oo(om, os)) {
                     return Some(r);
                 }
             }
