@@ -12,7 +12,6 @@ regex = "1.5.4"
 itertools = "0.10.1"
 rayon = "1.5.1"
 derive_more = "0.99.16"
-static_assertions = "1.1.0"
 decorum = { version = "0.3.1", default-features=false, features=["std"] }
 
 [target.'cfg(windows)'.dependencies]

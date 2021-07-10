@@ -3,6 +3,7 @@ use crate::board::Board;
 pub mod simple;
 pub mod minimax;
 pub mod solver;
+pub mod mcts;
 
 pub trait Bot<B: Board> {
     /// Pick a move to play. Panics if the board is done.
