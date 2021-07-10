@@ -5,7 +5,6 @@ authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "An implemention of super tic tac toe, including bots that play it."
 license-file = "NONE.md"
 edition = "2018"
-default-run = "main"
 
 [dependencies]
 rand = { version = "0.8.3", features = ["small_rng"] }
