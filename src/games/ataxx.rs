@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Write;
 
 use internal_iterator::InternalIterator;
 use newtype_ops::newtype_ops;
@@ -27,6 +28,16 @@ pub struct AtaxxBoard {
 }
 
 impl AtaxxBoard {
+    pub fn empty() -> Self {
+        AtaxxBoard {
+            tiles_a: Tiles::empty(),
+            tiles_b: Tiles::empty(),
+            gaps: Tiles::empty(),
+            next_player: Player::A,
+            outcome: Some(Outcome::Draw),
+        }
+    }
+
     pub fn new_without_blocks() -> Self {
         AtaxxBoard {
             tiles_a: Tiles::CORNERS_A,
@@ -55,7 +66,8 @@ impl AtaxxBoard {
         !(self.tiles_a | self.tiles_b | self.gaps)
     }
 
-    pub fn must_pass(&self, tiles: Tiles) -> bool {
+    /// Return whether tha player with the given tiles has to pass, ie. cannot make a copy or jump move.
+    fn must_pass(&self, tiles: Tiles) -> bool {
         let possible_targets = tiles.copy_targets() | tiles.jump_targets();
         (possible_targets & self.free_tiles()).is_empty()
     }
@@ -72,6 +84,39 @@ impl AtaxxBoard {
             Player::A => (&mut self.tiles_a, &mut self.tiles_b),
             Player::B => (&mut self.tiles_b, &mut self.tiles_a),
         }
+    }
+
+    /// Set the correct outcome based on the current tiles and gaps.
+    fn update_outcome(&mut self) {
+        let a_empty = self.tiles_a.is_empty();
+        let b_empty = self.tiles_b.is_empty();
+
+        let a_pass = self.must_pass(self.tiles_a);
+        let b_pass = self.must_pass(self.tiles_b);
+
+        let outcome = if a_empty && b_empty {
+            Some(Outcome::Draw)
+        } else if a_empty {
+            Some(Outcome::WonBy(Player::B))
+        } else if b_empty {
+            Some(Outcome::WonBy(Player::A))
+        } else if a_pass && b_pass {
+            let count_a = self.tiles_a.count();
+            let count_b = self.tiles_b.count();
+
+            let outcome = if count_a > count_b {
+                Outcome::WonBy(Player::A)
+            } else if count_a < count_b {
+                Outcome::WonBy(Player::B)
+            } else {
+                Outcome::Draw
+            };
+            Some(outcome)
+        } else {
+            None
+        };
+
+        self.outcome = outcome;
     }
 }
 
@@ -129,21 +174,7 @@ impl Board for AtaxxBoard {
         *next_tiles |= to | converted;
         *other_tiles &= !converted;
 
-        //check if any player can make a move and set outcome if not
-        if self.must_pass(self.tiles_a) && self.must_pass(self.tiles_b) {
-            let count_a = self.tiles_a.count();
-            let count_b = self.tiles_b.count();
-
-            let outcome = if count_a > count_b {
-                Outcome::WonBy(Player::A)
-            } else if count_a < count_b {
-                Outcome::WonBy(Player::B)
-            } else {
-                Outcome::Draw
-            };
-            self.outcome = Some(outcome)
-        }
-
+        self.update_outcome();
         self.next_player = self.next_player.other();
     }
 
@@ -349,6 +380,109 @@ fn abs_distance(a: u8, b: u8) -> u8 {
     if a >= b { a - b } else { b - a }
 }
 
+fn player_symbol(player: Player) -> char {
+    match player {
+        Player::A => 'x',
+        Player::B => 'o',
+    }
+}
+
+impl AtaxxBoard {
+    pub fn from_fen(fen: &str) -> AtaxxBoard {
+        let mut board = AtaxxBoard::empty();
+
+        let mut x = 0;
+        let mut y = 0;
+        let mut expect_next = false;
+        let mut done = false;
+
+        for c in fen.chars() {
+            if done {
+                panic!("Expected end of string, got '{}'", c);
+            }
+
+            if expect_next {
+                match c {
+                    'x' => board.next_player = Player::A,
+                    'o' => board.next_player = Player::B,
+                    _ => panic!("Expected next player, got '{}'", c),
+                }
+                done = true;
+                continue;
+            }
+
+            match c {
+                'x' => board.tiles_a |= Tiles::coord(Coord::from_xy(x, y)),
+                'o' => board.tiles_b |= Tiles::coord(Coord::from_xy(x, y)),
+                '-' => board.gaps |= Tiles::coord(Coord::from_xy(x, y)),
+                '/' => {
+                    assert!(x == 7, "Row not yet complete, unexpected '/'");
+                    x = 0;
+                    y += 1;
+                    continue;
+                }
+                ' ' => {
+                    assert!(x == 7 && y == 6, "Board not yet complete, unexpected ' '");
+                    expect_next = true;
+                    continue;
+                }
+                d if d.is_ascii_digit() => {
+                    let d = d.to_digit(10).unwrap() as u8;
+                    assert!(0 < d && d <= 7, "Unexpected gap size {}", d);
+                    x += d;
+                    continue;
+                }
+                _ => panic!("Expected next tile or gap, got '{}'", c),
+            }
+
+            x = x.wrapping_add(1);
+        }
+
+        board.update_outcome();
+        board
+    }
+
+    pub fn to_fen(&self) -> String {
+        let mut s = String::new();
+
+        for y in 0..7 {
+            if y != 0 {
+                write!(&mut s, "/").unwrap();
+            }
+
+            let mut space = 0;
+
+            for x in 0..7 {
+                let coord = Coord::from_xy(x, y);
+                match self.tile(coord) {
+                    None => {
+                        if self.block(coord) {
+                            write!(&mut s, "-").unwrap();
+                        } else {
+                            space += 1;
+                        }
+                    }
+                    Some(player) => {
+                        if space != 0 {
+                            write!(&mut s, "{}", space).unwrap();
+                            space = 0;
+                        }
+                        write!(&mut s, "{}", player_symbol(player)).unwrap();
+                    }
+                }
+            }
+
+            if space != 0 {
+                write!(&mut s, "{}", space).unwrap();
+            }
+        }
+
+        write!(&mut s, " {}", player_symbol(self.next_player)).unwrap();
+
+        s
+    }
+}
+
 impl Display for AtaxxBoard {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for y in 0..7 {
@@ -356,15 +490,19 @@ impl Display for AtaxxBoard {
                 let coord = Coord::from_xy(x, y);
                 let tuple = (self.block(coord), self.tile(coord));
                 let c = match tuple {
-                    (true, None) => 'X',
+                    (true, None) => '-',
                     (false, None) => '.',
-                    (false, Some(Player::A)) => 'a',
-                    (false, Some(Player::B)) => 'b',
+                    (false, Some(player)) => player_symbol(player),
                     (true, Some(_)) => unreachable!("Tile with block cannot have player"),
                 };
 
                 write!(f, "{}", c)?;
             }
+
+            if y == 3 {
+                write!(f, "    {}", player_symbol(self.next_player))?;
+            }
+
             writeln!(f)?;
         }
 
