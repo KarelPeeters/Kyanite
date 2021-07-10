@@ -19,7 +19,7 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
     type Move: Debug + Copy + Clone + Eq + PartialEq;
 
     /// Whether the player who plays a move can lose by playing that move.
-    /// Symbolically whether `b.won_by() == Some(Winner::Player(board.next_player()))` can ever be true.
+    /// Symbolically whether `b.won_by() == Some(Winner::Player(b.next_player()))` can ever be true.
     fn can_lose_after_move() -> bool;
 
     /// Return minimum and maximum possible games lengths.
