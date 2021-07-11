@@ -1,5 +1,6 @@
 use internal_iterator::InternalIterator;
 
+use crate::ai::Bot;
 use crate::ai::minimax::{Heuristic, minimax};
 use crate::board::{Board, Outcome, Player};
 
@@ -54,5 +55,22 @@ pub fn is_double_forced_draw(board: &impl Board, depth: u32) -> Result<bool, ()>
         Some(true) => Err(()),
         Some(false) => Ok(false),
         None => Ok(true)
+    }
+}
+
+pub struct SolverBot {
+    depth: u32,
+}
+
+impl SolverBot {
+    pub fn new(depth: u32) -> Self {
+        assert!(depth > 0);
+        SolverBot { depth }
+    }
+}
+
+impl<B: Board> Bot<B> for SolverBot {
+    fn select_move(&mut self, board: &B) -> B::Move {
+        minimax(board, &SolverHeuristic, self.depth).best_move.unwrap()
     }
 }
