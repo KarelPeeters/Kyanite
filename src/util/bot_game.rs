@@ -2,8 +2,6 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
-use rand::{Rng, SeedableRng};
-use rand::rngs::SmallRng;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
@@ -14,13 +12,15 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     start: impl Fn() -> B + Sync,
     bot_l: impl Fn() -> L + Sync,
     bot_r: impl Fn() -> R + Sync,
-    games: u32,
-    shuffle: bool,
+    games_per_side: u32,
+    both_sides: bool,
     print_progress_every: Option<u32>,
 ) -> BotGameResult {
     let progress_counter = AtomicU32::default();
 
-    let result: ReductionResult = (0..games).into_par_iter().map(|_i| {
+    let game_count = if both_sides { 2 * games_per_side } else { games_per_side };
+
+    let result: ReductionResult = (0..game_count).into_par_iter().map(|i| {
         let mut bot_l = bot_l();
         let mut bot_r = bot_r();
 
@@ -29,9 +29,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         let mut move_count_l: u32 = 0;
         let mut move_count_r: u32 = 0;
 
-        let mut rand = SmallRng::from_entropy();
-
-        let flip = if shuffle { rand.gen::<bool>() } else { false };
+        let flip = if both_sides { i % 2 == 1 } else { false };
         let mut board = start();
 
         for i in 0.. {
@@ -58,7 +56,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         if let Some(print_progress) = print_progress_every {
             let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
             if progress % print_progress == 0 {
-                println!("Progress: {}", progress as f32 / games as f32);
+                println!("Progress: {}", progress as f32 / game_count as f32);
             }
         }
 
@@ -71,15 +69,15 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         ReductionResult { wins_l, wins_r, total_time_l, total_time_r, move_count_l, move_count_r }
     }).reduce(ReductionResult::default, ReductionResult::add);
 
-    let draws = games - result.wins_l - result.wins_r;
+    let draws = game_count - result.wins_l - result.wins_r;
     BotGameResult {
-        games,
+        game_count,
         wins_l: result.wins_l,
         wins_r: result.wins_r,
         draws,
-        win_rate_l: (result.wins_l as f32) / (games as f32),
-        win_rate_r: (result.wins_r as f32) / (games as f32),
-        draw_rate: (draws as f32) / (games as f32),
+        win_rate_l: (result.wins_l as f32) / (game_count as f32),
+        win_rate_r: (result.wins_r as f32) / (game_count as f32),
+        draw_rate: (draws as f32) / (game_count as f32),
         time_l: result.total_time_l / (result.move_count_l as f32),
         time_r: result.total_time_r / (result.move_count_r as f32),
     }
@@ -113,7 +111,7 @@ impl std::ops::Add for ReductionResult {
 #[derive(Debug)]
 #[must_use]
 pub struct BotGameResult {
-    games: u32,
+    game_count: u32,
     wins_l: u32,
     wins_r: u32,
     draws: u32,
