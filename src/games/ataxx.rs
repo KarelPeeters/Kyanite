@@ -58,8 +58,16 @@ impl AtaxxBoard {
         return None;
     }
 
-    pub fn block(&self, coord: Coord) -> bool {
-        self.gaps.has(coord)
+    pub fn tiles_a(&self) -> Tiles {
+        self.tiles_a
+    }
+
+    pub fn tiles_b(&self) -> Tiles {
+        self.tiles_b
+    }
+
+    pub fn gaps(&self) -> Tiles {
+        self.gaps
     }
 
     pub fn free_tiles(&self) -> Tiles {
@@ -199,8 +207,8 @@ impl std::ops::Not for Tiles {
 impl Tiles {
     pub const FULL_MASK: u64 = 0x7F_7F_7F_7F_7F_7F_7F;
 
-    pub const CORNERS_A: Tiles = Tiles(0x_40_00_00_00_00_00_01);
-    pub const CORNERS_B: Tiles = Tiles(0x_01_00_00_00_00_00_40);
+    pub const CORNERS_A: Tiles = Tiles(0x_01_00_00_00_00_00_40);
+    pub const CORNERS_B: Tiles = Tiles(0x_40_00_00_00_00_00_01);
 
     pub fn empty() -> Tiles {
         Tiles(0)
@@ -244,38 +252,38 @@ impl Tiles {
         Tiles((self.0 << 1) & Self::FULL_MASK)
     }
 
-    pub fn up(self) -> Self {
+    pub fn down(self) -> Self {
         Tiles((self.0 >> 8) & Self::FULL_MASK)
     }
 
-    pub fn down(self) -> Self {
+    pub fn up(self) -> Self {
         Tiles((self.0 << 8) & Self::FULL_MASK)
     }
 
     pub fn copy_targets(self) -> Self {
-        //clockwise starting from left
-        self.left() | self.left().up() | self.up() | self.right().up()
-            | self.right() | self.right().down() | self.down() | self.left().down()
+        // counterclockwise starting from left
+        self.left() | self.left().down() | self.down() | self.right().down()
+            | self.right() | self.right().up() | self.up() | self.left().up()
     }
 
     pub fn jump_targets(self) -> Self {
-        //clockwise starting from left.left
+        // counterclockwise starting from left.left
         self.left().left()
-            | self.left().left().up()
-            | self.left().left().up().up()
-            | self.left().up().up()
-            | self.up().up()
-            | self.right().up().up()
-            | self.right().right().up().up()
-            | self.right().right().up()
-            | self.right().right()
-            | self.right().right().down()
-            | self.right().right().down().down()
-            | self.right().down().down()
-            | self.down().down()
-            | self.left().down().down()
-            | self.left().left().down().down()
             | self.left().left().down()
+            | self.left().left().down().down()
+            | self.left().down().down()
+            | self.down().down()
+            | self.right().down().down()
+            | self.right().right().down().down()
+            | self.right().right().down()
+            | self.right().right()
+            | self.right().right().up()
+            | self.right().right().up().up()
+            | self.right().up().up()
+            | self.up().up()
+            | self.left().up().up()
+            | self.left().left().up().up()
+            | self.left().left().up()
     }
 
     pub fn iter(self) -> impl Iterator<Item=Coord> {
@@ -286,7 +294,7 @@ impl Tiles {
 impl Display for Tiles {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         assert!(self.0 & Tiles::FULL_MASK == self.0);
-        for y in 0..7 {
+        for y in (0..7).rev() {
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
                 write!(f, "{}", if self.has(coord) { '1' } else { '.' })?;
@@ -380,6 +388,22 @@ fn abs_distance(a: u8, b: u8) -> u8 {
     if a >= b { a - b } else { b - a }
 }
 
+impl Coord {
+    pub fn to_uai(self) -> String {
+        format!("{}{}", ('a' as u8 + self.x()) as char, self.y() + 1)
+    }
+}
+
+impl Move {
+    pub fn to_uai(self) -> String {
+        match self {
+            Move::Pass => "null".to_string(),
+            Move::Copy { to } => to.to_uai(),
+            Move::Jump { from, to } => format!("{}{}", from.to_uai(), to.to_uai())
+        }
+    }
+}
+
 fn player_symbol(player: Player) -> char {
     match player {
         Player::A => 'x',
@@ -392,20 +416,21 @@ impl AtaxxBoard {
         let mut board = AtaxxBoard::empty();
 
         let mut x = 0;
-        let mut y = 0;
+        let mut y = 6;
         let mut expect_next = false;
         let mut done = false;
 
         for c in fen.chars() {
             if done {
-                panic!("Expected end of string, got '{}'", c);
+                assert!(c.is_ascii_digit() || c == ' ', "Unexpected '{}' near end in '{}'", c, fen);
+                continue;
             }
 
             if expect_next {
                 match c {
                     'x' => board.next_player = Player::A,
                     'o' => board.next_player = Player::B,
-                    _ => panic!("Expected next player, got '{}'", c),
+                    _ => panic!("Expected next player, got '{}' in '{}'", c, fen),
                 }
                 done = true;
                 continue;
@@ -416,23 +441,23 @@ impl AtaxxBoard {
                 'o' => board.tiles_b |= Tiles::coord(Coord::from_xy(x, y)),
                 '-' => board.gaps |= Tiles::coord(Coord::from_xy(x, y)),
                 '/' => {
-                    assert!(x == 7, "Row not yet complete, unexpected '/'");
+                    assert!(x == 7, "Row not yet complete, unexpected '/' in '{}'", fen);
                     x = 0;
-                    y += 1;
+                    y -= 1;
                     continue;
                 }
                 ' ' => {
-                    assert!(x == 7 && y == 6, "Board not yet complete, unexpected ' '");
+                    assert!(x == 7 && y == 0, "Board not yet complete, unexpected ' ' in '{}'", fen);
                     expect_next = true;
                     continue;
                 }
                 d if d.is_ascii_digit() => {
                     let d = d.to_digit(10).unwrap() as u8;
-                    assert!(0 < d && d <= 7, "Unexpected gap size {}", d);
+                    assert!(0 < d && d <= 7, "Unexpected gap size {} in '{}'", d, fen);
                     x += d;
                     continue;
                 }
-                _ => panic!("Expected next tile or gap, got '{}'", c),
+                _ => panic!("Expected next tile or gap, got '{}' in '{}'", c, fen),
             }
 
             x = x.wrapping_add(1);
@@ -456,7 +481,7 @@ impl AtaxxBoard {
                 let coord = Coord::from_xy(x, y);
                 match self.tile(coord) {
                     None => {
-                        if self.block(coord) {
+                        if self.gaps.has(coord) {
                             write!(&mut s, "-").unwrap();
                         } else {
                             space += 1;
@@ -485,10 +510,10 @@ impl AtaxxBoard {
 
 impl Display for AtaxxBoard {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for y in 0..7 {
+        for y in (0..7).rev() {
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
-                let tuple = (self.block(coord), self.tile(coord));
+                let tuple = (self.gaps.has(coord), self.tile(coord));
                 let c = match tuple {
                     (true, None) => '-',
                     (false, None) => '.',
