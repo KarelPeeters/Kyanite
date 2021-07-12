@@ -6,8 +6,9 @@ use internal_iterator::InternalIterator;
 
 use crate::ai::Bot;
 use crate::board::Board;
+use std::fmt::Debug;
 
-pub trait Heuristic<B: Board> {
+pub trait Heuristic<B: Board> : Debug {
     /// The type used to represent the heuristic value of a board.
     type V: Copy + Ord + Neg<Output=Self::V>;
 
@@ -112,6 +113,7 @@ fn negamax_recurse<B: Board, H: Heuristic<B>>(
     }
 }
 
+#[derive(Debug)]
 pub struct MiniMaxBot<B: Board, H: Heuristic<B>> {
     depth: u32,
     heuristic: H,

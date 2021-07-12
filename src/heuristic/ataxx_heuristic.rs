@@ -2,6 +2,7 @@ use crate::ai::minimax::Heuristic;
 use crate::board::{Board, Outcome};
 use crate::games::ataxx::{AtaxxBoard, Tiles};
 
+#[derive(Debug)]
 pub struct AtaxxTileHeuristic {
     tile_factor: i32,
     surface_factor: i32,

@@ -2,6 +2,7 @@ use crate::ai::minimax::Heuristic;
 use crate::board::{Board, Outcome};
 use crate::games::sttt::{Coord, STTTBoard};
 
+#[derive(Debug)]
 pub struct STTTTileHeuristic {
     oo_factors: [i32; 3],
     macro_factor: i32,

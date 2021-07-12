@@ -3,9 +3,16 @@ use rand::Rng;
 use crate::ai::Bot;
 use crate::board::Board;
 use internal_iterator::InternalIterator;
+use std::fmt::{Debug, Formatter};
 
 pub struct RandomBot<R: Rng> {
     rng: R,
+}
+
+impl<R: Rng> Debug for RandomBot<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RandomBot")
+    }
 }
 
 impl<R: Rng> RandomBot<R> {
@@ -23,6 +30,12 @@ impl<B: Board, R: Rng> Bot<B> for RandomBot<R> {
 pub struct RolloutBot<R: Rng> {
     rollouts_per_move: u32,
     rng: R,
+}
+
+impl<R: Rng> Debug for RolloutBot<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RolloutBot {{ rollouts_per_move: {} }}", self.rollouts_per_move)
+    }
 }
 
 impl<R: Rng> RolloutBot<R> {

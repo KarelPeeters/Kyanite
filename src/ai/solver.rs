@@ -4,6 +4,7 @@ use crate::ai::Bot;
 use crate::ai::minimax::{Heuristic, minimax};
 use crate::board::{Board, Outcome, Player};
 
+#[derive(Debug)]
 struct SolverHeuristic;
 
 impl<B: Board> Heuristic<B> for SolverHeuristic {
@@ -58,6 +59,7 @@ pub fn is_double_forced_draw(board: &impl Board, depth: u32) -> Result<bool, ()>
     }
 }
 
+#[derive(Debug)]
 pub struct SolverBot {
     depth: u32,
 }

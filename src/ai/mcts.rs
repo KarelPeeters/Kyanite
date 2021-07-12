@@ -8,6 +8,7 @@ use rand::Rng;
 use crate::ai::Bot;
 use crate::board::{Board, Outcome};
 use internal_iterator::InternalIterator;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Copy, Clone)]
 pub struct IdxRange {
@@ -273,6 +274,12 @@ pub struct MCTSBot<R: Rng> {
     iterations: u64,
     exploration_weight: f32,
     rng: R,
+}
+
+impl<R: Rng> Debug for MCTSBot<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MCTSBot {{ iterations: {}, exploration_weight: {} }} ", self.iterations, self.exploration_weight)
+    }
 }
 
 impl<R: Rng> MCTSBot<R> {

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use std::fmt::Write;
 use std::ops::Add;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
@@ -71,6 +73,8 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
 
     let draws = game_count - result.wins_l - result.wins_r;
     BotGameResult {
+        bot_l: debug_to_sting(&bot_l()),
+        bot_r: debug_to_sting(&bot_r()),
         game_count,
         wins_l: result.wins_l,
         wins_r: result.wins_r,
@@ -111,6 +115,9 @@ impl std::ops::Add for ReductionResult {
 #[derive(Debug)]
 #[must_use]
 pub struct BotGameResult {
+    bot_l: String,
+    bot_r: String,
+
     game_count: u32,
     wins_l: u32,
     wins_r: u32,
@@ -123,4 +130,10 @@ pub struct BotGameResult {
     //time per move in seconds
     time_l: f32,
     time_r: f32,
+}
+
+fn debug_to_sting(d: &impl Debug) -> String {
+    let mut s = String::new();
+    write!(&mut s, "{:?}", d).unwrap();
+    s
 }
