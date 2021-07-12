@@ -4,10 +4,11 @@ use std::fmt::Write;
 
 use internal_iterator::InternalIterator;
 use newtype_ops::newtype_ops;
+use rand::Rng;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
 use crate::symmetry::D4Symmetry;
-use crate::util::bit_iter::BitIter;
+use crate::util::bits::{BitIter, get_nth_set_bit};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Coord(u8);
@@ -160,7 +161,43 @@ impl Board for AtaxxBoard {
         }
     }
 
-    //TODO implement random_available_move for faster mcts
+    fn random_available_move(&self, rng: &mut impl Rng) -> Self::Move {
+        assert!(!self.is_done());
+
+        let next_tiles = self.tiles_pov().0;
+        let free_tiles = self.free_tiles();
+
+        if self.must_pass(next_tiles) {
+            return Move::Pass;
+        }
+
+        let copy_targets = self.free_tiles() & next_tiles.copy_targets();
+        let jump_targets = free_tiles & next_tiles.jump_targets();
+
+        let copy_count = copy_targets.count() as u32;
+        let jump_count: u32 = jump_targets.into_iter().map(|to| {
+            (next_tiles & Tiles::coord(to).jump_targets()).count() as u32
+        }).sum();
+
+        let index = rng.gen_range(0..(copy_count + jump_count));
+
+        if index < copy_count {
+            Move::Copy { to: copy_targets.get_nth(index) }
+        } else {
+            let mut left = index - copy_count;
+            for to in jump_targets {
+                let from = next_tiles & Tiles::coord(to).jump_targets();
+                let count = from.count() as u32;
+                if left < count {
+                    let from = from.get_nth(left);
+                    return Move::Jump { from, to };
+                }
+                left -= count;
+            }
+
+            unreachable!()
+        }
+    }
 
     fn play(&mut self, mv: Self::Move) {
         assert!(self.is_available_move(mv), "{:?} is not available", mv);
@@ -266,6 +303,10 @@ impl Tiles {
 
     pub fn count(self) -> u8 {
         self.0.count_ones() as u8
+    }
+
+    pub fn get_nth(self, index: u32) -> Coord {
+        Coord::from_i(get_nth_set_bit(self.0, index))
     }
 
     #[must_use]
@@ -394,13 +435,15 @@ impl<'a> InternalIterator for MoveIterator<'a> {
         }
 
         // copy moves
-        for to in free_tiles & next_tiles.copy_targets() {
+        let copy_targets = free_tiles & next_tiles.copy_targets();
+        for to in copy_targets {
             if let Some(x) = f(Move::Copy { to }) { return Some(x); }
         }
 
         // jump moves
-        for from in next_tiles {
-            for to in free_tiles & Tiles::coord(from).jump_targets() {
+        let jump_targets = free_tiles & next_tiles.jump_targets();
+        for to in jump_targets {
+            for from in next_tiles & Tiles::coord(to).jump_targets() {
                 if let Some(x) = f(Move::Jump { from, to }) { return Some(x); }
             }
         }

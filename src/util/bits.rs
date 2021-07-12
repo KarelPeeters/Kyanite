@@ -1,4 +1,5 @@
 use num::{PrimInt, Unsigned};
+use num::traits::WrappingSub;
 
 pub struct BitIter<N: PrimInt + Unsigned> {
     left: N,
@@ -23,4 +24,12 @@ impl<N: PrimInt + Unsigned> Iterator for BitIter<N> {
             Some(index)
         }
     }
+}
+
+pub fn get_nth_set_bit<N: PrimInt + Unsigned + WrappingSub>(mut x: N, n: u32) -> u8 {
+    for _ in 0..n {
+        x = x & x.wrapping_sub(&N::one());
+    }
+    debug_assert!(x != N::zero());
+    x.trailing_zeros() as u8
 }

@@ -7,7 +7,7 @@ use rand::Rng;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
 use crate::symmetry::D4Symmetry;
-use crate::util::bit_iter::BitIter;
+use crate::util::bits::{BitIter, get_nth_set_bit};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Coord(u8);
@@ -140,8 +140,8 @@ impl Board for STTTBoard {
             let grid_count = 9 - grid.count_ones();
 
             if index < grid_count {
-                let os = get_nth_set_bit(!compact_grid(grid), index as u32);
-                return Coord::from_oo(om, os as u8);
+                let os = get_nth_set_bit(!compact_grid(grid), index);
+                return Coord::from_oo(om, os);
             }
 
             index -= grid_count;
@@ -318,13 +318,6 @@ fn has_bit(x: u32, i: u8) -> bool {
 
 fn has_mask(x: u32, mask: u32) -> bool {
     x & mask == mask
-}
-
-fn get_nth_set_bit(mut x: u32, n: u32) -> u32 {
-    for _ in 0..n {
-        x &= x.wrapping_sub(1);
-    }
-    x.trailing_zeros()
 }
 
 fn compact_grid(grid: u32) -> u32 {

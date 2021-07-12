@@ -28,28 +28,30 @@ impl<B: Board, R: Rng> Bot<B> for RandomBot<R> {
 }
 
 pub struct RolloutBot<R: Rng> {
-    rollouts_per_move: u32,
+    rollouts: u32,
     rng: R,
 }
 
 impl<R: Rng> Debug for RolloutBot<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RolloutBot {{ rollouts_per_move: {} }}", self.rollouts_per_move)
+        write!(f, "RolloutBot {{ rollouts: {} }}", self.rollouts)
     }
 }
 
 impl<R: Rng> RolloutBot<R> {
-    pub fn new(rollouts_per_move: u32, rng: R) -> Self {
-        RolloutBot { rollouts_per_move, rng }
+    pub fn new(rollouts: u32, rng: R) -> Self {
+        RolloutBot { rollouts, rng }
     }
 }
 
 impl<B: Board, R: Rng> Bot<B> for RolloutBot<R> {
     fn select_move(&mut self, board: &B) -> B::Move {
+        let rollouts_per_move = self.rollouts / board.available_moves().count() as u32;
+
         board.available_moves().max_by_key(|&mv| {
             let child = board.clone_and_play(mv);
 
-            let score: i64 = (0..self.rollouts_per_move).map(|_| {
+            let score: i64 = (0..rollouts_per_move).map(|_| {
                 let mut copy = child.clone();
                 while !copy.is_done() {
                     copy.play(copy.random_available_move(&mut self.rng))

@@ -75,13 +75,13 @@ fn test_available_match<B: Board>(board: &B) {
 
     // check that every generated move is indeed available
     for &mv in &available {
-        assert!(board.is_available_move(mv));
+        assert!(board.is_available_move(mv), "generated move {:?} is not available", mv);
     }
 
     //check that every available move is generated
     B::all_possible_moves().for_each(|mv: B::Move| {
         if board.is_available_move(mv) {
-            assert!(available.contains(&mv));
+            assert!(available.contains(&mv), "available move {:?} was not generated", mv);
         }
     })
 }
