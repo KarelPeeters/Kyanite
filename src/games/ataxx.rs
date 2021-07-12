@@ -132,7 +132,7 @@ impl Board for AtaxxBoard {
     type Move = Move;
 
     fn can_lose_after_move() -> bool {
-        false
+        true
     }
 
     fn game_length_bounds() -> (u32, Option<u32>) {

@@ -21,7 +21,7 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
 
     /// Whether the player who plays a move can lose by playing that move.
     /// Symbolically whether `b.won_by() == Some(Winner::Player(b.next_player()))` can ever be true.
-    /// This may be pessimistic, returning `false` is always correct.
+    /// This may be pessimistic, returning `true` is always correct.
     fn can_lose_after_move() -> bool;
 
     /// Return minimum and maximum possible games lengths. These bounds may be pessimistic,
