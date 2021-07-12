@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![warn(missing_debug_implementations)]
 
 pub mod board;
 pub mod symmetry;

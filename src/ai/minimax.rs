@@ -34,6 +34,7 @@ pub trait Heuristic<B: Board> : Debug {
     }
 }
 
+#[derive(Debug)]
 pub struct MinimaxResult<V, M> {
     /// The value of this board.
     pub value: V,

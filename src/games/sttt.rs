@@ -263,6 +263,7 @@ impl Debug for Coord {
 
 //TODO implement a size hint
 //TODO look into other iterator speedup functions that can be implemented
+#[derive(Debug)]
 pub struct STTTMoveIterator<'a> {
     board: &'a STTTBoard,
 }

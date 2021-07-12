@@ -1,6 +1,7 @@
 use num::{PrimInt, Unsigned};
 use num::traits::WrappingSub;
 
+#[derive(Debug)]
 pub struct BitIter<N: PrimInt + Unsigned> {
     left: N,
 }

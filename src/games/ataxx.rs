@@ -384,10 +384,12 @@ impl Display for Tiles {
     }
 }
 
+#[derive(Debug)]
 pub struct MoveIterator<'a> {
     board: &'a AtaxxBoard,
 }
 
+#[derive(Debug)]
 pub struct AllMoveIterator;
 
 impl<'a> BoardAvailableMoves<'a, AtaxxBoard> for AtaxxBoard {
