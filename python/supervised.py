@@ -3,9 +3,9 @@ from math import prod
 import torch
 from torch.optim import AdamW
 
-from models import MixModel
+from models.basic import BasicModel
 from train import TrainState, train_model, WdlTarget, TrainSettings
-from util import load_data, DEVICE
+from util import load_data, DEVICE, print_param_count
 
 
 def print_data_stats(test_data, train_data):
@@ -39,15 +39,13 @@ def main():
     # TODO this is okay for value, but policy is struggling :(
     #   hypothesis: the messages (with relu!) are too small to carry the required information
     #       maybe make messages smaller and instead carry a lot of state within each macro?
-    model = MixModel(
-        depth=8, message_size=32, wdl_size=32,
-    )
+    # model = MixModel(
+    #     depth=8, message_size=32, wdl_size=32,
+    #     same_weight=True,
+    # )
+    model = BasicModel(depth=4, size=256)
 
-    param_count = sum(prod(p.shape) for p in model.parameters())
-    print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
-    for name, child in model.named_children():
-        child_param_count = sum(prod(p.shape) for p in child.parameters())
-        print(f"  {name}: {child_param_count / param_count:.2f}")
+    print_param_count(model)
 
     model = torch.jit.script(model)
     model.to(DEVICE)
@@ -55,7 +53,7 @@ def main():
     batch_size = 256
     # cycles_per_epoch = 2
 
-    optimizer = AdamW(model.parameters(), weight_decay=1e-5)
+    optimizer = AdamW(model.parameters(), weight_decay=1e-3)
     # scheduler = CyclicLR(
     #     optimizer,
     #     base_lr=1e-4, max_lr=1e-2,
@@ -75,7 +73,7 @@ def main():
 
     state = TrainState(
         settings=settings,
-        output_path="../data/esat3/mix_large",
+        output_path="../data/esat3/0_layer",
         train_data=train_data,
         test_data=test_data,
         optimizer=optimizer,

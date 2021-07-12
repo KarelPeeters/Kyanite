@@ -74,8 +74,8 @@ class TrainState:
 
     output_path: str
 
-    train_data: GoogleData
-    test_data: GoogleData
+    train_data: GenericData
+    test_data: GenericData
 
     optimizer: Optimizer
     scheduler: Any
@@ -94,15 +94,13 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
     for bi in range(batch_count):
         is_plot_batch = bi in plot_batches
 
-        # todo bring random symmetry back
-
         train_batch_i = train_shuffle[bi * batch_size:(bi + 1) * batch_size]
-        train_data_batch = s.train_data.pick_batch(train_batch_i)  # .random_symmetry()
+        train_data_batch = s.train_data[train_batch_i].random_symmetry()
 
         if is_plot_batch:
             model.eval()
             test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
-            test_data_batch = s.test_data.pick_batch(test_batch_i)  # .random_symmetry()
+            test_data_batch = s.test_data[test_batch_i].random_symmetry()
 
             test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch, s.settings.wdl_target)
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
