@@ -160,8 +160,9 @@ dependencies = [
 
 [[package]]
 name = "internal-iterator"
-version = "0.1.1"
-source = "git+https://github.com/KarelPeeters/internal-iterator#a05546dd94dfd0777a880ba77731d78bd1bf553a"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "849c225ff5a15ae887c092bb8746832cb0ef5eb29ffee2f0e66d95cf7033d71a"
 
 [[package]]
 name = "itertools"

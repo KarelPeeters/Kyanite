@@ -13,7 +13,7 @@ rayon = "1.5.1"
 derive_more = "0.99.16"
 decorum = { version = "0.3.1", default-features=false, features=["std"] }
 newtype-ops = "0.1.4"
-internal-iterator = {git= "https://github.com/KarelPeeters/internal-iterator" }
+internal-iterator = "0.1.2"
 num = "0.4.0"
 nom = "6.2.1"
 rand_xoshiro = "0.6.0"
