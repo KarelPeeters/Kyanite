@@ -1,20 +1,19 @@
 use std::fmt;
 use std::fmt::Debug;
 
-use internal_iterator::InternalIterator;
+use internal_iterator::{InternalIterator, Internal, IteratorExt};
 use itertools::Itertools;
-use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
+use crate::symmetry::D4Symmetry;
 use crate::util::bit_iter::BitIter;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Coord(u8);
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct STTTBoard {
-    //TODO try u16 here, that makes Board a lot smaller and maybe even feasible to store in the tree?
     grids: [u32; 9],
     main_grid: u32,
 
@@ -55,23 +54,6 @@ impl STTTBoard {
     pub fn is_macro_open(&self, om: u8) -> bool {
         debug_assert!(om < 9);
         has_bit(self.macro_open, om)
-    }
-
-    pub fn map_symmetry(&self, sym: Symmetry) -> STTTBoard {
-        let mut grids = [0; 9];
-        for oo in 0..9 {
-            grids[sym.map_oo(oo) as usize] = sym.map_grid(self.grids[oo as usize])
-        }
-
-        STTTBoard {
-            grids,
-            main_grid: 0,
-            last_move: self.last_move.map(|c| sym.map_coord(c)),
-            next_player: self.next_player,
-            outcome: self.outcome,
-            macro_mask: sym.map_grid(self.macro_mask),
-            macro_open: sym.map_grid(self.macro_open),
-        }
     }
 
     /// Return the number of non-empty tiles.
@@ -119,6 +101,7 @@ impl STTTBoard {
 
 impl Board for STTTBoard {
     type Move = Coord;
+    type Symmetry = D4Symmetry;
 
     fn can_lose_after_move() -> bool {
         false
@@ -182,10 +165,36 @@ impl Board for STTTBoard {
     fn outcome(&self) -> Option<Outcome> {
         self.outcome
     }
+
+    fn map(&self, sym: D4Symmetry) -> STTTBoard {
+        let mut grids = [0; 9];
+        for oo in 0..9 {
+            grids[map_oo(sym, oo) as usize] = map_grid(sym, self.grids[oo as usize])
+        }
+
+        STTTBoard {
+            grids,
+            main_grid: 0,
+            last_move: self.last_move.map(|c| Self::map_move(sym, c)),
+            next_player: self.next_player,
+            outcome: self.outcome,
+            macro_mask: map_grid(sym, self.macro_mask),
+            macro_open: map_grid(sym, self.macro_open),
+        }
+    }
+
+    fn map_move(sym: D4Symmetry, mv: Coord) -> Coord {
+        Coord::from_oo(map_oo(sym, mv.om()), map_oo(sym, mv.os()))
+    }
 }
 
 impl<'a> BoardAvailableMoves<'a, STTTBoard> for STTTBoard {
     type MoveIterator = STTTMoveIterator<'a>;
+    type AllMoveIterator = Internal<CoordIter>;
+
+    fn all_possible_moves() -> Self::AllMoveIterator {
+        Coord::all().into_internal()
+    }
 
     fn available_moves(&'a self) -> Self::MoveIterator {
         assert!(!self.is_done(), "Board must not be done");
@@ -193,12 +202,15 @@ impl<'a> BoardAvailableMoves<'a, STTTBoard> for STTTBoard {
     }
 }
 
+pub type CoordIter = std::iter::Map<std::ops::Range<u8>, fn(u8) -> Coord>;
+
 impl Coord {
-    pub fn all() -> impl Iterator<Item=Coord> {
+
+    pub fn all() -> CoordIter {
         (0..81).map(|o| Self::from_o(o))
     }
 
-    pub fn all_yx() -> impl Iterator<Item=Coord> {
+    pub fn all_yx() -> CoordIter {
         (0..81).map(|i| Self::from_xy(i % 9, i / 9))
     }
 
@@ -272,70 +284,20 @@ impl<'a> InternalIterator for STTTMoveIterator<'a> {
     }
 }
 
-/// A symmetry group element for Board transformations. Can represent any combination of
-/// flips, rotating and transposing, which result in 8 distinct elements.
-///
-/// The `Default::default()` value means no transformation.
-///
-/// The internal representation is such that first x and y are transposed,
-/// then each axis is flipped separately.
-#[derive(Debug, Copy, Clone)]
-pub struct Symmetry {
-    pub transpose: bool,
-    pub flip_x: bool,
-    pub flip_y: bool,
+fn map_oo(sym: D4Symmetry, oo: u8) -> u8 {
+    let (x, y) = sym.map_xy(oo % 3, oo / 3, 2);
+    x + y * 3
 }
 
-impl Default for Symmetry {
-    fn default() -> Self {
-        Symmetry { transpose: false, flip_x: false, flip_y: false }
+fn map_grid(sym: D4Symmetry, grid: u32) -> u32 {
+    // this could be implemented faster but it's not on a hot path
+    let mut result = 0;
+    for oo_input in 0..9 {
+        let oo_result = map_oo(sym, oo_input);
+        let get = (grid >> oo_input) & 0b1_000_000_001;
+        result |= get << oo_result;
     }
-}
-
-impl Distribution<Symmetry> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Symmetry {
-        Symmetry { transpose: rng.gen(), flip_x: rng.gen(), flip_y: rng.gen() }
-    }
-}
-
-impl Symmetry {
-    pub fn all() -> impl Iterator<Item=Symmetry> {
-        (0..8).map(|i| Symmetry {
-            transpose: i & 0b100 != 0,
-            flip_x: i & 0b010 != 0,
-            flip_y: i & 0b001 != 0,
-        })
-    }
-
-    pub fn inverse(self) -> Symmetry {
-        Symmetry {
-            transpose: self.transpose,
-            flip_x: if self.transpose { self.flip_y } else { self.flip_x },
-            flip_y: if self.transpose { self.flip_x } else { self.flip_y },
-        }
-    }
-
-    pub fn map_coord(self, coord: Coord) -> Coord {
-        Coord::from_oo(self.map_oo(coord.om()), self.map_oo(coord.os()))
-    }
-
-    pub fn map_oo(self, oo: u8) -> u8 {
-        let (mut x, mut y) = (oo % 3, oo / 3);
-        if self.transpose { std::mem::swap(&mut x, &mut y) };
-        if self.flip_x { x = 2 - x };
-        if self.flip_y { y = 2 - y };
-        x + y * 3
-    }
-
-    fn map_grid(self, grid: u32) -> u32 {
-        let mut result = 0;
-        for oo_input in 0..9 {
-            let oo_result = self.map_oo(oo_input);
-            let get = (grid >> oo_input) & 0b1_000_000_001;
-            result |= get << oo_result;
-        }
-        result
-    }
+    result
 }
 
 fn is_win_grid(grid: u32) -> bool {
@@ -474,84 +436,4 @@ pub fn board_from_compact_string(s: &str) -> STTTBoard {
     }
 
     board
-}
-
-#[cfg(test)]
-mod test {
-    use internal_iterator::InternalIterator;
-    use rand::rngs::SmallRng;
-    use rand::SeedableRng;
-    use rand::seq::SliceRandom;
-
-    use crate::board::{Board, BoardAvailableMoves};
-    use crate::games::sttt::{Coord, STTTBoard, Symmetry};
-    use crate::util::board_gen::random_board_with_moves;
-
-    #[test]
-    //TODO move this test somewhere more generic where it can be run for all games, not just sttt
-    fn test_random_distribution() {
-        let mut board = STTTBoard::default();
-        let mut rand = SmallRng::seed_from_u64(0);
-
-        while !board.is_done() {
-            let moves: Vec<Coord> = board.available_moves().collect();
-
-            let mut counts: [i32; 81] = [0; 81];
-            for _ in 0..1_000_000 {
-                counts[board.random_available_move(&mut rand).o() as usize] += 1;
-            }
-
-            let avg = (1_000_000 / moves.len()) as i32;
-
-            for (mv, &count) in counts.iter().enumerate() {
-                if moves.contains(&Coord::from_o(mv as u8)) {
-                    debug_assert!((count.wrapping_sub(avg)).abs() < 10_000, "uniformly distributed")
-                } else {
-                    assert_eq!(count, 0, "only actual moves returned")
-                }
-            }
-
-            let mv = moves.choose(&mut rand).unwrap().o();
-            board.play(Coord::from_o(mv as u8));
-        }
-    }
-
-    #[test]
-    fn symmetries() {
-        let mut rng = SmallRng::seed_from_u64(5);
-        let board = random_board_with_moves(&STTTBoard::default(), 10, &mut rng);
-        println!("Original:\n{}", board);
-
-        for i in 0..8 {
-            let sym = Symmetry {
-                transpose: i & 0b001 != 0,
-                flip_x: i & 0b010 != 0,
-                flip_y: i & 0b100 != 0,
-            };
-            let sym_inv = sym.inverse();
-
-            println!("{:?}", sym);
-            println!("inverse: {:?}", sym_inv);
-
-            let mapped = board.map_symmetry(sym);
-            let back = mapped.map_symmetry(sym_inv);
-
-            // these prints test that the board is consistent enough to print it
-            println!("Mapped:\n{}", mapped);
-            println!("Back:\n{}", back);
-
-            if i == 0 {
-                assert_eq!(board, mapped);
-            }
-            assert_eq!(board, back);
-
-            let mut expected_moves: Vec<Coord> = board.available_moves().map(|c| sym.map_coord(c)).collect();
-            let mut actual_moves: Vec<Coord> = mapped.available_moves().collect();
-
-            expected_moves.sort_by_key(|c| c.o());
-            actual_moves.sort_by_key(|c| c.o());
-
-            assert_eq!(expected_moves, actual_moves);
-        }
-    }
 }

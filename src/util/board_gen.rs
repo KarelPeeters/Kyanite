@@ -1,7 +1,7 @@
 use rand::Rng;
 
 use crate::ai::solver::{find_forcing_winner, is_double_forced_draw};
-use crate::board::Board;
+use crate::board::{Board, Outcome};
 
 /// Generate a `Board` by playing `n` random moves on `start`.
 pub fn random_board_with_moves<B: Board>(start: &B, n: u32, rng: &mut impl Rng) -> B {
@@ -15,6 +15,20 @@ pub fn random_board_with_moves<B: Board>(start: &B, n: u32, rng: &mut impl Rng) 
             board.play(board.random_available_move(rng))
         }
         return board;
+    }
+}
+
+pub fn random_board_with_outcome<B: Board>(start: &B, outcome: Outcome, rng: &mut impl Rng) -> B {
+    loop {
+        let mut board = start.clone();
+        loop {
+            if let Some(actual) = board.outcome() {
+                if actual == outcome { return board; }
+                break;
+            }
+
+            board.play(board.random_available_move(rng))
+        }
     }
 }
 

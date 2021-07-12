@@ -1,8 +1,10 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use internal_iterator::InternalIterator;
 use rand::Rng;
+
+use crate::symmetry::Symmetry;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Player {
@@ -16,8 +18,10 @@ pub enum Outcome {
     Draw,
 }
 
-pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailableMoves<'a, Self> {
-    type Move: Debug + Copy + Eq + PartialEq;
+/// The representation of a game state.
+pub trait Board: Debug + Display + Clone + Eq + Hash where for<'a> Self: BoardAvailableMoves<'a, Self> {
+    type Move: Debug + Copy + Eq + Ord + Hash;
+    type Symmetry: Symmetry;
 
     /// Whether the player who plays a move can lose by playing that move.
     /// Symbolically whether `b.won_by() == Some(Winner::Player(b.next_player()))` can ever be true.
@@ -61,14 +65,26 @@ pub trait Board: Debug + Clone + Eq + PartialEq where for<'a> Self: BoardAvailab
     fn is_done(&self) -> bool {
         self.outcome().is_some()
     }
+
+    /// Map this board under the given symmetry.
+    fn map(&self, sym: Self::Symmetry) -> Self;
+
+    /// Map a move under the given symmetry.
+    fn map_move(sym: Self::Symmetry, mv: Self::Move) -> Self::Move;
 }
 
 /// Trait to fake generic associated types, can be removed once that's stable.
 /// See https://github.com/rust-lang/rust/issues/44265.
 pub trait BoardAvailableMoves<'a, B: Board> {
     type MoveIterator: InternalIterator<Item=B::Move>;
+    type AllMoveIterator: InternalIterator<Item=B::Move>;
 
-    /// Return an iterator over available moves, is always nonempty.
+    /// All theoretically possible moves, for any possible board.
+    /// Moves returned by `available_moves` will always be a subset of these moves.
+    fn all_possible_moves() -> Self::AllMoveIterator;
+
+    /// Return an iterator over available moves, is always nonempty. No guarantees are made about the ordering except
+    /// that it stays consistent when the board is not modified.
     /// Panics if this board is done.
     fn available_moves(&'a self) -> Self::MoveIterator;
 }

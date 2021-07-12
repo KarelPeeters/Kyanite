@@ -29,8 +29,9 @@ fn ataxx_perft() {
         let board = AtaxxBoard::from_fen(fen);
 
         for (depth, &expected_perft) in expected_perfts.iter().enumerate() {
-            println!("Board {}, depth {}", fen, depth);
-            assert_eq!(expected_perft, game_stats::perft(&board, depth as u32))
+            let perft = game_stats::perft(&board, depth as u32);
+            println!("Board {}, depth {} -> {}", fen, depth, perft);
+            assert_eq!(expected_perft, perft)
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::board::Board;
 
 /// The number of legal positions reachable after `depth` moves, including duplicates.
 /// See https://www.chessprogramming.org/Perft.
-pub fn perft<B: Board + Hash>(board: &B, depth: u32) -> u64 {
+pub fn perft<B: Board>(board: &B, depth: u32) -> u64 {
     let mut map = HashMap::default();
     perft_recuse(&mut map, board.clone(), depth)
 }

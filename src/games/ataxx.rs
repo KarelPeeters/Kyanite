@@ -6,12 +6,13 @@ use internal_iterator::InternalIterator;
 use newtype_ops::newtype_ops;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
+use crate::symmetry::D4Symmetry;
 use crate::util::bit_iter::BitIter;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Coord(u8);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Move {
     Pass,
     Copy { to: Coord },
@@ -130,6 +131,7 @@ impl AtaxxBoard {
 
 impl Board for AtaxxBoard {
     type Move = Move;
+    type Symmetry = D4Symmetry;
 
     fn can_lose_after_move() -> bool {
         true
@@ -157,6 +159,8 @@ impl Board for AtaxxBoard {
                 self.free_tiles().has(to) && next_tiles.has(from) && from.distance(to) == 2,
         }
     }
+
+    //TODO implement random_available_move for faster mcts
 
     fn play(&mut self, mv: Self::Move) {
         assert!(self.is_available_move(mv), "{:?} is not available", mv);
@@ -189,6 +193,24 @@ impl Board for AtaxxBoard {
     fn outcome(&self) -> Option<Outcome> {
         self.outcome
     }
+
+    fn map(&self, sym: Self::Symmetry) -> Self {
+        AtaxxBoard {
+            tiles_a: self.tiles_a.map(sym),
+            tiles_b: self.tiles_b.map(sym),
+            gaps: self.gaps.map(sym),
+            next_player: self.next_player,
+            outcome: self.outcome,
+        }
+    }
+
+    fn map_move(sym: Self::Symmetry, mv: Self::Move) -> Self::Move {
+        match mv {
+            Move::Pass => Move::Pass,
+            Move::Copy { to } => Move::Copy { to: to.map(sym) },
+            Move::Jump { from, to } => Move::Jump { from: from.map(sym), to: to.map(sym) },
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -204,11 +226,23 @@ impl std::ops::Not for Tiles {
     }
 }
 
+impl IntoIterator for Tiles {
+    type Item = Coord;
+    type IntoIter = std::iter::Map<BitIter<u64>, fn(u8) -> Coord>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        BitIter::new(self.0).map(|i| Coord::from_i(i as u8))
+    }
+}
+
 impl Tiles {
     pub const FULL_MASK: u64 = 0x7F_7F_7F_7F_7F_7F_7F;
-
     pub const CORNERS_A: Tiles = Tiles(0x_01_00_00_00_00_00_40);
     pub const CORNERS_B: Tiles = Tiles(0x_40_00_00_00_00_00_01);
+
+    pub fn full() -> Tiles {
+        Tiles(Self::FULL_MASK)
+    }
 
     pub fn empty() -> Tiles {
         Tiles(0)
@@ -286,8 +320,12 @@ impl Tiles {
             | self.left().left().up()
     }
 
-    pub fn iter(self) -> impl Iterator<Item=Coord> {
-        BitIter::new(self.0).map(|i| Coord::from_i(i as u8))
+    pub fn map(self, sym: D4Symmetry) -> Tiles {
+        let mut result = Tiles::empty();
+        for c in self {
+            result = result.set(c.map(sym))
+        }
+        result
     }
 }
 
@@ -309,12 +347,36 @@ pub struct MoveIterator<'a> {
     board: &'a AtaxxBoard,
 }
 
+pub struct AllMoveIterator;
+
 impl<'a> BoardAvailableMoves<'a, AtaxxBoard> for AtaxxBoard {
     type MoveIterator = MoveIterator<'a>;
+    type AllMoveIterator = AllMoveIterator;
+
+    fn all_possible_moves() -> Self::AllMoveIterator {
+        AllMoveIterator
+    }
 
     fn available_moves(&'a self) -> Self::MoveIterator {
         assert!(!self.is_done());
         MoveIterator { board: self }
+    }
+}
+
+impl<'a> InternalIterator for AllMoveIterator {
+    type Item = Move;
+
+    fn find_map<R, F>(self, mut f: F) -> Option<R> where F: FnMut(Self::Item) -> Option<R> {
+        if let Some(x) = f(Move::Pass) { return Some(x); };
+        for to in Tiles::full() {
+            if let Some(x) = f(Move::Copy { to }) { return Some(x); };
+        }
+        for from in Tiles::full() {
+            for to in Tiles::coord(from).jump_targets() {
+                if let Some(x) = f(Move::Jump { from, to }) { return Some(x); };
+            }
+        }
+        None
     }
 }
 
@@ -326,19 +388,19 @@ impl<'a> InternalIterator for MoveIterator<'a> {
         let next_tiles = board.tiles_pov().0;
         let free_tiles = board.free_tiles();
 
-        // pass move
+        // pass move, don't emit other moves afterwards
         if board.must_pass(next_tiles) {
             return f(Move::Pass);
         }
 
         // copy moves
-        for to in (free_tiles & next_tiles.copy_targets()).iter() {
+        for to in free_tiles & next_tiles.copy_targets() {
             if let Some(x) = f(Move::Copy { to }) { return Some(x); }
         }
 
         // jump moves
-        for from in next_tiles.iter() {
-            for to in (free_tiles & Tiles::coord(from).jump_targets()).iter() {
+        for from in next_tiles {
+            for to in free_tiles & Tiles::coord(from).jump_targets() {
                 if let Some(x) = f(Move::Jump { from, to }) { return Some(x); }
             }
         }
@@ -381,6 +443,11 @@ impl Coord {
         let dx = abs_distance(self.x(), other.x());
         let dy = abs_distance(self.y(), other.y());
         max(dx, dy)
+    }
+
+    pub fn map(self, sym: D4Symmetry) -> Coord {
+        let (x, y) = sym.map_xy(self.x(), self.y(), 6);
+        Coord::from_xy(x, y)
     }
 }
 
