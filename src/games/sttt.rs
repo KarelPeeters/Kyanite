@@ -174,7 +174,7 @@ impl Board for STTTBoard {
 
         STTTBoard {
             grids,
-            main_grid: 0,
+            main_grid: map_grid(sym, self.main_grid),
             last_move: self.last_move.map(|c| Self::map_move(sym, c)),
             next_player: self.next_player,
             outcome: self.outcome,
@@ -337,7 +337,7 @@ fn get_player(grid: u32, index: u8) -> Option<Player> {
 
 fn symbol_from_tile(board: &STTTBoard, coord: Coord) -> char {
     let is_last = Some(coord) == board.last_move;
-    let is_available = board.is_available_move(coord);
+    let is_available = !board.is_done() && board.is_available_move(coord);
     let player = board.tile(coord);
     symbol_from_tuple(is_available, is_last, player)
 }
