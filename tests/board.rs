@@ -1,7 +1,6 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use internal_iterator::InternalIterator;
-use mathru::statistics::distrib::{ChiSquare, Continuous};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoroshiro64StarStar;
 
@@ -13,7 +12,6 @@ use sttt::util::board_gen::{random_board_with_forced_win, random_board_with_move
 
 #[test]
 fn sttt_empty() {
-    println!("derp");
     test_main(&STTTBoard::default())
 }
 
@@ -89,48 +87,33 @@ fn test_available_match<B: Board>(board: &B) {
 /// Test whether the random move distribution is uniform using
 /// [Pearson's chi-squared test](https://en.wikipedia.org/wiki/Pearson%27s_chi-squared_test).
 fn test_random_available_uniform<B: Board>(board: &B) {
+    assert!(!board.is_done(), "invalid board to test");
+
     println!("random_available uniform:");
     println!("{}", board);
 
     let mut rng = consistent_rng();
 
-    let total_samples = 50 * B::all_possible_moves().count();
-    println!("Sampling {} random moves", total_samples);
+    let available_move_count = board.available_moves().count();
+    let total_samples = 1000 * available_move_count;
+    let expected_samples = total_samples as f32 / available_move_count as f32;
 
-    let move_count = board.available_moves().count();
-    let samples_per_move = total_samples as f32 / move_count as f32;
+    println!("Available moves: {}, samples: {}, expected: {}", available_move_count, total_samples, expected_samples);
 
-    let mut counts: HashMap<B::Move, u64> = HashMap::new();
+    let mut counts: BTreeMap<B::Move, u32> = BTreeMap::new();
     for _ in 0..total_samples {
         let mv = board.random_available_move(&mut rng);
         *counts.entry(mv).or_default() += 1;
     }
 
-    board.available_moves().for_each(|mv| {
-        // every move needs to be generated at least once
-        assert!(counts.contains_key(&mv));
-    });
+    for (&mv, &count) in &counts {
+        println!("Move {:?} -> count {} ~ {}", mv, count, count as f32 / expected_samples);
+    }
 
-    println!("Counts: {}", counts.len());
-    let mut i = 0;
-
-    board.available_moves().for_each(|mv: B::Move| {
-        let count = counts.get(&mv).unwrap();
-        println!("  move {:?} -> {}", mv, count);
-    });
-
-    let x2: f32 = counts.iter()
-        .map(|(k, &c)| {
-            i += 1;
-            println!("{} {:?} {}", i, k, c);
-            (c as f32 - samples_per_move).powi(2) / samples_per_move
-        })
-        .sum::<f32>();
-    let p = 1.0 - ChiSquare::new(1).cdf(x2);
-    println!("x2={} -> p={}", x2, p);
-
-    //TODO figure out why this is not working yet
-    // assert!(p < 0.01, "Distribution is not uniform enough");
+    for (&mv, &count) in &counts {
+        assert!((count as f32) > 0.8 * expected_samples, "Move {:?} not generated often enough", mv);
+        assert!((count as f32) < 1.2 * expected_samples, "Move {:?} generated too often", mv);
+    }
 }
 
 fn test_symmetry<B: Board>(board: &B) {

@@ -199,15 +199,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
 
 [[package]]
-name = "mathru"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4c11f3fbdfe75b7ae7dedf62c583a5fd3b2ead296f6d26982dd7eee782281dc"
-dependencies = [
- "rand",
-]
-
-[[package]]
 name = "memchr"
 version = "2.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -493,7 +484,6 @@ dependencies = [
  "derive_more",
  "internal-iterator",
  "itertools",
- "mathru",
  "newtype-ops",
  "nom",
  "num",
