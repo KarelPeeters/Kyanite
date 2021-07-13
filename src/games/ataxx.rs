@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::{max, Ordering};
 use std::fmt::{Debug, Display, Formatter};
 use std::fmt::Write;
 
@@ -114,12 +114,10 @@ impl AtaxxBoard {
             let count_a = self.tiles_a.count();
             let count_b = self.tiles_b.count();
 
-            let outcome = if count_a > count_b {
-                Outcome::WonBy(Player::A)
-            } else if count_a < count_b {
-                Outcome::WonBy(Player::B)
-            } else {
-                Outcome::Draw
+            let outcome = match count_a.cmp(&count_b) {
+                Ordering::Less => Outcome::WonBy(Player::B),
+                Ordering::Equal => Outcome::Draw,
+                Ordering::Greater => Outcome::WonBy(Player::A),
             };
             Some(outcome)
         } else {
@@ -139,7 +137,7 @@ impl Board for AtaxxBoard {
     }
 
     fn game_length_bounds() -> (u32, Option<u32>) {
-        (0, None)
+        (3, None)
     }
 
     fn next_player(&self) -> Player {
