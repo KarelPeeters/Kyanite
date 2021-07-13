@@ -1,6 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::collections::hash_map::RandomState;
+use std::iter::FromIterator;
 
 use internal_iterator::InternalIterator;
+use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoroshiro64StarStar;
 
@@ -69,6 +72,7 @@ fn test_available_match<B: Board>(board: &B) {
     println!("available_moves and is_available match:");
     println!("{}", board);
 
+    let all: Vec<B::Move> = B::all_possible_moves().collect();
     let available: Vec<B::Move> = board.available_moves().collect();
 
     // check that every generated move is indeed available
@@ -76,12 +80,22 @@ fn test_available_match<B: Board>(board: &B) {
         assert!(board.is_available_move(mv), "generated move {:?} is not available", mv);
     }
 
-    //check that every available move is generated
-    B::all_possible_moves().for_each(|mv: B::Move| {
+    // check that every available move is generated
+    for &mv in &all {
         if board.is_available_move(mv) {
             assert!(available.contains(&mv), "available move {:?} was not generated", mv);
         }
-    })
+    }
+
+    // check that there are no duplicates anywhere
+    assert_eq!(all.len(), HashSet::<_, RandomState>::from_iter(&all).len(), "Found duplicate move");
+    assert_eq!(available.len(), HashSet::<_, RandomState>::from_iter(&available).len(), "Found duplicate move");
+
+    // check that all_possible_moves and available_moves have the same ordering
+    let all_filtered = all.iter().copied()
+        .filter(|&mv| board.is_available_move(mv))
+        .collect_vec();
+    assert_eq!(available, all_filtered, "Move order mismatch")
 }
 
 /// Test whether the random move distribution is uniform using

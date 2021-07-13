@@ -412,8 +412,8 @@ impl<'a> InternalIterator for AllMoveIterator {
         for to in Tiles::full() {
             if let Some(x) = f(Move::Copy { to }) { return Some(x); };
         }
-        for from in Tiles::full() {
-            for to in Tiles::coord(from).jump_targets() {
+        for to in Tiles::full() {
+            for from in Tiles::coord(to).jump_targets() {
                 if let Some(x) = f(Move::Jump { from, to }) { return Some(x); };
             }
         }

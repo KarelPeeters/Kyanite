@@ -81,6 +81,7 @@ pub trait BoardAvailableMoves<'a, B: Board> {
 
     /// All theoretically possible moves, for any possible board.
     /// Moves returned by `available_moves` will always be a subset of these moves.
+    /// The ordering must be consistent with `available_moves`.
     fn all_possible_moves() -> Self::AllMoveIterator;
 
     /// Return an iterator over available moves, is always nonempty. No guarantees are made about the ordering except
