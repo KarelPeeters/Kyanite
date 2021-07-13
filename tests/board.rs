@@ -59,6 +59,13 @@ fn ataxx_done() {
     test_main(&random_board_with_outcome(&AtaxxBoard::new_without_blocks(), Outcome::WonBy(Player::A), &mut consistent_rng()))
 }
 
+#[test]
+fn ataxx_forced_pass() {
+    let board = AtaxxBoard::from_fen("xxxxxxx/-------/-------/o6/7/7/7 x");
+    assert!(!board.is_done(), "Board is not done, player B can still play");
+    test_main(&board)
+}
+
 fn test_main<B: Board>(board: &B) {
     if !board.is_done() {
         test_available_match(board);
