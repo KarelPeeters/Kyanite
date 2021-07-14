@@ -409,10 +409,10 @@ impl<'a> InternalIterator for AllMoveIterator {
 
     fn find_map<R, F>(self, mut f: F) -> Option<R> where F: FnMut(Self::Item) -> Option<R> {
         if let Some(x) = f(Move::Pass) { return Some(x); };
-        for to in Tiles::full() {
+        for to in Coord::all() {
             if let Some(x) = f(Move::Copy { to }) { return Some(x); };
         }
-        for to in Tiles::full() {
+        for to in Coord::all() {
             for from in Tiles::coord(to).jump_targets() {
                 if let Some(x) = f(Move::Jump { from, to }) { return Some(x); };
             }
@@ -459,6 +459,11 @@ impl Debug for Coord {
 }
 
 impl Coord {
+    pub fn all() -> impl Iterator<Item=Coord> {
+        // this is kind of stupid but it works
+        Tiles::full().into_iter()
+    }
+
     pub fn from_xy(x: u8, y: u8) -> Coord {
         assert!(x < 7);
         assert!(y < 7);
