@@ -12,7 +12,8 @@ pub trait Symmetry: 'static + Debug + Copy + Clone + Eq + PartialEq {
     fn inverse(self) -> Self;
 }
 
-struct SymmetryDistribution;
+#[derive(Debug)]
+pub struct SymmetryDistribution;
 
 impl<S: Symmetry + Sized> Distribution<S> for SymmetryDistribution {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> S {
