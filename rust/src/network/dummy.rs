@@ -1,41 +1,66 @@
+use std::marker::PhantomData;
+
+use internal_iterator::InternalIterator;
 use itertools::zip;
 use sttt::board::Board;
 
-use crate::network::{mask_and_softmax, Network, NetworkEvaluation, WDL};
+use crate::evaluation::{WDL, ZeroEvaluation};
+use crate::network::Network;
 
 /// A `Network` that always returns value and a uniform policy.
+#[derive(Debug)]
 pub struct DummyNetwork;
 
-impl Network for DummyNetwork {
-    fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
+/// A `Network` that returns value 0 and a policy as returned by the inner network.
+#[derive(Debug)]
+pub struct DummyValueNetwork<B: Board, N: Network<B>> {
+    inner: N,
+    ph: PhantomData<*const B>,
+}
+
+/// A `Network` that returns the value returned by the inner network and a uniform policy.
+#[derive(Debug)]
+pub struct DummyPolicyNetwork<B: Board, N: Network<B>> {
+    inner: N,
+    ph: PhantomData<*const B>,
+}
+
+impl<B: Board, N: Network<B>> DummyValueNetwork<B, N> {
+    pub fn new(inner: N) -> Self {
+        DummyValueNetwork { inner, ph: PhantomData }
+    }
+}
+
+impl<B: Board, N: Network<B>> DummyPolicyNetwork<B, N> {
+    pub fn new(inner: N) -> Self {
+        DummyPolicyNetwork { inner, ph: PhantomData }
+    }
+}
+
+impl<B: Board> Network<B> for DummyNetwork {
+    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
         boards.iter()
-            .map(|board| NetworkEvaluation {
-                wdl: dummy_wdl(),
+            .map(|board| ZeroEvaluation {
+                wdl: uniform_wdl(),
                 policy: uniform_policy(board),
             })
             .collect()
     }
 }
 
-/// A `Network` that returns value 0 and a policy as returned by the inner network.
-pub struct DummyValueNetwork<N: Network>(pub N);
-
-impl<N: Network> Network for DummyValueNetwork<N> {
-    fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
-        let mut result = self.0.evaluate_batch(boards);
+impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
+    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
+        let mut result = self.inner.evaluate_batch(boards);
         for eval in &mut result {
-            eval.wdl = dummy_wdl();
+            eval.wdl = uniform_wdl();
         }
         result
     }
 }
 
-/// A `Network` that returns the value returned by the inner network and a uniform policy.
-pub struct DummyPolicyNetwork<N: Network>(pub N);
-
-impl<N: Network> Network for DummyPolicyNetwork<N> {
-    fn evaluate_batch(&mut self, boards: &[Board]) -> Vec<NetworkEvaluation> {
-        let mut result = self.0.evaluate_batch(boards);
+impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
+    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
+        let mut result = self.inner.evaluate_batch(boards);
         for (board, eval) in zip(boards, &mut result) {
             eval.policy = uniform_policy(board);
         }
@@ -43,12 +68,11 @@ impl<N: Network> Network for DummyPolicyNetwork<N> {
     }
 }
 
-fn dummy_wdl() -> WDL {
+fn uniform_wdl() -> WDL {
     WDL { win: 1.0 / 3.0, draw: 1.0 / 3.0, loss: 1.0 / 3.0 }
 }
 
-fn uniform_policy(board: &Board) -> Vec<f32> {
-    let mut policy = vec![0.0; 81];
-    mask_and_softmax(&mut policy, board);
-    policy
+fn uniform_policy<B: Board>(board: &B) -> Vec<f32> {
+    let move_count = board.available_moves().count();
+    vec![1.0 / move_count as f32; move_count]
 }

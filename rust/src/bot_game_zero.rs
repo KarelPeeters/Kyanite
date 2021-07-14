@@ -1,27 +1,28 @@
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
-use rand::{Rng, thread_rng};
-use rand_distr::WeightedIndex;
-use sttt::board::{Board, Coord, Player};
-use sttt::bot_game::Bot;
+use rand::thread_rng;
+use sttt::ai::Bot;
+use sttt::board::{Board, Outcome, Player};
 
 use crate::network::Network;
+use crate::selfplay::MoveSelector;
 use crate::zero::{RunResult, Tree, ZeroSettings, ZeroState};
 
-struct GameState {
+struct GameState<B: Board> {
     opponent: usize,
     zero_first: bool,
 
-    zero: ZeroState,
-    board: Board,
+    zero: ZeroState<B>,
+    board: B,
+    move_count: u32,
 }
 
-pub fn run(
-    mut opponents: Vec<Box<dyn Bot>>,
+pub fn run<B: Board>(
+    mut opponents: Vec<Box<dyn Bot<B>>>,
+    start_board: &B,
     iterations: u64,
     settings: ZeroSettings,
-    network: &mut impl Network,
-    temperature: f32,
+    network: &mut impl Network<B>,
+    move_selector: MoveSelector,
     games_per_side: usize,
 ) {
     let mut rng = thread_rng();
@@ -35,10 +36,12 @@ pub fn run(
     for opponent in 0..opponents.len() {
         for &zero_first in &[true, false] {
             for _ in 0..games_per_side {
-                let mut board = Board::new();
+                let mut board = start_board.clone();
+                let mut move_count = 0;
 
                 if !zero_first {
-                    board.play(opponents[opponent].play(&board).unwrap());
+                    board.play(opponents[opponent].select_move(&board));
+                    move_count += 1;
                 }
 
                 let mut zero = ZeroState::new(Tree::new(board.clone()), iterations, settings);
@@ -47,7 +50,7 @@ pub fn run(
                 let request = unwrap_match!(result, RunResult::Request(req) => req);
                 requests.push(request);
 
-                games.push(GameState { opponent, zero_first, zero, board })
+                games.push(GameState { opponent, zero_first, zero, board, move_count })
             }
         }
     }
@@ -61,7 +64,7 @@ pub fn run(
         let game_count = games.iter().filter(|g| !g.board.is_done()).count();
         let (min_move_count, max_move_count) = games.iter()
             .filter(|g| !g.board.is_done())
-            .map(|g| g.board.count_tiles() + 1)
+            .map(|g| g.move_count + 1)
             .minmax().into_option().unwrap();
 
         if min_move_count > prev_min_move_count {
@@ -86,12 +89,18 @@ pub fn run(
                     requests.push(request)
                 }
                 RunResult::Done => {
-                    // play zero's move
-                    game.board.play(pick_move(&game.zero.tree, temperature, &mut rng));
+                    // select a move
+                    let index = move_selector.select(game.move_count, game.zero.tree.policy(), &mut rng);
+                    let mv = game.zero.tree[game.zero.tree[0].children.unwrap().get(index)].last_move.unwrap();
+
+                    // play the move
+                    game.board.play(mv);
+                    game.move_count += 1;
                     if game.board.is_done() { continue; }
 
                     // play opponent move
-                    game.board.play(opponents[game.opponent].play(&game.board).unwrap());
+                    game.board.play(opponents[game.opponent].select_move(&game.board));
+                    game.move_count += 1;
                     if game.board.is_done() { continue; }
 
                     //start next zero search
@@ -107,28 +116,17 @@ pub fn run(
     //collect results
     for opponent in 0..opponents.len() {
         for &zero_first in &[true, false] {
-            let zero_player = if zero_first { Player::X } else { Player::O };
+            let zero_player = if zero_first { Player::A } else { Player::B };
             let matches = games.iter()
                 .filter(|g| g.opponent == opponent && g.zero_first == zero_first);
 
-            let wins = matches.clone().filter(|g| g.board.won_by.unwrap() == zero_player).count();
-            let draws = matches.clone().filter(|g| g.board.won_by.unwrap() == Player::Neutral).count();
-            let losses = matches.clone().filter(|g| g.board.won_by.unwrap() == zero_player.other()).count();
+            let wins = matches.clone().filter(|g| g.board.outcome().unwrap() == Outcome::WonBy(zero_player)).count();
+            let draws = matches.clone().filter(|g| g.board.outcome().unwrap() == Outcome::Draw).count();
+            let losses = matches.clone().filter(|g| g.board.outcome().unwrap() == Outcome::WonBy(zero_player.other())).count();
 
             assert_eq!(games_per_side, wins + draws + losses);
 
             println!("Opponent {}, zero first: {}, WDL: {} {} {}", opponent, zero_first, wins, draws, losses);
         }
     }
-}
-
-fn pick_move(tree: &Tree, temperature: f32, rng: &mut impl Rng) -> Coord {
-    let index = if temperature == 0.0 {
-        tree.policy().map(OrderedFloat).position_max().unwrap()
-    } else {
-        let policy_temp = tree.policy().map(|p| p.powf(1.0 / temperature));
-        let distr = WeightedIndex::new(policy_temp).unwrap();
-        rng.sample(distr)
-    };
-    tree[tree[0].children.unwrap().get(index)].coord.unwrap()
 }

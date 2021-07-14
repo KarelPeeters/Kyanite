@@ -1,14 +1,17 @@
-use std::io::Write;
 use std::time::Instant;
 
 use crossbeam::channel::Receiver;
-use sttt::board::{Coord, Player};
+use sttt::board::Board;
 use ta::indicators::ExponentialMovingAverage;
 use ta::Next;
 
-use crate::selfplay::{Message, Position, Simulation};
+use crate::selfplay::{Message, Simulation};
 
-pub(super) fn collect(writer: &mut impl Write, game_count: u64, receiver: &Receiver<Message>) {
+pub(super) fn collect<B: Board>(
+    game_count: u64,
+    receiver: &Receiver<Message<B>>,
+    mut output: impl FnMut(Simulation<B>) -> (),
+) {
     //performance metrics
     let mut total_eval_count = 0;
     let mut total_move_count = 0;
@@ -44,8 +47,7 @@ pub(super) fn collect(writer: &mut impl Write, game_count: u64, receiver: &Recei
                 total_pos_count += simulation.positions.len() as u64;
                 total_game_count += 1;
 
-                append_simulation_to_file(writer, simulation)
-                    .expect("Failed to write to output file");
+                output(simulation);
             }
             Message::Counter { moves, evals } => {
                 total_eval_count += evals;
@@ -60,63 +62,4 @@ pub(super) fn collect(writer: &mut impl Write, game_count: u64, receiver: &Recei
             break;
         }
     }
-}
-
-const OUTPUT_FORMAT_SIZE: usize = 3 + 3 + 81 + (3 * 81 + 2 * 9);
-
-fn append_simulation_to_file(writer: &mut impl Write, simulation: Simulation) -> std::io::Result<()> {
-    let won_by = simulation.won_by;
-
-    let mut full_policy = vec![0.0; 81];
-    let mut data = Vec::with_capacity(OUTPUT_FORMAT_SIZE);
-
-    for position in simulation.positions {
-        let Position { board, should_store, wdl, policy } = position;
-
-        assert_eq!(policy.len(), board.available_moves().count());
-        full_policy.fill(0.0);
-        for (i, coord) in board.available_moves().enumerate() {
-            full_policy[coord.o() as usize] = policy[i];
-        }
-
-        data.clear();
-
-        // wdl_final
-        data.push((won_by == board.next_player) as u8 as f32);
-        data.push((won_by == Player::Neutral) as u8 as f32);
-        data.push((won_by == board.next_player.other()) as u8 as f32);
-
-        // wdl_est
-        data.push(wdl.win);
-        data.push(wdl.draw);
-        data.push(wdl.loss);
-
-        // policy
-        data.extend_from_slice(&full_policy);
-
-        // board state
-        data.extend(Coord::all().map(|c| board.is_available_move(c) as u8 as f32));
-        data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player) as u8 as f32));
-        data.extend(Coord::all().map(|c| (board.tile(c) == board.next_player.other()) as u8 as f32));
-        data.extend((0..9).map(|om| (board.macr(om) == board.next_player) as u8 as f32));
-        data.extend((0..9).map(|om| (board.macr(om) == board.next_player.other()) as u8 as f32));
-
-        assert_eq!(OUTPUT_FORMAT_SIZE, data.len());
-
-        if !should_store {
-            write!(writer, "#")?;
-        }
-
-        for (i, x) in data.iter().enumerate() {
-            if i != 0 {
-                write!(writer, ",")?;
-            }
-            write!(writer, "{}", x)?;
-        }
-        write!(writer, "\n")?;
-    }
-
-    write!(writer, "\n")?;
-
-    Ok(())
 }

@@ -1,15 +1,20 @@
 use std::convert::TryInto;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
+use decorum::N32;
+use internal_iterator::InternalIterator;
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
 use rand::Rng;
-use sttt::board::{Board, Coord, Player, Symmetry};
-use sttt::bot_game::Bot;
+use rand_distr::Distribution;
+use sttt::ai::Bot;
+use sttt::board::{Board, Outcome};
+use sttt::symmetry::{Symmetry, SymmetryDistribution};
 
-use crate::network::{Network, NetworkEvaluation, WDL};
+use crate::evaluation::{WDL, ZeroEvaluation};
+use crate::network::Network;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
@@ -58,8 +63,8 @@ impl IntoIterator for IdxRange {
 }
 
 #[derive(Debug, Clone)]
-pub struct Node {
-    pub coord: Option<Coord>,
+pub struct Node<M> {
+    pub last_move: Option<M>,
     pub children: Option<IdxRange>,
 
     /// The evaluation returned by the network for this position.
@@ -74,10 +79,10 @@ pub struct Node {
     pub total_wdl: WDL,
 }
 
-impl Node {
-    fn new(coord: Option<Coord>, p: f32) -> Self {
+impl<N> Node<N> {
+    fn new(last_move: Option<N>, p: f32) -> Self {
         Node {
-            coord,
+            last_move,
             children: None,
 
             net_wdl: None,
@@ -93,7 +98,6 @@ impl Node {
         self.total_wdl / self.visits as f32
     }
 
-
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
         let q = self.wdl().value();
         let u = self.net_policy * (parent_visits as f32).sqrt() / (1 + self.visits) as f32;
@@ -103,32 +107,33 @@ impl Node {
 
 /// A small wrapper type for Vec<Node> that uses u64 for indexing instead.
 #[derive(Debug, Clone)]
-pub struct Tree {
-    root_board: Board,
-    nodes: Vec<Node>,
+pub struct Tree<B: Board> {
+    root_board: B,
+    nodes: Vec<Node<B::Move>>,
 }
 
-impl Index<usize> for Tree {
-    type Output = Node;
+impl<B: Board> Index<usize> for Tree<B> {
+    type Output = Node<B::Move>;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.nodes[index]
     }
 }
 
-impl IndexMut<usize> for Tree {
+impl<B: Board> IndexMut<usize> for Tree<B> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.nodes[index]
     }
 }
 
-pub enum KeepResult {
-    Done(Player),
-    Tree(Tree),
+#[derive(Debug)]
+pub enum KeepResult<B: Board> {
+    Done(Outcome),
+    Tree(Tree<B>),
 }
 
-impl Tree {
-    pub fn new(root_board: Board) -> Self {
+impl<B: Board> Tree<B> {
+    pub fn new(root_board: B) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
 
         let root = Node::new(None, f32::NAN);
@@ -139,11 +144,11 @@ impl Tree {
         self.nodes.len()
     }
 
-    pub fn root_board(&self) -> &Board {
+    pub fn root_board(&self) -> &B {
         &self.root_board
     }
 
-    pub fn best_move(&self) -> Coord {
+    pub fn best_move(&self) -> B::Move {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         let children = self[0].children.unwrap();
@@ -152,7 +157,7 @@ impl Tree {
             self[child].visits
         }).expect("Root node must have non-empty children");
 
-        self[best_child].coord.unwrap()
+        self[best_child].last_move.unwrap()
     }
 
     /// The WDL of `root_board` from the POV of `root_board.next_player`.
@@ -165,26 +170,24 @@ impl Tree {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         self[0].children.unwrap().iter().map(move |c| {
-            //TODO isn't this a wrong normalization?
-            // the root node is always visited one more time than the sum of the children, right?
-            (self[c].visits as f32) / (self[0].visits as f32)
+            (self[c].visits as f32) / ((self[0].visits - 1) as f32)
         })
     }
 
     /// Return a new tree containing the nodes that are still relevant after playing the given move.
     /// Effectively this copies the part of the tree starting from the selected child.
-    pub fn keep_move(&self, coord: Coord) -> KeepResult {
+    pub fn keep_move(&self, mv: B::Move) -> KeepResult<B> {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         let mut new_root_board = self.root_board.clone();
-        new_root_board.play(coord);
-        if let Some(won_by) = new_root_board.won_by {
-            return KeepResult::Done(won_by);
+        new_root_board.play(mv);
+        if let Some(outcome) = new_root_board.outcome() {
+            return KeepResult::Done(outcome);
         }
 
         let picked_child = self[0].children.unwrap().iter()
-            .find(|&c| self[c].coord.unwrap() == coord)
-            .unwrap_or_else(|| panic!("Child for move {:?} not found", coord));
+            .find(|&c| self[c].last_move.unwrap() == mv)
+            .unwrap_or_else(|| panic!("Child for move {:?} not found", mv));
 
         let old_nodes = &self.nodes;
         let mut new_nodes = vec![old_nodes[picked_child].clone()];
@@ -209,21 +212,22 @@ impl Tree {
         KeepResult::Tree(tree)
     }
 
-    pub fn display(&self, max_depth: usize) -> TreeDisplay {
+    pub fn display(&self, max_depth: usize) -> TreeDisplay<B> {
         let parent_visits = self[0].visits;
         TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, parent_visits }
     }
 }
 
-pub struct TreeDisplay<'a> {
-    tree: &'a Tree,
+#[derive(Debug)]
+pub struct TreeDisplay<'a, B: Board> {
+    tree: &'a Tree<B>,
     node: usize,
     curr_depth: usize,
     max_depth: usize,
     parent_visits: u64,
 }
 
-impl Display for TreeDisplay<'_> {
+impl<B: Board> Display for TreeDisplay<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.curr_depth == 0 {
             writeln!(f, "move: visits zero(w/d/l, policy) net(w/d/l, policy)")?;
@@ -239,7 +243,7 @@ impl Display for TreeDisplay<'_> {
         writeln!(
             f,
             "{:?}: {} zero({:.3}/{:.3}/{:.3}, {:.3}) net({:.3}/{:.3}/{:.3}, {:.3})",
-            node.coord, node.visits,
+            node.last_move, node.visits,
             node_wdl.win, node_wdl.draw, node_wdl.loss,
             (node.visits as f32) / (self.parent_visits as f32),
             net_wdl.win, net_wdl.draw, net_wdl.loss,
@@ -278,8 +282,8 @@ impl Display for TreeDisplay<'_> {
 
 /// A coroutine-style implementation that yields `Request`s instead of immediately calling a network.
 #[derive(Debug, Clone)]
-pub struct ZeroState {
-    pub tree: Tree,
+pub struct ZeroState<B: Board> {
+    pub tree: Tree<B>,
     pub target_iterations: u64,
     settings: ZeroSettings,
 
@@ -287,38 +291,38 @@ pub struct ZeroState {
 }
 
 #[derive(Debug)]
-pub enum RunResult {
-    Request(Request),
+pub enum RunResult<B: Board> {
+    Request(Request<B>),
     Done,
 }
 
 #[derive(Debug, Clone)]
-pub struct Request {
-    curr_board: Board,
+pub struct Request<B: Board> {
+    curr_board: B,
     curr_node: usize,
-    sym: Symmetry,
+    sym: B::Symmetry,
 }
 
-impl Request {
-    pub fn board(&self) -> Board {
-        self.curr_board.map_symmetry(self.sym)
+impl<B: Board> Request<B> {
+    pub fn board(&self) -> B {
+        self.curr_board.map(self.sym)
     }
 }
 
 #[derive(Debug)]
-pub struct Response {
-    pub request: Request,
-    pub evaluation: NetworkEvaluation,
+pub struct Response<B: Board> {
+    pub request: Request<B>,
+    pub evaluation: ZeroEvaluation,
 }
 
-impl ZeroState {
+impl<B: Board> ZeroState<B> {
     /// Create a new state that will expand the given tree until its root node has been visited `iterations` times.
-    pub fn new(tree: Tree, target_iterations: u64, settings: ZeroSettings) -> ZeroState {
+    pub fn new(tree: Tree<B>, target_iterations: u64, settings: ZeroSettings) -> ZeroState<B> {
         Self { tree, target_iterations, settings, parent_list: Vec::with_capacity(81) }
     }
 
     /// Run until finished or a network evaluation is needed.
-    pub fn run_until_result(&mut self, response: Option<Response>, rng: &mut impl Rng) -> RunResult {
+    pub fn run_until_result(&mut self, response: Option<Response<B>>, rng: &mut impl Rng) -> RunResult<B> {
         //apply the previous network evaluation if any
         match response {
             None => assert!(self.parent_list.is_empty(), "Expected evaluation response"),
@@ -332,16 +336,16 @@ impl ZeroState {
         self.run_until_result_from_root(rng)
     }
 
-    fn gen_symmetry(&self, rng: &mut impl Rng) -> Symmetry {
+    fn gen_symmetry(&self, rng: &mut impl Rng) -> B::Symmetry {
         if self.settings.random_symmetries {
-            rng.gen()
+            SymmetryDistribution.sample(rng)
         } else {
-            Symmetry::default()
+            B::Symmetry::identity()
         }
     }
 
     /// Continue running, starting from the selection phase at the root of the tree.
-    fn run_until_result_from_root(&mut self, rng: &mut impl Rng) -> RunResult {
+    fn run_until_result_from_root(&mut self, rng: &mut impl Rng) -> RunResult<B> {
         while self.tree[0].visits < self.target_iterations {
             //start walking down the tree
             assert!(self.parent_list.is_empty());
@@ -352,10 +356,8 @@ impl ZeroState {
                 self.parent_list.push(curr_node);
 
                 //if the game is done use the real value
-                if let Some(won_by) = curr_board.won_by {
-                    let draw = if won_by == Player::Neutral { 1.0 } else { 0.0 };
-                    let wdl = WDL { win: 0.0, draw, loss: 1.0 - draw };
-                    break wdl;
+                if let Some(outcome) = curr_board.outcome() {
+                    break WDL::from_outcome(outcome, curr_board.next_player());
                 }
 
                 //get the children or call the network if this is the first time we visit this node
@@ -367,14 +369,14 @@ impl ZeroState {
                     Some(children) => children,
                 };
 
-                //continue with the best child
+                //continue selecting, pick the best child
                 let parent_visits = self.tree[curr_node].visits;
                 let selected = children.iter().max_by_key(|&child| {
-                    OrderedFloat(self.tree[child].uct(self.settings.exploration_weight, parent_visits))
+                    N32::from(self.tree[child].uct(self.settings.exploration_weight, parent_visits))
                 }).expect("Board is not done, this node should have a child");
 
                 curr_node = selected;
-                curr_board.play(self.tree[curr_node].coord.unwrap());
+                curr_board.play(self.tree[curr_node].last_move.unwrap());
             };
 
             self.propagate_wdl(wdl);
@@ -384,10 +386,10 @@ impl ZeroState {
     }
 
     /// Insert the given network evaluation into the current tree.
-    fn apply_eval(&mut self, response: Response) {
+    fn apply_eval(&mut self, response: Response<B>) {
         // unwrap everything
         let Response { request, evaluation } = response;
-        let NetworkEvaluation { wdl, policy: sym_policy } = evaluation;
+        let ZeroEvaluation { wdl, policy: sym_policy } = evaluation;
         let Request { curr_board, curr_node, sym } = request;
 
         // safety check: is this actually our request?
@@ -396,10 +398,9 @@ impl ZeroState {
 
         // store the policy in newly created child nodes while undoing the symmetry map
         let start = self.tree.len();
-        self.tree.nodes.extend(
-            check_and_visit_policy(&curr_board, sym, &sym_policy)
-                .map(|(c, p)| Node::new(Some(c), p))
-        );
+        for_each_original_move_and_policy(&curr_board, sym, &sym_policy, |mv, p| {
+            self.tree.nodes.push(Node::new(Some(mv), p))
+        });
         let end = self.tree.len();
 
         self.tree[curr_node].children = Some(IdxRange::new(start, end));
@@ -424,30 +425,38 @@ impl ZeroState {
     }
 }
 
-/// Assert that this policy makes sense for the given board and symmetry,
-/// and return an iterator that visits the available moves and their policy.
-fn check_and_visit_policy<'a>(board: &'a Board, sym: Symmetry, sym_policy: &'a Vec<f32>) -> impl Iterator<Item=(Coord, f32)> + 'a {
-    let mut policy_sum = 0.0;
+/// Visit the available (move, policy) pairs of the given board,
+/// assuming sym_policy is the policy evaluated on `board.map(sym)`.
+fn for_each_original_move_and_policy<B: Board>(
+    board: &B,
+    sym: B::Symmetry,
+    sym_policy: &Vec<f32>,
+    mut f: impl FnMut(B::Move, f32) -> (),
+) {
+    assert_eq!(board.available_moves().count(), sym_policy.len());
 
-    for c in Coord::all() {
-        let p = sym_policy[sym.map_coord(c).o() as usize];
-        if !board.is_available_move(c) {
-            assert_eq!(0.0, p, "Nonzero policy for non available move {:?}", c);
-        } else {
-            policy_sum += p;
-        }
-    }
+    let policy_sum: f32 = sym_policy.iter().sum();
+    assert!((1.0 - policy_sum).abs() < 0.001, "Policy sum was {} != 1.0 for board {}", policy_sum, board);
 
-    if (1.0 - policy_sum).abs() > 0.0001 {
-        panic!("Sum of policy {} != 1.0", policy_sum);
-    }
+    //this reverse mapping is kind of ugly but it's probably the best we can do without more constraints on
+    // moves and their ordering
+    let sym_moves: Vec<B::Move> = board.map(sym).available_moves().collect();
 
-    board.available_moves()
-        .map(move |c| (c, sym_policy[sym.map_coord(c).o() as usize]))
+    board.available_moves().for_each(|mv: B::Move| {
+        let sym_mv = B::map_move(sym, mv);
+        let index = sym_moves.iter().position(|&cand| cand == sym_mv).unwrap();
+        f(mv, sym_policy[index])
+    });
 }
 
 /// Build a new evaluation tree search from scratch for the given `board`.
-pub fn zero_build_tree(board: &Board, iterations: u64, settings: ZeroSettings, network: &mut impl Network, rng: &mut impl Rng) -> Tree {
+pub fn zero_build_tree<B: Board>(
+    board: &B,
+    iterations: u64,
+    settings: ZeroSettings,
+    network: &mut impl Network<B>,
+    rng: &mut impl Rng,
+) -> Tree<B> {
     let mut state = ZeroState::new(Tree::new(board.clone()), iterations, settings);
 
     let mut response = None;
@@ -467,30 +476,33 @@ pub fn zero_build_tree(board: &Board, iterations: u64, settings: ZeroSettings, n
     return state.tree;
 }
 
-pub struct ZeroBot<N: Network, R: Rng> {
+pub struct ZeroBot<B: Board, N: Network<B>, R: Rng> {
     iterations: u64,
     settings: ZeroSettings,
     network: N,
     rng: R,
+    ph: PhantomData<*const B>,
 }
 
-impl<N: Network, R: Rng> ZeroBot<N, R> {
+impl<B: Board, N: Network<B>, R: Rng> Debug for ZeroBot<B, N, R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ZeroBot {{ iterations: {:?}, settings: {:?} }}", self.iterations, self.settings)
+    }
+}
+
+impl<B: Board, N: Network<B>, R: Rng> ZeroBot<B, N, R> {
     pub fn new(iterations: u64, settings: ZeroSettings, network: N, rng: R) -> Self {
-        ZeroBot { iterations, settings, network, rng }
+        ZeroBot { iterations, settings, network, rng, ph: PhantomData }
     }
 
-    pub fn build_tree(&mut self, board: &Board) -> Tree {
+    /// Utility function that builds a tree with the settings of this bot.
+    pub fn build_tree(&mut self, board: &B) -> Tree<B> {
         zero_build_tree(board, self.iterations, self.settings, &mut self.network, &mut self.rng)
     }
 }
 
-impl<N: Network, R: Rng> Bot for ZeroBot<N, R> {
-    fn play(&mut self, board: &Board) -> Option<Coord> {
-        if board.is_done() {
-            None
-        } else {
-            let tree = zero_build_tree(board, self.iterations, self.settings, &mut self.network, &mut self.rng);
-            Some(tree.best_move())
-        }
+impl<B: Board, N: Network<B>, R: Rng> Bot<B> for ZeroBot<B, N, R> {
+    fn select_move(&mut self, board: &B) -> B::Move {
+        self.build_tree(board).best_move()
     }
 }

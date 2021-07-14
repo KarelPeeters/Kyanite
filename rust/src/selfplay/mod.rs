@@ -1,37 +1,32 @@
 use std::cmp::min;
 use std::fmt::Debug;
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
-use closure::closure;
 use crossbeam::{channel, scope};
 use crossbeam::channel::Sender;
+use decorum::N32;
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
-use rand::distributions::Distribution;
 use rand::distributions::WeightedIndex;
 use rand::Rng;
-use sttt::board::{Board, Player};
-use sttt::mcts::Evaluation;
+use sttt::board::{Board, Outcome};
 
-use crate::network::WDL;
+use crate::evaluation::ZeroEvaluation;
 
 mod collect;
-pub mod generate_zero;
+// pub mod generate_zero;
 pub mod generate_mcts;
 
 #[derive(Debug)]
-pub struct Settings<G: Generator> {
+pub struct Settings<B, G: Generator<B>, F: FnMut(Simulation<B>) -> ()> {
     pub game_count: u64,
-    pub output_path: String,
+    pub output: F,
 
+    pub start_board: B,
     pub move_selector: MoveSelector,
     pub generator: G,
 }
 
-pub trait Generator: Debug + Sync {
+pub trait Generator<B>: Debug + Sync {
     type ThreadParam: Send;
 
     /// The parameter given to each launched thread.
@@ -40,20 +35,33 @@ pub trait Generator: Debug + Sync {
 
     fn thread_main(
         &self,
-        move_selector: &MoveSelector,
+        start_board: &B,
+        move_selector: MoveSelector,
         thread_param: Self::ThreadParam,
         start_counter: &StartGameCounter,
-        sender: &Sender<Message>,
+        sender: Sender<Message<B>>,
     );
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct MoveSelector {
-    //TODO this should be called zero_temp, inf temp is random play
-    pub inf_temp_move_count: u32,
+    /// After this number of moves, use temperature zero to always select the best move.
+    pub zero_temp_move_count: u32,
 
-    //TODO add temperature?
-    //TODO add dirichlet noise? or is that somewhere else?
+    /// The temperature applied to the policy before sampling. Can be any positive value.
+    /// * `0.0`: always pick the move with highest policy
+    /// * `inf`: pick a completely random move
+    pub temperature: f32,
+}
+
+impl MoveSelector {
+    pub fn new(zero_temp_move_count: u32, temperature: f32) -> Self {
+        MoveSelector { zero_temp_move_count, temperature }
+    }
+
+    pub fn zero_temp() -> Self {
+        Self::new(0, 0.0)
+    }
 }
 
 #[derive(Debug)]
@@ -75,67 +83,57 @@ impl StartGameCounter {
     }
 }
 
-
 // A message sent back from a worker thread to the main collector thread.
 #[derive(Debug)]
-pub enum Message {
-    Simulation(Simulation),
+pub enum Message<B> {
+    Simulation(Simulation<B>),
     Counter { evals: u64, moves: u64 },
 }
 
-// A full game.
-#[derive(Debug, Clone)]
-pub struct Simulation {
-    won_by: Player,
-    positions: Vec<Position>,
+/// A full game.
+#[derive(Debug)]
+pub struct Simulation<B> {
+    outcome: Outcome,
+    positions: Vec<Position<B>>,
 }
 
-// A single position in a game.
-#[derive(Debug, Clone)]
-pub struct Position {
-    board: Board,
+/// A single position in a game.
+#[derive(Debug)]
+pub struct Position<B> {
+    board: B,
     should_store: bool,
 
-    wdl: WDL,
-    policy: Vec<f32>,
+    /// The enhanced MCTS evaluation, not the immediate network output.
+    evaluation: ZeroEvaluation,
 }
 
-impl<G: Generator> Settings<G> {
-    pub fn run(&self) {
-        println!("{:#?}", self);
+impl<B: Board, G: Generator<B>, F: FnMut(Simulation<B>) -> ()> Settings<B, G, F> {
+    pub fn run(self) {
+        let Settings { game_count, output, start_board, move_selector, generator } = self;
 
-        //open output file
-        let output_path = PathBuf::from(&self.output_path);
-        let output_folder = output_path.parent()
-            .expect("Output should be in a folder");
-        std::fs::create_dir_all(output_folder)
-            .expect("Failed to create output directory");
-        let file = File::create(&self.output_path)
-            .expect("Failed to open output file");
-        let mut writer = BufWriter::new(&file);
+        println!("{:#?}", generator);
+        println!("start_board: {:?}", start_board);
+        println!("move_selector: {:?}", move_selector);
+        println!("game_count: {}", game_count);
 
         let (sender, receiver) = channel::unbounded();
-        let start_counter_left = StartGameCounter::new(self.game_count);
+        let start_counter = StartGameCounter::new(self.game_count);
 
         scope(|s| {
-            let thread_params = self.generator.thread_params();
+            let thread_params = generator.thread_params();
             println!("Spawning {} threads", thread_params.len());
 
             for (i, thread_param) in thread_params.into_iter().enumerate() {
                 s.builder()
                     .name(format!("worker-{}", i))
-                    .spawn(closure!(
-                            ref self.move_selector, ref start_counter_left, ref sender,
-                            |_| {
-                                // ignore "sender disconnected" errors, that just means
-                                let _ = self.generator.thread_main(move_selector, thread_param, start_counter_left, sender);
-                            }
-                        ))
+                    .spawn(|_| {
+                        generator.thread_main(&start_board, move_selector, thread_param, &start_counter, sender.clone())
+                    })
                     .expect("Failed to spawn thread");
             }
 
             println!("Start collecting");
-            collect::collect(&mut writer, self.game_count, &receiver);
+            collect::collect(game_count, &receiver, output);
 
             //scope automatically joins the threads
             //  they should all stop automatically once there are no more games to start
@@ -144,15 +142,24 @@ impl<G: Generator> Settings<G> {
 }
 
 impl MoveSelector {
-    fn select(&self, move_count: u32, policy: &[f32], rng: &mut impl Rng) -> usize {
-        if move_count > self.inf_temp_move_count {
-            //pick the best move
-            policy.iter().copied().map(OrderedFloat).position_max().unwrap()
+    pub fn select(&self, move_count: u32, policy: impl IntoIterator<Item=f32>, rng: &mut impl Rng) -> usize {
+        let temperature = if move_count > self.zero_temp_move_count { 0.0 } else { self.temperature };
+        assert!(temperature >= 0.0);
+
+        let policy = policy.into_iter();
+
+        // we handle the extreme cases separately, in theory that would not be necessary but they're degenerate
+        if temperature == 0.0 {
+            // pick the best move
+            policy.map(N32::from).position_max().unwrap()
+        } else if temperature == f32::INFINITY {
+            // pick a random move
+            rng.gen_range(0..policy.count())
         } else {
-            //pick a random move following the policy
-            let distr = WeightedIndex::new(policy).unwrap();
-            distr.sample(rng)
+            // pick according to `policy ** (1/temperature)`
+            let policy_temp = policy.map(|p| p.powf(1.0 / temperature));
+            let distr = WeightedIndex::new(policy_temp).unwrap();
+            rng.sample(distr)
         }
     }
 }
-

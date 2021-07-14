@@ -50,7 +50,7 @@ fn main() {
     let settings = Settings {
         game_count: args.game_count,
         output_path: args.output_path,
-        move_selector: MoveSelector { inf_temp_move_count: args.inf_temp_move_count },
+        move_selector: MoveSelector { zero_temp_move_count: args.inf_temp_move_count },
         generator: ZeroGeneratorSettings {
             batch_size: args.batch_size,
             full_search_prob: args.full_search_prob,
