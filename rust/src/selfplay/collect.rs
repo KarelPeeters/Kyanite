@@ -5,12 +5,12 @@ use sttt::board::Board;
 use ta::indicators::ExponentialMovingAverage;
 use ta::Next;
 
-use crate::selfplay::{Message, Simulation};
+use crate::selfplay::{Message, Output};
 
 pub(super) fn collect<B: Board>(
     game_count: u64,
     receiver: &Receiver<Message<B>>,
-    mut output: impl FnMut(Simulation<B>) -> (),
+    mut output: impl Output<B>,
 ) {
     //performance metrics
     let mut total_eval_count = 0;
@@ -47,7 +47,7 @@ pub(super) fn collect<B: Board>(
                 total_pos_count += simulation.positions.len() as u64;
                 total_game_count += 1;
 
-                output(simulation);
+                output.append(simulation);
             }
             Message::Counter { moves, evals } => {
                 total_eval_count += evals;

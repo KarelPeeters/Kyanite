@@ -898,8 +898,8 @@ dependencies = [
  "base64",
  "log",
  "ring",
- "sct",
- "webpki",
+    "sct",
+    "webpki",
 ]
 
 [[package]]
@@ -909,13 +909,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 
 [[package]]
+name = "safe-transmute"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
+
+[[package]]
 name = "schannel"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f05ba609c234e60bee0d547fe94a4c7e9da733d1c962cf6e59efa4cd9c8bc75"
 dependencies = [
- "lazy_static",
- "winapi",
+    "lazy_static",
+    "winapi",
 ]
 
 [[package]]
@@ -1032,21 +1038,22 @@ dependencies = [
 name = "sttt-zero"
 version = "0.1.0"
 dependencies = [
- "crossbeam",
- "decorum",
- "internal-iterator",
- "itertools",
- "num_cpus",
- "onnxruntime",
- "rand 0.8.4",
- "rand_distr",
- "rayon",
- "self_cell",
- "serde",
- "serde_json",
- "sttt",
- "ta",
- "tch",
+    "crossbeam",
+    "decorum",
+    "internal-iterator",
+    "itertools",
+    "num_cpus",
+    "onnxruntime",
+    "rand 0.8.4",
+    "rand_distr",
+    "rayon",
+    "safe-transmute",
+    "self_cell",
+    "serde",
+    "serde_json",
+    "sttt",
+    "ta",
+    "tch",
 ]
 
 [[package]]

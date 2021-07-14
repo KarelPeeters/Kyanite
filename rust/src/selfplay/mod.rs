@@ -10,16 +10,20 @@ use rand::distributions::WeightedIndex;
 use rand::Rng;
 use sttt::board::{Board, Outcome};
 
-use crate::evaluation::ZeroEvaluation;
+use crate::evaluation::{WDL, ZeroEvaluation};
 
 mod collect;
 // pub mod generate_zero;
 pub mod generate_mcts;
 
+pub trait Output<B> {
+    fn append(&mut self, simulation: Simulation<B>);
+}
+
 #[derive(Debug)]
-pub struct Settings<B, G: Generator<B>, F: FnMut(Simulation<B>) -> ()> {
+pub struct Settings<B, G: Generator<B>, O: Output<B>> {
     pub game_count: u64,
-    pub output: F,
+    pub output: O,
 
     pub start_board: B,
     pub move_selector: MoveSelector,
@@ -100,14 +104,23 @@ pub struct Simulation<B> {
 /// A single position in a game.
 #[derive(Debug)]
 pub struct Position<B> {
-    board: B,
-    should_store: bool,
+    pub board: B,
+    pub should_store: bool,
 
     /// The enhanced MCTS evaluation, not the immediate network output.
-    evaluation: ZeroEvaluation,
+    pub evaluation: ZeroEvaluation,
 }
 
-impl<B: Board, G: Generator<B>, F: FnMut(Simulation<B>) -> ()> Settings<B, G, F> {
+/// A position with the final `WDL`, zero `WDL` and zero policy.
+/// Returned by iterating over a `Simulation`.
+#[derive(Debug)]
+pub struct StorePosition<B: Board> {
+    pub board: B,
+    pub final_wdl: WDL,
+    pub evaluation: ZeroEvaluation,
+}
+
+impl<B: Board, G: Generator<B>, O: Output<B>> Settings<B, G, O> {
     pub fn run(self) {
         let Settings { game_count, output, start_board, move_selector, generator } = self;
 
@@ -138,6 +151,19 @@ impl<B: Board, G: Generator<B>, F: FnMut(Simulation<B>) -> ()> Settings<B, G, F>
             //scope automatically joins the threads
             //  they should all stop automatically once there are no more games to start
         }).unwrap();
+    }
+}
+
+impl<B: Board + 'static> Simulation<B> {
+    pub fn iter(self) -> impl Iterator<Item=StorePosition<B>> {
+        let Simulation { outcome, positions } = self;
+
+        positions.into_iter()
+            .filter(|pos| pos.should_store)
+            .map(move |pos| {
+                let final_wdl = WDL::from_outcome(outcome, pos.board.next_player());
+                StorePosition { board: pos.board, final_wdl, evaluation: pos.evaluation }
+            })
     }
 }
 
