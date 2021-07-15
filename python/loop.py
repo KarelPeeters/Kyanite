@@ -11,17 +11,22 @@ import torch
 from torch.optim import Adam
 
 from train import TrainSettings, train_model, TrainState
-from util import DATA_WIDTH, GenericData, load_data, DEVICE, GoogleData
+from util import DATA_WIDTH, GameData, load_data, DEVICE
 
 
 @dataclass
 class SelfplaySettings:
+    game: str
     game_count: int
 
-    inf_temp_move_count: int
+    temperature: float
+    zero_temp_move_count: int
+
     keep_tree: bool
     dirichlet_alpha: float
     dirichlet_eps: float
+
+    max_game_length: int
 
     full_search_prob: float
     full_iterations: int
@@ -76,13 +81,15 @@ class Generation:
             gi=gi,
             prev_gen_folder=prev_gen_folder,
             gen_folder=gen_folder,
-            games_path=path.join(gen_folder, "games_from_prev.csv"),
+            games_path=path.join(gen_folder, "games_from_prev.bin"),
             prev_network_path=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
             if gi != 0 else settings.initial_network,
             next_network_path=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
         )
 
 
+# TODO buffer may not fit in memory, load files in sequence instead
+#   extra advantage: the last gen will always be trained on last
 class Buffer:
     def __init__(self, max_gen_count: int, test_fraction: float, min_test_size: int):
         self.max_gen_count = max_gen_count
@@ -92,13 +99,11 @@ class Buffer:
         self.buffer = torch.zeros(0, DATA_WIDTH)
         self.gen_lengths = []
 
-        self.train_data: Optional[GoogleData] = None
-        self.test_data: Optional[GoogleData] = None
+        self.train_data: Optional[GameData] = None
+        self.test_data: Optional[GameData] = None
 
-    def push(self, data: GenericData):
-        split_index = min(int(self.test_fraction * len(data)), self.min_test_size)
-        test_data = data.pick_batch(slice(None, split_index))
-        train_data = data.pick_batch(slice(split_index, None))
+    def push_load_path(self, games_path: str):
+        train_data, test_data = load_data(games_path, self.test_fraction, limit=None)
 
         if len(self.gen_lengths) == self.max_gen_count:
             start = self.gen_lengths[0]
@@ -109,24 +114,28 @@ class Buffer:
         self.gen_lengths.append(len(train_data))
         self.buffer = torch.cat([self.buffer[start:], train_data.full], dim=0)
 
-        self.train_data = GoogleData.from_generic(GenericData(self.buffer)).to(DEVICE)
-        # TODO the full set be used as test data? should we just drop the idea of test data altogether?
-        self.test_data = GoogleData.from_generic(test_data).to(DEVICE)
+        self.train_data = GameData(self.buffer).to(DEVICE)
+        self.test_data = test_data.to(DEVICE)
 
     def __len__(self):
         return len(self.buffer)
 
 
-def generate_selfplay_games(gen: Generation) -> GenericData:
+def generate_selfplay_games(gen: Generation):
+    """Run the selfplay program, which will generate games and save them to gen.games.path"""
+
     arg_dict = gen.settings.selfplay_settings.to_dict()
     arg_dict["output_path"] = gen.games_path
     arg_dict["network_path"] = gen.prev_network_path
 
-    command = "cargo run --manifest-path rust/Cargo.toml --release --bin selfplay_cmd".split(" ") + [
+    # TODO go back to release
+    command = "cargo run --manifest-path rust/Cargo.toml --bin selfplay_cmd".split(" ") + [
         json.dumps(arg_dict)]
     print(f"Running command {command}")
 
-    p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
+    env = os.environ.copy()
+    env["RUSTFLAGS"]="-C target-cpu=native"
+    p = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
     for line in p.stdout:
         print(line, end="")
     p.wait()
@@ -134,8 +143,6 @@ def generate_selfplay_games(gen: Generation) -> GenericData:
         print(f"Process exited with error code {p.returncode}")
         print(p.stderr)
         raise subprocess.CalledProcessError(p.returncode, command)
-
-    return load_data(gen.games_path, shuffle=True)
 
 
 def train_new_network(buffer: Buffer, gen: Generation):
@@ -166,7 +173,7 @@ def load_resume_buffer(settings: LoopSettings, last_finished_gi: int) -> Buffer:
     buffer = settings.new_buffer()
     for gi in range(last_finished_gi + 1):
         gen = Generation.from_gi(gi, settings)
-        buffer.push(load_data(gen.games_path, shuffle=True))
+        buffer.push_load_path(gen.games_path)
     return buffer
 
 
@@ -191,8 +198,8 @@ def run_loop(settings: LoopSettings):
         gen = Generation.from_gi(gi, settings)
         os.makedirs(gen.gen_folder, exist_ok=True)
 
-        new_games = generate_selfplay_games(gen)
-        buffer.push(new_games)
+        generate_selfplay_games(gen)
+        buffer.push_load_path(gen.games_path)
 
         print(f"Buffer size: {len(buffer)}")
 

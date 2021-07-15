@@ -13,7 +13,7 @@ use sttt::board::{Board, Outcome};
 use crate::evaluation::{WDL, ZeroEvaluation};
 
 mod collect;
-// pub mod generate_zero;
+pub mod generate_zero;
 pub mod generate_mcts;
 
 pub trait Output<B> {
@@ -49,22 +49,23 @@ pub trait Generator<B>: Debug + Sync {
 
 #[derive(Debug, Copy, Clone)]
 pub struct MoveSelector {
-    /// After this number of moves, use temperature zero to always select the best move.
-    pub zero_temp_move_count: u32,
-
     /// The temperature applied to the policy before sampling. Can be any positive value.
     /// * `0.0`: always pick the move with highest policy
     /// * `inf`: pick a completely random move
     pub temperature: f32,
+
+    /// After this number of moves, use temperature zero to always select the best move.
+    pub zero_temp_move_count: u32,
 }
 
 impl MoveSelector {
-    pub fn new(zero_temp_move_count: u32, temperature: f32) -> Self {
+    pub fn new(temperature: f32, zero_temp_move_count: u32) -> Self {
         MoveSelector { zero_temp_move_count, temperature }
     }
 
+    /// Always select the move with the maximum policy, ie. temperature 0.
     pub fn zero_temp() -> Self {
-        Self::new(0, 0.0)
+        Self::new(0.0, 0)
     }
 }
 

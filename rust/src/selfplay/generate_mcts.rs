@@ -55,7 +55,7 @@ impl<B: Board> Generator<B> for MCTSGeneratorSettings {
                         let children = root.children.unwrap();
 
                         let policy = children.iter().map(|child| {
-                            (tree[child].visits as f32) / ((root.visits - 1) as f32)
+                            tree[child].visits as f32 / root.visits as f32
                         }).collect_vec();
 
                         let picked_index = move_selector.select(move_count, policy.iter().copied(), &mut rng);

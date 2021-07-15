@@ -1,23 +1,24 @@
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
 use crossbeam::channel::Sender;
 use itertools::Itertools;
 use itertools::izip;
 use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
-use sttt::board::Board;
+use sttt::board::{Board, Outcome};
 
+use crate::evaluation::ZeroEvaluation;
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
 use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 
 #[derive(Debug)]
-pub struct ZeroGeneratorSettings<S: NetworkSettings> {
+pub struct ZeroGeneratorSettings<B: Board, S: NetworkSettings<B>> {
     // performance settings
     pub batch_size: usize,
 
     // settings that effect the generated games
-    //TODO add random moves with less visits to reduce value overfitting
     pub network: S,
     pub zero_settings: ZeroSettings,
 
@@ -28,72 +29,23 @@ pub struct ZeroGeneratorSettings<S: NetworkSettings> {
     pub keep_tree: bool,
     pub dirichlet_alpha: f32,
     pub dirichlet_eps: f32,
+
+    pub max_game_length: u32,
+
+    pub ph: PhantomData<B>,
 }
 
-pub trait NetworkSettings: Debug + Sync {
+pub trait NetworkSettings<B: Board>: Debug + Sync {
     type ThreadParam: Send;
-    type Network: Network;
+    type Network: Network<B>;
 
     fn load_network(&self, param: Self::ThreadParam) -> Self::Network;
 
     fn thread_params(&self) -> Vec<Self::ThreadParam>;
 }
 
-#[cfg(feature = "torch")]
-pub mod settings_torch {
-    use tch::Device;
-
-    use crate::network::google_torch::GoogleTorchNetwork;
-    use crate::selfplay::generate_zero::NetworkSettings;
-
-    #[derive(Debug)]
-    pub struct GoogleTorchSettings {
-        pub path: String,
-        pub devices: Vec<Device>,
-        pub threads_per_device: usize,
-    }
-
-    impl NetworkSettings for GoogleTorchSettings {
-        type ThreadParam = Device;
-        type Network = GoogleTorchNetwork;
-
-        fn load_network(&self, init: Self::ThreadParam) -> Self::Network {
-            GoogleTorchNetwork::load(&self.path, init)
-        }
-
-        fn thread_params(&self) -> Vec<Self::ThreadParam> {
-            self.devices.repeat(self.threads_per_device)
-        }
-    }
-}
-
-#[cfg(feature = "onnx")]
-pub mod settings_onnx {
-    use crate::network::google_onnx::GoogleOnnxNetwork;
-    use crate::selfplay::generate_zero::NetworkSettings;
-
-    #[derive(Debug)]
-    pub struct GoogleOnnxSettings {
-        pub path: String,
-        pub num_threads: usize,
-    }
-
-    impl NetworkSettings for GoogleOnnxSettings {
-        type ThreadParam = ();
-        type Network = GoogleOnnxNetwork;
-
-        fn load_network(&self, _: ()) -> Self::Network {
-            GoogleOnnxNetwork::load(&self.path)
-        }
-
-        fn thread_params(&self) -> Vec<()> {
-            vec![(); self.num_threads]
-        }
-    }
-}
-
-impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
-    fn new_zero(&self, tree: Tree, rng: &mut impl Rng) -> ZeroState {
+impl<B: Board, S: NetworkSettings<B>> ZeroGeneratorSettings<B, S> {
+    fn new_zero(&self, tree: Tree<B>, rng: &mut impl Rng) -> ZeroState<B> {
         let iterations = if rng.gen_bool(self.full_search_prob) {
             self.full_iterations
         } else {
@@ -103,11 +55,11 @@ impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
         ZeroState::new(tree, iterations, self.zero_settings)
     }
 
-    fn new_zero_root(&self, rng: &mut impl Rng) -> ZeroState {
-        self.new_zero(Tree::new(Board::new()), rng)
+    fn new_zero_root(&self, start_board: &B, rng: &mut impl Rng) -> ZeroState<B> {
+        self.new_zero(Tree::new(start_board.clone()), rng)
     }
 
-    fn add_dirichlet_noise(&self, tree: &mut Tree, rng: &mut impl Rng) {
+    fn add_dirichlet_noise(&self, tree: &mut Tree<B>, rng: &mut impl Rng) {
         let children = tree[0].children
             .expect("root node has no children yet, it must have been visited at least once");
 
@@ -122,7 +74,7 @@ impl<S: NetworkSettings> ZeroGeneratorSettings<S> {
     }
 }
 
-impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
+impl<B: Board, S: NetworkSettings<B>> Generator<B> for ZeroGeneratorSettings<B, S> {
     type ThreadParam = S::ThreadParam;
 
     fn thread_params(&self) -> Vec<Self::ThreadParam> {
@@ -131,17 +83,18 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
 
     fn thread_main(
         &self,
-        move_selector: &MoveSelector,
+        start_board: &B,
+        move_selector: MoveSelector,
         thread_param: S::ThreadParam,
         start_counter: &StartGameCounter,
-        sender: &Sender<Message>,
+        sender: Sender<Message<B>>,
     ) {
         let mut network = self.network.load_network(thread_param);
         let rng = &mut thread_rng();
 
-        let mut games: Vec<GameState> = vec![];
-        let mut requests: Vec<Request> = vec![];
-        let mut responses: Vec<Response> = vec![];
+        let mut games: Vec<GameState<B>> = vec![];
+        let mut requests: Vec<Request<B>> = vec![];
+        let mut responses: Vec<Response<B>> = vec![];
 
         loop {
             let mut total_move_count = 0;
@@ -152,7 +105,7 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             let mut kept_games = vec![];
 
             for (mut game, response) in izip!(games.drain(..), responses.drain(..)) {
-                let (request, move_count) = game.run_until_request(rng, move_selector, self, Some(response), sender);
+                let (request, move_count) = game.run_until_request(rng, move_selector, self, Some(response), &sender);
                 total_move_count += move_count;
 
                 if let Some(request) = request {
@@ -167,8 +120,8 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
             // create new games until we have enough and run them once
             let new_game_count = start_counter.request_up_to((self.batch_size - games.len()) as u64);
             for _ in 0..new_game_count {
-                let mut game = GameState::new(self.new_zero_root(rng));
-                let (request, move_count) = game.run_until_request(rng, move_selector, self, None, sender);
+                let mut game = GameState::new(self.new_zero_root(start_board, rng));
+                let (request, move_count) = game.run_until_request(rng, move_selector, self, None, &sender);
 
                 total_move_count += move_count;
                 let request = request.expect("The first run of a gamestate should always returns a request");
@@ -193,14 +146,14 @@ impl<S: NetworkSettings> Generator for ZeroGeneratorSettings<S> {
 
 // The state kept while generating a new game.
 #[derive(Debug)]
-struct GameState {
-    zero: ZeroState,
+struct GameState<B: Board> {
+    zero: ZeroState<B>,
     needs_dirichlet: bool,
-    positions: Vec<Position>,
+    positions: Vec<Position<B>>,
 }
 
-impl GameState {
-    fn new(zero: ZeroState) -> Self {
+impl<B: Board> GameState<B> {
+    fn new(zero: ZeroState<B>) -> Self {
         GameState { zero, needs_dirichlet: true, positions: vec![] }
     }
 
@@ -210,11 +163,11 @@ impl GameState {
     fn run_until_request(
         &mut self,
         rng: &mut impl Rng,
-        move_selector: &MoveSelector,
-        settings: &ZeroGeneratorSettings<impl NetworkSettings>,
-        response: Option<Response>,
-        sender: &Sender<Message>,
-    ) -> (Option<Request>, u64) {
+        move_selector: MoveSelector,
+        settings: &ZeroGeneratorSettings<B, impl NetworkSettings<B>>,
+        response: Option<Response<B>>,
+        sender: &Sender<Message<B>>,
+    ) -> (Option<Request<B>>, u64) {
         let mut response = response;
         let mut move_count = 0;
 
@@ -237,9 +190,9 @@ impl GameState {
                     let policy = tree.policy().collect_vec();
 
                     //pick a move to play
-                    let picked_index = move_selector.select(tree.root_board().count_tiles(), &policy, rng);
+                    let picked_index = move_selector.select(self.positions.len() as u32, policy.iter().copied(), rng);
                     let picked_child = tree[0].children.unwrap().get(picked_index);
-                    let picked_move = tree[picked_child].coord.unwrap();
+                    let picked_move = tree[picked_child].last_move.unwrap();
 
                     //store this position
                     let iterations = self.zero.target_iterations;
@@ -249,13 +202,21 @@ impl GameState {
                     self.positions.push(Position {
                         board: self.zero.tree.root_board().clone(),
                         should_store,
-                        wdl: tree.wdl(),
-                        policy,
+                        evaluation: ZeroEvaluation {
+                            wdl: tree.wdl(),
+                            policy,
+                        },
                     });
                     move_count += 1;
 
-                    //keep the tree for the picked move
-                    match tree.keep_move(picked_move) {
+                    // decide whether to continue this game
+                    let result = if self.positions.len() as u32 >= settings.max_game_length {
+                        KeepResult::Done(Outcome::Draw)
+                    } else {
+                        tree.keep_move(picked_move)
+                    };
+
+                    match result {
                         KeepResult::Tree(next_tree) => {
                             //continue playing this game, either by keeping part of the tree or starting a new one on the next board
                             if settings.keep_tree {
@@ -264,9 +225,9 @@ impl GameState {
                                 self.zero = settings.new_zero(Tree::new(next_tree.root_board().clone()), rng)
                             }
                         }
-                        KeepResult::Done(won_by) => {
+                        KeepResult::Done(outcome) => {
                             //record this game
-                            let simulation = Simulation { won_by, positions: std::mem::take(&mut self.positions) };
+                            let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
                             sender.send(Message::Simulation(simulation)).unwrap();
 
                             //report that this game is done

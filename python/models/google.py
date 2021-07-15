@@ -52,14 +52,12 @@ class ResBlock(nn.Module):
         return y
 
 
-# TODO think about not allowing the policy computation to access the mask?
 class GoogleModel(nn.Module):
     def __init__(
             self,
             channels: int,
             blocks: int,
             wdl_channels: int, wdl_size: int,
-            policy_channels: int,
             res: bool,
             squeeze_size: Optional[int], squeeze_bias: bool,
     ):
@@ -77,26 +75,23 @@ class GoogleModel(nn.Module):
         super().__init__()
 
         self.common_tower = nn.Sequential(
-            nn.Conv2d(5, channels, (3, 3), padding=(1, 1), bias=False),
+            nn.Conv2d(3, channels, (3, 3), padding=(1, 1), bias=False),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
             *(ResBlock(channels, res, squeeze_size, squeeze_bias) for _ in range(blocks))
         )
 
         self.policy_head = nn.Sequential(
-            nn.Conv2d(channels, policy_channels, (1, 1), bias=False),
-            nn.BatchNorm2d(policy_channels),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(policy_channels * 9 * 9, 9 * 9),
+            nn.Conv2d(channels, 17, (1, 1)),
         )
 
+        # TODO try average pooling over channels instead
         self.wdl_head = nn.Sequential(
             nn.Conv2d(channels, wdl_channels, (1, 1), bias=False),
             nn.BatchNorm2d(wdl_channels),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(wdl_channels * 9 * 9, wdl_size),
+            nn.Linear(wdl_channels * 7 * 7, wdl_size),
             nn.ReLU(),
             nn.Linear(wdl_size, 3),
         )
@@ -111,6 +106,6 @@ class GoogleModel(nn.Module):
 
         common = self.common_tower(input)
         wdl = self.wdl_head(common)
-        policy = self.policy_head(common).view(-1, 9, 9)
+        policy = self.policy_head(common)
 
         return wdl, policy

@@ -9,36 +9,48 @@ from matplotlib import pyplot
 from torch import nn
 from torch.optim import Optimizer
 
-from util import DEVICE, GoogleData, linspace_int, uniform_window_filter, GenericData
+from util import DEVICE, linspace_int, uniform_window_filter, GameData
 
 
 def cross_entropy_masked(logits, target, mask):
-    assert len(logits.shape) == 2
-    assert logits.shape == target.shape
+    assert len(logits.shape) == 2, logits.shape
+    assert logits.shape == target.shape, (logits.shape, target.shape)
+    assert mask is None or logits.shape == mask.shape, (logits.shape, mask.shape)
 
+    # ignore empty masks
+    if mask is not None:
+        mask_empty = mask.sum(dim=1) == 0
+        logits = logits[~mask_empty, :]
+        target = target[~mask_empty, :]
+        mask = mask[~mask_empty, :]
+
+    # the mechanism for ignoring masked values:
+    #   log converts 0->-inf, 1->0
+    #   log_softmax converts -inf->nan
+    #   nansum then ignores these propagated nan values
     mask_log = mask.log() if mask is not None else 0
     log = torch.log_softmax(logits + mask_log, dim=1)
     loss = -(target * log).nansum(dim=1)
 
-    assert not loss.isinf().any(), \
-        "inf values in loss, maybe the mask and target contain impossible combinations?"
+    assert loss.isfinite().all(), \
+        "inf/nan values in loss, maybe the mask and target contain impossible combinations?"
 
     # average over batch dimension
     return loss.mean(dim=0)
 
 
-def evaluate_model(model, data: GenericData, target: 'WdlTarget'):
-    input = torch.cat([
-        data.tiles_o.view(-1, 2, 9, 9),
-        data.macros.view(-1, 2, 1, 9),
-    ], dim=2)
-    wdl_logit, policy_logit = model(data.mask_o.view(-1, 9, 9), input)
+def evaluate_model(model, data: GameData, target: 'WdlTarget'):
+    wdl_logit, policy_logit = model(data.board)
 
     wdl_target = target.get_target(data.wdl_final, data.wdl_est)
     wdl_loss = cross_entropy_masked(wdl_logit, wdl_target, None)
-    move_loss = cross_entropy_masked(policy_logit, data.policy_o, data.mask_o)
+    policy_loss = cross_entropy_masked(
+        policy_logit.flatten(start_dim=1),
+        data.policy.flatten(start_dim=1),
+        data.policy_mask.flatten(start_dim=1)
+    )
 
-    return wdl_loss, move_loss
+    return wdl_loss, policy_loss
 
 
 class WdlTarget(Enum):
@@ -74,8 +86,8 @@ class TrainState:
 
     output_path: str
 
-    train_data: GenericData
-    test_data: GenericData
+    train_data: GameData
+    test_data: GameData
 
     optimizer: Optimizer
     scheduler: Any
@@ -106,7 +118,7 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
             plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss], device=DEVICE)
 
-            print(f"Test batch: {test_loss:.2f}, {test_value_loss:.2f}, {test_policy_loss:.2f}")
+            print(f"Test batch: {test_loss:.2f} = {test_value_loss:.2f} + c * {test_policy_loss:.2f}")
 
         model.train()
         train_value_loss, train_policy_loss = evaluate_model(model, train_data_batch, s.settings.wdl_target)
@@ -121,8 +133,8 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             next_plot_i += 1
 
         print(
-            f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.2f},"
-            f" {train_value_loss:.2f}, {train_policy_loss:.2f}")
+            f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.2f} ="
+            f" {train_value_loss:.2f} + c * {train_policy_loss:.2f}")
 
         s.optimizer.zero_grad()
         train_loss.backward()

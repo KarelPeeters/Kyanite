@@ -1,9 +1,7 @@
-from math import prod
-
 import torch
 from torch.optim import AdamW
 
-from models.basic import BasicModel
+from models.google import GoogleModel
 from train import TrainState, train_model, WdlTarget, TrainSettings
 from util import load_data, DEVICE, print_param_count
 
@@ -27,23 +25,22 @@ def main():
     # TODO this is completely wrong! we need to keep games separate between test and train sets!
     #   right now we're leaking like crazy!
 
-    # shuffle to avoid biasing test data towards longer games
-    # train_data, test_data = load_data("../data/esat3/games.csv", test_fraction=0.02)
-    train_data, test_data = load_data("../data/esat3/games.csv", test_fraction=0.02)
+    train_data, test_data = load_data("../data/ataxx/mcts_games.bin", test_fraction=0.02, limit=None)
 
     # print_data_stats(test_data, train_data)
 
     train_data = train_data.to(DEVICE)
     test_data = test_data.to(DEVICE)
 
-    # TODO this is okay for value, but policy is struggling :(
-    #   hypothesis: the messages (with relu!) are too small to carry the required information
-    #       maybe make messages smaller and instead carry a lot of state within each macro?
-    # model = MixModel(
-    #     depth=8, message_size=32, wdl_size=32,
-    #     same_weight=True,
-    # )
-    model = BasicModel(depth=4, size=256)
+    model = GoogleModel(
+        channels=8,
+        blocks=4,
+        wdl_channels=1,
+        wdl_size=32,
+        res=True,
+        squeeze_size=None,
+        squeeze_bias=False,
+    )
 
     print_param_count(model)
 
@@ -53,7 +50,7 @@ def main():
     batch_size = 256
     # cycles_per_epoch = 2
 
-    optimizer = AdamW(model.parameters(), weight_decay=1e-3)
+    optimizer = AdamW(model.parameters(), weight_decay=1e-5)
     # scheduler = CyclicLR(
     #     optimizer,
     #     base_lr=1e-4, max_lr=1e-2,
@@ -63,9 +60,9 @@ def main():
     # )
 
     settings = TrainSettings(
-        epochs=15,
+        epochs=2,
         wdl_target=WdlTarget.Final,
-        policy_weight=2.0,
+        policy_weight=1.0,
         batch_size=batch_size,
         plot_points=100,
         plot_smooth_points=50,
@@ -73,7 +70,7 @@ def main():
 
     state = TrainState(
         settings=settings,
-        output_path="../data/esat3/0_layer",
+        output_path="../data/ataxx/supervised_4/",
         train_data=train_data,
         test_data=test_data,
         optimizer=optimizer,

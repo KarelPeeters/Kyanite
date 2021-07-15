@@ -1,21 +1,20 @@
-import os
-from dataclasses import dataclass
+import random
 from math import prod
 from pathlib import Path
+from typing import Optional
 
-import h5py
+import numpy
 import numpy as np
 import torch
-from torch import Tensor, nn
+from torch import nn
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-# DEVICE = "cpu"
 print(f"Using device {DEVICE}")
 
-DATA_WIDTH = 3 + 3 + 81 + (3 * 81 + 2 * 9)
+DATA_WIDTH = 3 + 3 + 17 * 7 * 7 + 17 * 7 * 7 + 3 * 7 * 7
 
 
-class GenericData:
+class GameData:
     def __init__(self, full):
         assert len(full.shape) == 2
         assert full.shape[1] == DATA_WIDTH, f"Expected size {DATA_WIDTH}, got {full.shape[1]}"
@@ -31,153 +30,76 @@ class GenericData:
 
         self.wdl_final = take(3)
         self.wdl_est = take(3)
-        self.policy_o = take(81)
 
-        self.mask_o = take(81)
-        self.tiles_o = take(2 * 81).view(-1, 2, 81)
-        # for macros o and yx order are the same
-        self.macros = take(2 * 9).view(-1, 2, 9)
+        self.policy_mask = take(17 * 7 * 7).view(-1, 17, 7, 7)
+        self.policy = take(17 * 7 * 7).view(-1, 17, 7, 7)
+
+        self.board = take(3 * 7 * 7).view(-1, 3, 7, 7)
 
         assert i == DATA_WIDTH
 
     def to(self, device):
-        return GenericData(self.full.to(device))
+        return GameData(self.full.to(device))
 
     def random_symmetry(self):
-        picked = torch.randint(0, 8, size=(len(self),))
+        flip = bool(random.getrandbits(1))
+        k = random.randrange(4)
 
-        indices_o = SYMMETRY_INDICES_O[picked]
-        indices_oo = SYMMETRY_INDICES_OO[picked]
+        def transform(x):
+            assert len(x.shape) > 2, x.shape
+            assert x.shape[-1] == 7 and x.shape[-2] == 7, x.shape
 
-        return GenericData(
+            if flip:
+                x = x.flip(-1)
+            return x.rot90(k, [-1, -2])
+
+        return GameData(
             torch.cat([
-                self.full[:, :3 + 3],
-                torch.gather(self.full, dim=1, index=6 + indices_o),
-                torch.gather(self.full, dim=1, index=6 + 81 + indices_o),
-                torch.gather(self.full, dim=1, index=6 + 2 * 81 + indices_o),
-                torch.gather(self.full, dim=1, index=6 + 3 * 81 + indices_o),
-                torch.gather(self.full, dim=1, index=6 + 4 * 81 + indices_oo),
-                torch.gather(self.full, dim=1, index=6 + 4 * 81 + 9 + indices_oo),
+                self.wdl_final,
+                self.wdl_est,
+                transform(self.policy_mask).reshape(-1, 17 * 7 * 7),
+                transform(self.policy).reshape(-1, 17 * 7 * 7),
+                transform(self.board).reshape(-1, 3 * 7 * 7),
             ], dim=1)
         )
 
     def __getitem__(self, indices):
-        return GenericData(self.full[indices, :])
+        return GameData(self.full[indices, :])
 
     def __len__(self):
         return len(self.full)
 
 
-@dataclass
-class GoogleData:
-    input: Tensor
-    wdl_final: Tensor
-    wdl_est: Tensor
-    policy: Tensor
-
-    @staticmethod
-    def from_generic(data: GenericData):
-        o = o_tensor(data.full.device)
-        input = torch.cat([
-            data.mask_o[:, o].view(-1, 1, 9, 9),
-            data.tiles_o[:, :, o].view(-1, 2, 9, 9),
-            data.macros.repeat_interleave(9, 2)[:, :, o].view(-1, 2, 9, 9)
-        ], dim=1)
-        pred_policy = data.policy_o.view(-1, 81)[:, o].view(-1, 9, 9)
-
-        return GoogleData(
-            input=input,
-            wdl_final=data.wdl_final,
-            wdl_est=data.wdl_est,
-            policy=pred_policy
-        )
-
-    def to(self, device):
-        return GoogleData(
-            input=self.input.to(device),
-            wdl_final=self.wdl_final.to(device),
-            wdl_est=self.wdl_est.to(device),
-            policy=self.policy.to(device),
-        )
-
-    @property
-    def mask(self):
-        return self.input[:, 0, :, :]
-
-    def __len__(self):
-        return len(self.input)
-
-
-def convert_csv_to_h5(csv_path: str):
-    h5_path = os.path.splitext(csv_path)[0] + ".hdf5"
-
-    data = []
-    last_used_game_id = 0
-
-    print("Loading from CSV")
-    with open(csv_path, "r") as f_in:
-        game_id = 0
-
-        for line in f_in:
-            line = line.strip()
-            if line == "":
-                game_id += 1
-                continue
-
-            a = np.fromstring(line, sep=",", dtype=np.single)
-            a = np.insert(a, 0, game_id)
-            data.append(a)
-            last_used_game_id = game_id
-
-    data = np.stack(data, axis=0)
-
-    print("Writing to hdf5")
-    with h5py.File(h5_path, "w") as f:
-        s = f.create_dataset("games", data=data, compression="gzip")
-        s.attrs["game_count"] = last_used_game_id + 1
-
-    return h5_path
-
-
-def load_data(path, test_fraction: float) -> (GenericData, GenericData):
+def load_data(path, test_fraction: float, limit: Optional[int]) -> (GameData, GameData):
     """
-    Path must be either a csv of hdf5 file, the former is automatically converted to the latter.
-
+    Path must bo a .bin file.
     This function does not actually shuffle train and test data itself, but games are randomly split between them.
     This is okay because they're shuffled during training anyway.
     """
 
     path = Path(path)
 
-    assert path.suffix in [".hdf5", ".csv"], f"Unexpected extension '{path.suffix}'"
-
-    if path.suffix == ".csv":
-        csv_path = path
-        path = path.with_suffix(".hdf5")
-
-        if not path.exists() or os.path.getmtime(csv_path) > os.path.getmtime(path):
-            print(f"Converting {csv_path} to {path}")
-            convert_csv_to_h5(str(csv_path))
-        else:
-            print(f"Using cached data {path}")
+    assert path.suffix == ".bin", f"Unexpected extension '{path.suffix}'"
 
     print(f"Loading data")
+    count = -1 if limit is None else limit * (1 + DATA_WIDTH)
+    games = numpy.fromfile(path, dtype=np.float32, count=count)
+    if len(games) == 0:
+        raise ValueError(f"Empty file {path}")
 
-    with h5py.File(path, "r") as f:
-        games = f["games"]
-        game_count = games.attrs["game_count"]
-        games = torch.tensor(games[()])
+    games = torch.tensor(games).view(-1, 1 + DATA_WIDTH)
 
     print("Splitting data")
     game_ids = games[:, 0].round().long()
+    game_count = game_ids.max() + 1
     full = games[:, 1:]
 
     perm_games = torch.randperm(game_count)
     split_index = int((1 - test_fraction) * game_count)
 
     train_mask = perm_games[game_ids] < split_index
-    train_data = GenericData(full[train_mask, :])
-    test_data = GenericData(full[~train_mask, :])
+    train_data = GameData(full[train_mask, :])
+    test_data = GameData(full[~train_mask, :])
 
     print(f"Train size {len(train_data)}, test size {len(test_data)}")
     return train_data, test_data

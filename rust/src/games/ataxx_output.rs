@@ -66,7 +66,7 @@ impl Output<AtaxxBoard> for AtaxxBinaryOutput {
                     let index = moves.iter().position(|&cand| cand == mv).unwrap();
                     policy[index]
                 } else {
-                    -1.0
+                    0.0
                 }
             });
 
@@ -86,6 +86,14 @@ impl Output<AtaxxBoard> for AtaxxBinaryOutput {
     }
 }
 
+pub const FROM_DX_DY: [(i8, i8); 16] = [
+    (-2, -2), (-1, -2), (0, -2), (1, -2), (2, -2),
+    (-2, -1), (2, -1),
+    (-2, 0), (2, 0),
+    (-2, 1), (2, 1),
+    (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2),
+];
+
 /// Call f for each possible move, and push the returned values to output.
 /// Will push `(1+16)*7*7` values in total, using `0.0` for nonsense moves (jumps near the edge).
 fn extend_with_policy_order(output: &mut Vec<f32>, f: impl Fn(Move) -> f32) {
@@ -95,19 +103,16 @@ fn extend_with_policy_order(output: &mut Vec<f32>, f: impl Fn(Move) -> f32) {
 
     // Here we have to be careful to push 16 values every time,
     // and to keep the "from" axis first for consistency with the copy moves.
-    for dx in -2..=2i32 {
-        for dy in -2..=2i32 {
-            if dx.abs() != 2 && dy.abs() != 2 { continue; }
-            for to in Coord::all() {
-                let fx = to.x() as i32 + dx;
-                let fy = to.y() as i32 + dy;
+    for &(dx, dy) in &FROM_DX_DY {
+        for to in Coord::all() {
+            let fx = to.x() as i32 + dx as i32;
+            let fy = to.y() as i32 + dy as i32;
 
-                if (0..7).contains(&fx) && (0..7).contains(&fy) {
-                    let from = Coord::from_xy(fx as u8, fy as u8);
-                    output.push(f(Move::Jump { from, to }))
-                } else {
-                    output.push(0.0);
-                }
+            if (0..7).contains(&fx) && (0..7).contains(&fy) {
+                let from = Coord::from_xy(fx as u8, fy as u8);
+                output.push(f(Move::Jump { from, to }))
+            } else {
+                output.push(0.0);
             }
         }
     }

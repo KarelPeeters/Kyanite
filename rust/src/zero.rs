@@ -95,7 +95,12 @@ impl<N> Node<N> {
 
     /// The WDL of this node from the POV of the player that could play this move.
     pub fn wdl(&self) -> WDL {
-        self.total_wdl / self.visits as f32
+        //TODO why did we need to change this? did this call never happen for STTT if there were no visits? why?
+        if self.visits == 0 {
+            WDL::default()
+        } else {
+            self.total_wdl / self.visits as f32
+        }
     }
 
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {

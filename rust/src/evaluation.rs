@@ -33,6 +33,10 @@ impl WDL {
     pub fn value(self) -> f32 {
         self.win - self.loss
     }
+
+    pub fn sum(self) -> f32 {
+        self.win + self.draw + self.loss
+    }
 }
 
 impl std::ops::Neg for WDL {
