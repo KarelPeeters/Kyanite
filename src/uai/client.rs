@@ -37,11 +37,11 @@ pub fn run(mut bot: impl Bot<AtaxxBoard>) -> std::io::Result<()> {
                 println!("info < readyok");
             }
             Command::NewGame => {
-                curr_board = Some(AtaxxBoard::new_without_blocks());
+                curr_board = Some(AtaxxBoard::new_without_gaps());
             }
             Command::Position(position) => {
                 curr_board = Some(match position {
-                    Position::StartPos => AtaxxBoard::new_without_blocks(),
+                    Position::StartPos => AtaxxBoard::new_without_gaps(),
                     Position::Fen(fen) => AtaxxBoard::from_fen(fen),
                 })
             }

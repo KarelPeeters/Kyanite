@@ -25,6 +25,7 @@ pub struct AtaxxBoard {
     tiles_a: Tiles,
     tiles_b: Tiles,
     gaps: Tiles,
+    moves_since_last_copy: u8,
     next_player: Player,
     outcome: Option<Outcome>,
 }
@@ -35,16 +36,18 @@ impl AtaxxBoard {
             tiles_a: Tiles::empty(),
             tiles_b: Tiles::empty(),
             gaps: Tiles::empty(),
+            moves_since_last_copy: 0,
             next_player: Player::A,
             outcome: Some(Outcome::Draw),
         }
     }
 
-    pub fn new_without_blocks() -> Self {
+    pub fn new_without_gaps() -> Self {
         AtaxxBoard {
             tiles_a: Tiles::CORNERS_A,
             tiles_b: Tiles::CORNERS_B,
             gaps: Tiles::empty(),
+            moves_since_last_copy: 0,
             next_player: Player::A,
             outcome: None,
         }
@@ -104,7 +107,7 @@ impl AtaxxBoard {
         let a_pass = self.must_pass(self.tiles_a);
         let b_pass = self.must_pass(self.tiles_b);
 
-        let outcome = if a_empty && b_empty {
+        let outcome = if self.moves_since_last_copy >= 100 || (a_empty && b_empty) {
             Some(Outcome::Draw)
         } else if a_empty {
             Some(Outcome::WonBy(Player::B))
@@ -209,7 +212,9 @@ impl Board for AtaxxBoard {
                 self.next_player = self.next_player.other();
                 return;
             }
-            Move::Copy { to } => to,
+            Move::Copy { to } => {
+                to
+            }
             Move::Jump { from, to } => {
                 *next_tiles &= !Tiles::coord(from);
                 to
@@ -220,6 +225,11 @@ impl Board for AtaxxBoard {
         let converted = *other_tiles & to.copy_targets();
         *next_tiles |= to | converted;
         *other_tiles &= !converted;
+
+        self.moves_since_last_copy += 1;
+        if let Move::Copy { .. } = mv {
+            self.moves_since_last_copy = 0;
+        }
 
         self.update_outcome();
         self.next_player = self.next_player.other();
@@ -234,6 +244,7 @@ impl Board for AtaxxBoard {
             tiles_a: self.tiles_a.map(sym),
             tiles_b: self.tiles_b.map(sym),
             gaps: self.gaps.map(sym),
+            moves_since_last_copy: self.moves_since_last_copy,
             next_player: self.next_player,
             outcome: self.outcome,
         }
@@ -266,7 +277,7 @@ impl IntoIterator for Tiles {
     type IntoIter = std::iter::Map<BitIter<u64>, fn(u8) -> Coord>;
 
     fn into_iter(self) -> Self::IntoIter {
-        BitIter::new(self.0).map(|i| Coord::from_i(i as u8))
+        BitIter::new(self.0).map(|i| Coord::from_sparse_i(i as u8))
     }
 }
 
@@ -284,11 +295,11 @@ impl Tiles {
     }
 
     pub fn coord(coord: Coord) -> Tiles {
-        Tiles(1 << coord.i())
+        Tiles(1 << coord.sparse_i())
     }
 
     pub fn has(self, coord: Coord) -> bool {
-        (self.0 >> coord.i()) & 1 != 0
+        (self.0 >> coord.sparse_i()) & 1 != 0
     }
 
     pub fn is_empty(self) -> bool {
@@ -304,17 +315,17 @@ impl Tiles {
     }
 
     pub fn get_nth(self, index: u32) -> Coord {
-        Coord::from_i(get_nth_set_bit(self.0, index))
+        Coord::from_sparse_i(get_nth_set_bit(self.0, index))
     }
 
     #[must_use]
     pub fn set(self, coord: Coord) -> Self {
-        Tiles(self.0 | (1 << coord.i()))
+        Tiles(self.0 | (1 << coord.sparse_i()))
     }
 
     #[must_use]
     pub fn clear(self, coord: Coord) -> Self {
-        Tiles(self.0 & !(1 << coord.i()))
+        Tiles(self.0 & !(1 << coord.sparse_i()))
     }
 
     pub fn left(self) -> Self {
@@ -467,10 +478,10 @@ impl Coord {
     pub fn from_xy(x: u8, y: u8) -> Coord {
         assert!(x < 7);
         assert!(y < 7);
-        Coord(y * 8 + x)
+        Coord(x + 8 * y)
     }
 
-    pub fn from_i(i: u8) -> Coord {
+    pub fn from_sparse_i(i: u8) -> Coord {
         Coord::from_xy(i % 8, i / 8)
     }
 
@@ -482,8 +493,12 @@ impl Coord {
         self.0 / 8
     }
 
-    pub fn i(self) -> u8 {
+    pub fn sparse_i(self) -> u8 {
         self.0
+    }
+
+    pub fn dense_i(self) -> u8 {
+        self.x() + 7 * self.y()
     }
 
     pub fn distance(self, other: Coord) -> u8 {
@@ -640,7 +655,7 @@ impl Display for AtaxxBoard {
             }
 
             if y == 3 {
-                write!(f, "    {}", player_symbol(self.next_player))?;
+                write!(f, "    {}  {}", player_symbol(self.next_player), self.moves_since_last_copy)?;
             }
 
             writeln!(f)?;
