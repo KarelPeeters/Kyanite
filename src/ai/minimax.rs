@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Neg;
 
@@ -6,9 +7,8 @@ use internal_iterator::InternalIterator;
 
 use crate::ai::Bot;
 use crate::board::Board;
-use std::fmt::Debug;
 
-pub trait Heuristic<B: Board> : Debug {
+pub trait Heuristic<B: Board>: Debug {
     /// The type used to represent the heuristic value of a board.
     type V: Copy + Ord + Neg<Output=Self::V>;
 
@@ -63,6 +63,8 @@ pub fn minimax<B: Board, H: Heuristic<B>>(board: &B, heuristic: &H, depth: u32) 
 
 /// Fail-Soft Alpha-Beta Negamax, implementation based on
 /// https://www.chessprogramming.org/Alpha-Beta#cite_note-9
+/// TODO implement some mechanism to prefer the shortest sequence if winning, or the longest if losing,
+///  currently it's easy to get stuck in a loop
 fn negamax_recurse<B: Board, H: Heuristic<B>>(
     heuristic: &H,
     board: &B,

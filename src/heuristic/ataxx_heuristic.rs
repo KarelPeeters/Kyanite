@@ -17,8 +17,8 @@ impl AtaxxTileHeuristic {
 impl Default for AtaxxTileHeuristic {
     fn default() -> Self {
         AtaxxTileHeuristic {
-            tile_factor: 1,
-            surface_factor: 0,
+            tile_factor: 100,
+            surface_factor: 10,
         }
     }
 }
