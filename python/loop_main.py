@@ -4,13 +4,14 @@ import shutil
 import torch.jit
 
 from loop import LoopSettings, SelfplaySettings, run_loop
+from models.google import GoogleModel
 from train import TrainSettings, WdlTarget
 
 
 def main():
     selfplay_settings = SelfplaySettings(
         game="ataxx",
-        game_count=256,
+        game_count=8,
         temperature=1.0,
         zero_temp_move_count=20,
         max_game_length=300,
@@ -41,7 +42,8 @@ def main():
     os.makedirs(root_path, exist_ok=True)
     initial_path = os.path.join(root_path, "initial_network.pt")
 
-    model = torch.jit.load("data/ataxx/supervised_4/model_2_epochs.pt")
+    model = GoogleModel(64, 4, 2, 32, True, None, False)
+    model = torch.jit.script(model)
     torch.jit.save(model, initial_path)
 
     settings = LoopSettings(
