@@ -33,11 +33,11 @@ def main():
     test_data = test_data.to(DEVICE)
 
     model = GoogleModel(
-        channels=8,
+        channels=32,
         blocks=4,
         wdl_channels=1,
         wdl_size=32,
-        res=True,
+        res=True, separable=True,
         squeeze_size=None,
         squeeze_bias=False,
     )
@@ -70,7 +70,7 @@ def main():
 
     state = TrainState(
         settings=settings,
-        output_path="../data/ataxx/supervised_4/",
+        output_path="../data/ataxx/supervised_4_sep/",
         train_data=train_data,
         test_data=test_data,
         optimizer=optimizer,

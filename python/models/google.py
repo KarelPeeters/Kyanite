@@ -5,7 +5,7 @@ from torch import nn
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channels: int, res: bool, squeeze_size: Optional[int], squeeze_bias: bool):
+    def __init__(self, channels: int, res: bool, separable: bool, squeeze_size: Optional[int], squeeze_bias: bool):
         super().__init__()
 
         if squeeze_bias:
@@ -15,11 +15,22 @@ class ResBlock(nn.Module):
         self.squeeze_bias = squeeze_bias
         self.channels = channels
 
+        def conv():
+            if separable:
+                return [
+                    nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), bias=False, groups=channels),
+                    nn.Conv2d(channels, channels, (1, 1), bias=False),
+                ]
+            else:
+                return [
+                    nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), bias=False)
+                ]
+
         self.convs = nn.Sequential(
-            nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), bias=False),
+            *conv(),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
-            nn.Conv2d(channels, channels, (3, 3), padding=(1, 1), bias=False),
+            *conv(),
             nn.BatchNorm2d(channels),
         )
 
@@ -58,7 +69,7 @@ class GoogleModel(nn.Module):
             channels: int,
             blocks: int,
             wdl_channels: int, wdl_size: int,
-            res: bool,
+            res: bool, separable: bool,
             squeeze_size: Optional[int], squeeze_bias: bool,
     ):
         """
@@ -78,7 +89,7 @@ class GoogleModel(nn.Module):
             nn.Conv2d(3, channels, (3, 3), padding=(1, 1), bias=False),
             nn.BatchNorm2d(channels),
             nn.ReLU(),
-            *(ResBlock(channels, res, squeeze_size, squeeze_bias) for _ in range(blocks))
+            *(ResBlock(channels, res, separable, squeeze_size, squeeze_bias) for _ in range(blocks))
         )
 
         self.policy_head = nn.Sequential(
@@ -90,8 +101,9 @@ class GoogleModel(nn.Module):
             nn.Conv2d(channels, wdl_channels, (1, 1), bias=False),
             nn.BatchNorm2d(wdl_channels),
             nn.ReLU(),
+            nn.AvgPool2d((7, 7)),
             nn.Flatten(),
-            nn.Linear(wdl_channels * 7 * 7, wdl_size),
+            nn.Linear(wdl_channels, wdl_size),
             nn.ReLU(),
             nn.Linear(wdl_size, 3),
         )
