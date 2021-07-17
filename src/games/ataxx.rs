@@ -20,6 +20,8 @@ pub enum Move {
     Jump { from: Coord, to: Coord },
 }
 
+const MAX_MOVES_SINCE_LAST_COPY: u8 = 100;
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct AtaxxBoard {
     tiles_a: Tiles,
@@ -107,7 +109,7 @@ impl AtaxxBoard {
         let a_pass = self.must_pass(self.tiles_a);
         let b_pass = self.must_pass(self.tiles_b);
 
-        let outcome = if self.moves_since_last_copy >= 100 || (a_empty && b_empty) {
+        let outcome = if self.moves_since_last_copy >= MAX_MOVES_SINCE_LAST_COPY || (a_empty && b_empty) {
             Some(Outcome::Draw)
         } else if a_empty {
             Some(Outcome::WonBy(Player::B))
