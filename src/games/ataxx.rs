@@ -141,10 +141,6 @@ impl Board for AtaxxBoard {
         true
     }
 
-    fn game_length_bounds() -> (u32, Option<u32>) {
-        (3, None)
-    }
-
     fn next_player(&self) -> Player {
         self.next_player
     }

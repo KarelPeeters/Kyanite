@@ -107,10 +107,6 @@ impl Board for STTTBoard {
         false
     }
 
-    fn game_length_bounds() -> (u32, Option<u32>) {
-        (9 + 8, Some(81))
-    }
-
     fn next_player(&self) -> Player {
         self.next_player
     }

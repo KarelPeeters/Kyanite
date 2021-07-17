@@ -28,10 +28,6 @@ pub trait Board: Debug + Display + Clone + Eq + Hash + Send + Sync where for<'a>
     /// This may be pessimistic, returning `true` is always correct.
     fn can_lose_after_move() -> bool;
 
-    /// Return minimum and maximum possible games lengths. These bounds may be pessimistic,
-    /// returning `(0, None)` is always correct.
-    fn game_length_bounds() -> (u32, Option<u32>);
-
     /// Return the next player to make a move.
     /// If the board is done this is the player that did not play the last move for consistency.
     fn next_player(&self) -> Player;
