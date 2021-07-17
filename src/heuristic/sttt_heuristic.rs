@@ -1,5 +1,5 @@
 use crate::ai::minimax::Heuristic;
-use crate::board::{Board, Outcome};
+use crate::board::Board;
 use crate::games::sttt::{Coord, STTTBoard};
 
 #[derive(Debug)]
@@ -25,21 +25,21 @@ impl Heuristic<STTTBoard> for STTTTileHeuristic {
     }
 
     fn value(&self, board: &STTTBoard, length: u32) -> i32 {
-        // win
-        if let Some(Outcome::WonBy(player)) = board.outcome() {
-            return player.sign(board.next_player()) as i32 * (self.bound() - length as i32);
+        // done
+        if let Some(outcome) = board.outcome() {
+            return outcome.pov(board.next_player()).sign::<i32>() * (self.bound() - length as i32);
         }
 
         // tile
         let tile_value = Coord::all().map(|c| {
             self.oo_factor(c.om()) * self.oo_factor(c.os()) *
-                board.tile(c).map_or(0, |p| p.sign(board.next_player()) as i32)
+                board.tile(c).map_or(0, |p| p.sign(board.next_player()))
         }).sum::<i32>();
 
         // macro
         let macr_value = (0..9).map(|om| {
             self.oo_factor(om) *
-                board.macr(om).map_or(0, |p| p.sign(board.next_player()) as i32)
+                board.macr(om).map_or(0, |p| p.sign(board.next_player()))
         }).sum::<i32>() * self.macro_factor;
 
         tile_value + macr_value
@@ -47,8 +47,8 @@ impl Heuristic<STTTBoard> for STTTTileHeuristic {
 
     fn value_update(&self, board: &STTTBoard, board_value: i32, board_length: u32, mv: Coord, child: &STTTBoard) -> i32 {
         // win
-        if let Some(Outcome::WonBy(player)) = board.outcome() {
-            return player.sign(board.next_player()) as i32 * (self.bound() - (board_length + 1) as i32);
+        if board.outcome().is_some() {
+            return self.value(board, board_length + 1);
         }
 
         let mut neg_child_value = board_value;

@@ -56,7 +56,7 @@ impl<B: Board, R: Rng> Bot<B> for RolloutBot<R> {
                 while !copy.is_done() {
                     copy.play(copy.random_available_move(&mut self.rng))
                 }
-                copy.outcome().unwrap().sign(board.next_player()) as i64
+                copy.outcome().unwrap().pov(board.next_player()).sign::<i64>()
             }).sum();
 
             score

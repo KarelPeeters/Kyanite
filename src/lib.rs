@@ -2,6 +2,7 @@
 
 pub mod board;
 pub mod symmetry;
+pub mod wdl;
 
 pub mod games;
 pub mod ai;

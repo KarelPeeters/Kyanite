@@ -101,38 +101,11 @@ impl Player {
         }
     }
 
-    pub fn sign(self, pov: Player) -> i8 {
-        if self == pov { 1 } else { -1 }
-    }
-}
-
-impl Outcome {
-    pub fn other(self) -> Outcome {
-        match self {
-            Outcome::WonBy(player) => Outcome::WonBy(player.other()),
-            Outcome::Draw => Outcome::Draw,
-        }
-    }
-
-    pub fn unwrap_player(self) -> Player {
-        match self {
-            Outcome::WonBy(player) => player,
-            Outcome::Draw => panic!("Expected a player, got {:?}", self),
-        }
-    }
-
-    pub fn sign(self, pov: Player) -> i8 {
-        match self {
-            Outcome::WonBy(player) => player.sign(pov),
-            Outcome::Draw => 0,
-        }
-    }
-
-    pub fn inf_sign(self, pov: Player) -> f32 {
-        match self {
-            Outcome::WonBy(player) => player.sign(pov) as f32 * f32::INFINITY,
-            Outcome::Draw => 0.0,
+    pub fn sign<V: num::One + std::ops::Neg<Output=V>>(self, pov: Player) -> V {
+        if self == pov {
+            V::one()
+        } else {
+            -V::one()
         }
     }
 }
-

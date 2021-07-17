@@ -19,7 +19,7 @@ impl<B: Board> Heuristic<B> for SolverHeuristic {
 
     fn value(&self, board: &B, length: u32) -> i32 {
         board.outcome().map_or(0, |p| {
-            p.sign(board.next_player()) as i32 * (i32::MAX - length as i32)
+            p.pov(board.next_player()).sign::<i32>() * (i32::MAX - length as i32)
         })
     }
 }
