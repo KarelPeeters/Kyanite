@@ -602,8 +602,8 @@ impl AtaxxBoard {
     pub fn to_fen(&self) -> String {
         let mut s = String::new();
 
-        for y in 0..7 {
-            if y != 0 {
+        for y in (0..7).rev() {
+            if y != 6 {
                 write!(&mut s, "/").unwrap();
             }
 
@@ -642,6 +642,8 @@ impl AtaxxBoard {
 
 impl Display for AtaxxBoard {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.to_fen())?;
+
         for y in (0..7).rev() {
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
