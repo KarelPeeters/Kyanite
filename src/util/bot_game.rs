@@ -22,7 +22,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
 
     let game_count = if both_sides { 2 * games_per_side } else { games_per_side };
 
-    let result: ReductionResult = (0..game_count).into_par_iter().map(|i| {
+    let result: ReductionResult = (0..game_count).into_par_iter().panic_fuse().map(|i| {
         let mut bot_l = bot_l();
         let mut bot_r = bot_r();
 
@@ -72,18 +72,19 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     }).reduce(ReductionResult::default, ReductionResult::add);
 
     let draws = game_count - result.wins_l - result.wins_r;
+    let score_l = (result.wins_l as f32 + 0.5 * draws as f32) / (game_count as f32);
+    let elo = -400.0 * (1.0 / score_l - 1.0).log10();
+
     BotGameResult {
-        bot_l: debug_to_sting(&bot_l()),
-        bot_r: debug_to_sting(&bot_r()),
         game_count,
-        wins_l: result.wins_l,
-        wins_r: result.wins_r,
-        draws,
         win_rate_l: (result.wins_l as f32) / (game_count as f32),
-        win_rate_r: (result.wins_r as f32) / (game_count as f32),
         draw_rate: (draws as f32) / (game_count as f32),
+        win_rate_r: (result.wins_r as f32) / (game_count as f32),
+        elo_l: elo,
         time_l: result.total_time_l / (result.move_count_l as f32),
         time_r: result.total_time_r / (result.move_count_r as f32),
+        bot_l: debug_to_sting(&bot_l()),
+        bot_r: debug_to_sting(&bot_r()),
     }
 }
 
@@ -115,21 +116,21 @@ impl std::ops::Add for ReductionResult {
 #[derive(Debug)]
 #[must_use]
 pub struct BotGameResult {
-    game_count: u32,
-    wins_l: u32,
-    wins_r: u32,
-    draws: u32,
+    pub game_count: u32,
 
-    win_rate_l: f32,
-    win_rate_r: f32,
-    draw_rate: f32,
+    pub win_rate_l: f32,
+    pub draw_rate: f32,
+    pub win_rate_r: f32,
+
+    //elo of the left player, assuming the right elo is 0
+    pub elo_l: f32,
 
     //time per move in seconds
-    time_l: f32,
-    time_r: f32,
+    pub time_l: f32,
+    pub time_r: f32,
 
-    bot_l: String,
-    bot_r: String,
+    pub bot_l: String,
+    pub bot_r: String,
 }
 
 fn debug_to_sting(d: &impl Debug) -> String {
