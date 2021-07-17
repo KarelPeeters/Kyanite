@@ -115,9 +115,6 @@ impl std::ops::Add for ReductionResult {
 #[derive(Debug)]
 #[must_use]
 pub struct BotGameResult {
-    bot_l: String,
-    bot_r: String,
-
     game_count: u32,
     wins_l: u32,
     wins_r: u32,
@@ -130,6 +127,9 @@ pub struct BotGameResult {
     //time per move in seconds
     time_l: f32,
     time_r: f32,
+
+    bot_l: String,
+    bot_r: String,
 }
 
 fn debug_to_sting(d: &impl Debug) -> String {
