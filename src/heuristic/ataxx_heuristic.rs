@@ -1,6 +1,7 @@
 use crate::ai::minimax::Heuristic;
-use crate::board::{Board, Outcome};
+use crate::board::{Board};
 use crate::games::ataxx::{AtaxxBoard, Tiles};
+use crate::ai::solver::SolverHeuristic;
 
 #[derive(Debug)]
 pub struct AtaxxTileHeuristic {
@@ -39,12 +40,10 @@ impl Heuristic<AtaxxBoard> for AtaxxTileHeuristic {
         i32::MAX
     }
 
-    fn value(&self, board: &AtaxxBoard) -> Self::V {
-        if let Some(outcome) = board.outcome() {
-            match outcome {
-                Outcome::WonBy(player) => player.sign(board.next_player()) as i32 * i32::MAX,
-                Outcome::Draw => 0,
-            }
+    fn value(&self, board: &AtaxxBoard, length: u32) -> Self::V {
+        if let Some(_) = board.outcome() {
+            // return near-max values for wins/draws/losses
+            SolverHeuristic.value(board, length)
         } else {
             let (next, other) = board.tiles_pov();
             self.player_score(board, next) - self.player_score(board, other)

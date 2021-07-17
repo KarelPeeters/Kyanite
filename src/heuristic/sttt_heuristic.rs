@@ -24,10 +24,10 @@ impl Heuristic<STTTBoard> for STTTTileHeuristic {
         i32::MAX
     }
 
-    fn value(&self, board: &STTTBoard) -> i32 {
+    fn value(&self, board: &STTTBoard, length: u32) -> i32 {
         // win
         if let Some(Outcome::WonBy(player)) = board.outcome() {
-            return player.sign(board.next_player()) as i32 * self.bound();
+            return player.sign(board.next_player()) as i32 * (self.bound() - length as i32);
         }
 
         // tile
@@ -45,10 +45,10 @@ impl Heuristic<STTTBoard> for STTTTileHeuristic {
         tile_value + macr_value
     }
 
-    fn value_update(&self, board: &STTTBoard, board_value: i32, mv: Coord, child: &STTTBoard) -> i32 {
+    fn value_update(&self, board: &STTTBoard, board_value: i32, board_length: u32, mv: Coord, child: &STTTBoard) -> i32 {
         // win
         if let Some(Outcome::WonBy(player)) = board.outcome() {
-            return player.sign(board.next_player()) as i32 * self.bound();
+            return player.sign(board.next_player()) as i32 * (self.bound() - (board_length + 1) as i32);
         }
 
         let mut neg_child_value = board_value;

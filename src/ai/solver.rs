@@ -4,18 +4,23 @@ use crate::ai::Bot;
 use crate::ai::minimax::{Heuristic, minimax};
 use crate::board::{Board, Outcome, Player};
 
+/// Heuristic with `bound()-length` for win, `-bound()+length` for loss and 0 for draw.
+/// This means the sign of the final minimax value means forced win, forced loss or unknown, and the selected move is
+/// the shortest win of the longest loss.
 #[derive(Debug)]
-struct SolverHeuristic;
+pub struct SolverHeuristic;
 
 impl<B: Board> Heuristic<B> for SolverHeuristic {
-    type V = i8;
+    type V = i32;
 
     fn bound(&self) -> Self::V {
-        i8::MAX
+        i32::MAX
     }
 
-    fn value(&self, board: &B) -> i8 {
-        board.outcome().map_or(0, |p| p.sign(board.next_player()))
+    fn value(&self, board: &B, length: u32) -> i32 {
+        board.outcome().map_or(0, |p| {
+            p.sign(board.next_player()) as i32 * (i32::MAX - length as i32)
+        })
     }
 }
 
@@ -41,7 +46,7 @@ pub fn is_double_forced_draw(board: &impl Board, depth: u32) -> Result<bool, ()>
     if depth == 0 { return Err(()); }
 
     //TODO this is kind of ugly, consider writing a function try_fold or something
-    //  that handles this back and forth convertion
+    //  that handles this back and forth conversion
     let result = board.available_moves().find_map(|mv| {
         let child = board.clone_and_play(mv);
 
