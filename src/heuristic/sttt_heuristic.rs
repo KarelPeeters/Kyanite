@@ -1,6 +1,7 @@
 use crate::ai::minimax::Heuristic;
 use crate::board::Board;
 use crate::games::sttt::{Coord, STTTBoard};
+use crate::wdl::POV;
 
 #[derive(Debug)]
 pub struct STTTTileHeuristic {

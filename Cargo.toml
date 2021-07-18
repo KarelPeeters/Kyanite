@@ -17,6 +17,7 @@ internal-iterator = "0.1.2"
 num = "0.4.0"
 nom = "6.2.1"
 rand_xoshiro = "0.6.0"
+cast_trait = "0.1.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = "0.17.2"

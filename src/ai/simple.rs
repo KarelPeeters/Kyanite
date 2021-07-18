@@ -1,9 +1,11 @@
+use std::fmt::{Debug, Formatter};
+
+use internal_iterator::InternalIterator;
 use rand::Rng;
 
 use crate::ai::Bot;
 use crate::board::Board;
-use internal_iterator::InternalIterator;
-use std::fmt::{Debug, Formatter};
+use crate::wdl::POV;
 
 pub struct RandomBot<R: Rng> {
     rng: R,

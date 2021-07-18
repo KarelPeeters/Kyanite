@@ -42,6 +42,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cast_trait"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4f8d981c476baadf74cd52897866a1d279d3e14e2d5e2d9af045210e0ae6128"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,6 +486,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "sttt"
 version = "0.2.0"
 dependencies = [
+ "cast_trait",
  "decorum",
  "derive_more",
  "internal-iterator",

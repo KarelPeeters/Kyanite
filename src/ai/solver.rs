@@ -1,8 +1,11 @@
+use std::cmp::Ordering;
+
 use internal_iterator::InternalIterator;
 
 use crate::ai::Bot;
 use crate::ai::minimax::{Heuristic, minimax};
 use crate::board::{Board, Outcome, Player};
+use crate::wdl::POV;
 
 /// Heuristic with `bound()-length` for win, `-bound()+length` for loss and 0 for draw.
 /// This means the sign of the final minimax value means forced win, forced loss or unknown, and the selected move is
@@ -27,14 +30,10 @@ impl<B: Board> Heuristic<B> for SolverHeuristic {
 /// Return which player can force a win if any. Both forced draws and unknown results are returned as `None`.
 pub fn find_forcing_winner(board: &impl Board, depth: u32) -> Option<Player> {
     let value = minimax(board, &SolverHeuristic, depth).value;
-    if value == 1 {
-        Some(board.next_player())
-    } else if value == -1 {
-        Some(board.next_player().other())
-    } else if value == 0 {
-        None
-    } else {
-        panic!("Unexpected value {}", value)
+    match value.cmp(&0) {
+        Ordering::Less => Some(board.next_player().other()),
+        Ordering::Equal => None,
+        Ordering::Greater => Some(board.next_player()),
     }
 }
 

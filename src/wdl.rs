@@ -1,3 +1,5 @@
+use cast_trait::Cast;
+
 use crate::board::{Outcome, Player};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -14,17 +16,13 @@ pub struct WDL<V> {
     pub loss: V,
 }
 
-impl Outcome {
-    pub fn pov(self, pov: Player) -> OutcomeWDL {
-        match self {
-            Outcome::WonBy(player) => if player == pov {
-                OutcomeWDL::Win
-            } else {
-                OutcomeWDL::Loss
-            },
-            Outcome::Draw => OutcomeWDL::Draw,
-        }
-    }
+pub trait POV {
+    type Output;
+    fn pov(self, pov: Player) -> Self::Output;
+}
+
+pub trait Flip {
+    fn flip(self) -> Self;
 }
 
 impl OutcomeWDL {
@@ -43,6 +41,36 @@ impl OutcomeWDL {
             OutcomeWDL::Loss => -V::one(),
         }
     }
+
+    /// Combine outcomes together in minimax-style.. `None` means unknown.
+    pub fn best(children: impl IntoIterator<Item=Option<OutcomeWDL>>) -> Option<OutcomeWDL> {
+        let mut any_unknown = false;
+        let mut all_known_are_loss = true;
+
+        for outcome in children {
+            match outcome {
+                None => {
+                    any_unknown = true;
+                }
+                Some(OutcomeWDL::Win) => {
+                    //early exit, we've found a win
+                    return Some(OutcomeWDL::Win);
+                }
+                Some(OutcomeWDL::Draw) => {
+                    all_known_are_loss = false;
+                }
+                Some(OutcomeWDL::Loss) => {}
+            }
+        }
+
+        if any_unknown {
+            None
+        } else if all_known_are_loss {
+            Some(OutcomeWDL::Loss)
+        } else {
+            Some(OutcomeWDL::Draw)
+        }
+    }
 }
 
 impl<V: num::Float> WDL<V> {
@@ -52,8 +80,12 @@ impl<V: num::Float> WDL<V> {
 }
 
 impl<V: Copy> WDL<V> {
-    pub fn other(self) -> Self {
-        WDL { win: self.loss, draw: self.draw, loss: self.win }
+    pub fn cast<W>(self) -> WDL<W> where V: Cast<W> {
+        WDL {
+            win: self.win.cast(),
+            draw: self.draw.cast(),
+            loss: self.loss.cast(),
+        }
     }
 }
 
@@ -66,6 +98,49 @@ impl<V: Copy + std::ops::Sub<V, Output=V>> WDL<V> {
 impl<V: Copy + std::ops::Add<V, Output=V>> WDL<V> {
     pub fn sum(self) -> V {
         self.win + self.draw + self.loss
+    }
+}
+
+impl<I: POV> POV for Option<I> {
+    type Output = Option<I::Output>;
+    fn pov(self, pov: Player) -> Option<I::Output> {
+        self.map(|inner| inner.pov(pov))
+    }
+}
+
+impl<I: Flip> Flip for Option<I> {
+    fn flip(self) -> Self {
+        self.map(|inner| inner.flip())
+    }
+}
+
+impl POV for Outcome {
+    type Output = OutcomeWDL;
+    fn pov(self, pov: Player) -> OutcomeWDL {
+        match self {
+            Outcome::WonBy(player) => if player == pov {
+                OutcomeWDL::Win
+            } else {
+                OutcomeWDL::Loss
+            },
+            Outcome::Draw => OutcomeWDL::Draw,
+        }
+    }
+}
+
+impl Flip for OutcomeWDL {
+    fn flip(self) -> Self {
+        match self {
+            OutcomeWDL::Win => OutcomeWDL::Loss,
+            OutcomeWDL::Draw => OutcomeWDL::Draw,
+            OutcomeWDL::Loss => OutcomeWDL::Win,
+        }
+    }
+}
+
+impl<V: Copy> Flip for WDL<V> {
+    fn flip(self) -> Self {
+        WDL { win: self.loss, draw: self.draw, loss: self.win }
     }
 }
 
