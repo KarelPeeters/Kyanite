@@ -4,8 +4,7 @@ use itertools::Itertools;
 use itertools::izip;
 use sttt::board::Board;
 
-use crate::evaluation::ZeroEvaluation;
-use crate::zero::{Request, Response};
+use crate::zero::{Request, Response, ZeroEvaluation};
 
 pub mod dummy;
 #[cfg(feature = "tch")]

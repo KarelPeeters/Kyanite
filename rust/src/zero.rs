@@ -12,8 +12,8 @@ use rand_distr::Distribution;
 use sttt::ai::Bot;
 use sttt::board::{Board, Outcome};
 use sttt::symmetry::{Symmetry, SymmetryDistribution};
+use sttt::wdl::{Flip, POV, WDL};
 
-use crate::evaluation::{WDL, ZeroEvaluation};
 use crate::network::Network;
 
 #[derive(Debug, Copy, Clone)]
@@ -26,6 +26,16 @@ impl ZeroSettings {
     pub fn new(exploration_weight: f32, random_symmetries: bool) -> Self {
         ZeroSettings { exploration_weight, random_symmetries }
     }
+}
+
+/// A board evaluation, either as returned by the network or as the final output of a zero tree search.
+#[derive(Debug)]
+pub struct ZeroEvaluation {
+    /// The win, draw and loss probabilities, after normalization.
+    pub wdl: WDL<f32>,
+
+    /// The policy "vector", only containing the available moves in the order they are yielded by `available_moves`.
+    pub policy: Vec<f32>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -68,7 +78,7 @@ pub struct Node<M> {
     pub children: Option<IdxRange>,
 
     /// The evaluation returned by the network for this position.
-    pub net_wdl: Option<WDL>,
+    pub net_wdl: Option<WDL<f32>>,
     /// The prior probability as evaluated by the network when the parent node was expanded. Called `P` in the paper.
     pub net_policy: f32,
 
@@ -76,7 +86,7 @@ pub struct Node<M> {
     pub visits: u64,
     /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value.
     /// Called `W` in the paper.
-    pub total_wdl: WDL,
+    pub total_wdl: WDL<f32>,
 }
 
 impl<N> Node<N> {
@@ -94,7 +104,7 @@ impl<N> Node<N> {
     }
 
     /// The WDL of this node from the POV of the player that could play this move.
-    pub fn wdl(&self) -> WDL {
+    pub fn wdl(&self) -> WDL<f32> {
         //TODO why did we need to change this? did this call never happen for STTT if there were no visits? why?
         if self.visits == 0 {
             WDL::default()
@@ -166,8 +176,8 @@ impl<B: Board> Tree<B> {
     }
 
     /// The WDL of `root_board` from the POV of `root_board.next_player`.
-    pub fn wdl(&self) -> WDL {
-        -self[0].wdl()
+    pub fn wdl(&self) -> WDL<f32> {
+        self[0].wdl().flip()
     }
 
     /// Return the policy vector for the root node.
@@ -243,7 +253,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         for _ in 0..self.curr_depth { write!(f, "  ")? }
 
         let node_wdl = node.wdl();
-        let net_wdl = -node.net_wdl.unwrap_or(WDL::nan());
+        let net_wdl = node.net_wdl.unwrap_or(WDL::nan()).flip();
 
         writeln!(
             f,
@@ -362,7 +372,7 @@ impl<B: Board> ZeroState<B> {
 
                 //if the game is done use the real value
                 if let Some(outcome) = curr_board.outcome() {
-                    break WDL::from_outcome(outcome, curr_board.next_player());
+                    break outcome.pov(curr_board.next_player()).to_wdl();
                 }
 
                 //get the children or call the network if this is the first time we visit this node
@@ -415,11 +425,11 @@ impl<B: Board> ZeroState<B> {
     }
 
     /// Propagate the given final value for a game backwards through the tree using `parent_list`.
-    fn propagate_wdl(&mut self, mut wdl: WDL) {
+    fn propagate_wdl(&mut self, mut wdl: WDL<f32>) {
         assert!(!self.parent_list.is_empty());
 
         for &node in self.parent_list.iter().rev() {
-            wdl = -wdl;
+            wdl = wdl.flip();
 
             let node = &mut self.tree[node];
             node.visits += 1;

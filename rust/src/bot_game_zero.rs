@@ -1,11 +1,16 @@
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::{Rng, thread_rng};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
+use rayon::iter::ParallelIterator;
 use sttt::ai::Bot;
 use sttt::board::{Board, Outcome, Player};
+use sttt::wdl::WDL;
 
 use crate::network::Network;
 use crate::selfplay::MoveSelector;
-use crate::zero::{RunResult, Tree, ZeroSettings, ZeroState};
+use crate::zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
+
+pub type OpponentConstructor<B> = Box<dyn Fn() -> Box<dyn Bot<B>> + Sync>;
 
 struct GameState<B: Board> {
     opponent: usize,
@@ -17,14 +22,14 @@ struct GameState<B: Board> {
 }
 
 pub fn run<B: Board>(
-    mut opponents: Vec<Box<dyn Bot<B>>>,
+    opponents: &[OpponentConstructor<B>],
     start_board: &B,
     iterations: u64,
     settings: ZeroSettings,
     network: &mut impl Network<B>,
     move_selector: MoveSelector,
     games_per_side: usize,
-) {
+) -> Vec<Vec<WDL<usize>>> {
     let mut rng = thread_rng();
 
     // games in this vector are always either finished or with zero expecting a response
@@ -40,7 +45,8 @@ pub fn run<B: Board>(
                 let mut move_count = 0;
 
                 if !zero_first {
-                    board.play(opponents[opponent].select_move(&board));
+                    let mut opponent = opponents[opponent]();
+                    board.play(opponent.select_move(&board));
                     move_count += 1;
                 }
 
@@ -73,48 +79,30 @@ pub fn run<B: Board>(
         }
 
         //evaluate requests
-        let mut responses = network.evaluate_batch_requests(&requests);
-        requests.clear();
-        let mut response_iter = responses.drain(..);
+        let responses = network.evaluate_batch_requests(&requests);
 
-        for game in &mut games {
-            if game.board.is_done() { continue; }
-
-            //advance zero
-            let response = response_iter.next().unwrap();
-            let result = game.zero.run_until_result(Some(response), &mut rng);
-
-            match result {
-                RunResult::Request(request) => {
-                    requests.push(request)
-                }
-                RunResult::Done => {
-                    // select a move
-                    let index = move_selector.select(game.move_count, game.zero.tree.policy(), &mut rng);
-                    let mv = game.zero.tree[game.zero.tree[0].children.unwrap().get(index)].last_move.unwrap();
-
-                    // play the move
-                    game.board.play(mv);
-                    game.move_count += 1;
-                    if game.board.is_done() { continue; }
-
-                    // play opponent move
-                    game.board.play(opponents[game.opponent].select_move(&game.board));
-                    game.move_count += 1;
-                    if game.board.is_done() { continue; }
-
-                    //start next zero search
-                    let mut zero = ZeroState::new(Tree::new(game.board.clone()), iterations, settings);
-                    let result = zero.run_until_result(None, &mut rng);
-                    requests.push(unwrap_match!(result, RunResult::Request(req) => req));
-                    game.zero = zero;
-                }
-            }
-        }
+        //continue playing games, using the responses
+        let running_games = games.iter_mut()
+            .filter(|g| !g.board.is_done())
+            .collect_vec();
+        let iter = running_games.into_par_iter()
+            .zip_eq(responses.into_par_iter())
+            .panic_fuse();
+        requests = iter
+            .filter_map(|(game, response)| {
+                let mut rng = thread_rng();
+                let opponent = opponents[game.opponent]();
+                let request = game.run_until_request(opponent, response, iterations, settings, move_selector, &mut rng);
+                request
+            }).collect();
     }
 
     //collect results
+    let mut wdls = vec![];
+
     for opponent in 0..opponents.len() {
+        let mut opponent_wdls = vec![];
+
         for &zero_first in &[true, false] {
             let zero_player = if zero_first { Player::A } else { Player::B };
             let matches = games.iter()
@@ -127,6 +115,57 @@ pub fn run<B: Board>(
             assert_eq!(games_per_side, wins + draws + losses);
 
             println!("Opponent {}, zero first: {}, WDL: {} {} {}", opponent, zero_first, wins, draws, losses);
+
+            opponent_wdls.push(WDL { win: wins, draw: draws, loss: losses })
+        }
+
+        wdls.push(opponent_wdls);
+    }
+
+    wdls
+}
+
+impl<B: Board> GameState<B> {
+    /// Continue running this game until it's done or zero generates a new request.
+    fn run_until_request(
+        &mut self,
+        mut opponent: Box<dyn Bot<B>>,
+        response: Response<B>,
+        iterations: u64,
+        settings: ZeroSettings,
+        move_selector: MoveSelector,
+        rng: &mut impl Rng,
+    ) -> Option<Request<B>> {
+        //advance zero
+        let result = self.zero.run_until_result(Some(response), rng);
+
+        match result {
+            RunResult::Request(request) => {
+                Some(request)
+            }
+            RunResult::Done => {
+                // select a move
+                let index = move_selector.select(self.move_count, self.zero.tree.policy(), rng);
+                let mv = self.zero.tree[self.zero.tree[0].children.unwrap().get(index)].last_move.unwrap();
+
+                // play the move
+                self.board.play(mv);
+                self.move_count += 1;
+                if self.board.is_done() { return None; }
+
+                // play opponent move
+                self.board.play(opponent.select_move(&self.board));
+                self.move_count += 1;
+                if self.board.is_done() { return None; }
+
+                //start next zero search
+                let mut zero = ZeroState::new(Tree::new(self.board.clone()), iterations, settings);
+                let result = zero.run_until_result(None, rng);
+                let request = unwrap_match!(result, RunResult::Request(req) => req);
+                self.zero = zero;
+
+                Some(request)
+            }
         }
     }
 }

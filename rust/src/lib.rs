@@ -1,7 +1,6 @@
 #![warn(missing_debug_implementations)]
 
 pub mod zero;
-pub mod evaluation;
 pub mod network;
 
 pub mod selfplay;

@@ -9,8 +9,9 @@ use itertools::Itertools;
 use rand::distributions::WeightedIndex;
 use rand::Rng;
 use sttt::board::{Board, Outcome};
+use sttt::wdl::{POV, WDL};
 
-use crate::evaluation::{WDL, ZeroEvaluation};
+use crate::zero::ZeroEvaluation;
 
 mod collect;
 pub mod generate_zero;
@@ -117,7 +118,7 @@ pub struct Position<B> {
 #[derive(Debug)]
 pub struct StorePosition<B: Board> {
     pub board: B,
-    pub final_wdl: WDL,
+    pub final_wdl: WDL<f32>,
     pub evaluation: ZeroEvaluation,
 }
 
@@ -162,7 +163,7 @@ impl<B: Board + 'static> Simulation<B> {
         positions.into_iter()
             .filter(|pos| pos.should_store)
             .map(move |pos| {
-                let final_wdl = WDL::from_outcome(outcome, pos.board.next_player());
+                let final_wdl = outcome.pov(pos.board.next_player()).to_wdl();
                 StorePosition { board: pos.board, final_wdl, evaluation: pos.evaluation }
             })
     }

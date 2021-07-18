@@ -3,13 +3,14 @@ use std::path::Path;
 use internal_iterator::InternalIterator;
 use sttt::board::BoardAvailableMoves;
 use sttt::games::ataxx::{AtaxxBoard, Coord, Move};
+use sttt::wdl::WDL;
 use tch::{CModule, Device, IValue, maybe_init_cuda, Tensor};
 
-use crate::evaluation::{WDL, ZeroEvaluation};
 use crate::games::ataxx_output::FROM_DX_DY;
 use crate::network::{Network, softmax};
 use crate::network::torch_utils::{unwrap_ivalue_pair, unwrap_tensor_with_shape};
 use crate::selfplay::generate_zero::NetworkSettings;
+use crate::zero::ZeroEvaluation;
 
 #[derive(Debug)]
 pub struct AtaxxTorchSettings {

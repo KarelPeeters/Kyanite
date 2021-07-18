@@ -3,9 +3,10 @@ use std::marker::PhantomData;
 use internal_iterator::InternalIterator;
 use itertools::zip;
 use sttt::board::Board;
+use sttt::wdl::WDL;
 
-use crate::evaluation::{WDL, ZeroEvaluation};
 use crate::network::Network;
+use crate::zero::ZeroEvaluation;
 
 /// A `Network` that always returns value and a uniform policy.
 #[derive(Debug)]
@@ -68,7 +69,7 @@ impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
     }
 }
 
-fn uniform_wdl() -> WDL {
+fn uniform_wdl() -> WDL<f32> {
     WDL { win: 1.0 / 3.0, draw: 1.0 / 3.0, loss: 1.0 / 3.0 }
 }
 

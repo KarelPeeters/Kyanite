@@ -8,10 +8,9 @@ use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
 use sttt::board::{Board, Outcome};
 
-use crate::evaluation::ZeroEvaluation;
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
-use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
+use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroEvaluation, ZeroSettings, ZeroState};
 
 #[derive(Debug)]
 pub struct ZeroGeneratorSettings<B: Board, S: NetworkSettings<B>> {
@@ -89,6 +88,10 @@ impl<B: Board, S: NetworkSettings<B>> Generator<B> for ZeroGeneratorSettings<B, 
         start_counter: &StartGameCounter,
         sender: Sender<Message<B>>,
     ) {
+        //TODO combine threads as soon as the sum of batch sizes gets low enough
+        // alternative: switch to continuously generating games with changing network
+        // but then training may be too slow since the GPUs are used a lot?
+
         let mut network = self.network.load_network(thread_param);
         let rng = &mut thread_rng();
 
