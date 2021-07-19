@@ -1,3 +1,4 @@
+use core::fmt::Display;
 use std::fmt::Debug;
 use std::fmt::Write;
 use std::ops::Add;
@@ -8,7 +9,7 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::ai::Bot;
-use crate::board::{Board, Outcome, Player};
+use crate::board::{Board, Outcome};
 
 pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     start: impl Fn() -> B + Sync,
@@ -33,6 +34,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
 
         let flip = if both_sides { i % 2 == 1 } else { false };
         let mut board = start();
+        let player_first = board.next_player();
 
         for i in 0.. {
             if board.is_done() {
@@ -63,10 +65,10 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         }
 
         let outcome = board.outcome().unwrap();
-        let win_a = (outcome == Outcome::WonBy(Player::A)) as u32;
-        let win_b = (outcome == Outcome::WonBy(Player::B)) as u32;
+        let win_first = (outcome == Outcome::WonBy(player_first)) as u32;
+        let win_second = (outcome == Outcome::WonBy(player_first.other())) as u32;
 
-        let (wins_l, wins_r) = if flip { (win_b, win_a) } else { (win_a, win_b) };
+        let (wins_l, wins_r) = if flip { (win_second, win_first) } else { (win_first, win_second) };
 
         ReductionResult { wins_l, wins_r, total_time_l, total_time_r, move_count_l, move_count_r }
     }).reduce(ReductionResult::default, ReductionResult::add);
