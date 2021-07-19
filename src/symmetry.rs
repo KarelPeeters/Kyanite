@@ -6,7 +6,7 @@ use rand::seq::SliceRandom;
 
 /// The symmetry group associated with a Board. An instance of this group maps a board and moves such that everything
 /// about the board and its state is invariant under this mapping.
-pub trait Symmetry: 'static + Debug + Copy + Clone + Eq + PartialEq {
+pub trait Symmetry: 'static + Debug + Copy + Clone + Eq + PartialEq + Send + Sync {
     fn all() -> &'static [Self];
     fn identity() -> Self;
     fn inverse(self) -> Self;
