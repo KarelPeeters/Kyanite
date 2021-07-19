@@ -5,6 +5,7 @@ use std::ops::{Index, IndexMut};
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
+use rand::seq::IteratorRandom;
 
 use crate::ai::Bot;
 use crate::board::{Board, Outcome};
@@ -245,17 +246,6 @@ fn random_playout<B: Board>(mut board: B, rng: &mut impl Rng) -> Outcome {
     }
 }
 
-fn pick_random_from_iter<T>(iter: impl Clone + IntoIterator<Item=T>, rng: &mut impl Rng) -> Option<T> {
-    let count = iter.clone().into_iter().count();
-
-    if count > 0 {
-        let picked = rng.gen_range(0..count);
-        Some(iter.into_iter().nth(picked).unwrap())
-    } else {
-        None
-    }
-}
-
 /// Run a single MCTS step.
 ///
 /// Returns `(result, proven)`, where
@@ -308,7 +298,7 @@ fn mcts_solver_step<B: Board>(
 
     // check if there are unvisited children
     let unvisited = children.iter().filter(|&c| tree[c].is_unvisited());
-    let picked_unvisited = pick_random_from_iter(unvisited, rng);
+    let picked_unvisited = unvisited.choose(rng);
 
     // result is from the POV of curr_board.next_player
     let (result, proven) = if let Some(picked_child) = picked_unvisited {
@@ -380,7 +370,7 @@ pub struct MCTSBot<R: Rng> {
 
 impl<R: Rng> Debug for MCTSBot<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MCTSBot {{ iterations: {}, exploration_weight: {} }} ", self.iterations, self.exploration_weight)
+        write!(f, "MCTSBot {{ iterations: {}, exploration_weight: {} }}", self.iterations, self.exploration_weight)
     }
 }
 

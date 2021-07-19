@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
+use std::fmt::{Debug, Formatter};
 
 use internal_iterator::InternalIterator;
+use rand::Rng;
 
 use crate::ai::Bot;
-use crate::ai::minimax::{Heuristic, minimax};
+use crate::ai::minimax::{Heuristic, minimax, minimax_value};
 use crate::board::{Board, Outcome, Player};
 use crate::wdl::POV;
 
@@ -29,7 +31,7 @@ impl<B: Board> Heuristic<B> for SolverHeuristic {
 
 /// Return which player can force a win if any. Both forced draws and unknown results are returned as `None`.
 pub fn find_forcing_winner(board: &impl Board, depth: u32) -> Option<Player> {
-    let value = minimax(board, &SolverHeuristic, depth).value;
+    let value = minimax_value(board, &SolverHeuristic, depth);
     match value.cmp(&0) {
         Ordering::Less => Some(board.next_player().other()),
         Ordering::Equal => None,
@@ -63,20 +65,26 @@ pub fn is_double_forced_draw(board: &impl Board, depth: u32) -> Result<bool, ()>
     }
 }
 
-#[derive(Debug)]
-pub struct SolverBot {
+pub struct SolverBot<R: Rng> {
     depth: u32,
+    rng: R,
 }
 
-impl SolverBot {
-    pub fn new(depth: u32) -> Self {
-        assert!(depth > 0);
-        SolverBot { depth }
+impl<R: Rng> Debug for SolverBot<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SolverBot {{ depth: {} }}", self.depth)
     }
 }
 
-impl<B: Board> Bot<B> for SolverBot {
+impl<R: Rng> SolverBot<R> {
+    pub fn new(depth: u32, rng: R) -> Self {
+        assert!(depth > 0);
+        SolverBot { depth, rng }
+    }
+}
+
+impl<B: Board, R: Rng> Bot<B> for SolverBot<R> {
     fn select_move(&mut self, board: &B) -> B::Move {
-        minimax(board, &SolverHeuristic, self.depth).best_move.unwrap()
+        minimax(board, &SolverHeuristic, self.depth, &mut self.rng).best_move.unwrap()
     }
 }

@@ -1,7 +1,7 @@
 use crate::ai::minimax::Heuristic;
-use crate::board::{Board};
-use crate::games::ataxx::{AtaxxBoard, Tiles};
 use crate::ai::solver::SolverHeuristic;
+use crate::board::Board;
+use crate::games::ataxx::{AtaxxBoard, Tiles};
 
 #[derive(Debug)]
 pub struct AtaxxTileHeuristic {
@@ -12,6 +12,10 @@ pub struct AtaxxTileHeuristic {
 impl AtaxxTileHeuristic {
     pub fn new(tile_factor: i32, surface_factor: i32) -> Self {
         AtaxxTileHeuristic { tile_factor, surface_factor }
+    }
+
+    pub fn greedy() -> Self {
+        AtaxxTileHeuristic { tile_factor: 1, surface_factor: 0 }
     }
 }
 
