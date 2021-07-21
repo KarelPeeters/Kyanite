@@ -1,3 +1,6 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
 use std::cmp::min;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -131,7 +134,7 @@ fn main() -> anyhow::Result<()> {
 
                     // update settings for threads that will stay alive
                     for sender in &device.threads {
-                        sender.send(Command::NewSettings { settings: settings.clone() });
+                        sender.send(Command::NewSettings { settings: settings.clone() }).unwrap();
                     }
 
                     // start new threads
