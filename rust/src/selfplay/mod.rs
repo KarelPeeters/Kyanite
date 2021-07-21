@@ -61,12 +61,16 @@ pub struct MoveSelector {
 
 impl MoveSelector {
     pub fn new(temperature: f32, zero_temp_move_count: u32) -> Self {
-        MoveSelector { zero_temp_move_count, temperature }
+        MoveSelector { temperature, zero_temp_move_count }
     }
 
     /// Always select the move with the maximum policy, ie. temperature 0.
     pub fn zero_temp() -> Self {
         Self::new(0.0, 0)
+    }
+
+    pub fn constant_temp(temperature: f32) -> Self {
+        MoveSelector { temperature, zero_temp_move_count: u32::MAX }
     }
 }
 
@@ -93,7 +97,7 @@ impl StartGameCounter {
 #[derive(Debug)]
 pub enum Message<B> {
     Simulation(Simulation<B>),
-    Counter { evals: u64, moves: u64 },
+    Counter { evals: u64, moves: u64, seen: u64 },
 }
 
 /// A full game.
@@ -171,7 +175,7 @@ impl<B: Board + 'static> Simulation<B> {
 
 impl MoveSelector {
     pub fn select(&self, move_count: u32, policy: impl IntoIterator<Item=f32>, rng: &mut impl Rng) -> usize {
-        let temperature = if move_count > self.zero_temp_move_count { 0.0 } else { self.temperature };
+        let temperature = if move_count >= self.zero_temp_move_count { 0.0 } else { self.temperature };
         assert!(temperature >= 0.0);
 
         let policy = policy.into_iter();
