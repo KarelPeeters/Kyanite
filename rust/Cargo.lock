@@ -15,6 +15,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
+name = "alpha-zero"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "board-game",
+ "crossbeam",
+ "decorum",
+ "image",
+ "internal-iterator",
+ "itertools",
+ "num_cpus",
+ "rand 0.8.4",
+ "rand_distr",
+ "rayon",
+ "safe-transmute",
+ "self_cell",
+ "serde",
+ "serde_json",
+ "ta",
+ "tch",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -57,6 +80,24 @@ dependencies = [
  "radium",
  "tap",
  "wyz",
+]
+
+[[package]]
+name = "board-game"
+version = "0.3.0"
+dependencies = [
+ "cast_trait",
+ "decorum",
+ "derive_more",
+ "internal-iterator",
+ "itertools",
+ "newtype-ops",
+ "nom",
+ "num",
+ "rand 0.8.4",
+ "rand_xoshiro",
+ "rayon",
+ "windows",
 ]
 
 [[package]]
@@ -222,9 +263,9 @@ dependencies = [
 
 [[package]]
 name = "curl-sys"
-version = "0.4.44+curl-7.77.0"
+version = "0.4.45+curl-7.78.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b6d85e9322b193f117c966e79c2d6929ec08c02f339f950044aba12e20bbaf1"
+checksum = "de9e5a72b1c744eb5dd20b2be4d7eb84625070bb5c4ab9b347b70464ab1e62eb"
 dependencies = [
  "cc",
  "libc",
@@ -933,47 +974,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "sttt"
-version = "0.2.0"
-dependencies = [
- "cast_trait",
- "decorum",
- "derive_more",
- "internal-iterator",
- "itertools",
- "newtype-ops",
- "nom",
- "num",
- "rand 0.8.4",
- "rand_xoshiro",
- "rayon",
- "windows",
-]
-
-[[package]]
-name = "sttt-zero"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossbeam",
- "decorum",
- "image",
- "internal-iterator",
- "itertools",
- "num_cpus",
- "rand 0.8.4",
- "rand_distr",
- "rayon",
- "safe-transmute",
- "self_cell",
- "serde",
- "serde_json",
- "sttt",
- "ta",
- "tch",
-]
 
 [[package]]
 name = "syn"

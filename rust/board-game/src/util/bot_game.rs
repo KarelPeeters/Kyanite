@@ -1,4 +1,3 @@
-use core::fmt::Display;
 use std::fmt::Debug;
 use std::fmt::Write;
 use std::ops::Add;

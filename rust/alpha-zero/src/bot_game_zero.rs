@@ -2,9 +2,9 @@ use itertools::Itertools;
 use rand::{Rng, thread_rng};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::ParallelIterator;
-use sttt::ai::Bot;
-use sttt::board::{Board, Outcome, Player};
-use sttt::wdl::WDL;
+use board_game::ai::Bot;
+use board_game::board::{Board, Outcome, Player};
+use board_game::wdl::WDL;
 
 use crate::network::Network;
 use crate::selfplay::MoveSelector;

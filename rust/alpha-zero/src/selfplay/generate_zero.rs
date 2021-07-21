@@ -6,7 +6,7 @@ use itertools::Itertools;
 use itertools::izip;
 use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
-use sttt::board::{Board, Outcome};
+use board_game::board::{Board, Outcome};
 
 use crate::network::Network;
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};

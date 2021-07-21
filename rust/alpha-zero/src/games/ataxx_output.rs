@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use internal_iterator::InternalIterator;
 use safe_transmute::transmute_to_bytes;
-use sttt::board::{Board, BoardAvailableMoves};
-use sttt::games::ataxx::{AtaxxBoard, Coord, Move};
+use board_game::board::{Board, BoardAvailableMoves};
+use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
 use crate::selfplay::{Output, Simulation};
 

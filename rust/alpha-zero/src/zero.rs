@@ -9,10 +9,10 @@ use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::Rng;
 use rand_distr::Distribution;
-use sttt::ai::Bot;
-use sttt::board::{Board, Outcome};
-use sttt::symmetry::{Symmetry, SymmetryDistribution};
-use sttt::wdl::{Flip, POV, WDL};
+use board_game::ai::Bot;
+use board_game::board::{Board, Outcome};
+use board_game::symmetry::{Symmetry, SymmetryDistribution};
+use board_game::wdl::{Flip, POV, WDL};
 
 use crate::network::Network;
 

@@ -8,8 +8,8 @@ use decorum::N32;
 use itertools::Itertools;
 use rand::distributions::WeightedIndex;
 use rand::Rng;
-use sttt::board::{Board, Outcome};
-use sttt::wdl::{POV, WDL};
+use board_game::board::{Board, Outcome};
+use board_game::wdl::{POV, WDL};
 
 use crate::zero::ZeroEvaluation;
 
@@ -97,7 +97,7 @@ impl StartGameCounter {
 #[derive(Debug)]
 pub enum Message<B> {
     Simulation(Simulation<B>),
-    Counter { evals: u64, moves: u64, seen: u64 },
+    Counter { evals: u64, moves: u64 },
 }
 
 /// A full game.

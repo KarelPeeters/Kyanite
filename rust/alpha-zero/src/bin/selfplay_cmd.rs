@@ -5,14 +5,14 @@ use std::path::PathBuf;
 
 use itertools::Itertools;
 use serde::Deserialize;
-use sttt::games::ataxx::AtaxxBoard;
+use board_game::games::ataxx::AtaxxBoard;
 
-use sttt_zero::games::ataxx_output::AtaxxBinaryOutput;
-use sttt_zero::games::ataxx_torch_network::AtaxxTorchSettings;
-use sttt_zero::network::torch_utils::all_cuda_devices;
-use sttt_zero::selfplay::{MoveSelector, Settings};
-use sttt_zero::selfplay::generate_zero::ZeroGeneratorSettings;
-use sttt_zero::zero::ZeroSettings;
+use alpha_zero::games::ataxx_output::AtaxxBinaryOutput;
+use alpha_zero::games::ataxx_torch_network::AtaxxTorchSettings;
+use alpha_zero::network::torch_utils::all_cuda_devices;
+use alpha_zero::selfplay::{MoveSelector, Settings};
+use alpha_zero::selfplay::generate_zero::ZeroGeneratorSettings;
+use alpha_zero::zero::ZeroSettings;
 
 #[derive(Debug, Deserialize)]
 struct Args {

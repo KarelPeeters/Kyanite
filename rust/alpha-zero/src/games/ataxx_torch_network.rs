@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use internal_iterator::InternalIterator;
-use sttt::board::BoardAvailableMoves;
-use sttt::games::ataxx::{AtaxxBoard, Coord, Move};
-use sttt::wdl::WDL;
+use board_game::board::BoardAvailableMoves;
+use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
+use board_game::wdl::WDL;
 use tch::{CModule, Device, IValue, maybe_init_cuda, Tensor};
 
 use crate::games::ataxx_output::FROM_DX_DY;

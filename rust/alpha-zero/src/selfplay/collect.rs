@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crossbeam::channel::Receiver;
-use sttt::board::Board;
+use board_game::board::Board;
 use ta::indicators::ExponentialMovingAverage;
 use ta::Next;
 

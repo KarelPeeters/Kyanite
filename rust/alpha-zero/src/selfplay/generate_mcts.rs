@@ -1,8 +1,8 @@
 use crossbeam::channel::Sender;
 use itertools::Itertools;
 use rand::thread_rng;
-use sttt::ai::mcts::mcts_build_tree;
-use sttt::board::Board;
+use board_game::ai::mcts::mcts_build_tree;
+use board_game::board::Board;
 
 use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, StartGameCounter};
 use crate::zero::ZeroEvaluation;

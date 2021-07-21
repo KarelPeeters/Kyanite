@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use internal_iterator::InternalIterator;
 use itertools::zip;
-use sttt::board::Board;
-use sttt::wdl::WDL;
+use board_game::board::Board;
+use board_game::wdl::WDL;
 
 use crate::network::Network;
 use crate::zero::ZeroEvaluation;

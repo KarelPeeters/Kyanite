@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use itertools::Itertools;
 use itertools::izip;
-use sttt::board::Board;
+use board_game::board::Board;
 
 use crate::zero::{Request, Response, ZeroEvaluation};
 

@@ -1,0 +1,13 @@
+[workspace]
+
+members = [
+    "board-game",
+    "alpha-zero",
+]
+
+[profile.release]
+# lto = true
+debug = true
+
+[profile.dev]
+opt-level = 1

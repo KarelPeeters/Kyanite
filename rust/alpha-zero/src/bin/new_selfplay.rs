@@ -9,7 +9,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tch::Device;
 
-use sttt_zero::network::torch_utils::all_cuda_devices;
+use alpha_zero::network::torch_utils::all_cuda_devices;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum Command {

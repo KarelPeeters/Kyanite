@@ -7,11 +7,11 @@ use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoroshiro64StarStar;
 
-use sttt::board::{Board, Outcome, Player};
-use sttt::games::ataxx::AtaxxBoard;
-use sttt::games::sttt::STTTBoard;
-use sttt::symmetry::Symmetry;
-use sttt::util::board_gen::{random_board_with_forced_win, random_board_with_moves, random_board_with_outcome};
+use board_game::board::{Board, Outcome, Player};
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::games::sttt::STTTBoard;
+use board_game::symmetry::Symmetry;
+use board_game::util::board_gen::{random_board_with_forced_win, random_board_with_moves, random_board_with_outcome};
 
 #[test]
 fn sttt_empty() {

@@ -1,5 +1,5 @@
-use sttt::games::ataxx::AtaxxBoard;
-use sttt::util::game_stats;
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::util::game_stats;
 
 ///Test cases from https://github.com/kz04px/libataxx/blob/master/tests/perft.cpp, edited to remove move counters.
 #[test]
