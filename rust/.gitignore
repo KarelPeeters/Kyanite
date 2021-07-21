@@ -1,4 +1,5 @@
-/target/
+/data/
+.idea/
 /ignored/
-
-/src/bin/exp_*.rs
+*.pt.trace.json
+onnxruntime*.json

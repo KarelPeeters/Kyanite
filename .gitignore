@@ -1,5 +1,0 @@
-/data/
-.idea/
-/ignored/
-*.pt.trace.json
-onnxruntime*.json
