@@ -1,0 +1,30 @@
+[package]
+name = "sttt"
+version = "0.2.0"
+authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
+description = "A board game abstraction and bots and utilities around it."
+license-file = "NONE.md"
+edition = "2018"
+
+[dependencies]
+rand = { version = "0.8.4", features = ["small_rng"] }
+itertools = "0.10.1"
+rayon = "1.5.1"
+derive_more = "0.99.16"
+decorum = { version = "0.3.1", default-features=false, features=["std"] }
+newtype-ops = "0.1.4"
+internal-iterator = "0.1.2"
+num = "0.4.0"
+nom = "6.2.1"
+rand_xoshiro = "0.6.0"
+cast_trait = "0.1.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = "0.17.2"
+
+[target.'cfg(windows)'.build-dependencies]
+windows = "0.17.2"
+
+[profile.release]
+lto = true
+debug = true

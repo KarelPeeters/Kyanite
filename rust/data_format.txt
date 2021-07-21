@@ -1,0 +1,22 @@
+data layout:
+
+game result:
+* 3 final_wdl    0..1
+
+mcts output:
+* 3 pred_wdl     0..1
+* 81 pred_policy 0..1
+
+board state:
+* 81 move_mask   0,1
+
+* 81 board.next tiles 0,1
+* 81 board.next.other tiles 0,1
+
+* 9 board.next macros 0,1
+* 9 board.next.other macros 0,1
+
+all wdl from POV of board.next_player
+
+mask, move probability and tiles are all in o-order, not yx-order!
+they need to be rearranged before being used as a 2D tensor
