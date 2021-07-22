@@ -1,6 +1,9 @@
 [workspace]
 
 members = [
+    "cuda-sys",
+    "cuda-nn-eval",
+
     "board-game",
     "alpha-zero",
 ]
