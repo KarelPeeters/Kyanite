@@ -7,7 +7,7 @@ use cuda_sys::bindings::{cudnnActivationMode_t, cudnnConvolutionFwdAlgo_t, cudnn
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::DeviceMem;
-use cuda_sys::wrapper::operation::{find_conv_algorithms, run_activation_in_place, run_add_tensor, run_conv};
+use cuda_sys::wrapper::operation::{find_conv_algorithms, run_conv_bias_res_activation};
 
 #[derive(Copy, Clone)]
 pub struct NetDefinition {
@@ -86,7 +86,7 @@ impl NetEvaluator {
 
         let algo_info = find_conv_algorithms(
             &mut handle,
-            &conv_desc, &image_desc, &filter_desc, &image_desc,
+            &conv_desc, &filter_desc, &image_desc, &image_desc,
         )[0];
 
         let workspace = DeviceMem::alloc(algo_info.memory);
@@ -118,35 +118,21 @@ impl NetEvaluator {
         for layer in &self.layers {
             let Layer { filter_mem, bias_mem } = layer;
 
-            // next = conv(prev, filter)
-            run_conv(
+            run_conv_bias_res_activation(
                 &mut self.handle,
+                &self.act_desc,
                 &self.conv_desc,
                 self.algo,
                 &mut self.work_mem,
-                &self.image_desc,
-                &mut next,
-                &self.image_desc,
-                &prev,
                 &self.filter_desc,
                 filter_mem,
-            );
-
-            // next += bias
-            run_add_tensor(
-                &mut self.handle,
                 &self.image_desc,
-                &mut next,
+                &prev,
+                None,
                 &self.bias_desc,
                 bias_mem,
-            );
-
-            // next = act(next)
-            run_activation_in_place(
-                &mut self.handle,
-                &self.act_desc,
                 &self.image_desc,
-                &mut next,
+                &mut next
             );
 
             // swap for next iteration

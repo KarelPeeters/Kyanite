@@ -7,8 +7,8 @@ use crate::wrapper::status::Status;
 pub fn find_conv_algorithms(
     handle: &mut CudnnHandle,
     conv: &ConvolutionDescriptor,
-    input: &TensorDescriptor,
     filter: &FilterDescriptor,
+    input: &TensorDescriptor,
     output: &TensorDescriptor,
 ) -> Vec<cudnnConvolutionFwdAlgoPerfStruct> {
     unsafe {
@@ -50,12 +50,12 @@ pub fn run_conv(
     conv_desc: &ConvolutionDescriptor,
     algo: cudnnConvolutionFwdAlgo_t,
     work_mem: &mut DeviceMem,
-    output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
-    input_desc: &TensorDescriptor,
-    input_mem: &DeviceMem,
     filter_desc: &FilterDescriptor,
     filter_mem: &DeviceMem,
+    input_desc: &TensorDescriptor,
+    input_mem: &DeviceMem,
+    output_desc: &TensorDescriptor,
+    output_mem: &mut DeviceMem,
 ) {
     assert_eq!(input_desc.size(), input_mem.size());
     assert_eq!(filter_desc.size(), filter_mem.size());
@@ -86,10 +86,10 @@ pub fn run_conv(
 /// Run `output += input`. `output` can have dimensions of size 1 which are broadcasted to the shape of `output`.
 pub fn run_add_tensor(
     handle: &mut CudnnHandle,
-    output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
+    output_desc: &TensorDescriptor,
+    output_mem: &mut DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 1.0;
@@ -111,10 +111,10 @@ pub fn run_add_tensor(
 pub fn run_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
-    output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
+    output_desc: &TensorDescriptor,
+    output_mem: &mut DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -137,8 +137,8 @@ pub fn run_activation(
 pub fn run_activation_in_place(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
-    output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    data_desc: &TensorDescriptor,
+    data_mem: &mut DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -148,21 +148,60 @@ pub fn run_activation_in_place(
             handle.inner(),
             activation_desc.inner(),
             &alpha as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
+            data_desc.inner(),
+            data_mem.inner(),
             &beta as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
+            data_desc.inner(),
+            data_mem.inner(),
         ).unwrap();
     }
 }
 
-/// Runs `output = act(conv(input, filter) + res + bias)`.
-///
-/// `output` and `res` can be the same buffer, but `input` must be destinct from both.
-pub fn run_conv_bias_res_activation() {
-    // let alpha1: f32 = 1.0;
-    // let alpha2: f32 = 1.0;
+/// Runs `output = act(conv(input, filter) + res_weight * res + bias)`.
+pub fn run_conv_bias_res_activation(
+    handle: &mut CudnnHandle,
+    activation_desc: &ActivationDescriptor,
+    conv_desc: &ConvolutionDescriptor,
+    algo: cudnnConvolutionFwdAlgo_t,
+    work_mem: &mut DeviceMem,
+    filter_desc: &FilterDescriptor,
+    filter_mem: &DeviceMem,
+    input_desc: &TensorDescriptor,
+    input_mem: &DeviceMem,
+    res_desc_mem: Option<(&TensorDescriptor, &DeviceMem)>,
+    bias_desc: &TensorDescriptor,
+    bias_mem: &DeviceMem,
+    output_desc: &TensorDescriptor,
+    output_mem: &mut DeviceMem,
+) {
+    let alpha1: f32 = 1.0;
 
-    todo!()
+    unsafe {
+        // if no res, use input with weight 0.0 instead
+        let (alpha2, res_desc, res_mem) = match res_desc_mem {
+            Some((res_desc, res_mem)) => (1.0, res_desc, res_mem.inner()),
+            None => (0.0, output_desc, output_mem.inner())
+        };
+
+        cudnnConvolutionBiasActivationForward(
+            handle.inner(),
+            &alpha1 as *const _ as *const _,
+            input_desc.inner(),
+            input_mem.inner(),
+            filter_desc.inner(),
+            filter_mem.inner(),
+            conv_desc.inner(),
+            algo,
+            work_mem.inner(),
+            work_mem.size(),
+            &alpha2 as *const _ as *const _,
+            res_desc.inner(),
+            res_mem,
+            bias_desc.inner(),
+            bias_mem.inner(),
+            activation_desc.inner(),
+            output_desc.inner(),
+            output_mem.inner(),
+        ).unwrap();
+    }
 }

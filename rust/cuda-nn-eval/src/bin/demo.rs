@@ -28,7 +28,7 @@ pub fn main() {
         cudnnDataType_t::CUDNN_DATA_FLOAT,
     );
 
-    let algo_info = find_conv_algorithms(&mut handle, &conv_desc, &input_desc, &filter_desc, &output_desc)[0];
+    let algo_info = find_conv_algorithms(&mut handle, &conv_desc, &filter_desc, &input_desc, &output_desc)[0];
     println!("{:?}", algo_info);
 
     println!("input size: {}", input_desc.size());
@@ -49,9 +49,9 @@ pub fn main() {
         &mut handle,
         &conv_desc, algo_info.algo,
         &mut work_mem,
-        &output_desc, &mut output_mem,
-        &input_desc, &input_mem,
         &filter_desc, &filter_mem,
+        &input_desc, &input_mem,
+        &output_desc, &mut output_mem,
     );
 
     let bias_desc = TensorDescriptor::new(
@@ -63,10 +63,10 @@ pub fn main() {
 
     run_add_tensor(
         &mut handle,
-        &output_desc,
-        &mut output_mem,
         &bias_desc,
         &bias_mem,
+        &output_desc,
+        &mut output_mem,
     );
 
     let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_RELU, 0.0);
