@@ -6,3 +6,5 @@ edition = "2018"
 [dependencies]
 cuda-sys = { path = "../cuda-sys" }
 bytemuck = "1.7.0"
+rand = "0.8.4"
+itertools = "0.10.1"

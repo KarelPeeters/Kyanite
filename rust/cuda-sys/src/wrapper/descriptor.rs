@@ -1,7 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgoPerfStruct, cudnnConvolutionMode_t, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnStatus_t, cudnnGetTensorSizeInBytes, cudnnGetFilterSizeInBytes};
-use crate::wrapper::handle::CudnnHandle;
+use crate::bindings::{cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnActivationDescriptor_t, cudnnDestroyActivationDescriptor, cudnnCreateActivationDescriptor, cudnnSetActivationDescriptor, cudnnActivationMode_t, cudnnNanPropagation_t};
 use crate::wrapper::status::Status;
 
 pub struct TensorDescriptor(cudnnTensorDescriptor_t);
@@ -110,46 +109,36 @@ impl ConvolutionDescriptor {
     pub unsafe fn inner(&self) -> cudnnConvolutionDescriptor_t {
         self.0
     }
+}
 
-    pub fn find_algorithms(
-        &self,
-        handle: &mut CudnnHandle,
-        input: &TensorDescriptor,
-        filter: &FilterDescriptor,
-        output: &TensorDescriptor,
-    ) -> Vec<cudnnConvolutionFwdAlgoPerfStruct> {
-        unsafe {
-            let mut max_algo_count = 0;
-            cudnnGetConvolutionForwardAlgorithmMaxCount(handle.inner(), &mut max_algo_count as *mut _).unwrap();
+pub struct ActivationDescriptor(cudnnActivationDescriptor_t);
 
-            let mut result = Vec::with_capacity(max_algo_count as usize);
-            let mut algo_count = 0;
-            cudnnFindConvolutionForwardAlgorithm(
-                handle.inner(),
-                input.0,
-                filter.0,
-                self.0,
-                output.0,
-                max_algo_count,
-                &mut algo_count as *mut _,
-                result.as_mut_ptr(),
-            ).unwrap();
-
-            result.set_len(algo_count as usize);
-
-            //remove non-supported algorithms and propagate errors
-            result.retain(|a| {
-                if a.status == cudnnStatus_t::CUDNN_STATUS_NOT_SUPPORTED {
-                    false
-                } else {
-                    a.status.unwrap();
-                    true
-                }
-            });
-
-            result
-        }
+impl Drop for ActivationDescriptor {
+    fn drop(&mut self) {
+        unsafe { cudnnDestroyActivationDescriptor(self.0).unwrap() }
     }
 }
 
+impl ActivationDescriptor {
+    pub fn new(
+        mode: cudnnActivationMode_t,
+        coef: f32,
+    ) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cudnnCreateActivationDescriptor(&mut inner as *mut _).unwrap();
+            cudnnSetActivationDescriptor(
+                inner,
+                mode,
+                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+                coef as f64,
+            ).unwrap();
+            ActivationDescriptor(inner)
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cudnnActivationDescriptor_t {
+        self.0
+    }
+}
 
