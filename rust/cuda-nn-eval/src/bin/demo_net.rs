@@ -1,15 +1,17 @@
 use std::time::Instant;
 
-use cuda_sys::wrapper::handle::CudnnHandle;
+use cuda_sys::wrapper::handle::{CudnnHandle, cuda_device_count};
 use nn_cuda_eval::net::{NetDefinition, NetEvaluator};
 
 fn main() {
+    println!("Cuda device count: {}", cuda_device_count());
+
     let def = NetDefinition {
         tower_depth: 8,
         channels: 32,
     };
 
-    let handle = CudnnHandle::new();
+    let handle = CudnnHandle::new(0);
     let batch_size = 5000;
     let mut eval = NetEvaluator::new(handle, def, batch_size);
 

@@ -9,7 +9,7 @@ use cuda_sys::wrapper::operation::{run_conv, run_add_tensor, find_conv_algorithm
 pub fn main() {
     let batch_size = 1000;
 
-    let mut handle = CudnnHandle::new();
+    let mut handle = CudnnHandle::new(0);
     let input_desc = TensorDescriptor::new(
         batch_size, 3, 7, 7,
         cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
