@@ -157,7 +157,18 @@ pub fn run_activation_in_place(
     }
 }
 
-/// Runs `output = act(conv(input, filter) + res_weight * res + bias)`.
+pub enum ResType<'a> {
+    Zero,
+    Output,
+    Other {
+        desc: &'a TensorDescriptor,
+        mem: &'a DeviceMem,
+    },
+}
+
+/// Runs `output = act(conv(input, filter) + res + bias)`.
+///
+/// `res` can be 0, equal to the output or a separate tensor.
 pub fn run_conv_bias_res_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
@@ -168,7 +179,7 @@ pub fn run_conv_bias_res_activation(
     filter_mem: &DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
-    res_desc_mem: Option<(&TensorDescriptor, &DeviceMem)>,
+    res: ResType,
     bias_desc: &TensorDescriptor,
     bias_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
@@ -177,10 +188,11 @@ pub fn run_conv_bias_res_activation(
     let alpha1: f32 = 1.0;
 
     unsafe {
-        // if no res, use input with weight 0.0 instead
-        let (alpha2, res_desc, res_mem) = match res_desc_mem {
-            Some((res_desc, res_mem)) => (1.0, res_desc, res_mem.inner()),
-            None => (0.0, output_desc, output_mem.inner())
+        // map res to actual arguments
+        let (alpha2, res_desc, res_mem) = match res {
+            ResType::Zero => (0.0, output_desc, output_mem.inner()),
+            ResType::Output => (1.0, output_desc, output_mem.inner()),
+            ResType::Other { desc, mem } => (1.0, desc, mem.inner())
         };
 
         cudnnConvolutionBiasActivationForward(

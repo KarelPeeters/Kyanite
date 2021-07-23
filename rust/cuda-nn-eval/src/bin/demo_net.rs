@@ -13,14 +13,14 @@ fn main_thread() {
     let handle = CudnnHandle::new(stream);
 
     let def = NetDefinition {
-        tower_depth: 2 * 8,
-        channels: 32,
+        tower_depth: 8,
+        tower_channels: 32,
     };
 
     let batch_size = 5000;
     let mut eval = NetEvaluator::new(handle, def, batch_size);
 
-    let mut data = vec![0.0; batch_size as usize * def.channels as usize * 7 * 7];
+    let mut data = vec![0.0; batch_size as usize * def.tower_channels as usize * 7 * 7];
 
     let start = Instant::now();
     let mut prev_print = Instant::now();
