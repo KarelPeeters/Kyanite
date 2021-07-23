@@ -33,7 +33,7 @@ impl TensorDescriptor {
     pub fn size(&self) -> usize {
         unsafe {
             let mut result = 0;
-            cudnnGetTensorSizeInBytes(self.0, &mut result as *mut _);
+            cudnnGetTensorSizeInBytes(self.0, &mut result as *mut _).unwrap();
             result
         }
     }
@@ -70,7 +70,7 @@ impl FilterDescriptor {
     pub fn size(&self) -> usize {
         unsafe {
             let mut result = 0;
-            cudnnGetFilterSizeInBytes(self.0, &mut result as *mut _);
+            cudnnGetFilterSizeInBytes(self.0, &mut result as *mut _).unwrap();
             result
         }
     }

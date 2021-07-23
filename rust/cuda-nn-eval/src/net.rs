@@ -35,7 +35,11 @@ pub struct NetEvaluator {
     act_desc: ActivationDescriptor,
 
     algo: cudnnConvolutionFwdAlgo_t,
+
+    // scratch memory
     work_mem: DeviceMem,
+    prev: DeviceMem,
+    next: DeviceMem,
 }
 
 impl NetEvaluator {
@@ -60,8 +64,8 @@ impl NetEvaluator {
         let mut rng = StdRng::seed_from_u64(0);
 
         let layers = (0..def.tower_depth).map(|_| {
-            let mut filter_mem = DeviceMem::alloc(filter_desc.size());
-            let mut bias_mem = DeviceMem::alloc(bias_desc.size());
+            let mut filter_mem = DeviceMem::alloc(filter_desc.size(), handle.device());
+            let mut bias_mem = DeviceMem::alloc(bias_desc.size(), handle.device());
 
             filter_mem.copy_from_host(
                 cast_slice(
@@ -89,7 +93,9 @@ impl NetEvaluator {
             &conv_desc, &filter_desc, &image_desc, &image_desc,
         )[0];
 
-        let workspace = DeviceMem::alloc(algo_info.memory);
+        let workspace = DeviceMem::alloc(algo_info.memory, handle.device());
+        let prev = DeviceMem::alloc(image_desc.size(), handle.device());
+        let next = DeviceMem::alloc(image_desc.size(), handle.device());
 
         NetEvaluator {
             handle,
@@ -102,7 +108,10 @@ impl NetEvaluator {
             bias_desc,
             act_desc,
             algo: algo_info.algo,
+            
             work_mem: workspace,
+            prev,
+            next,
         }
     }
 
@@ -110,10 +119,7 @@ impl NetEvaluator {
     pub fn eval(&mut self, data: &mut Vec<f32>) {
         assert_eq!(self.batch_size * self.def.channels * 7 * 7, data.len() as i32);
 
-        let mut prev = DeviceMem::alloc(self.image_desc.size());
-        let mut next = DeviceMem::alloc(self.image_desc.size());
-
-        prev.copy_from_host(cast_slice(data));
+        self.prev.copy_from_host(cast_slice(data));
 
         for layer in &self.layers {
             let Layer { filter_mem, bias_mem } = layer;
@@ -127,19 +133,19 @@ impl NetEvaluator {
                 &self.filter_desc,
                 filter_mem,
                 &self.image_desc,
-                &prev,
+                &self.prev,
                 None,
                 &self.bias_desc,
                 bias_mem,
                 &self.image_desc,
-                &mut next
+                &mut self.next
             );
 
             // swap for next iteration
-            std::mem::swap(&mut next, &mut prev);
+            std::mem::swap(&mut self.next, &mut self.prev);
         }
 
         // copy output back
-        prev.copy_to_host(cast_slice_mut(data));
+        self.prev.copy_to_host(cast_slice_mut(data));
     }
 }

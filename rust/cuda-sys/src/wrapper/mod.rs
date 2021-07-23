@@ -1,3 +1,6 @@
+/// This crate tries to eliminate the global "current device" cuda state.
+/// Every cuda/cudnn call that depends on the device is preceded by a cudaSetDevice call.
+
 pub mod status;
 pub mod handle;
 

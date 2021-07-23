@@ -4,10 +4,14 @@ use cuda_sys::wrapper::handle::{CudnnHandle, cuda_device_count};
 use nn_cuda_eval::net::{NetDefinition, NetEvaluator};
 
 fn main() {
+    main_thread()
+}
+
+fn main_thread() {
     println!("Cuda device count: {}", cuda_device_count());
 
     let def = NetDefinition {
-        tower_depth: 8,
+        tower_depth: 2 * 8,
         channels: 32,
     };
 
@@ -20,11 +24,13 @@ fn main() {
     let start = Instant::now();
     let mut prev_print = Instant::now();
 
-    for i in 0.. {
+    for i in 0..500 {
         eval.eval(&mut data);
 
         let now = Instant::now();
         if (now - prev_print).as_secs_f32() >= 1.0 {
+            println!("{}", i);
+
             let throughput = (batch_size * i) as f32 / (now - start).as_secs_f32();
             prev_print = now;
 
