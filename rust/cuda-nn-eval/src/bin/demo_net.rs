@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use cuda_sys::wrapper::handle::{CudnnHandle, cuda_device_count};
+use cuda_sys::wrapper::handle::{cuda_device_count, CudaStream, CudnnHandle};
 use nn_cuda_eval::net::{NetDefinition, NetEvaluator};
 
 fn main() {
@@ -9,13 +9,14 @@ fn main() {
 
 fn main_thread() {
     println!("Cuda device count: {}", cuda_device_count());
+    let stream = CudaStream::new(0);
+    let handle = CudnnHandle::new(stream);
 
     let def = NetDefinition {
         tower_depth: 2 * 8,
         channels: 32,
     };
 
-    let handle = CudnnHandle::new(0);
     let batch_size = 5000;
     let mut eval = NetEvaluator::new(handle, def, batch_size);
 
@@ -24,7 +25,7 @@ fn main_thread() {
     let start = Instant::now();
     let mut prev_print = Instant::now();
 
-    for i in 0..500 {
+    for i in 0..250 {
         eval.eval(&mut data);
 
         let now = Instant::now();

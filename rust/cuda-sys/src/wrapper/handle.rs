@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudnnCreate, cudnnDestroy};
+use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::status::Status;
 
@@ -16,36 +16,70 @@ pub unsafe fn cuda_set_device(device: i32) {
     cudaSetDevice(device).unwrap()
 }
 
+//TODO copy? clone? default stream?
+pub struct CudaStream {
+    device: i32,
+    inner: cudaStream_t,
+}
+
+impl Drop for CudaStream {
+    fn drop(&mut self) {
+        unsafe {
+            cudaStreamDestroy(self.inner).unwrap();
+        }
+    }
+}
+
+impl CudaStream {
+    pub fn new(device: i32) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cuda_set_device(device);
+            cudaStreamCreate(&mut inner as *mut _).unwrap();
+            CudaStream { device, inner }
+        }
+    }
+
+    pub fn device(&self) -> i32 {
+        self.device
+    }
+
+    pub unsafe fn inner(&self) -> cudaStream_t {
+        self.inner
+    }
+}
+
 pub struct CudnnHandle {
     inner: cudnnHandle_t,
-    device: i32,
+    stream: CudaStream,
 }
 
 impl Drop for CudnnHandle {
     fn drop(&mut self) {
         unsafe {
-            cuda_set_device(self.device);
+            cuda_set_device(self.device());
             cudnnDestroy(self.inner).unwrap()
         }
     }
 }
 
 impl CudnnHandle {
-    pub fn new(device: i32) -> Self {
+    pub fn new(stream: CudaStream) -> Self {
         unsafe {
             let mut inner = null_mut();
-            cuda_set_device(device);
+            cuda_set_device(stream.device());
             cudnnCreate(&mut inner as *mut _).unwrap();
-            CudnnHandle { inner, device }
+            cudnnSetStream(inner, stream.inner()).unwrap();
+            CudnnHandle { inner, stream }
         }
     }
 
-    pub unsafe fn switch_to_device(self) {
-        cuda_set_device(self.device);
+    pub fn device(&self) -> i32 {
+        self.stream.device()
     }
 
-    pub fn device(&self)  -> i32 {
-        self.device
+    pub fn stream(&self) -> &CudaStream {
+        &self.stream
     }
 
     pub unsafe fn inner(&mut self) -> cudnnHandle_t {
