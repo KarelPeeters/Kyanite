@@ -1,7 +1,7 @@
 import torch
 from torch.optim import AdamW
 
-from models.google import GoogleModel
+from models import TowerModel
 from train import TrainState, train_model, WdlTarget, TrainSettings
 from util import load_data, DEVICE, print_param_count
 
@@ -32,9 +32,9 @@ def main():
     train_data = train_data.to(DEVICE)
     test_data = test_data.to(DEVICE)
 
-    model = GoogleModel(
-        channels=32,
-        blocks=4,
+    model = TowerModel(
+        tower_channels=32,
+        tower_depth=4,
         wdl_channels=1,
         wdl_size=32,
         res=True, separable=True,

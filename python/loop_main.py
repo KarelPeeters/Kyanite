@@ -4,7 +4,7 @@ import shutil
 import torch.jit
 
 from loop import LoopSettings, SelfplaySettings, run_loop
-from models.google import GoogleModel
+from models import TowerModel
 from train import TrainSettings, WdlTarget
 
 
@@ -42,7 +42,7 @@ def main():
     os.makedirs(root_path, exist_ok=True)
     initial_path = os.path.join(root_path, "initial_network.pt")
 
-    model = GoogleModel(64, 4, 2, 32, True, None, False)
+    model = TowerModel(64, 4, 2, 32, True, None, False)
     model = torch.jit.script(model)
     torch.jit.save(model, initial_path)
 

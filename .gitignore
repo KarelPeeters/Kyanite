@@ -11,3 +11,6 @@ rust/ignored/
 python/ignored/
 
 /rust/zero/src/bin/ign_*.rs
+
+# main data folder
+/data/

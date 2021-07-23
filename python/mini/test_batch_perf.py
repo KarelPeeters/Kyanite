@@ -4,7 +4,7 @@ import torch
 from matplotlib import pyplot
 from torch import nn
 
-from models.google import GoogleModel
+from models import GoogleModel
 from util import load_data, print_param_count
 
 

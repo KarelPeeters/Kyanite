@@ -70,24 +70,28 @@ class GameData:
         return len(self.full)
 
 
-def load_data(path, test_fraction: float, limit: Optional[int]) -> (GameData, GameData):
+def load_data_multiple(paths: [str], test_fraction: float, limit_each: Optional[int] = None) -> (GameData, GameData):
     """
-    Path must bo a .bin file.
+    All paths bust be .bin files
     This function does not actually shuffle train and test data itself, but games are randomly split between them.
     This is okay because they're shuffled during training anyway.
     """
 
-    path = Path(path)
+    load_count = -1 if limit_each is None else limit_each * (1 + DATA_WIDTH)
+    games = torch.zeros(0, 1 + DATA_WIDTH)
 
-    assert path.suffix == ".bin", f"Unexpected extension '{path.suffix}'"
+    for path in paths:
+        path = Path(path)
 
-    print(f"Loading data")
-    count = -1 if limit is None else limit * (1 + DATA_WIDTH)
-    games = numpy.fromfile(path, dtype=np.float32, count=count)
-    if len(games) == 0:
-        raise ValueError(f"Empty file {path}")
+        assert path.suffix == ".bin", f"Unexpected extension '{path.suffix}'"
 
-    games = torch.tensor(games).view(-1, 1 + DATA_WIDTH)
+        print(f"Loading data")
+        part_games = numpy.fromfile(path, dtype=np.float32, count=load_count)
+        if len(part_games) == 0:
+            raise ValueError(f"Empty file {path}")
+
+        part_games = torch.tensor(part_games).view(-1, 1 + DATA_WIDTH)
+        games = torch.cat([games, part_games], dim=0)
 
     print("Splitting data")
     game_ids = games[:, 0].round().long()
@@ -103,6 +107,10 @@ def load_data(path, test_fraction: float, limit: Optional[int]) -> (GameData, Ga
 
     print(f"Train size {len(train_data)}, test size {len(test_data)}")
     return train_data, test_data
+
+
+def load_data(path: str, test_fraction: float, limit: Optional[int]) -> (GameData, GameData):
+    return load_data_multiple([path], test_fraction, limit)
 
 
 def o_tensor(device):
@@ -132,12 +140,12 @@ def uniform_window_filter(data: np.array, window_size: int) -> np.array:
     return filtfilt(b, a, data)
 
 
-def print_param_count(module: nn.Module):
+def print_param_count(module: nn.Module, f=None):
     param_count = sum(prod(p.shape) for p in module.parameters())
-    print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
+    print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb", file=f)
     for name, child in module.named_children():
         child_param_count = sum(prod(p.shape) for p in child.parameters())
-        print(f"  {name}: {child_param_count / param_count:.2f}")
+        print(f"  {name}: {child_param_count / param_count:.2f}", file=f)
 
 
 SYMMETRY_INDICES_O = torch.tensor([

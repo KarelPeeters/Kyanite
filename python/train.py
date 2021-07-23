@@ -191,13 +191,13 @@ def train_model(model: nn.Module, s: TrainState):
     all_plot_data = None
 
     os.makedirs(s.output_path, exist_ok=True)
-    model.save(f"{s.output_path}/model_0_epochs.pt")
+    # model.save(f"{s.output_path}/model_0_epochs.pt")
 
     for ei in range(epochs):
         print(f"Starting epoch {ei + 1}/{epochs}")
 
         plot_data = train_model_epoch(ei, model, s)
-        model.save(f"{output_path}/model_{ei + 1}_epochs.pt")
+        # model.save(f"{output_path}/model_{ei + 1}_epochs.pt")
 
         if all_plot_data is None:
             all_plot_data = plot_data
