@@ -1,8 +1,9 @@
 pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerfStruct, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
-use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, PoolingDescriptor};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::status::Status;
+use crate::bindings::cudnnPoolingForward;
 
 pub fn find_conv_algorithms(
     handle: &mut CudnnHandle,
@@ -43,6 +44,9 @@ pub fn find_conv_algorithms(
         result
     }
 }
+
+// TODO the &mut stuff for all of these functions is kind of sketchy, since they don't really modify the mem yet.
+//   They just schedule the memory to be modified by the stream inside the handle.
 
 /// Run `output = conv(input, filter)`
 pub fn run_conv(
@@ -212,6 +216,32 @@ pub fn run_conv_bias_res_activation(
             bias_desc.inner(),
             bias_mem.inner(),
             activation_desc.inner(),
+            output_desc.inner(),
+            output_mem.inner(),
+        ).unwrap();
+    }
+}
+
+/// Runs `output = pool(input)`.
+fn run_pooling(
+    handle: &mut CudnnHandle,
+    pool_desc: &PoolingDescriptor,
+    input_desc: &TensorDescriptor,
+    input_mem: &DeviceMem,
+    output_desc: &TensorDescriptor,
+    output_mem: &mut DeviceMem,
+) {
+    let alpha: f32 = 1.0;
+    let beta: f32 = 0.0;
+
+    unsafe {
+        cudnnPoolingForward(
+            handle.inner(),
+            pool_desc.inner(),
+            &alpha as *const _ as *const _,
+            input_desc.inner(),
+            input_mem.inner(),
+            &beta as *const _ as *const _,
             output_desc.inner(),
             output_mem.inner(),
         ).unwrap();

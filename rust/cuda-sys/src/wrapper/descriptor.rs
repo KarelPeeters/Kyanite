@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnActivationDescriptor_t, cudnnDestroyActivationDescriptor, cudnnCreateActivationDescriptor, cudnnSetActivationDescriptor, cudnnActivationMode_t, cudnnNanPropagation_t};
+use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnGetPooling2dForwardOutputDim};
 use crate::wrapper::status::Status;
 
 pub struct TensorDescriptor(cudnnTensorDescriptor_t);
@@ -142,3 +142,56 @@ impl ActivationDescriptor {
     }
 }
 
+pub struct PoolingDescriptor(cudnnPoolingDescriptor_t);
+
+impl Drop for PoolingDescriptor {
+    fn drop(&mut self) {
+        unsafe { cudnnDestroyPoolingDescriptor(self.0).unwrap() }
+    }
+}
+
+impl PoolingDescriptor {
+    pub fn new(
+        mode: cudnnPoolingMode_t,
+        h: i32,
+        w: i32,
+        pad_h: i32,
+        pad_w: i32,
+        stride_h: i32,
+        stride_v: i32,
+    ) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cudnnCreatePoolingDescriptor(&mut inner as *mut _).unwrap();
+            cudnnSetPooling2dDescriptor(
+                inner,
+                mode,
+                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+                h, w, pad_h, pad_w, stride_h, stride_v,
+            ).unwrap();
+            PoolingDescriptor(inner)
+        }
+    }
+
+    pub fn output_shape(&self, input_desc: &TensorDescriptor) -> [i32; 4] {
+        unsafe {
+            let mut n = 0;
+            let mut c = 0;
+            let mut h = 0;
+            let mut w = 0;
+            cudnnGetPooling2dForwardOutputDim(
+                self.inner(),
+                input_desc.inner(),
+                &mut n as *mut _,
+                &mut c as *mut _,
+                &mut h as *mut _,
+                &mut w as *mut _,
+            ).unwrap();
+            [n, c, h, w]
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cudnnPoolingDescriptor_t {
+        self.0
+    }
+}
