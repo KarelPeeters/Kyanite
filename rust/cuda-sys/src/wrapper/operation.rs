@@ -1,6 +1,6 @@
 pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerfStruct, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
 use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, PoolingDescriptor};
-use crate::wrapper::handle::{CudnnHandle, cuda_set_device};
+use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::status::Status;
 use crate::bindings::{cudnnPoolingForward};
@@ -13,8 +13,6 @@ pub fn find_conv_algorithms(
     output: &TensorDescriptor,
 ) -> Vec<cudnnConvolutionFwdAlgoPerfStruct> {
     unsafe {
-        cuda_set_device(handle.device());
-
         let mut max_algo_count = 0;
         cudnnGetConvolutionForwardAlgorithmMaxCount(handle.inner(), &mut max_algo_count as *mut _).unwrap();
 
@@ -71,8 +69,6 @@ pub fn run_conv(
     let beta: f32 = 0.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         cudnnConvolutionForward(
             handle.inner(),
             &alpha as *const _ as *const _,
@@ -103,8 +99,6 @@ pub fn run_add_tensor(
     let beta: f32 = 1.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         cudnnAddTensor(
             handle.inner(),
             &alpha as *const _ as *const _,
@@ -130,8 +124,6 @@ pub fn run_activation(
     let beta: f32 = 0.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         cudnnActivationForward(
             handle.inner(),
             activation_desc.inner(),
@@ -156,8 +148,6 @@ pub fn run_activation_in_place(
     let beta: f32 = 0.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         cudnnActivationForward(
             handle.inner(),
             activation_desc.inner(),
@@ -202,8 +192,6 @@ pub fn run_conv_bias_res_activation(
     let alpha1: f32 = 1.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         // map res to actual arguments
         let (alpha2, res_desc, res_mem) = match res {
             ResType::Zero => (0.0, output_desc, output_mem.inner()),
@@ -247,8 +235,6 @@ pub fn run_pooling(
     let beta: f32 = 0.0;
 
     unsafe {
-        cuda_set_device(handle.device());
-
         cudnnPoolingForward(
             handle.inner(),
             pool_desc.inner(),
