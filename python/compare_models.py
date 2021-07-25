@@ -31,8 +31,35 @@ def gen_data(root: str):
     )
 
     models = {
-        "base_2p": TowerModel(16, 8, 32, lambda: ResBlock(16, 16, False, False, None)),
-        "res_2p": TowerModel(16, 8, 32, lambda: ResBlock(16, 16, True, False, None)),
+        "res": TowerModel(16, 8, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        "res_act": TowerModel(16, 8, 32, True, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        "res_vconv": TowerModel(16, 8, 32, False, True, True, lambda: ResBlock(16, 16, True, False, None)),
+
+        "res_deep": TowerModel(16, 16, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        "res_wide": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 32, True, False, None)),
+        "res_wide_bottle": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 16, True, False, None)),
+
+        # "base_2p": TowerModel(16, 8, 32, lambda: ResBlock(16, 16, False, False, None)),
+
+        # "res": TowerModel(16, 8, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act": TowerModel(16, 8, 32, True, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_vconv": TowerModel(16, 8, 32, False, True, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act_vconv": TowerModel(16, 8, 32, True, True, True, lambda: ResBlock(16, 16, True, False, None)),
+
+        # "res_16": TowerModel(16, 16, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act_16": TowerModel(16, 16, 32, True, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_vconv_16": TowerModel(16, 16, 32, False, True, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act_vconv_16": TowerModel(16, 16, 32, True, True, True, lambda: ResBlock(16, 16, True, False, None)),
+
+        # "res_vconv_16_bot": TowerModel(16, 16, 32, False, True, True, lambda: ResBlock(16, 8, True, False, None)),
+        # "res_vconv_16_sep": TowerModel(16, 16, 32, False, True, True, lambda: ResBlock(16, 8, True, True, None)),
+
+        # "res_pfc": TowerModel(16, 8, 32, False, False, False, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act_pfc": TowerModel(16, 8, 32, True, False, False, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_vconv_pfc": TowerModel(16, 8, 32, False, True, False, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act_vconv_pfc": TowerModel(16, 8, 32, True, True, False, lambda: ResBlock(16, 16, True, False, None)),
+
+        # "mob": TowerModel(16, 8, 32, True, True, True, lambda: MobileV2Block(16, 2, True))
 
         # "res_deeper_bigger": TowerModel(32, 32, 32, lambda: ResBlock(32, 8, True, False, None)),
 
@@ -76,7 +103,7 @@ def gen_data(root: str):
 
 def plot_data(root: str):
     for i in range(3):
-        title =  TRAIN_PLOT_TITLES[i]
+        title = TRAIN_PLOT_TITLES[i]
 
         for model in os.listdir(root):
             if not os.path.isdir(f"{root}/{model}"):
@@ -87,7 +114,7 @@ def plot_data(root: str):
             axis = np.load(f"{root}/{model}/plot_axis.npy")
             data = np.load(f"{root}/{model}/plot_data.npy")
 
-            data = uniform_window_filter(data[:, i], 3)
+            data = uniform_window_filter(data[:, 3 + i], 3)
 
             pyplot.plot(axis, data, label=model)
 
@@ -98,7 +125,7 @@ def plot_data(root: str):
 
 
 def main():
-    root = "../data/ataxx/compare_models_bottle"
+    root = "../data/ataxx/compare_models_less"
     gen_data(root)
     plot_data(root)
 

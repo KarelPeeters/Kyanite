@@ -1,6 +1,5 @@
 from typing import Optional, Callable
 
-import torch
 from torch import nn
 
 
@@ -97,28 +96,54 @@ class TowerModel(nn.Module):
             tower_depth: int,
             wdl_size: int,
 
+            initial_act: bool,
+            value_conv: bool,
+            policy_conv: bool,
+
             block: Callable[[], nn.Module],
     ):
         super().__init__()
 
-        # TODO relu and batchnorm at the start?
         self.tower = nn.Sequential(
             nn.Conv2d(3, tower_channels, (3, 3), padding=(1, 1), bias=False),
+            *[
+                nn.BatchNorm2d(tower_channels),
+                nn.ReLU()
+            ] if initial_act else [],
             *(block() for _ in range(tower_depth))
         )
 
-        self.policy_head = nn.Sequential(
-            nn.Conv2d(tower_channels, 17, (1, 1)),
-        )
+        if policy_conv:
+            self.policy_head = nn.Sequential(
+                nn.Conv2d(tower_channels, 17, (1, 1)),
+            )
+        else:
+            self.policy_head = nn.Sequential(
+                nn.Conv2d(tower_channels, 8, (1, 1)),
+                nn.BatchNorm2d(8),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(8 * 7 * 7, 17 * 7 * 7),
+                nn.Unflatten(1, (17, 7, 7))
+            )
 
-        # TODO try average pooling over channels instead
-        self.wdl_head = nn.Sequential(
-            nn.AvgPool2d((7, 7)),
-            nn.Flatten(),
-            nn.Linear(tower_channels, wdl_size),
-            nn.ReLU(),
-            nn.Linear(wdl_size, 3),
-        )
+        if value_conv:
+            self.wdl_head = nn.Sequential(
+                nn.Conv2d(tower_channels, 1, (3, 3), padding=(1, 1)),
+                nn.Flatten(),
+                nn.Linear(7*7, wdl_size),
+                nn.ReLU(),
+                nn.Linear(wdl_size, 3),
+            )
+        else:
+            self.wdl_head = nn.Sequential(
+                nn.AvgPool2d((7, 7)),
+                nn.Flatten(),
+                nn.Linear(tower_channels, wdl_size),
+                nn.ReLU(),
+                nn.Linear(wdl_size, 3),
+            )
+
 
     def forward(self, input):
         """
