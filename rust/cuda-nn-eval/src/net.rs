@@ -1,51 +1,74 @@
 use bytemuck::{cast_slice, cast_slice_mut};
-use itertools::Itertools;
-use rand::{Rng, thread_rng};
 
-use cuda_sys::bindings::{cudnnActivationMode_t, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t, cudnnTensorFormat_t};
+use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
+use cuda_sys::wrapper::group::{Convolution, Filter, Tensor};
 use cuda_sys::wrapper::handle::CudnnHandle;
-use cuda_sys::wrapper::mem::DeviceMem;
-use cuda_sys::wrapper::operation::{find_conv_algorithms, ResType, run_conv_bias_res_activation};
-
-//TODO initial convolution
-//TODO value head
-//TODO policy head
+use cuda_sys::wrapper::operation::{ResType, run_conv_bias_res_activation};
 
 #[derive(Copy, Clone)]
-pub struct NetDefinition {
+pub struct ResNetShape {
+    pub board_size: i32,
+    pub input_channels: i32,
+
     pub tower_depth: usize,
     pub tower_channels: i32,
+
+    pub wdl_hidden_size: i32,
+    pub policy_channels: i32,
 }
 
-struct ConvWeights {
-    filter_mem: DeviceMem,
-    bias_mem: DeviceMem,
+pub struct ResNetParams<F, B> {
+    initial_conv: WeightBias<F, B>,
+
+    tower: Vec<BlockParams<F, B>>,
+
+    policy_conv: WeightBias<F, B>,
+    wdl_initial_conv: WeightBias<F, B>,
+    wdl_hidden_conv: WeightBias<F, B>,
+    wdl_output_conv: WeightBias<F, B>,
 }
 
-impl ConvWeights {
-    fn random(handle: &CudnnHandle, filter_desc: &FilterDescriptor, bias_desc: &TensorDescriptor) -> Self {
-        let mut rng = thread_rng();
+impl ResNetParams<Filter, Tensor> {
+    pub fn dummy(shape: ResNetShape, device: i32) -> Self {
+        let c = shape.tower_channels;
 
-        let mut filter_mem = DeviceMem::alloc(filter_desc.size(), handle.device());
-        let mut bias_mem = DeviceMem::alloc(bias_desc.size(), handle.device());
+        ResNetParams {
+            initial_conv: WeightBias::dummy(c, shape.input_channels, 3, device),
+            tower: (0..shape.tower_depth).map(|_| BlockParams::dummy(shape, device)).collect(),
+            policy_conv: WeightBias::dummy(shape.policy_channels, c, 3, device),
+            wdl_initial_conv: WeightBias::dummy(1, c, 1, device),
+            wdl_hidden_conv: WeightBias::dummy(shape.wdl_hidden_size, 1, shape.board_size, device),
+            wdl_output_conv: WeightBias::dummy(3, shape.wdl_hidden_size, 1, device),
+        }
+    }
+}
 
-        filter_mem.copy_from_host(
-            cast_slice(
-                &(0..filter_mem.size() / 4)
-                    .map(|_| rng.gen::<f32>())
-                    .collect_vec()
-            )
-        );
-        bias_mem.copy_from_host(
-            cast_slice(
-                &(0..bias_mem.size() / 4)
-                    .map(|_| rng.gen::<f32>())
-                    .collect_vec()
-            )
-        );
+pub struct BlockParams<F, B> {
+    first: WeightBias<F, B>,
+    second: WeightBias<F, B>,
+}
 
-        ConvWeights { filter_mem, bias_mem }
+impl BlockParams<Filter, Tensor> {
+    fn dummy(shape: ResNetShape, device: i32) -> Self {
+        BlockParams {
+            first: WeightBias::dummy(shape.tower_channels, shape.tower_channels, 3, device),
+            second: WeightBias::dummy(shape.tower_channels, shape.tower_channels, 3, device),
+        }
+    }
+}
+
+pub struct WeightBias<F, B> {
+    filter: F,
+    bias: B,
+}
+
+impl WeightBias<Filter, Tensor> {
+    fn dummy(k: i32, c: i32, k_size: i32, device: i32) -> Self {
+        WeightBias {
+            filter: Filter::new(k, c, k_size, k_size, cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, device),
+            bias: Tensor::new(1, k, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, device),
+        }
     }
 }
 
@@ -53,123 +76,272 @@ pub struct NetEvaluator {
     handle: CudnnHandle,
     batch_size: i32,
 
-    def: NetDefinition,
-    layers: Vec<(ConvWeights, ConvWeights)>,
+    shape: ResNetShape,
+    params: ResNetParams<Filter, Tensor>,
 
-    image_desc: TensorDescriptor,
+    activation_relu: ActivationDescriptor,
+    activation_none: ActivationDescriptor,
 
-    conv_desc: ConvolutionDescriptor,
-    filter_desc: FilterDescriptor,
-    bias_desc: TensorDescriptor,
-    act_desc: ActivationDescriptor,
+    initial_conv: Convolution,
+    tower_conv: Convolution,
+    policy_conv: Convolution,
+    wdl_initial_conv: Convolution,
+    wdl_hidden_conv: Convolution,
+    wdl_output_conv: Convolution,
 
-    algo: cudnnConvolutionFwdAlgo_t,
+    input: Tensor,
+    highway: Tensor,
+    inter: Tensor,
 
-    // scratch memory
-    work_mem: DeviceMem,
-
-    highway_mem: DeviceMem,
-    inter_mem: DeviceMem,
+    policy_output: Tensor,
+    wdl_initial: Tensor,
+    wdl_hidden: Tensor,
+    wdl_output: Tensor,
 }
 
 impl NetEvaluator {
-    pub fn new(mut handle: CudnnHandle, def: NetDefinition, batch_size: i32) -> Self {
-        let image_desc = TensorDescriptor::new(
-            batch_size, def.tower_channels, 7, 7,
-            cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-        );
-        let bias_desc = TensorDescriptor::new(
-            1, def.tower_channels, 1, 1,
-            cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-        );
-        let filter_desc = FilterDescriptor::new(
-            def.tower_channels, def.tower_channels, 3, 3,
-            cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-        );
-        let conv_desc = ConvolutionDescriptor::new(
-            1, 1, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT,
-        );
-        let act_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_RELU, 0.0);
+    pub fn new(mut handle: CudnnHandle, shape: ResNetShape, params: ResNetParams<Filter, Tensor>, batch_size: i32) -> Self {
+        // abbreviations
+        let n = batch_size;
+        let s = shape.board_size;
+        let c = shape.tower_channels;
 
-        let layers = (0..def.tower_depth).map(|_| {
-            (
-                ConvWeights::random(&handle, &filter_desc, &bias_desc),
-                ConvWeights::random(&handle, &filter_desc, &bias_desc),
-            )
-        }).collect();
+        let device = handle.device();
+        let data_type = cudnnDataType_t::CUDNN_DATA_FLOAT;
+        let format = cudnnTensorFormat_t::CUDNN_TENSOR_NCHW;
 
-        let algo_info = find_conv_algorithms(
+        // activation
+
+        // tensors
+        let input = Tensor::new(n, shape.input_channels, s, s, data_type, format, device);
+        let highway = Tensor::new(n, c, s, s, data_type, format, device);
+        let inter = Tensor::new(n, c, s, s, data_type, format, device);
+        let policy_output = Tensor::new(n, shape.policy_channels, s, s, data_type, format, device);
+        let wdl_initial = Tensor::new(n, 1, s, s, data_type, format, device);
+        let wdl_hidden = Tensor::new(n, shape.wdl_hidden_size, 1, 1, data_type, format, device);
+        let wdl_output = Tensor::new(n, 3, 1, 1, data_type, format, device);
+
+        // convolutions
+        let initial_conv = Convolution::with_best_algo(
             &mut handle,
-            &conv_desc, &filter_desc, &image_desc, &image_desc,
-        )[0];
+            ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, data_type),
+            &params.initial_conv.filter.desc,
+            &input.desc,
+            &highway.desc,
+        );
 
-        let workspace = DeviceMem::alloc(algo_info.memory, handle.device());
-        let highway_mem = DeviceMem::alloc(image_desc.size(), handle.device());
-        let inter_mem = DeviceMem::alloc(image_desc.size(), handle.device());
+        // TODO expand this to support changing channel sizes
+        let tower_conv = Convolution::with_best_algo(
+            &mut handle,
+            ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, data_type),
+            &params.tower[0].first.filter.desc,
+            &highway.desc,
+            &inter.desc,
+        );
+
+        let policy_conv = Convolution::with_best_algo(
+            &mut handle,
+            ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, data_type),
+            &params.policy_conv.filter.desc,
+            &highway.desc,
+            &policy_output.desc,
+        );
+
+        let wdl_initial_conv = Convolution::with_best_algo(
+            &mut handle,
+            ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, data_type),
+            &params.wdl_initial_conv.filter.desc,
+            &highway.desc,
+            &wdl_initial.desc,
+        );
+
+        let wdl_hidden_conv = Convolution::with_best_algo(
+            &mut handle,
+            ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, data_type),
+            &params.wdl_hidden_conv.filter.desc,
+            &wdl_initial.desc,
+            &wdl_hidden.desc,
+        );
+
+        let wdl_final_conv = Convolution::with_best_algo(
+            &mut handle,
+            ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, data_type),
+            &params.wdl_output_conv.filter.desc,
+            &wdl_hidden.desc,
+            &wdl_output.desc,
+        );
 
         NetEvaluator {
-            handle,
             batch_size,
-            def,
-            layers,
-            image_desc,
-            conv_desc,
-            filter_desc,
-            bias_desc,
-            act_desc,
-            algo: algo_info.algo,
 
-            work_mem: workspace,
-            highway_mem,
-            inter_mem,
+            handle,
+            shape,
+            params,
+
+            activation_relu: ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_RELU, 0.0),
+            activation_none: ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0),
+
+            initial_conv,
+            tower_conv,
+            policy_conv,
+            wdl_initial_conv,
+            wdl_hidden_conv,
+            wdl_output_conv: wdl_final_conv,
+
+            input,
+            highway,
+            inter,
+            policy_output,
+            wdl_initial,
+            wdl_hidden,
+            wdl_output,
         }
     }
 
     /// Runs `data = net(data)`.
-    pub fn eval(&mut self, data: &mut Vec<f32>) {
-        assert_eq!(self.batch_size * self.def.tower_channels * 7 * 7, data.len() as i32);
+    pub fn eval(&mut self, input: &[f32], output_wdl: &mut [f32], output_policy: &mut [f32]) {
+        let batch_size = self.batch_size;
+        let shape = self.shape;
+        let w = shape.board_size;
 
-        self.highway_mem.copy_from_host(cast_slice(data));
+        assert_eq!(input.len() as i32, batch_size * shape.input_channels * w * w, "input_size mismatch");
+        assert_eq!(output_wdl.len() as i32, batch_size * 3, "output_wdl size mismatch");
+        assert_eq!(output_policy.len() as i32, batch_size * shape.policy_channels * w * w, "policy size mismatch");
 
-        for layer in &self.layers {
-            let (first, second) = layer;
+        let handle = &mut self.handle;
+
+        // copy input to device
+        self.input.mem.copy_from_host(cast_slice(input));
+
+        // initial
+        run_conv_bias_res_activation(
+            handle,
+            &self.activation_relu,
+            &self.initial_conv.desc,
+            self.initial_conv.algo,
+            &mut self.initial_conv.workspace,
+            &self.params.initial_conv.filter.desc,
+            &self.params.initial_conv.filter.mem,
+            &self.input.desc,
+            &self.input.mem,
+            ResType::Zero,
+            &self.params.initial_conv.bias.desc,
+            &self.params.initial_conv.bias.mem,
+            &self.highway.desc,
+            &mut self.highway.mem,
+        );
+
+        // tower
+        for layer in &self.params.tower {
+            let BlockParams { first, second } = layer;
 
             run_conv_bias_res_activation(
-                &mut self.handle,
-                &self.act_desc,
-                &self.conv_desc,
-                self.algo,
-                &mut self.work_mem,
-                &self.filter_desc,
-                &first.filter_mem,
-                &self.image_desc,
-                &self.highway_mem,
+                handle,
+                &self.activation_relu,
+                &self.tower_conv.desc,
+                self.tower_conv.algo,
+                &mut self.tower_conv.workspace,
+                &first.filter.desc,
+                &first.filter.mem,
+                &self.highway.desc,
+                &self.highway.mem,
                 ResType::Zero,
-                &self.bias_desc,
-                &first.bias_mem,
-                &self.image_desc,
-                &mut self.inter_mem,
+                &first.bias.desc,
+                &first.bias.mem,
+                &self.inter.desc,
+                &mut self.inter.mem,
             );
 
             run_conv_bias_res_activation(
-                &mut self.handle,
-                &self.act_desc,
-                &self.conv_desc,
-                self.algo,
-                &mut self.work_mem,
-                &self.filter_desc,
-                &second.filter_mem,
-                &self.image_desc,
-                &self.inter_mem,
+                handle,
+                &self.activation_relu,
+                &self.tower_conv.desc,
+                self.tower_conv.algo,
+                &mut self.tower_conv.workspace,
+                &second.filter.desc,
+                &second.filter.mem,
+                &self.inter.desc,
+                &self.inter.mem,
                 ResType::Output,
-                &self.bias_desc,
-                &second.bias_mem,
-                &self.image_desc,
-                &mut self.highway_mem,
+                &second.bias.desc,
+                &second.bias.mem,
+                &self.highway.desc,
+                &mut self.highway.mem,
             );
         }
 
-        // copy output back
-        self.highway_mem.copy_to_host(cast_slice_mut(data));
+        // policy
+        run_conv_bias_res_activation(
+            handle,
+            &self.activation_none,
+            &self.policy_conv.desc,
+            self.policy_conv.algo,
+            &mut self.policy_conv.workspace,
+            &self.params.policy_conv.filter.desc,
+            &self.params.policy_conv.filter.mem,
+            &self.highway.desc,
+            &self.highway.mem,
+            ResType::Zero,
+            &self.params.policy_conv.bias.desc,
+            &self.params.policy_conv.bias.mem,
+            &self.policy_output.desc,
+            &mut self.policy_output.mem,
+        );
+
+        // wdl
+        run_conv_bias_res_activation(
+            handle,
+            &self.activation_relu,
+            &self.wdl_initial_conv.desc,
+            self.wdl_initial_conv.algo,
+            &mut self.wdl_initial_conv.workspace,
+            &self.params.wdl_initial_conv.filter.desc,
+            &self.params.wdl_initial_conv.filter.mem,
+            &self.highway.desc,
+            &self.highway.mem,
+            ResType::Zero,
+            &self.params.wdl_initial_conv.bias.desc,
+            &self.params.wdl_initial_conv.bias.mem,
+            &self.wdl_initial.desc,
+            &mut self.wdl_initial.mem,
+        );
+
+        run_conv_bias_res_activation(
+            handle,
+            &self.activation_relu,
+            &self.wdl_hidden_conv.desc,
+            self.wdl_hidden_conv.algo,
+            &mut self.wdl_hidden_conv.workspace,
+            &self.params.wdl_hidden_conv.filter.desc,
+            &self.params.wdl_hidden_conv.filter.mem,
+            &self.wdl_initial.desc,
+            &self.wdl_initial.mem,
+            ResType::Zero,
+            &self.params.wdl_hidden_conv.bias.desc,
+            &self.params.wdl_hidden_conv.bias.mem,
+            &self.wdl_hidden.desc,
+            &mut self.wdl_hidden.mem,
+        );
+
+        run_conv_bias_res_activation(
+            handle,
+            &self.activation_none,
+            &self.wdl_output_conv.desc,
+            self.wdl_output_conv.algo,
+            &mut self.wdl_output_conv.workspace,
+            &self.params.wdl_output_conv.filter.desc,
+            &self.params.wdl_output_conv.filter.mem,
+            &self.wdl_hidden.desc,
+            &self.wdl_hidden.mem,
+            ResType::Zero,
+            &self.params.wdl_output_conv.bias.desc,
+            &self.params.wdl_output_conv.bias.mem,
+            &self.wdl_output.desc,
+            &mut self.wdl_output.mem,
+        );
+
+        // copy output back from device
+        self.wdl_output.mem.copy_to_host(cast_slice_mut(output_wdl));
+        self.policy_output.mem.copy_to_host(cast_slice_mut(output_policy));
     }
 }

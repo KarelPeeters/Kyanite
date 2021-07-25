@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnGetPooling2dForwardOutputDim};
+use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnGetPooling2dForwardOutputDim, cudnnGetConvolution2dForwardOutputDim};
 use crate::wrapper::status::Status;
 
 pub struct TensorDescriptor(cudnnTensorDescriptor_t);
@@ -103,6 +103,25 @@ impl ConvolutionDescriptor {
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION, data_type,
             ).unwrap();
             ConvolutionDescriptor(inner)
+        }
+    }
+
+    pub fn output_shape(&self, input_desc: &TensorDescriptor, filter_desc: &FilterDescriptor) -> [i32; 4] {
+        unsafe {
+            let mut n = 0;
+            let mut c = 0;
+            let mut h = 0;
+            let mut w = 0;
+            cudnnGetConvolution2dForwardOutputDim(
+                self.inner(),
+                input_desc.inner(),
+                filter_desc.inner(),
+                &mut n as *mut _,
+                &mut c as *mut _,
+                &mut h as *mut _,
+                &mut w as *mut _,
+            ).unwrap();
+            [n, c, h, w]
         }
     }
 

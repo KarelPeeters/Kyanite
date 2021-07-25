@@ -24,6 +24,7 @@ impl Drop for DeviceMem {
 }
 
 impl DeviceMem {
+    //TODO create device newtype, all these loose i32 are sketch
     pub fn alloc(size: usize, device: i32) -> Self {
         unsafe {
             let mut dev_ptr = null_mut();

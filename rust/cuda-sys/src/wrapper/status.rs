@@ -14,6 +14,7 @@ impl Status for cudaError {
         unsafe { CStr::from_ptr(cudaGetErrorString(*self)) }
     }
 
+    #[track_caller]
     fn unwrap(self) {
         if self != cudaError::cudaSuccess {
             panic!("Cuda operation returned error {:?}", self.as_string());
@@ -26,6 +27,7 @@ impl Status for cudnnStatus_t {
         unsafe { CStr::from_ptr(cudnnGetErrorString(*self)) }
     }
 
+    #[track_caller]
     fn unwrap(self) {
         if self != cudnnStatus_t::CUDNN_STATUS_SUCCESS {
             panic!("Cuda operation returned error {:?}", self.as_string());
