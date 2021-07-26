@@ -104,6 +104,8 @@ class TowerModel(nn.Module):
     ):
         super().__init__()
 
+        self.print = False
+
         self.tower = nn.Sequential(
             nn.Conv2d(3, tower_channels, (3, 3), padding=(1, 1), bias=False),
             *[
@@ -129,7 +131,9 @@ class TowerModel(nn.Module):
 
         if value_conv:
             self.wdl_head = nn.Sequential(
-                nn.Conv2d(tower_channels, 1, (3, 3), padding=(1, 1)),
+                nn.Conv2d(tower_channels, 1, (1, 1)),
+                nn.BatchNorm2d(1),
+                nn.ReLU(),
                 nn.Flatten(),
                 nn.Linear(7*7, wdl_size),
                 nn.ReLU(),
@@ -154,6 +158,8 @@ class TowerModel(nn.Module):
         """
 
         common = self.tower(input)
+        if self.print:
+            print("common", common)
         wdl = self.wdl_head(common)
         policy = self.policy_head(common)
 

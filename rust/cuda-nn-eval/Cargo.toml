@@ -8,3 +8,4 @@ cuda-sys = { path = "../cuda-sys" }
 bytemuck = "1.7.0"
 rand = "0.8.4"
 itertools = "0.10.1"
+npyz = { version = "0.6.1", features = ["npz"] }

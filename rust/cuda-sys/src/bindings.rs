@@ -5,4 +5,5 @@
 // Ignore warnings in bindgen-generated tests, see https://github.com/rust-lang/rust-bindgen/issues/1651.
 #![allow(deref_nullptr)]
 
+#![allow(missing_debug_implementations)]
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

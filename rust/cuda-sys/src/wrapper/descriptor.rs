@@ -1,13 +1,17 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetFilterSizeInBytes, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t, cudnnGetPooling2dForwardOutputDim, cudnnGetConvolution2dForwardOutputDim};
+use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
 use crate::wrapper::status::Status;
 
-pub struct TensorDescriptor(cudnnTensorDescriptor_t);
+#[derive(Debug)]
+pub struct TensorDescriptor {
+    inner: cudnnTensorDescriptor_t,
+    shape: [i32; 4],
+}
 
 impl Drop for TensorDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyTensorDescriptor(self.0).unwrap() }
+        unsafe { cudnnDestroyTensorDescriptor(self.inner).unwrap() }
     }
 }
 
@@ -22,27 +26,37 @@ impl TensorDescriptor {
                 data_type,
                 n, c, h, w,
             ).unwrap();
-            TensorDescriptor(inner)
+
+            TensorDescriptor { inner, shape: [n, c, h, w] }
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnTensorDescriptor_t {
-        self.0
+        self.inner
+    }
+
+    pub fn shape(&self) -> [i32; 4] {
+        self.shape
     }
 
     pub fn size(&self) -> usize {
         unsafe {
             let mut result = 0;
-            cudnnGetTensorSizeInBytes(self.0, &mut result as *mut _).unwrap();
+            cudnnGetTensorSizeInBytes(self.inner, &mut result as *mut _).unwrap();
+
             result
         }
     }
 }
 
-pub struct FilterDescriptor(cudnnFilterDescriptor_t);
+#[derive(Debug)]
+pub struct FilterDescriptor {
+    inner: cudnnFilterDescriptor_t,
+    shape: [i32; 4],
+}
 
 impl Drop for FilterDescriptor {
-    fn drop(&mut self) { unsafe { cudnnDestroyFilterDescriptor(self.0).unwrap() } }
+    fn drop(&mut self) { unsafe { cudnnDestroyFilterDescriptor(self.inner).unwrap() } }
 }
 
 impl FilterDescriptor {
@@ -59,23 +73,28 @@ impl FilterDescriptor {
                 format,
                 k, c, h, w,
             ).unwrap();
-            FilterDescriptor(inner)
+            FilterDescriptor { inner, shape: [k, c, h, w] }
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnFilterDescriptor_t {
-        self.0
+        self.inner
+    }
+
+    pub fn shape(&self) -> [i32; 4] {
+        self.shape
     }
 
     pub fn size(&self) -> usize {
         unsafe {
             let mut result = 0;
-            cudnnGetFilterSizeInBytes(self.0, &mut result as *mut _).unwrap();
+            cudnnGetFilterSizeInBytes(self.inner, &mut result as *mut _).unwrap();
             result
         }
     }
 }
 
+#[derive(Debug)]
 pub struct ConvolutionDescriptor(cudnnConvolutionDescriptor_t);
 
 impl Drop for ConvolutionDescriptor {
@@ -130,6 +149,7 @@ impl ConvolutionDescriptor {
     }
 }
 
+#[derive(Debug)]
 pub struct ActivationDescriptor(cudnnActivationDescriptor_t);
 
 impl Drop for ActivationDescriptor {

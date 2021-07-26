@@ -17,6 +17,7 @@ pub unsafe fn cuda_set_device(device: i32) {
 }
 
 //TODO copy? clone? default stream?
+#[derive(Debug)]
 pub struct CudaStream {
     device: i32,
     inner: cudaStream_t,
@@ -49,6 +50,7 @@ impl CudaStream {
     }
 }
 
+#[derive(Debug)]
 pub struct CudnnHandle {
     inner: cudnnHandle_t,
     stream: CudaStream,

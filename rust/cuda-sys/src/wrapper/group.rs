@@ -4,6 +4,7 @@ use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::operation::find_conv_algorithms;
 
+#[derive(Debug)]
 pub struct Tensor {
     pub desc: TensorDescriptor,
     pub mem: DeviceMem,
@@ -17,6 +18,7 @@ impl Tensor {
     }
 }
 
+#[derive(Debug)]
 pub struct Filter {
     pub desc: FilterDescriptor,
     pub mem: DeviceMem,
@@ -30,6 +32,7 @@ impl Filter {
     }
 }
 
+#[derive(Debug)]
 pub struct Convolution {
     pub desc: ConvolutionDescriptor,
     pub algo: cudnnConvolutionFwdAlgo_t,
@@ -37,13 +40,21 @@ pub struct Convolution {
 }
 
 impl Convolution {
-    pub fn with_best_algo(
+    pub fn new_with_best_algo(
         handle: &mut CudnnHandle,
         conv: ConvolutionDescriptor,
         filter: &FilterDescriptor,
         input: &TensorDescriptor,
         output: &TensorDescriptor,
     ) -> Self {
+        let output_shape = conv.output_shape(input, filter);
+        if output_shape != output.shape() {
+            panic!(
+                "Shape mismatch: (input: {:?}, filter: {:?}) -> {:?} != {:?}",
+                input.shape(), filter.shape(), output_shape, output.shape()
+            )
+        }
+
         let algos = find_conv_algorithms(handle, &conv, filter, input, output);
         let algo = algos
             .get(0)

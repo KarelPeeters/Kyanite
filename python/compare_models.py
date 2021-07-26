@@ -32,12 +32,12 @@ def gen_data(root: str):
 
     models = {
         "res": TowerModel(16, 8, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
-        "res_act": TowerModel(16, 8, 32, True, False, True, lambda: ResBlock(16, 16, True, False, None)),
-        "res_vconv": TowerModel(16, 8, 32, False, True, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_act": TowerModel(16, 8, 32, True, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_vconv": TowerModel(16, 8, 32, False, True, True, lambda: ResBlock(16, 16, True, False, None)),
 
-        "res_deep": TowerModel(16, 16, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
-        "res_wide": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 32, True, False, None)),
-        "res_wide_bottle": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 16, True, False, None)),
+        # "res_deep": TowerModel(16, 16, 32, False, False, True, lambda: ResBlock(16, 16, True, False, None)),
+        # "res_wide": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 32, True, False, None)),
+        # "res_wide_bottle": TowerModel(32, 8, 32, False, False, True, lambda: ResBlock(32, 16, True, False, None)),
 
         # "base_2p": TowerModel(16, 8, 32, lambda: ResBlock(16, 16, False, False, None)),
 
