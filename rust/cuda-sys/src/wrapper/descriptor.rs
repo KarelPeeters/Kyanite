@@ -1,6 +1,7 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
+use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
+use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -113,6 +114,8 @@ impl ConvolutionDescriptor {
         dilation_w: i32,
         data_type: cudnnDataType_t,
     ) -> Self {
+        assert!(dilation_h > 0 && dilation_w > 0, "Dilation cannot be zero, 1 means no dilation");
+
         unsafe {
             let mut inner = null_mut();
             cudnnCreateConvolutionDescriptor(&mut inner as *mut _).unwrap();
@@ -123,6 +126,31 @@ impl ConvolutionDescriptor {
             ).unwrap();
             ConvolutionDescriptor(inner)
         }
+    }
+
+    pub fn workspace_size(
+        &self,
+        handle: &mut CudnnHandle,
+        algo: cudnnConvolutionFwdAlgo_t,
+        input: &TensorDescriptor,
+        filter: &FilterDescriptor,
+        output: &TensorDescriptor,
+    ) -> usize {
+        let mut workspace: usize = 0;
+
+        unsafe {
+            cudnnGetConvolutionForwardWorkspaceSize(
+                handle.inner(),
+                input.inner,
+                filter.inner,
+                self.inner(),
+                output.inner(),
+                algo,
+                &mut workspace as *mut _,
+            ).unwrap();
+        }
+
+        workspace
     }
 
     pub fn output_shape(&self, input_desc: &TensorDescriptor, filter_desc: &FilterDescriptor) -> [i32; 4] {

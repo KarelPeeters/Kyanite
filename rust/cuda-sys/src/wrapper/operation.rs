@@ -1,9 +1,9 @@
 pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerfStruct, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
-use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, PoolingDescriptor};
+use crate::bindings::cudnnPoolingForward;
+use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::status::Status;
-use crate::bindings::{cudnnPoolingForward};
 
 pub fn find_conv_algorithms(
     handle: &mut CudnnHandle,
@@ -161,7 +161,8 @@ pub fn run_activation_in_place(
     }
 }
 
-pub enum ResType<'a> {
+#[derive(Debug)]
+pub enum ResInput<'a> {
     Zero,
     Output,
     Other {
@@ -172,7 +173,8 @@ pub enum ResType<'a> {
 
 /// Runs `output = act(conv(input, filter) + res + bias)`.
 ///
-/// `res` can be 0, equal to the output or a separate tensor.
+/// * `res` can be 0, equal to the output or a separate tensor.
+/// * `input` must be different from both `output` and `res`.
 pub fn run_conv_bias_res_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
@@ -183,7 +185,7 @@ pub fn run_conv_bias_res_activation(
     filter_mem: &DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
-    res: ResType,
+    res: ResInput,
     bias_desc: &TensorDescriptor,
     bias_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
@@ -192,11 +194,14 @@ pub fn run_conv_bias_res_activation(
     let alpha1: f32 = 1.0;
 
     unsafe {
+        assert_ne!(input_mem.inner(), output_mem.inner(), "input and output must be distinct");
+        assert_ne!(input_mem.inner(), bias_mem.inner(), "input and bias must be distinct");
+
         // map res to actual arguments
         let (alpha2, res_desc, res_mem) = match res {
-            ResType::Zero => (0.0, output_desc, output_mem.inner()),
-            ResType::Output => (1.0, output_desc, output_mem.inner()),
-            ResType::Other { desc, mem } => (1.0, desc, mem.inner())
+            ResInput::Zero => (0.0, output_desc, output_mem.inner()),
+            ResInput::Output => (1.0, output_desc, output_mem.inner()),
+            ResInput::Other { desc, mem } => (1.0, desc, mem.inner())
         };
 
         cudnnConvolutionBiasActivationForward(

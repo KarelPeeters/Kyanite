@@ -1,6 +1,6 @@
 use crate::bindings::{cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
 use crate::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
-use crate::wrapper::handle::CudnnHandle;
+use crate::wrapper::handle::{CudnnHandle, Device};
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::operation::find_conv_algorithms;
 
@@ -11,7 +11,7 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    pub fn new(n: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t, device: i32) -> Self {
+    pub fn new(n: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t, device: Device) -> Self {
         let desc = TensorDescriptor::new(n, c, h, w, data_type, format);
         let mem = DeviceMem::alloc(desc.size(), device);
         Tensor { desc, mem }
@@ -25,7 +25,7 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn new(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t, device: i32) -> Self {
+    pub fn new(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t, device: Device) -> Self {
         let desc = FilterDescriptor::new(k, c, h, w, data_type, format);
         let mem = DeviceMem::alloc(desc.size(), device);
         Filter { desc, mem }
@@ -47,13 +47,7 @@ impl Convolution {
         input: &TensorDescriptor,
         output: &TensorDescriptor,
     ) -> Self {
-        let output_shape = conv.output_shape(input, filter);
-        if output_shape != output.shape() {
-            panic!(
-                "Shape mismatch: (input: {:?}, filter: {:?}) -> {:?} != {:?}",
-                input.shape(), filter.shape(), output_shape, output.shape()
-            )
-        }
+        check_conv_output_shape(&conv, filter, input, output);
 
         let algos = find_conv_algorithms(handle, &conv, filter, input, output);
         let algo = algos
@@ -63,5 +57,15 @@ impl Convolution {
         let workspace = DeviceMem::alloc(algo.memory, handle.device());
 
         Convolution { desc: conv, algo: algo.algo, workspace }
+    }
+}
+
+fn check_conv_output_shape(conv: &ConvolutionDescriptor, filter: &FilterDescriptor, input: &TensorDescriptor, output: &TensorDescriptor) {
+    let output_shape = conv.output_shape(input, filter);
+    if output_shape != output.shape() {
+        panic!(
+            "Shape mismatch: (input: {:?}, filter: {:?}) -> {:?} != {:?}",
+            input.shape(), filter.shape(), output_shape, output.shape()
+        )
     }
 }

@@ -16,19 +16,19 @@ def save_multiple(model, path: str):
 
     os.makedirs(path, exist_ok=True)
     pt_path = os.path.join(path, "model.pt")
-    # onnx_path = os.path.join(path, "model.onnx")
-    # onnx_opt_path = os.path.join(path, "model_opt.onnx")
+    onnx_path = os.path.join(path, "model.onnx")
+    onnx_opt_path = os.path.join(path, "model_opt.onnx")
 
-    # torch.jit.script(model).save(pt_path)
+    torch.jit.script(model).save(pt_path)
 
-    # example_input = torch.zeros(100, 3, 7, 7)
-    # torch.onnx.export(
-    #     model, example_input, onnx_path
-    # )
+    example_input = torch.zeros(100, 3, 7, 7)
+    torch.onnx.export(
+        model, example_input, onnx_path
+    )
 
-    # model_onnx = onnx.load_model(onnx_path)
-    # model_onnx_opt = onnxoptimizer.optimize(model_onnx)
-    # onnx.save_model(model_onnx_opt, onnx_opt_path)
+    model_onnx = onnx.load_model(onnx_path)
+    model_onnx_opt = onnxoptimizer.optimize(model_onnx)
+    onnx.save_model(model_onnx_opt, onnx_opt_path)
 
     params_path = os.path.join(path, "params.npz")
     save_fused_params(model, params_path)
@@ -82,11 +82,11 @@ def train(model):
 
 def main():
     model = TowerModel(
-        16, 8, 5, True, True, True, lambda: ResBlock(16, 16, True, False, None)
+        32, 2, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None)
     )
 
     model.print = False
-    train(model)
+    # train(model)
 
     model.eval()
 

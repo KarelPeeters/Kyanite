@@ -2,49 +2,67 @@ use std::io;
 
 use bytemuck::cast_slice;
 use itertools::Itertools;
-use npyz::Order;
 use npyz::npz::NpzArchive;
+use npyz::Order;
 
 use cuda_sys::bindings::{cudnnDataType_t, cudnnTensorFormat_t};
 use cuda_sys::wrapper::group::{Filter, Tensor};
 
-use crate::net::{BlockParams, ConvParams, ResNetParams, ResNetShape};
+use crate::graph::{Graph, Operation};
+use cuda_sys::wrapper::handle::Device;
+use std::fmt::{Debug, Formatter};
 
-pub fn load_net_params<R>(shape: ResNetShape, npz: &mut NpzArchive<R>, device: i32) -> ResNetParams<Filter, Tensor> where R: io::Read + io::Seek {
+pub struct GraphParams {
+    pub device: Device,
+    pub filters: Vec<Filter>,
+    pub biases: Vec<Tensor>,
+}
+
+impl GraphParams {
+    fn new(device: Device) -> Self {
+        GraphParams {
+            device,
+            filters: Default::default(),
+            biases: Default::default(),
+        }
+    }
+}
+
+pub fn load_params_from_npz<R: io::Read + io::Seek>(graph: &Graph, npz: &mut NpzArchive<R>, device: Device) -> GraphParams {
     let mut loader = Loader::new(npz, device);
+    let mut params = GraphParams::new(device);
 
-    let c = shape.tower_channels;
-    let s = shape.board_size;
+    for value in graph.values() {
+        match graph[value].operation {
+            Operation::Input | Operation::Add { .. } | Operation::Relu { .. } => {}
+            Operation::Conv { input, output_channels, kernel_size, padding: _, flat_weights } => {
+                let [_, input_channels, w, h] = graph[input].shape;
+                let filter_shape = [output_channels, input_channels, kernel_size, kernel_size];
+                let flat_shape;
 
-    let params = ResNetParams {
-        initial_conv: loader.next_conv([c, shape.input_channels, 3, 3]),
-        tower: (0..shape.tower_depth).map(|_| {
-            BlockParams {
-                first: loader.next_conv([c, c, 3, 3]),
-                second: loader.next_conv([c, c, 3, 3]),
+                let data_shape: &[i32] = if flat_weights {
+                    flat_shape = [output_channels, input_channels * w * h];
+                    &flat_shape
+                } else {
+                    &filter_shape
+                };
+
+                let filter = loader.next_filter(filter_shape, data_shape);
+                params.filters.push(filter);
             }
-        }).collect(),
-
-        wdl_initial_conv: loader.next_conv([1, c, 1, 1]),
-        wdl_hidden_conv: loader.next_general_conv(
-            [shape.wdl_hidden_size, 1, s, s],
-            &[shape.wdl_hidden_size, s * s]
-        ),
-        wdl_output_conv: loader.next_general_conv(
-            [3, shape.wdl_hidden_size, 1, 1],
-            &[3, shape.wdl_hidden_size]
-        ),
-
-        policy_conv: loader.next_conv([shape.policy_channels, c, 1, 1]),
-    };
+            Operation::Bias { input: _, channels } => {
+                let bias = loader.next_bias(channels);
+                params.biases.push(bias);
+            }
+        }
+    }
 
     assert!(loader.is_done(), "{} leftover parameters", loader.max - loader.next);
-
     params
 }
 
 struct Loader<'a, R: io::Read + io::Seek> {
-    device: i32,
+    device: Device,
     npz: &'a mut NpzArchive<R>,
 
     max: usize,
@@ -52,7 +70,7 @@ struct Loader<'a, R: io::Read + io::Seek> {
 }
 
 impl<'a, R: io::Read + io::Seek> Loader<'a, R> {
-    fn new(npz: &'a mut NpzArchive<R>, device: i32) -> Self {
+    fn new(npz: &'a mut NpzArchive<R>, device: Device) -> Self {
         let max = npz.array_names().count();
         Loader { device, next: 0, max, npz }
     }
@@ -68,7 +86,7 @@ impl<'a, R: io::Read + io::Seek> Loader<'a, R> {
 
         assert_eq!(Order::C, result.order(), "param {}: must be in C-order", next);
         let shape = shape.iter().map(|&x| x as u64).collect_vec();
-        assert_eq!(&shape, result.shape(), "param {}: shape mismatch", next);
+        assert_eq!(&shape, result.shape(), "param {}: shape mismatch, maybe the graph doesn't math the parameter file?", next);
 
         result.into_vec()
             .unwrap_or_else(|_| panic!("param {}: failed to convert to vec, maybe type mismatch?", next))
@@ -96,21 +114,30 @@ impl<'a, R: io::Read + io::Seek> Loader<'a, R> {
         tensor
     }
 
-    /// Load the params for any layer that can be represented as a convolution,
-    /// flattening followed by a fully connected layer.
-    fn next_general_conv(&mut self, filter_shape: [i32; 4], data_shape: &[i32]) -> ConvParams<Filter, Tensor> {
-        ConvParams {
-            filter: self.next_filter(filter_shape, data_shape),
-            bias: self.next_bias(filter_shape[0]),
-        }
-    }
-
-    /// Load the params for a real convolution.
-    fn next_conv(&mut self, shape: [i32; 4]) -> ConvParams<Filter, Tensor> {
-        self.next_general_conv(shape, &shape)
-    }
-
     fn is_done(&self) -> bool {
         self.next == self.max
+    }
+}
+
+impl Debug for GraphParams {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let GraphParams { device, filters, biases } = self;
+
+        writeln!(f, "GraphParams {{")?;
+        writeln!(f, "  device: {:?},", device)?;
+
+        writeln!(f, "  filters: [")?;
+        for (i, filter) in filters.iter().enumerate() {
+            writeln!(f, "    {} -> {:?},", i, filter)?;
+        }
+        writeln!(f, "  ],")?;
+
+        writeln!(f, "  biases: [")?;
+        for (i, bias) in biases.iter().enumerate() {
+            writeln!(f, "    {} -> {:?},", i, bias)?;
+        }
+        writeln!(f, "  ],")?;
+
+        Ok(())
     }
 }
