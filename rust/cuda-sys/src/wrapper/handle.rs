@@ -21,6 +21,10 @@ impl Device {
         Device(device)
     }
 
+    pub fn all() -> impl Iterator<Item=Self> {
+        (0..cuda_device_count()).map(|i| Device::new(i))
+    }
+
     pub fn inner(self) -> i32 {
         self.0
     }

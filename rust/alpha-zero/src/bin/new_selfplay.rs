@@ -121,6 +121,7 @@ fn main() -> anyhow::Result<()> {
             Command::NewSettings { settings } => {
                 println!("Received new settings: {:#?}", settings);
 
+                // TODO this is stupid, just keep the number of threads fixed for now
                 let new_thread_count = settings.threads_per_device as usize;
 
                 for device in &mut state.devices {

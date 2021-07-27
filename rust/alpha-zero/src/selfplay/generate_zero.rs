@@ -13,12 +13,12 @@ use crate::selfplay::{Generator, Message, MoveSelector, Position, Simulation, St
 use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroEvaluation, ZeroSettings, ZeroState};
 
 #[derive(Debug)]
-pub struct ZeroGeneratorSettings<B: Board, S: NetworkSettings<B>> {
+pub struct ZeroGeneratorSettings<B: Board, L: NetworkLoader<B>> {
     // performance settings
     pub batch_size: usize,
 
     // settings that effect the generated games
-    pub network: S,
+    pub network: L,
     pub zero_settings: ZeroSettings,
 
     pub full_search_prob: f64,
@@ -32,18 +32,19 @@ pub struct ZeroGeneratorSettings<B: Board, S: NetworkSettings<B>> {
     pub max_game_length: u32,
 
     pub ph: PhantomData<B>,
+
+    pub devices: Vec<L::Device>,
+    pub threads_per_device: usize,
 }
 
-pub trait NetworkSettings<B: Board>: Debug + Sync {
-    type ThreadParam: Send;
+pub trait NetworkLoader<B: Board>: Debug + Sync {
+    type Device: Debug + Clone + Send + Sync;
     type Network: Network<B>;
 
-    fn load_network(&self, param: Self::ThreadParam) -> Self::Network;
-
-    fn thread_params(&self) -> Vec<Self::ThreadParam>;
+    fn load_network(&self, device: Self::Device) -> Self::Network;
 }
 
-impl<B: Board, S: NetworkSettings<B>> ZeroGeneratorSettings<B, S> {
+impl<B: Board, S: NetworkLoader<B>> ZeroGeneratorSettings<B, S> {
     fn new_zero(&self, tree: Tree<B>, rng: &mut impl Rng) -> ZeroState<B> {
         let iterations = if rng.gen_bool(self.full_search_prob) {
             self.full_iterations
@@ -73,18 +74,18 @@ impl<B: Board, S: NetworkSettings<B>> ZeroGeneratorSettings<B, S> {
     }
 }
 
-impl<B: Board, S: NetworkSettings<B>> Generator<B> for ZeroGeneratorSettings<B, S> {
-    type ThreadParam = S::ThreadParam;
+impl<B: Board, L: NetworkLoader<B>> Generator<B> for ZeroGeneratorSettings<B, L> {
+    type ThreadParam = L::Device;
 
     fn thread_params(&self) -> Vec<Self::ThreadParam> {
-        self.network.thread_params()
+        self.devices.clone()
     }
 
     fn thread_main(
         &self,
         start_board: &B,
         move_selector: MoveSelector,
-        thread_param: S::ThreadParam,
+        thread_param: L::Device,
         start_counter: &StartGameCounter,
         sender: Sender<Message<B>>,
     ) {
@@ -167,7 +168,7 @@ impl<B: Board> GameState<B> {
         &mut self,
         rng: &mut impl Rng,
         move_selector: MoveSelector,
-        settings: &ZeroGeneratorSettings<B, impl NetworkSettings<B>>,
+        settings: &ZeroGeneratorSettings<B, impl NetworkLoader<B>>,
         response: Option<Response<B>>,
         sender: &Sender<Message<B>>,
     ) -> (Option<Request<B>>, u64) {

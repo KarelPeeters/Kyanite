@@ -1,9 +1,9 @@
 use npyz::npz::NpzArchive;
 
 use cuda_sys::wrapper::handle::{cuda_device_count, CudaStream, CudnnHandle, Device};
-use nn_cuda_eval::executor::CudaGraphExecutor;
-use nn_cuda_eval::load::load_params_from_npz;
-use nn_cuda_eval::tower_net::TowerShape;
+use cuda_nn_eval::tower_net::TowerShape;
+use cuda_nn_eval::load::load_params_from_npz;
+use cuda_nn_eval::executor::CudaGraphExecutor;
 
 fn main() {
     main_thread()

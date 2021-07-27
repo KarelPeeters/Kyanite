@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot
 from torch import nn
+from torch.fx._experimental.fuser import fuse
 from torch.optim import Optimizer
 
 from util import DEVICE, linspace_int, uniform_window_filter, GameData
@@ -184,6 +185,13 @@ def plot_train_data(s: TrainState):
         pyplot.show()
 
 
+def save_opt_model(model, f):
+    model.eval()
+    model_fused = fuse(model)
+    model_jit = torch.jit.script(model_fused)
+    model_jit.save(f)
+
+
 def train_model(model: nn.Module, s: TrainState):
     epochs = s.settings.epochs
     output_path = s.output_path
@@ -191,13 +199,13 @@ def train_model(model: nn.Module, s: TrainState):
     all_plot_data = None
 
     os.makedirs(s.output_path, exist_ok=True)
-    # model.save(f"{s.output_path}/model_0_epochs.pt")
+    save_opt_model(model, f"{output_path}/model_{0}_epochs.pt")
 
     for ei in range(epochs):
         print(f"Starting epoch {ei + 1}/{epochs}")
 
         plot_data = train_model_epoch(ei, model, s)
-        # model.save(f"{output_path}/model_{ei + 1}_epochs.pt")
+        save_opt_model(model, f"{output_path}/model_{ei + 1}_epochs.pt")
 
         if all_plot_data is None:
             all_plot_data = plot_data

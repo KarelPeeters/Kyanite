@@ -82,7 +82,7 @@ def train(model):
 
 def main():
     model = TowerModel(
-        32, 2, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None)
+        32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None)
     )
 
     model.print = False

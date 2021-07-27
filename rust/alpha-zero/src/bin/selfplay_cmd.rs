@@ -8,7 +8,7 @@ use serde::Deserialize;
 use board_game::games::ataxx::AtaxxBoard;
 
 use alpha_zero::games::ataxx_output::AtaxxBinaryOutput;
-use alpha_zero::games::ataxx_torch_network::AtaxxTorchSettings;
+use alpha_zero::games::ataxx_torch_network::AtaxxTorchLoader;
 use alpha_zero::network::torch_utils::all_cuda_devices;
 use alpha_zero::selfplay::{MoveSelector, Settings};
 use alpha_zero::selfplay::generate_zero::ZeroGeneratorSettings;
@@ -72,10 +72,10 @@ fn main() {
             dirichlet_alpha: args.dirichlet_alpha,
             dirichlet_eps: args.dirichlet_eps,
             max_game_length: args.max_game_length,
-            network: AtaxxTorchSettings {
+            devices: all_cuda_devices(),
+            threads_per_device: args.threads_per_device,
+            network: AtaxxTorchLoader {
                 path: args.network_path,
-                devices: all_cuda_devices(),
-                threads_per_device: args.threads_per_device,
             },
             ph: PhantomData,
         },

@@ -30,10 +30,13 @@ dependencies = [
  "anyhow",
  "board-game",
  "crossbeam",
+ "cuda-nn-eval",
+ "cuda-sys",
  "decorum",
  "image",
  "internal-iterator",
  "itertools",
+ "npyz",
  "num_cpus",
  "rand 0.8.4",
  "rand_distr",
@@ -330,6 +333,17 @@ checksum = "d82cfc11ce7f2c3faef78d8a684447b40d503d9681acebed6cb728d45940c4db"
 dependencies = [
  "cfg-if",
  "lazy_static",
+]
+
+[[package]]
+name = "cuda-nn-eval"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cuda-sys",
+ "itertools",
+ "npyz",
+ "rand 0.8.4",
 ]
 
 [[package]]
@@ -686,17 +700,6 @@ name = "newtype-ops"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d36047f46c69ef97b60e7b069a26ce9a15cd8a7852eddb6991ea94a83ba36a78"
-
-[[package]]
-name = "nn-cuda-eval"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "cuda-sys",
- "itertools",
- "npyz",
- "rand 0.8.4",
-]
 
 [[package]]
 name = "nom"

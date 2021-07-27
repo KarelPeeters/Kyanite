@@ -1,5 +1,5 @@
 [package]
-name = "nn-cuda-eval"
+name = "cuda-nn-eval"
 version = "0.1.0"
 edition = "2018"
 
