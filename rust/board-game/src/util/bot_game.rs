@@ -18,8 +18,11 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     both_sides: bool,
     print_progress_every: Option<u32>,
 ) -> BotGameResult {
-    let progress_counter = AtomicU32::default();
+    // this instantiates both both at least once so we catch errors before starting a bunch of threads
+    let debug_l = debug_to_sting(&bot_l());
+    let debug_r = debug_to_sting(&bot_r());
 
+    let progress_counter = AtomicU32::default();
     let game_count = if both_sides { 2 * games_per_side } else { games_per_side };
 
     let result: ReductionResult = (0..game_count).into_par_iter().panic_fuse().map(|i| {
@@ -84,8 +87,8 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         elo_l: elo,
         time_l: result.total_time_l / (result.move_count_l as f32),
         time_r: result.total_time_r / (result.move_count_r as f32),
-        bot_l: debug_to_sting(&bot_l()),
-        bot_r: debug_to_sting(&bot_r()),
+        debug_l,
+        debug_r,
     }
 }
 
@@ -130,8 +133,8 @@ pub struct BotGameResult {
     pub time_l: f32,
     pub time_r: f32,
 
-    pub bot_l: String,
-    pub bot_r: String,
+    pub debug_l: String,
+    pub debug_r: String,
 }
 
 fn debug_to_sting(d: &impl Debug) -> String {
