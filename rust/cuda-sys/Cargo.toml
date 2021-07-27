@@ -7,4 +7,4 @@ edition = "2018"
 bindgen = { git = "https://github.com/KarelPeeters/rust-bindgen", rev = "5b396301" }
 
 [dependencies]
-
+bytemuck = "1.7.0"

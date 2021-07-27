@@ -159,7 +159,7 @@ class TowerModel(nn.Module):
 
         common = self.tower(input)
         if self.print:
-            print("common", common)
+            print("common", common.detach())
         wdl = self.wdl_head(common)
         policy = self.policy_head(common)
 

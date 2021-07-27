@@ -91,7 +91,9 @@ impl FusedGraph {
 
         //if it's an input just wrap it
         if let Operation::Input = g[value].operation {
-            return self.push(FusedValueInfo::Input(value));
+            let fused_value = self.push(FusedValueInfo::Input(value));
+            assert!(self.visited.insert(value, Some(fused_value)).is_none());
+            return fused_value;
         }
 
         // all of the values involved in this fused operation, including input and output
@@ -155,11 +157,7 @@ impl FusedGraph {
         let filter_index = post_inc(&mut self.next_filter_index);
         let bias_index = post_inc(&mut self.next_bias_index);
 
-        let res_input = res_left.map(|left| {
-            self.visited.get(&left)
-                .unwrap_or_else(|| panic!("Limitation: left {:?} should have been visited already", value))
-                .unwrap_or_else(|| panic!("Limitation: left {:?} was fused away", value))
-        });
+        let res_input = res_left.map(|left| self.visit(g, left));
 
         let operation = FusedValueInfo::FusedOperation {
             value,

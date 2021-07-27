@@ -109,6 +109,7 @@ impl Graph {
     }
 
     /// Add two same-size values together.
+    /// TODO for now the "resnet highway" should be on the left.
     pub fn add(&mut self, left: Value, right: Value) -> Value {
         let left_shape = self[left].shape;
         let right_shape = self[right].shape;

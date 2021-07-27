@@ -37,15 +37,15 @@ def save_multiple(model, path: str):
 def print_outputs(model):
     all_zero = torch.zeros(1, 3, 7, 7)
 
-    wdl, policy = model(all_zero)
-    torch.set_printoptions(threshold=100000)
-    print("policy", policy)
-    print("wdl", wdl)
+    # wdl, policy = model(all_zero)
+    # torch.set_printoptions(threshold=100000)
+    # print("policy", policy)
+    # print("wdl", wdl)
 
     model_fused = fuse(model)
-    wdl, zero = model_fused(all_zero)
+    wdl, policy = model_fused(all_zero)
     print("policy", policy)
-    print("wdl", wdl)
+    print("wdl", wdl.detach())
 
 
 def train(model):
@@ -86,11 +86,11 @@ def main():
     )
 
     model.print = False
-    # train(model)
+    train(model)
 
     model.eval()
 
-    model.print = True
+    model.print = False
     print_outputs(model)
     save_multiple(model, "../../data/derp/basic_res_model/")
 

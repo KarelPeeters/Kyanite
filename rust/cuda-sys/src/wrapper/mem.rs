@@ -34,6 +34,10 @@ impl DeviceMem {
         }
     }
 
+    pub unsafe fn from_components(dev_ptr: *mut c_void, size: usize, device: Device) -> Self {
+        DeviceMem { dev_ptr, size, device }
+    }
+
     pub unsafe fn inner(&self) -> *mut c_void {
         self.dev_ptr
     }
@@ -54,7 +58,7 @@ impl DeviceMem {
     }
 
     pub fn copy_from_host(&mut self, buffer: &[u8]) {
-        assert_eq!(self.size, buffer.len());
+        assert_eq!(self.size, buffer.len(), "copy buffer size mismatch");
         unsafe {
             self.device.switch_to();
             cudaMemcpy(
@@ -67,7 +71,7 @@ impl DeviceMem {
     }
 
     pub fn copy_to_host(&self, buffer: &mut [u8]) {
-        assert_eq!(self.size, buffer.len());
+        assert_eq!(self.size, buffer.len(), "copy buffer size mismatch");
         unsafe {
             self.device.switch_to();
             cudaMemcpy(
@@ -80,7 +84,7 @@ impl DeviceMem {
     }
 
     pub fn copy_from_device(&mut self, other: &DeviceMem) {
-        assert_eq!(self.size, other.size);
+        assert_eq!(self.size, other.size, "copy buffer size mismatch");
         unsafe {
             self.device.switch_to();
             cudaMemcpy(

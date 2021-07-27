@@ -155,7 +155,10 @@ def save_fused_params(model, path):
 
     params = []
     for i, param in enumerate(model_fused.parameters()):
-        print(f"{i}: {param.shape}")
+        if prod(param.shape) == 1:
+            print(f"{i}: {param.data}")
+        else:
+            print(f"{i}: {param.shape}")
         params.append(param.detach().numpy())
 
     np.savez(path, *params)

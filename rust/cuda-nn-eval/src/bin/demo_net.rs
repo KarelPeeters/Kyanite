@@ -3,7 +3,6 @@ use npyz::npz::NpzArchive;
 use cuda_sys::wrapper::handle::{cuda_device_count, CudaStream, CudnnHandle, Device};
 use nn_cuda_eval::executor::CudaGraphExecutor;
 use nn_cuda_eval::load::load_params_from_npz;
-use nn_cuda_eval::planner::FusedGraph;
 use nn_cuda_eval::tower_net::TowerShape;
 
 fn main() {
@@ -25,7 +24,7 @@ fn main_thread() {
         wdl_hidden_size: 16,
     };
 
-    let batch_size = 100;
+    let batch_size = 1;
     let graph = shape.to_graph(batch_size);
 
     println!("{:?}", graph);
@@ -33,21 +32,20 @@ fn main_thread() {
     let mut npz = NpzArchive::open("../data/derp/basic_res_model/params.npz").unwrap();
     let params = load_params_from_npz(&graph, &mut npz, handle.device());
 
-    println!("{:?}", params);
+    // println!("{:?}", params);
 
-    let fused = FusedGraph::new(&graph);
-    println!("{:?}", fused);
+    // let fused = FusedGraph::new(&graph);
+    // println!("{:?}", fused);
 
-    let mut executor = CudaGraphExecutor::new(handle, graph, params);
-    println!("{:?}", executor);
+    let mut executor = CudaGraphExecutor::new(handle, &graph, params);
+    // println!("{:?}", executor);
 
     let batch_size = batch_size as usize;
     let input = vec![0.0; batch_size * 3 * 7 * 7];
     let mut output_wdl = vec![0.0; batch_size * 3];
     let mut output_policy = vec![0.0; batch_size * 17 * 7 * 7];
 
-    executor.execute(&[&input], &mut [&mut output_wdl, &mut output_policy]);
+    executor.eval(&[&input], &mut [&mut output_wdl, &mut output_policy]);
 
-    println!("{:?}", &output_wdl[0..3]);
-    println!("{:?}", &output_wdl[3..6]);
+    println!("{:?}", &output_wdl);
 }

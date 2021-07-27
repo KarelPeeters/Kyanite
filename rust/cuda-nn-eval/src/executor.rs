@@ -90,8 +90,8 @@ const CONV_ALGO: cudnnConvolutionFwdAlgo_t = cudnnConvolutionFwdAlgo_t::CUDNN_CO
 
 impl CudaGraphExecutor {
     //TODO implement memory reuse, with some "register" allocation scheme
-    pub fn new(mut handle: CudnnHandle, graph: Graph, params: GraphParams) -> Self {
-        let fused_graph = FusedGraph::new(&graph);
+    pub fn new(mut handle: CudnnHandle, graph: &Graph, params: GraphParams) -> Self {
+        let fused_graph = FusedGraph::new(graph);
 
         let mut plan = vec![];
         let mut buffers = vec![];
@@ -191,7 +191,7 @@ impl CudaGraphExecutor {
         }
     }
 
-    pub fn execute(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]]) {
+    pub fn eval(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]]) {
         assert_eq!(self.inputs.len(), inputs.len(), "Wrong number of inputs");
         assert_eq!(self.outputs.len(), outputs.len(), "Wrong number of outputs");
 

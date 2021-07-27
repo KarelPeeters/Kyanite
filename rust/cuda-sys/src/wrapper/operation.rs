@@ -199,14 +199,14 @@ pub fn run_conv_bias_res_activation(
 
         // map res to actual arguments
         let (alpha2, res_desc, res_mem) = match res {
-            ResInput::Zero => (0.0, output_desc, output_mem.inner()),
-            ResInput::Output => (1.0, output_desc, output_mem.inner()),
-            ResInput::Other { desc, mem } => (1.0, desc, mem.inner())
+            ResInput::Zero => (0f32, output_desc, output_mem.inner()),
+            ResInput::Output => (1f32, output_desc, output_mem.inner()),
+            ResInput::Other { desc, mem } => (1f32, desc, mem.inner())
         };
 
         cudnnConvolutionBiasActivationForward(
             handle.inner(),
-            &alpha1 as *const _ as *const _,
+            &alpha1 as *const f32 as *const _,
             input_desc.inner(),
             input_mem.inner(),
             filter_desc.inner(),
@@ -215,7 +215,7 @@ pub fn run_conv_bias_res_activation(
             algo,
             work_mem.inner(),
             work_mem.size(),
-            &alpha2 as *const _ as *const _,
+            &alpha2 as *const f32 as *const _,
             res_desc.inner(),
             res_mem,
             bias_desc.inner(),
