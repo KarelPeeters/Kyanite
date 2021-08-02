@@ -19,7 +19,9 @@ pub enum Outcome {
 }
 
 /// The representation of a game state.
-pub trait Board: Debug + Display + Clone + Eq + Hash + Send + Sync where for<'a> Self: BoardAvailableMoves<'a, Self> {
+pub trait Board: 'static + Debug + Display + Clone + Eq + Hash + Send + Sync
+    where for<'a> Self: BoardAvailableMoves<'a, Self>
+{
     type Move: Debug + Copy + Eq + Ord + Hash + Send + Sync;
     type Symmetry: Symmetry;
 

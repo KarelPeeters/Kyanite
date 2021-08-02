@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::Path;
 
 use npyz::npz::NpzArchive;
@@ -6,14 +7,13 @@ use board_game::games::ataxx::AtaxxBoard;
 use cuda_nn_eval::executor::CudaGraphExecutor;
 use cuda_nn_eval::graph::Graph;
 use cuda_nn_eval::load::load_params_from_npz;
-use cuda_nn_eval::tower_net::TowerShape;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 
 use crate::games::ataxx_utils::{decode_output, encode_input, INPUT_SIZE, POLICY_SIZE};
 use crate::network::Network;
 use crate::selfplay::generate_zero::NetworkLoader;
 use crate::zero::ZeroEvaluation;
-use std::ffi::OsStr;
+use crate::network::tower_shape::TowerShape;
 
 #[derive(Debug)]
 pub struct AtaxxCNNLoader {

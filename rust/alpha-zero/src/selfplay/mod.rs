@@ -103,8 +103,8 @@ pub enum Message<B> {
 /// A full game.
 #[derive(Debug)]
 pub struct Simulation<B> {
-    outcome: Outcome,
-    positions: Vec<Position<B>>,
+    pub outcome: Outcome,
+    pub positions: Vec<Position<B>>,
 }
 
 /// A single position in a game.

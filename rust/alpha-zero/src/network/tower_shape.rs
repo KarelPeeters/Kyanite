@@ -1,7 +1,7 @@
-use crate::graph::Graph;
+use serde::{Deserialize, Serialize};
+use cuda_nn_eval::graph::Graph;
 
-//TODO move this file into a different crate, so this one only contains general NN code
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct TowerShape {
     pub board_size: i32,
     pub input_channels: i32,

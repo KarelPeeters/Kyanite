@@ -6,8 +6,8 @@ use alpha_zero::selfplay::{MoveSelector, Settings};
 use alpha_zero::selfplay::generate_zero::ZeroGeneratorSettings;
 use alpha_zero::zero::ZeroSettings;
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNLoader;
-use cuda_nn_eval::tower_net::TowerShape;
 use cuda_sys::wrapper::handle::Device;
+use alpha_zero::network::tower_shape::TowerShape;
 
 fn main() {
     let output_path = "../data/derp/derp_games.bin";
@@ -31,13 +31,13 @@ fn main() {
             dirichlet_eps: 0.25,
             max_game_length: 400,
             devices: Device::all().collect(),
-            threads_per_device: 4,
+            threads_per_device: 1,
             network: AtaxxCNNLoader {
                 path: network_path.to_owned(),
                 shape: TowerShape {
                     board_size: 7,
                     input_channels: 3,
-                    tower_depth: 2,
+                    tower_depth: 8,
                     tower_channels: 32,
                     wdl_hidden_size: 16,
                     policy_channels: 17

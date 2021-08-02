@@ -1,157 +1,73 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-
-use std::cmp::min;
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
-use std::thread::JoinHandle;
-
-use crossbeam::channel;
-use crossbeam::channel::Sender;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use tch::Device;
 
-use alpha_zero::network::torch_utils::all_cuda_devices;
+use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::games::ataxx_output::AtaxxBinaryOutput;
+use alpha_zero::network::tower_shape::TowerShape;
+use alpha_zero::new_selfplay::core::{Command, Settings, StartupSettings};
+use alpha_zero::new_selfplay::server::selfplay_server_main;
+use board_game::games::ataxx::AtaxxBoard;
+use cuda_sys::wrapper::handle::Device;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-enum Command {
-    Stop,
-    NewSettings { settings: Settings },
-}
+fn main() {
+    print_example_commands();
 
-#[derive(Debug)]
-struct StartupSettings {
-    output_folder: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Settings {
-    // network
-    network_path: String,
-
-    // performance
-    games_per_file: u32,
-    games_per_thread: u32,
-    threads_per_device: u32,
-
-    // selfplay
-    temperature: f32,
-    zero_temp_move_count: u32,
-
-    dirichlet_alpha: f32,
-    dirichlet_eps: f32,
-
-    full_search_prob: f32,
-    full_iterations: u32,
-    part_iterations: f32,
-
-    exploration_weight: f32,
-    max_game_length: u32,
-}
-
-#[derive(Debug, Serialize)]
-enum Update {
-    FileDone,
-    ThroughputUpdate {
-        games_per_sec: f32,
-        moves_per_sec: f32,
-        cache_hit_rate: f32,
-        new_evals_per_sec: f32,
-    },
-}
-
-struct State {
-    devices: Vec<DeviceState>,
-}
-
-struct DeviceState {
-    device: Device,
-    threads: Vec<Sender<Command>>,
-}
-
-fn start_collector_thread(startup_settings: StartupSettings) -> (JoinHandle<()>, Sender<Command>) {
-    let (sender, receiver) = channel::unbounded();
-    let handle = std::thread::spawn(|| {});
-    (handle, sender)
-}
-
-fn start_generator_thread(settings: Settings) -> (JoinHandle<()>, Sender<Command>) {
-    todo!()
-}
-
-fn main() -> anyhow::Result<()> {
-    println!("{}", serde_json::to_string(&Command::Stop).unwrap());
-
-    let args = std::env::args().collect_vec();
-    assert_eq!(2, args.len(), "expected one argument, the output folder");
-
+    // let startup_settings = parse_startup();
     let startup_settings = StartupSettings {
-        output_folder: args[1].clone(),
+        game: "ataxx".to_string(),
+        output_folder: "../data/derp/selfplay/".to_string(),
+        threads_per_device: 2,
+        batch_size: 256,
+        games_per_file: 1000,
     };
 
+    let tower_shape = TowerShape {
+        board_size: 7,
+        input_channels: 3,
+        tower_depth: 8,
+        tower_channels: 32,
+        wdl_hidden_size: 16,
+        policy_channels: 17,
+    };
+
+    assert_eq!("ataxx", startup_settings.game);
+
+    let load_network = |path: String, device: Device| -> AtaxxCNNNetwork {
+        AtaxxCNNNetwork::load(path, &tower_shape.to_graph(startup_settings.batch_size as i32), startup_settings.batch_size, device)
+    };
+
+    let output = |path: &str| AtaxxBinaryOutput::new(path);
+
+    selfplay_server_main(&startup_settings, AtaxxBoard::new_without_gaps, output, load_network);
+}
+
+fn print_example_commands() {
+    let settings = Settings {
+        max_game_length: 400,
+        exploration_weight: 2.0,
+        random_symmetries: true,
+        keep_tree: false,
+        temperature: 1.0,
+        zero_temp_move_count: 20,
+        dirichlet_alpha: 0.25,
+        dirichlet_eps: 0.2,
+        full_search_prob: 1.0,
+        full_iterations: 500,
+        part_iterations: 500,
+        cache_size: 0,
+    };
+
+    println!("{}", serde_json::to_string(&Command::Stop).unwrap());
+    println!("{}", serde_json::to_string(&Command::NewSettings(settings)).unwrap());
+    println!("{}", serde_json::to_string(&Command::NewNetwork("C:/Documents/Programming/STTT/AlphaZero/data/derp/basic_res_model/params.npz".to_owned())).unwrap());
+}
+
+fn parse_startup() -> StartupSettings {
+    let args = std::env::args().collect_vec();
+    assert_eq!(2, args.len(), "expected one (json) argument");
+
+    let startup_settings: StartupSettings = serde_json::from_str(&args[1])
+        .expect("Failed to parse startup json");
     println!("Startup settings: {:#?}", startup_settings);
 
-    println!("Waiting for connection");
-    let (mut stream, address) = TcpListener::bind("127.0.0.1:8668")?.accept()?;
-    let mut reader = BufReader::new(stream.try_clone()?);
-    println!("Accepted connection from {}", address);
-
-    let (collector_handle, stop_collector) = start_collector_thread(startup_settings);
-
-    let mut state = State {
-        devices: all_cuda_devices().into_iter().map(|device| {
-            DeviceState { device, threads: vec![] }
-        }).collect(),
-    };
-
-    loop {
-        let mut buf = vec![];
-        reader.read_until(b'\n', &mut buf)?;
-        let string = String::from_utf8(buf)?;
-        println!("Received string '{}'", string);
-        let command = serde_json::from_str::<Command>(&string)?;
-
-        match command {
-            Command::Stop => {
-                println!("Received stop command");
-                stop_collector.send(Command::Stop)?;
-                break;
-            }
-            Command::NewSettings { settings } => {
-                println!("Received new settings: {:#?}", settings);
-
-                // TODO this is stupid, just keep the number of threads fixed for now
-                let new_thread_count = settings.threads_per_device as usize;
-
-                for device in &mut state.devices {
-                    let prev_thread_count = device.threads.len();
-                    let kept_thread_count = min(new_thread_count, prev_thread_count);
-
-                    // stop & remove extra threads
-                    for sender in device.threads.drain(kept_thread_count..) {
-                        sender.send(Command::Stop)?;
-                    }
-
-                    // update settings for threads that will stay alive
-                    for sender in &device.threads {
-                        sender.send(Command::NewSettings { settings: settings.clone() }).unwrap();
-                    }
-
-                    // start new threads
-                    device.threads.extend(
-                        (0..(new_thread_count - kept_thread_count))
-                            .map(|_| start_generator_thread(settings.clone()).1)
-                    )
-                }
-            }
-        }
-
-        let message = Update::FileDone;
-        stream.write_all(serde_json::to_string(&message)?.as_bytes())?;
-    }
-
-    collector_handle.join().expect("Failed to join collector thread");
-
-    Ok(())
+    startup_settings
 }

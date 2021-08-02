@@ -1,5 +1,4 @@
 use alpha_zero::games::ataxx_torch_network::AtaxxTorchNetwork;
-use cuda_nn_eval::tower_net::TowerShape;
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use cuda_sys::wrapper::handle::Device;
 use alpha_zero::zero::{zero_build_tree, Tree, ZeroSettings, ZeroBot};
@@ -8,6 +7,7 @@ use alpha_zero::network::Network;
 use alpha_zero::util::PanicRng;
 use board_game::util::bot_game;
 use rand::thread_rng;
+use alpha_zero::network::tower_shape::TowerShape;
 
 fn main() {
     let torch_path = "../data/derp/basic_res_model/training/model_1_epochs.pt";
