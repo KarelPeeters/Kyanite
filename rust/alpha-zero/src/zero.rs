@@ -29,7 +29,7 @@ impl ZeroSettings {
 }
 
 /// A board evaluation, either as returned by the network or as the final output of a zero tree search.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ZeroEvaluation {
     /// The win, draw and loss probabilities, after normalization.
     pub wdl: WDL<f32>,
