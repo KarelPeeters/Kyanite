@@ -12,7 +12,7 @@ pub struct Graph {
 #[must_use]
 pub struct Value(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ValueInfo {
     pub shape: [i32; 4],
     pub operation: Operation,
@@ -41,6 +41,7 @@ impl Graph {
         assert!(value.0 < self.values.len());
     }
 
+    /// Iterate over the values in this graph, in topological order.
     pub fn values(&self) -> impl Iterator<Item=Value> {
         (0..self.values.len()).map(Value)
     }
@@ -67,7 +68,7 @@ impl Graph {
         value
     }
 
-    pub fn conv_bias_impl(&mut self, input: Value, output_channels: i32, kernel_size: i32, padding: i32, flat_weights: bool) -> Value {
+    pub fn conv_bias_impl(&mut self, input: Value, output_channels: i32, kernel_size: i32, padding: i32, bias: bool, flat_weights: bool) -> Value {
         let [n, _, w, h] = self[input].shape;
         assert_eq!(1, kernel_size % 2, "kernel size must be odd, got {}", kernel_size);
 
@@ -75,23 +76,27 @@ impl Graph {
         let output_h = h - kernel_size + 1 + 2 * padding;
         let shape = [n, output_channels, output_w, output_h];
 
-        let conv_output = self.push(shape, Operation::Conv {
+        let mut output = self.push(shape, Operation::Conv {
             input,
             output_channels,
             kernel_size,
             padding,
             flat_weights,
         });
-        let bias_output = self.push(shape, Operation::Bias {
-            input: conv_output,
-            channels: output_channels,
-        });
-        bias_output
+
+        if bias {
+            output = self.push(shape, Operation::Bias {
+                input: output,
+                channels: output_channels,
+            });
+        }
+
+        output
     }
 
     /// 2D convolution with padding, followed by per-channel bias.
     pub fn conv_bias(&mut self, input: Value, output_channels: i32, kernel: i32, padding: i32) -> Value {
-        self.conv_bias_impl(input, output_channels, kernel, padding, false)
+        self.conv_bias_impl(input, output_channels, kernel, padding, true, false)
     }
 
     /// Flatten the last 3 dimensions, followed by a fully connected layer, followed by bias.
@@ -100,7 +105,7 @@ impl Graph {
         let [_, _, w, h] = input_shape;
         assert_eq!(w, h, "Only supports square inputs tensors, got {:?}", input_shape);
 
-        self.conv_bias_impl(input, output_size, w, 0, true)
+        self.conv_bias_impl(input, output_size, w, 0, true, true)
     }
 
     /// Elementwise relu.

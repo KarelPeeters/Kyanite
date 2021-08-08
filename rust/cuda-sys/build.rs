@@ -21,7 +21,7 @@ fn main() {
 
         // settings
         .size_t_is_usize(true)
-        .default_enum_style(EnumVariation::NewType { is_bitfield: false })
+        .default_enum_style(EnumVariation::Rust { non_exhaustive: true })
         .must_use_type("cudaError")
         .must_use_type("cudnnStatus_t")
         .must_use_type("cublasStatus_t")

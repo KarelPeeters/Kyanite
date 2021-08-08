@@ -5,9 +5,6 @@ use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyKind, cudaMems
 use crate::wrapper::status::Status;
 use crate::wrapper::handle::Device;
 
-/// TODO this does not currently support multiple devices!
-///   because that's really ugly in cuda, it will require cudaSetDevice everywhere
-///   (yay for mutable global state)
 #[derive(Debug)]
 pub struct DeviceMem {
     dev_ptr: *mut c_void,

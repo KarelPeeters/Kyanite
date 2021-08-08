@@ -105,4 +105,8 @@ impl CudnnHandle {
     pub unsafe fn inner(&mut self) -> cudnnHandle_t {
         self.inner
     }
+
+    pub fn into_inner(self) -> cudnnHandle_t {
+        self.inner
+    }
 }

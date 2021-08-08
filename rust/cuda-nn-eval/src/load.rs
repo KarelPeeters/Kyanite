@@ -19,7 +19,42 @@ pub struct GraphParams {
 }
 
 impl GraphParams {
-    fn new(device: Device) -> Self {
+    /// Initialize matching parameters for Graph, with values all uninitialized.
+    pub fn dummy(device: Device, graph: &Graph) -> Self {
+        let mut filters = vec![];
+        let mut biases = vec![];
+
+        for value in graph.values() {
+            let value_info = graph[value];
+
+            match value_info.operation {
+                Operation::Input => {}
+                Operation::Conv { input, output_channels, kernel_size, .. } => {
+                    let input_channels = graph[input].shape[1];
+                    let filter = Filter::new(
+                        output_channels, input_channels, kernel_size, kernel_size,
+                        cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+                        device
+                    );
+                    filters.push(filter)
+                }
+                Operation::Bias { channels, .. } => {
+                    let bias = Tensor::new(
+                        1, channels, 1, 1,
+                        cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+                        device
+                    );
+                    biases.push(bias);
+                }
+                Operation::Add { .. } => {}
+                Operation::Relu { .. } => {}
+            }
+        }
+
+        GraphParams { device, filters, biases }
+    }
+
+    fn empty(device: Device) -> Self {
         GraphParams {
             device,
             filters: Default::default(),
@@ -30,7 +65,7 @@ impl GraphParams {
 
 pub fn load_params_from_npz<R: io::Read + io::Seek>(graph: &Graph, npz: &mut NpzArchive<R>, device: Device) -> GraphParams {
     let mut loader = Loader::new(npz, device);
-    let mut params = GraphParams::new(device);
+    let mut params = GraphParams::empty(device);
 
     for value in graph.values() {
         match graph[value].operation {
