@@ -38,7 +38,7 @@ pub enum GeneratorUpdate<B> {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ServerUpdate {
     Stopped,
-    FinishedFile,
+    FinishedFile { index: u32 }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

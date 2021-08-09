@@ -17,22 +17,12 @@ fn main() {
         threads_per_device: 2,
         batch_size: 256,
         games_per_file: 1000,
-
-        tower_shape: TowerShape {
-            board_size: 7,
-            input_channels: 3,
-            tower_depth: 8,
-            tower_channels: 32,
-            wdl_hidden_size: 16,
-            policy_channels: 17,
-        }
     };
 
     assert_eq!("ataxx", startup_settings.game);
 
     let load_network = |path: String, device: Device| -> AtaxxCNNNetwork {
-        let graph = startup_settings.tower_shape.to_graph(startup_settings.batch_size as i32);
-        AtaxxCNNNetwork::load(path, &graph, startup_settings.batch_size, device)
+        AtaxxCNNNetwork::load(path, startup_settings.batch_size, device)
     };
 
     let output = |path: &str| AtaxxBinaryOutput::new(path);

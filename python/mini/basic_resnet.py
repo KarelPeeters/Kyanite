@@ -23,7 +23,10 @@ def save_multiple(model, path: str):
 
     example_input = torch.zeros(100, 3, 7, 7)
     torch.onnx.export(
-        model, example_input, onnx_path
+        model, example_input, onnx_path,
+        input_names=["input"],
+        output_names=["wdl", "policy"],
+        dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
     )
 
     model_onnx = onnx.load_model(onnx_path)

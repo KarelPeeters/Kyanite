@@ -23,6 +23,7 @@ pub fn encode_input(boards: &[AtaxxBoard]) -> Vec<f32> {
     input
 }
 
+//TODO about 10% CPU time is spent int this function for some reason
 pub fn decode_output(boards: &[AtaxxBoard], batch_wdl_logit: &[f32], batch_policy_logit: &[f32]) -> Vec<ZeroEvaluation> {
     let batch_size = boards.len();
     assert_eq!(batch_size * 3, batch_wdl_logit.len());

@@ -90,8 +90,6 @@ impl CudaGraphExecutor {
         let device = handle.device();
         let fused_graph = FusedGraph::new(graph);
 
-        println!("{:?}", fused_graph);
-
         let mut buffer_map: HashMap<FusedValue, usize> = Default::default();
 
         let mut plan = vec![];

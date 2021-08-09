@@ -72,8 +72,6 @@ impl FusedGraph {
         self.schedule.push(info);
         let fused_value = FusedValue(index);
 
-        println!("Adding {:?} as {:?} computed by {:?}", value, fused_value, info);
-
         let prev = self.visited.insert(value, fused_value);
         if let Some(prev) = prev {
             let prev_info = &self[prev];
@@ -104,8 +102,6 @@ impl FusedGraph {
     }
 
     fn visit_fuse(&mut self, g: &Graph, value: Value) -> FusedValue {
-        println!("Fusing starting from {:?}", value);
-
         let mut next = value;
 
         // accept activation
