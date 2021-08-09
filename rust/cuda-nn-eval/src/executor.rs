@@ -1,26 +1,26 @@
 use std::collections::HashMap;
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use itertools::Itertools;
+use unwrap_match::unwrap_match;
 
-use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
-use cuda_sys::wrapper::group::Tensor;
+use cuda_sys::bindings::{cudnnConvolutionBiasActivationForward, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
+use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use cuda_sys::wrapper::group::{Filter, Tensor};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::DeviceMem;
 use cuda_sys::wrapper::operation::{ResInput, run_conv_bias_res_activation};
 
-use crate::graph::Graph;
-use crate::load::GraphParams;
-use crate::planner::{FusedGraph, FusedValueInfo};
+use crate::fuser::{FusedGraph, FusedValue, FusedValueInfo};
+use crate::fuser::FusedValueInfo::FusedOperation;
+use crate::graph::{ConvShape, Graph, Operation, Value};
 
 #[derive(Debug)]
 pub struct CudaGraphExecutor {
     handle: CudnnHandle,
 
-    params: GraphParams,
     plan: Vec<PlannedOperation>,
-
-    buffers: Vec<Tensor>,
+    buffers: Vec<DeviceMem>,
 
     inputs: Vec<usize>,
     outputs: Vec<usize>,
@@ -28,58 +28,57 @@ pub struct CudaGraphExecutor {
 
 #[derive(Debug)]
 struct PlannedOperation {
-    indices: BufferIndices,
-
+    input_index: usize,
     filter_index: usize,
     bias_index: usize,
-
-    act: ActivationDescriptor,
-    conv: ConvolutionDescriptor,
-    algo: cudnnConvolutionFwdAlgo_t,
-
-    workspace: DeviceMem,
-}
-
-#[derive(Debug, Copy, Clone)]
-struct BufferIndices {
-    input_index: usize,
-    res_input_index: Option<usize>,
+    res_index: Option<usize>,
     output_index: usize,
+
+    input_desc: TensorDescriptor,
+    conv_desc: ConvolutionDescriptor,
+    filter_desc: FilterDescriptor,
+    bias_desc: TensorDescriptor,
+    act_desc: ActivationDescriptor,
+    output_desc: TensorDescriptor,
+
+    algo: cudnnConvolutionFwdAlgo_t,
+    workspace_mem: DeviceMem,
 }
 
-#[derive(Debug)]
-struct Buffers<'a> {
-    input: &'a Tensor,
-    res_input: ResInput<'a>,
-    output: &'a mut Tensor,
+struct OperationBuffers<'a> {
+    input: &'a DeviceMem,
+    filter: &'a DeviceMem,
+    bias: &'a DeviceMem,
+    res: ResInput<'a>,
+    output: &'a mut DeviceMem,
 }
 
-impl BufferIndices {
-    /// Get references to the input, output and res buffers.
-    /// This function asserts that they don't overlap where not allowed so it's safe.
-    fn get_buffers(self, buffers: &mut Vec<Tensor>) -> Buffers {
-        let BufferIndices { input_index: input_mem, output_index: output_mem, res_input_index: res } = self;
+impl PlannedOperation {
+    fn get_buffers<'a>(&self, buffers: &'a mut Vec<DeviceMem>) -> OperationBuffers<'a> {
+        //TODO this implements a very conservative requirement, it's not clear if eg the filter and input can be the same mem
+        //  it should be fine for now with how the rest of the planning pipeline works though
+        let mut indices = vec![
+            self.input_index, self.filter_index, self.bias_index,
+            self.res_index.unwrap_or(usize::MAX),
+            self.output_index,
+        ];
+        let len_before = indices.len();
+        indices.dedup();
+        assert_eq!(indices.len(), len_before, "Found duplicate index in planned operation");
 
-        assert_ne!(input_mem, output_mem);
-        assert_ne!(Some(input_mem), res);
-
+        // safe because we just checked that all indices are distinct
         unsafe {
-            let res_type = match res {
+            let res = match self.res_index {
                 None => ResInput::Zero,
-                Some(res_mem) => {
-                    if res_mem == output_mem {
-                        ResInput::Output
-                    } else {
-                        let tensor = &*(&buffers[res_mem] as *const Tensor);
-                        ResInput::Other { desc: &tensor.desc, mem: &tensor.mem }
-                    }
-                }
+                Some(res_index) => ResInput::Other(&*(&buffers[res_index] as *const _))
             };
 
-            Buffers {
-                input: &*(&buffers[input_mem] as *const _),
-                output: &mut *(&mut buffers[output_mem] as *mut _),
-                res_input: res_type,
+            OperationBuffers {
+                input: &*(&buffers[self.input_index] as *const _),
+                filter: &*(&buffers[self.filter_index] as *const _),
+                bias: &*(&buffers[self.bias_index] as *const _),
+                res,
+                output: &mut *(&mut buffers[self.output_index] as *mut _),
             }
         }
     }
@@ -90,149 +89,151 @@ const CONV_ALGO: cudnnConvolutionFwdAlgo_t = cudnnConvolutionFwdAlgo_t::CUDNN_CO
 
 impl CudaGraphExecutor {
     //TODO implement memory reuse, with some "register" allocation scheme
-    pub fn new(mut handle: CudnnHandle, graph: &Graph, params: GraphParams) -> Self {
+    pub fn new(mut handle: CudnnHandle, graph: &Graph) -> Self {
+        let device = handle.device();
         let fused_graph = FusedGraph::new(graph);
+
+        println!("{:?}", fused_graph);
+
+        let mut buffer_map: HashMap<FusedValue, usize> = Default::default();
 
         let mut plan = vec![];
         let mut buffers = vec![];
-        let mut buffer_map = HashMap::new();
         let mut inputs = vec![];
-        let mut outputs = vec![];
 
         for fused_value in fused_graph.schedule() {
-            let fused_info = fused_graph[fused_value];
-            let value = fused_info.value();
+            let value = fused_graph[fused_value].value();
+            let value_info = &graph[value];
+            let shape = value_info.shape;
 
-            // allocate "output" buffer
-            let shape = graph[value].shape;
-            let output_buffer = Tensor::new(
-                shape[0], shape[1], shape[2], shape[3],
-                cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW, handle.device(),
-            );
             let output_index = buffers.len();
-            buffers.push(output_buffer);
-            assert!(buffer_map.insert(fused_value, output_index).is_none());
+            let output_mem = DeviceMem::alloc(shape.iter().product::<i32>() as usize * 4, device);
+            buffers.push(output_mem);
+            buffer_map.insert(fused_value, output_index);
 
-            // register buffer as output
-            if graph.outputs().contains(&value) {
-                outputs.push(output_index);
-            }
-
-            match fused_info {
+            match fused_graph[fused_value] {
                 FusedValueInfo::Input(_) => {
-                    // register buffer as input
-                    inputs.push(output_index)
+                    // register as input
+                    inputs.push(output_index);
+                }
+                FusedValueInfo::Constant(_) => {
+                    // copy constant data to device mem
+                    let data = unwrap_match!(&value_info.operation, Operation::Constant { data } => &**data);
+                    buffers[output_index].copy_from_host(cast_slice(data));
                 }
                 FusedValueInfo::FusedOperation {
                     value: _,
-                    input_fused, res_input,
-                    output_channels, kernel_size, padding,
-                    filter_index, bias_index,
-                    act_mode
+                    input, input_shape_view, res_input, bias, filter,
+                    conv_shape, act_mode
                 } => {
-                    //check parameter sizes just to make sure
-                    let input_channels = graph[fused_graph[input_fused].value()].shape[1];
-                    assert_eq!(
-                        [output_channels, input_channels, kernel_size, kernel_size],
-                        params.filters[filter_index].desc.shape()
-                    );
-                    assert_eq!(
-                        [1, output_channels, 1, 1],
-                        params.biases[bias_index].desc.shape(),
-                    );
+                    let ConvShape {
+                        input_channels, output_channels,
+                        kernel_width, kernel_height,
+                        pad_w, pad_h
+                    } = conv_shape;
 
-                    // map everything to planned operation
-                    let indices = BufferIndices {
-                        input_index: *buffer_map.get(&input_fused).unwrap(),
-                        res_input_index: res_input.map(|res| *buffer_map.get(&res).unwrap()),
-                        output_index,
-                    };
+                    let input_desc = shape_to_tensor_desc(input_shape_view);
+                    let output_desc = shape_to_tensor_desc(graph[value].shape);
+                    let bias_desc = shape_to_tensor_desc(graph[fused_graph[bias].value()].shape);
 
-                    let conv = ConvolutionDescriptor::new(
-                        padding, padding,
-                        1, 1, 1, 1,
-                        cudnnDataType_t::CUDNN_DATA_FLOAT,
+                    let filter_desc = FilterDescriptor::new(
+                        output_channels, input_channels, kernel_height, kernel_width,
+                        cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
                     );
 
-                    let act = ActivationDescriptor::new(act_mode, 0.0);
-                    let algo = CONV_ALGO;
+                    let conv_desc = ConvolutionDescriptor::new(
+                        pad_h, pad_w, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT,
+                    );
 
-                    let workspace_size = conv.workspace_size(
+                    let workspace_size = conv_desc.workspace_size(
                         &mut handle,
-                        algo,
-                        &buffers[indices.input_index].desc,
-                        &params.filters[filter_index].desc,
-                        &buffers[indices.output_index].desc,
+                        CONV_ALGO,
+                        &input_desc, &filter_desc, &output_desc,
                     );
-                    let workspace = DeviceMem::alloc(workspace_size, handle.device());
 
-                    // figure out inputs
+                    let workspace_mem = DeviceMem::alloc(workspace_size, device);
+
                     let operation = PlannedOperation {
-                        indices,
-                        filter_index,
-                        bias_index,
-                        act,
-                        conv,
-                        algo,
-                        workspace,
+                        input_index: *buffer_map.get(&input).unwrap(),
+                        filter_index: *buffer_map.get(&filter).unwrap(),
+                        bias_index: *buffer_map.get(&bias).unwrap(),
+                        res_index: res_input.map(|res_index| *buffer_map.get(&res_index).unwrap()),
+                        output_index,
+                        input_desc,
+                        conv_desc,
+                        filter_desc,
+                        bias_desc,
+                        act_desc: ActivationDescriptor::new(act_mode, 0.0),
+                        output_desc,
+                        algo: CONV_ALGO,
+                        workspace_mem,
                     };
                     plan.push(operation);
                 }
             }
         }
 
-        CudaGraphExecutor {
-            handle,
-            params,
-            plan,
-            buffers,
-            inputs,
-            outputs,
-        }
+        let outputs = graph.outputs().iter().map(|&value| {
+            // find fused value for this output
+            let fused_value = fused_graph.schedule().find(|&fused_value| {
+                fused_graph[fused_value].value() == value
+            }).unwrap_or_else(|| panic!("Output {:?} not found in fused graph", value));
+
+            // find buffer index for the fused value
+            *buffer_map.get(&fused_value)
+                .unwrap_or_else(|| panic!("Output {:?} not found in buffer map", value))
+        }).collect();
+
+        CudaGraphExecutor { handle, buffers, plan, inputs, outputs }
     }
 
-    pub fn eval(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]]) {
+    pub fn run(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]]) {
         assert_eq!(self.inputs.len(), inputs.len(), "Wrong number of inputs");
         assert_eq!(self.outputs.len(), outputs.len(), "Wrong number of outputs");
 
+        // copy inputs to buffers
         for i in 0..inputs.len() {
-            self.buffers[self.inputs[i]].mem.copy_from_host(cast_slice(inputs[i]));
+            self.buffers[self.inputs[i]].copy_from_host(cast_slice(inputs[i]));
         }
 
-        for planned_op in &mut self.plan {
-            let PlannedOperation {
-                indices, filter_index, bias_index,
-                act, conv, algo,
-                workspace
-            } = planned_op;
-
-            let filter = &self.params.filters[*filter_index];
-            let bias = &self.params.biases[*bias_index];
-
-            let Buffers {
-                res_input, input, output
-            } = indices.get_buffers(&mut self.buffers);
-
-            run_conv_bias_res_activation(
-                &mut self.handle,
-                act,
-                conv,
-                *algo,
-                workspace,
-                &filter.desc,
-                &filter.mem,
-                &input.desc,
-                &input.mem,
-                res_input,
-                &bias.desc,
-                &bias.mem,
-                &output.desc,
-                &mut output.mem,
-            )
+        // run operations
+        for i in 0..self.plan.len() {
+            self.run_op(i)
         }
 
+        // copy outputs back
         for i in 0..outputs.len() {
-            self.buffers[self.outputs[i]].mem.copy_to_host(cast_slice_mut(outputs[i]));
+            self.buffers[self.outputs[i]].copy_to_host(cast_slice_mut(outputs[i]));
         }
     }
+
+    fn run_op(&mut self, op_index: usize) {
+        let op = &mut self.plan[op_index];
+        let buffers = op.get_buffers(&mut self.buffers);
+
+        run_conv_bias_res_activation(
+            &mut self.handle,
+            &op.act_desc,
+            &op.conv_desc,
+            op.algo,
+            &mut op.workspace_mem,
+            &op.filter_desc,
+            buffers.filter,
+            &op.input_desc,
+            buffers.input,
+            buffers.res,
+            &op.bias_desc,
+            buffers.bias,
+            &op.output_desc,
+            buffers.output,
+        )
+    }
+}
+
+fn shape_to_tensor_desc(shape: [i32; 4]) -> TensorDescriptor {
+    TensorDescriptor::new(
+        shape[0], shape[1], shape[2], shape[3],
+        cudnnDataType_t::CUDNN_DATA_FLOAT,
+        cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+    )
 }

@@ -1,7 +1,8 @@
+use std::fmt::{Debug, Formatter};
 use std::ops::Index;
-use std::fmt::{Formatter, Debug};
 
-#[derive(Default)]
+use crate::util::WrapDebug;
+
 pub struct Graph {
     values: Vec<ValueInfo>,
     inputs: Vec<Value>,
@@ -9,22 +10,36 @@ pub struct Graph {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[must_use]
 pub struct Value(usize);
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct ValueInfo {
+    /// [n, c, w, h]
     pub shape: [i32; 4],
     pub operation: Operation,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum Operation {
     Input,
-    Conv { input: Value, output_channels: i32, kernel_size: i32, padding: i32, flat_weights: bool },
-    Bias { input: Value, channels: i32 },
+    Constant { data: WrapDebug<Vec<f32>> },
+
+    Flatten { input: Value },
+
+    Conv { input: Value, filter: Value, conv_shape: ConvShape },
+    Bias { input: Value, bias: Value },
     Add { left: Value, right: Value },
     Relu { input: Value },
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ConvShape {
+    pub input_channels: i32,
+    pub output_channels: i32,
+    pub kernel_width: i32,
+    pub kernel_height: i32,
+    pub pad_w: i32,
+    pub pad_h: i32,
 }
 
 impl Index<Value> for Graph {
@@ -37,6 +52,10 @@ impl Index<Value> for Graph {
 }
 
 impl Graph {
+    pub fn empty() ->Self {
+        Graph { values: vec![], inputs: vec![], outputs: vec![] }
+    }
+
     fn check_contains(&self, value: Value) {
         assert!(value.0 < self.values.len());
     }
@@ -45,7 +64,7 @@ impl Graph {
     pub fn values(&self) -> impl Iterator<Item=Value> {
         (0..self.values.len()).map(Value)
     }
-    
+
     pub fn inputs(&self) -> &Vec<Value> {
         &self.inputs
     }
@@ -55,66 +74,89 @@ impl Graph {
     }
 
     fn push(&mut self, shape: [i32; 4], operation: Operation) -> Value {
-        assert!(shape.iter().all(|&x| x > 0), "shape must be positive, got {:?}", shape);
+        assert_valid_shape(shape);
 
         let index = self.values.len();
         self.values.push(ValueInfo { shape, operation });
         Value(index)
     }
 
+    /// Declare a new input value.
+    #[must_use]
     pub fn input(&mut self, shape: [i32; 4]) -> Value {
         let value = self.push(shape, Operation::Input);
         self.inputs.push(value);
         value
     }
 
-    pub fn conv_bias_impl(&mut self, input: Value, output_channels: i32, kernel_size: i32, padding: i32, bias: bool, flat_weights: bool) -> Value {
-        let [n, _, w, h] = self[input].shape;
-        assert_eq!(1, kernel_size % 2, "kernel size must be odd, got {}", kernel_size);
+    /// Declare a new constant.
+    #[must_use]
+    pub fn constant(&mut self, shape: [i32; 4], data: Vec<f32>) -> Value {
+        assert_valid_shape(shape);
 
-        let output_w = w - kernel_size + 1 + 2 * padding;
-        let output_h = h - kernel_size + 1 + 2 * padding;
-        let shape = [n, output_channels, output_w, output_h];
+        let expected_len = shape.iter().product::<i32>();
+        assert_eq!(expected_len, data.len() as i32, "Shape {:?} and data size {} mismatch", shape, data.len());
 
-        let mut output = self.push(shape, Operation::Conv {
-            input,
-            output_channels,
-            kernel_size,
-            padding,
-            flat_weights,
-        });
-
-        if bias {
-            output = self.push(shape, Operation::Bias {
-                input: output,
-                channels: output_channels,
-            });
-        }
-
-        output
+        self.push(shape, Operation::Constant { data: data.into() })
     }
 
-    /// 2D convolution with padding, followed by per-channel bias.
-    pub fn conv_bias(&mut self, input: Value, output_channels: i32, kernel: i32, padding: i32) -> Value {
-        self.conv_bias_impl(input, output_channels, kernel, padding, true, false)
+    /// Flatten a value of shape `[n, c, w, h]` to shape `[n, c * w * h, 1, 1]`;
+    #[must_use]
+    pub fn flatten(&mut self, input: Value) -> Value {
+        let [n, c, h, w] = self[input].shape;
+        self.push(
+            [n, c * h * w, 1, 1],
+            Operation::Flatten { input },
+        )
     }
 
-    /// Flatten the last 3 dimensions, followed by a fully connected layer, followed by bias.
-    pub fn flatten_linear_bias(&mut self, input: Value, output_size: i32) -> Value {
-        let input_shape = self[input].shape;
-        let [_, _, w, h] = input_shape;
-        assert_eq!(w, h, "Only supports square inputs tensors, got {:?}", input_shape);
+    /// 2D convolution.
+    #[must_use]
+    pub fn conv(&mut self, input: Value, filter: Value, pad_w: i32, pad_h: i32) -> Value {
+        let [n, in_c, in_w, in_h] = self[input].shape;
+        let [output_channels, input_channels, kernel_width, kernel_height] = self[filter].shape;
 
-        self.conv_bias_impl(input, output_size, w, 0, true, true)
+        assert_eq!(1, kernel_width % 2, "Kernel width must be odd, got {}", kernel_width);
+        assert_eq!(1, kernel_height % 2, "Kernel height must be odd, got {}", kernel_height);
+
+        assert_eq!(in_c, input_channels, "Input channel mismatch");
+
+        let out_w = in_w - kernel_width + 1 + 2 * pad_w;
+        let out_h = in_h - kernel_height + 1 + 2 * pad_h;
+        let output_shape = [n, output_channels, out_w, out_h];
+
+        let conv_shape = ConvShape { input_channels, output_channels, kernel_width, kernel_height, pad_w, pad_h };
+        self.push(
+            output_shape,
+            Operation::Conv { input, conv_shape, filter },
+        )
+    }
+
+    /// Channel-wise bias
+    #[must_use]
+    pub fn bias(&mut self, input: Value, bias: Value) -> Value {
+        let [_, in_c, _, _] = self[input].shape;
+        let [bias_n, bias_c, bias_w, bias_h] = self[bias].shape;
+
+        assert_eq!(in_c, bias_c, "Channel mismatch");
+        assert_eq!(1, bias_n);
+        assert_eq!(1, bias_w);
+        assert_eq!(1, bias_h);
+
+        self.push(
+            self[input].shape,
+            Operation::Bias { input, bias },
+        )
     }
 
     /// Elementwise relu.
+    #[must_use]
     pub fn relu(&mut self, input: Value) -> Value {
         self.push(self[input].shape, Operation::Relu { input })
     }
 
     /// Add two same-size values together.
-    /// TODO for now the "resnet highway" should be on the left.
+    #[must_use]
     pub fn add(&mut self, left: Value, right: Value) -> Value {
         let left_shape = self[left].shape;
         let right_shape = self[right].shape;
@@ -122,7 +164,7 @@ impl Graph {
         self.push(left_shape, Operation::Add { left, right })
     }
 
-    /// Register the value as an output
+    /// Register an existing value as an output
     pub fn output(&mut self, value: Value) {
         assert!(!self.outputs.contains(&value), "{:?} already registered as an output!", value);
         self.outputs.push(value);
@@ -148,4 +190,8 @@ impl Debug for Graph {
 
         Ok(())
     }
+}
+
+fn assert_valid_shape(shape: [i32; 4]) {
+    assert!(shape.iter().all(|&x| x > 0), "Shape must be positive, got {:?}", shape);
 }

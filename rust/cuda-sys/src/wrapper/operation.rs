@@ -161,20 +161,20 @@ pub fn run_activation_in_place(
     }
 }
 
+/// Represents the residual input of a fused operation.
+/// This allows reusing the (mutable) output as input, which would normally not be allowed by Rust.    
 #[derive(Debug)]
 pub enum ResInput<'a> {
     Zero,
     Output,
-    Other {
-        desc: &'a TensorDescriptor,
-        mem: &'a DeviceMem,
-    },
+    Other(&'a DeviceMem),
 }
 
 /// Runs `output = act(conv(input, filter) + res + bias)`.
 ///
 /// * `res` can be 0, equal to the output or a separate tensor.
 /// * `input` must be different from both `output` and `res`.
+/// * `res` is assumed to have the same descriptor as `output`.
 pub fn run_conv_bias_res_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
@@ -198,10 +198,10 @@ pub fn run_conv_bias_res_activation(
         assert_ne!(input_mem.inner(), bias_mem.inner(), "input and bias must be distinct");
 
         // map res to actual arguments
-        let (alpha2, res_desc, res_mem) = match res {
-            ResInput::Zero => (0f32, output_desc, output_mem.inner()),
-            ResInput::Output => (1f32, output_desc, output_mem.inner()),
-            ResInput::Other { desc, mem } => (1f32, desc, mem.inner())
+        let (alpha2,  res_mem) = match res {
+            ResInput::Zero => (0f32, output_mem.inner()),
+            ResInput::Output => (1f32, output_mem.inner()),
+            ResInput::Other(mem) => (1f32, mem.inner())
         };
 
         cudnnConvolutionBiasActivationForward(
@@ -216,7 +216,7 @@ pub fn run_conv_bias_res_activation(
             work_mem.inner(),
             work_mem.size(),
             &alpha2 as *const f32 as *const _,
-            res_desc.inner(),
+            output_desc.inner(),
             res_mem,
             bias_desc.inner(),
             bias_mem.inner(),

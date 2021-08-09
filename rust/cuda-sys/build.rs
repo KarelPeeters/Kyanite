@@ -24,7 +24,6 @@ fn main() {
         .default_enum_style(EnumVariation::Rust { non_exhaustive: true })
         .must_use_type("cudaError")
         .must_use_type("cudnnStatus_t")
-        .must_use_type("cublasStatus_t")
 
         // output
         .generate()

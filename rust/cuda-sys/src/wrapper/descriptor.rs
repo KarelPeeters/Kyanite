@@ -57,7 +57,11 @@ pub struct FilterDescriptor {
 }
 
 impl Drop for FilterDescriptor {
-    fn drop(&mut self) { unsafe { cudnnDestroyFilterDescriptor(self.inner).unwrap() } }
+    fn drop(&mut self) {
+        unsafe {
+            cudnnDestroyFilterDescriptor(self.inner).unwrap()
+        }
+    }
 }
 
 impl FilterDescriptor {
@@ -65,6 +69,7 @@ impl FilterDescriptor {
     /// * `c`: input channels
     /// * `(h, w)`: kernel size
     pub fn new(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t) -> Self {
+        //TODO whats with (h, w) here? that's super inconsistent with everything else?
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
@@ -114,7 +119,12 @@ impl ConvolutionDescriptor {
         dilation_w: i32,
         data_type: cudnnDataType_t,
     ) -> Self {
-        assert!(dilation_h > 0 && dilation_w > 0, "Dilation cannot be zero, 1 means no dilation");
+        let checked = [stride_h, stride_v, dilation_h, dilation_w];
+        assert!(
+            checked.iter().all(|&x| x > 0),
+            "Dilation and stride must be strictly positive, 1 means dense convolution. Got {:?}",
+            checked
+        );
 
         unsafe {
             let mut inner = null_mut();
@@ -136,6 +146,8 @@ impl ConvolutionDescriptor {
         filter: &FilterDescriptor,
         output: &TensorDescriptor,
     ) -> usize {
+        assert_eq!(self.output_shape(input, filter), output.shape, "Output shape mismatch");
+
         let mut workspace: usize = 0;
 
         unsafe {
@@ -154,6 +166,12 @@ impl ConvolutionDescriptor {
     }
 
     pub fn output_shape(&self, input_desc: &TensorDescriptor, filter_desc: &FilterDescriptor) -> [i32; 4] {
+        assert_eq!(
+            input_desc.shape[1], filter_desc.shape[1],
+            "Input channel count mismatch, input {:?} filter {:?}",
+            input_desc.shape, filter_desc.shape
+        );
+
         unsafe {
             let mut n = 0;
             let mut c = 0;

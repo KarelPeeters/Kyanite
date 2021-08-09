@@ -6,6 +6,12 @@ edition = "2018"
 [dependencies]
 cuda-sys = { path = "../cuda-sys" }
 bytemuck = "1.7.0"
-rand = "0.8.4"
+byteorder = "1.4.3"
 itertools = "0.10.1"
-npyz = { version = "0.6.1", features = ["npz"] }
+prost = "0.8.0"
+unwrap-match = "0.1.0"
+cast_trait = "0.1.2"
+rand = "0.8.4"
+
+[build-dependencies]
+prost-build = "0.8.0"
