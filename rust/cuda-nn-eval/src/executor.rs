@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use itertools::Itertools;
 use unwrap_match::unwrap_match;
 
-use cuda_sys::bindings::{cudnnConvolutionBiasActivationForward, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
+use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
-use cuda_sys::wrapper::group::{Filter, Tensor};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::DeviceMem;
 use cuda_sys::wrapper::operation::{ResInput, run_conv_bias_res_activation};
 
 use crate::fuser::{FusedGraph, FusedValue, FusedValueInfo};
-use crate::fuser::FusedValueInfo::FusedOperation;
-use crate::graph::{ConvShape, Graph, Operation, Value};
+use crate::graph::{ConvShape, Graph, Operation};
 
 #[derive(Debug)]
 pub struct CudaGraphExecutor {

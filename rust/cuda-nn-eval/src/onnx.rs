@@ -2,31 +2,28 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::path::Path;
 
+use byteorder::{ByteOrder, LittleEndian};
+use cast_trait::Cast;
 use itertools::Itertools;
 use prost::Message;
-use unwrap_match::unwrap_match;
-
-use cuda_sys::wrapper::handle::Device;
 
 use crate::graph::Graph;
 use crate::graph::Value;
-use crate::onnx::proto::{AttributeProto, GraphProto, ModelProto, TensorProto, TypeProto};
+use crate::onnx::proto::{AttributeProto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoShapeValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
-use byteorder::{LittleEndian, ByteOrder};
-use cast_trait::Cast;
 
-pub fn load_onnx_graph(path: impl AsRef<Path>, batch_size: i32, device: Device) -> Graph {
-    load_onnx_impl(path.as_ref(), batch_size, device)
+pub fn load_onnx_graph(path: impl AsRef<Path>, batch_size: i32) -> Graph {
+    load_onnx_impl(path.as_ref(), batch_size)
 }
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/onnx.rs"));
 }
 
-fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
+fn load_onnx_impl(path: &Path, batch_size: i32) -> Graph {
     let model = load_model_proto(path);
     let model_graph = model.graph.unwrap();
 
@@ -74,7 +71,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
 
                 let filter = graph.constant(
                     cast_shape([output_channels, input_channels, kernel_w, kernel_h]),
-                    get_tensor_f32_data(filter)
+                    get_tensor_f32_data(filter),
                 );
                 let conv = graph.conv(input, filter, ph0 as i32, pv0 as i32);
 
@@ -83,7 +80,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
 
                     let bias = graph.constant(
                         cast_shape([1, channels, 1, 1]),
-                        get_tensor_f32_data(bias)
+                        get_tensor_f32_data(bias),
                     );
                     graph.bias(conv, bias)
                 } else {
@@ -124,9 +121,9 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
 
                 let [output_channels, input_channels] = unwrap_2(&weight.dims);
 
-                let filter= graph.constant(
+                let filter = graph.constant(
                     cast_shape([output_channels, input_channels, 1, 1]),
-                    get_tensor_f32_data(weight)
+                    get_tensor_f32_data(weight),
                 );
                 let conv = graph.conv(input, filter, 0, 0);
 
@@ -135,7 +132,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
 
                     let bias = graph.constant(
                         cast_shape([1, channels, 1, 1]),
-                        get_tensor_f32_data(bias)
+                        get_tensor_f32_data(bias),
                     );
                     graph.bias(conv, bias)
                 } else {

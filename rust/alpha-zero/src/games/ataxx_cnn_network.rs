@@ -24,7 +24,7 @@ impl AtaxxCNNNetwork {
         let path = path.as_ref();
         assert_eq!(Some(OsStr::new("onnx")), path.extension(), "Unexpected extension");
 
-        let graph = load_onnx_graph(path, max_batch_size as i32, device);
+        let graph = load_onnx_graph(path, max_batch_size as i32);
         let handle = CudnnHandle::new(CudaStream::new(device));
         let executor = CudaGraphExecutor::new(handle, &graph);
 

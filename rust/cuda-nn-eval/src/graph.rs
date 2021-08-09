@@ -52,7 +52,7 @@ impl Index<Value> for Graph {
 }
 
 impl Graph {
-    pub fn empty() ->Self {
+    pub fn empty() -> Self {
         Graph { values: vec![], inputs: vec![], outputs: vec![] }
     }
 
