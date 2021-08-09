@@ -32,7 +32,6 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
 
     for init in &model_graph.initializer {
         assert_eq!(DataType::Float as i32, init.data_type);
-        println!("init {:?} with raw size {} and shape {:?}", init.name, init.raw_data.len(), init.dims);
     }
 
     let init_map: HashMap<&str, &TensorProto> = model_graph.initializer.iter()
@@ -49,9 +48,6 @@ fn load_onnx_impl(path: &Path, batch_size: i32, device: Device) -> Graph {
     }
 
     for node in &model_graph.node {
-        println!("{}:", node.name);
-        println!("  {:#?}", node);
-
         let mut attrs = Attributes::from(&node.attribute);
 
         let value = match &*node.op_type {

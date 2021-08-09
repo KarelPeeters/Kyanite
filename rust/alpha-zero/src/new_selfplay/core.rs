@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::selfplay::Simulation;
-use crate::network::tower_shape::TowerShape;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StartupSettings {
@@ -10,7 +9,6 @@ pub struct StartupSettings {
     pub threads_per_device: usize,
     pub batch_size: usize,
     pub games_per_file: usize,
-    pub tower_shape: TowerShape,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

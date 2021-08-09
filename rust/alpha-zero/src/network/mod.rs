@@ -7,7 +7,6 @@ use board_game::board::Board;
 use crate::zero::{Request, Response, ZeroEvaluation};
 
 pub mod dummy;
-pub mod tower_shape;
 
 #[cfg(feature = "tch")]
 pub mod torch_utils;
