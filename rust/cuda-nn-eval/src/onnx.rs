@@ -163,7 +163,7 @@ fn resolve_tensor_shape(ty: &TypeProto, batch_size: i32) -> [i32; 4] {
         ProtoTypeValue::TensorType(tensor) => {
             assert_eq!(tensor.elem_type, DataType::Float as i32, "only floats supported for now");
             let shape = tensor.shape.as_ref().expect("Tensor does not have shape set");
-            assert_eq!(4, shape.dim.len(), "Unexpected shape length");
+            assert_eq!(4, shape.dim.len(), "Unexpected shape length, shape: {:?}", &shape.dim);
 
             let shape = shape.dim.iter().map(|d| {
                 match d.value.as_ref().unwrap() {

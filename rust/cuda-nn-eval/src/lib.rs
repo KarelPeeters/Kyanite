@@ -6,4 +6,4 @@ pub mod onnx;
 pub mod fuser;
 pub mod executor;
 
-mod util;
+pub mod util;
