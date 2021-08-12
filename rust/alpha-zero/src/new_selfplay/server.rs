@@ -1,3 +1,4 @@
+use std::io::{BufReader, BufWriter};
 use std::net::{TcpListener, TcpStream};
 
 use crossbeam::channel;
@@ -7,38 +8,47 @@ use cuda_sys::wrapper::handle::Device;
 
 use crate::network::Network;
 use crate::new_selfplay::collector::collector_main;
-use crate::new_selfplay::commander::commander_main;
-use crate::new_selfplay::core::StartupSettings;
+use crate::new_selfplay::commander::{commander_main, read_command};
+use crate::new_selfplay::core::{StartupSettings, Command};
 use crate::new_selfplay::generator::generator_main;
-use std::io::{BufWriter, BufReader};
 use crate::selfplay::Output;
 
 pub fn selfplay_server_main<B: Board, O: Output<B>, N: Network<B>>(
-    startup: &StartupSettings,
+    game_name: &str,
     start_pos: impl Fn() -> B + Sync,
     output: impl Fn(&str) -> O + Send,
-    load_network: impl Fn(String, Device) -> N + Sync,
+    load_network: impl Fn(String, usize, Device) -> N + Sync,
 ) {
     let (stream, addr) = TcpListener::bind("::1:63105").unwrap()
         .accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
-    selfplay_handle_connection(startup, start_pos, output, load_network, stream);
+    selfplay_handle_connection(game_name, start_pos, output, load_network, stream);
 }
 
-pub fn selfplay_handle_connection<B: Board, O: Output<B>, N: Network<B>>(
-    startup: &StartupSettings,
+fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSettings {
+    match read_command(reader) {
+        Command::StartupSettings(startup) =>
+            startup,
+        command =>
+            panic!("Must receive startup settings before any other command, got {:?}", command),
+    }
+}
+
+fn selfplay_handle_connection<B: Board, O: Output<B>, N: Network<B>>(
+    game_name: &str,
     start_pos: impl Fn() -> B + Sync,
     output: impl Fn(&str) -> O + Send,
-    load_network: impl Fn(String, Device) -> N + Sync,
+    load_network: impl Fn(String, usize, Device) -> N + Sync,
     stream: TcpStream,
 ) {
-    println!("{:#?}", startup);
+    let writer = BufWriter::new(&stream);
+    let mut reader = BufReader::new(&stream);
+
+    let startup = wait_for_startup_settings(&mut reader);
+    assert_eq!(game_name, startup.game);
 
     let mut cmd_senders = vec![];
     let (update_sender, update_receiver) = channel::unbounded();
-
-    let writer = BufWriter::new(&stream);
-    let reader = BufReader::new(&stream);
 
     crossbeam::scope(|s| {
         for device in Device::all() {

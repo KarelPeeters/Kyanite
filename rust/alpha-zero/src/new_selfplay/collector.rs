@@ -62,6 +62,7 @@ struct ThroughputEstimator {
     cached_evals: u64,
     moves: u64,
     games: u64,
+    total_games: u64,
 }
 
 impl ThroughputEstimator {
@@ -72,11 +73,13 @@ impl ThroughputEstimator {
             cached_evals: 0,
             moves: 0,
             games: 0,
+            total_games: 0,
         }
     }
 
     fn add_game(&mut self) {
         self.games += 1;
+        self.total_games += 1;
     }
 
     fn update(&mut self, real_evals: u64, cached_evals: u64, moves: u64) {
@@ -95,8 +98,8 @@ impl ThroughputEstimator {
             let game_throughput = self.games as f32 / delta;
 
             println!(
-                "Thoughput: {} evals/s, {} cached evals/s, {} moves/s, {} games/s",
-                real_eval_throughput, cached_eval_throughput, moves_throughput, game_throughput
+                "Thoughput: {} evals/s, {} cached evals/s, {} moves/s, {} games/s, {} games",
+                real_eval_throughput, cached_eval_throughput, moves_throughput, game_throughput, self.total_games
             );
             println!("   cache hit rate: {}", cached_eval_throughput / (cached_eval_throughput + real_eval_throughput));
 

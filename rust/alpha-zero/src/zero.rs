@@ -227,6 +227,7 @@ impl<B: Board> Tree<B> {
         KeepResult::Tree(tree)
     }
 
+    #[must_use]
     pub fn display(&self, max_depth: usize) -> TreeDisplay<B> {
         let parent_visits = self[0].visits;
         TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, parent_visits }
@@ -501,7 +502,7 @@ pub struct ZeroBot<B: Board, N: Network<B>, R: Rng> {
 
 impl<B: Board, N: Network<B>, R: Rng> Debug for ZeroBot<B, N, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ZeroBot {{ iterations: {:?}, settings: {:?} }}", self.iterations, self.settings)
+        write!(f, "ZeroBot {{ iterations: {:?}, settings: {:?}, network: {:?} }}", self.iterations, self.settings, self.network)
     }
 }
 

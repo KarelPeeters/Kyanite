@@ -186,19 +186,25 @@ impl CudaGraphExecutor {
         assert_eq!(self.inputs.len(), inputs.len(), "Wrong number of inputs");
         assert_eq!(self.outputs.len(), outputs.len(), "Wrong number of outputs");
 
-        // copy inputs to buffers
-        for i in 0..inputs.len() {
-            self.buffers[self.inputs[i]].copy_from_host(cast_slice(inputs[i]));
-        }
+        unsafe {
+            // copy inputs to buffers
+            for i in 0..inputs.len() {
+                self.buffers[self.inputs[i]]
+                    .copy_from_host_async(cast_slice(inputs[i]), self.handle.stream());
+            }
 
-        // run operations
-        for i in 0..self.plan.len() {
-            self.run_op(i)
-        }
+            // run operations
+            for i in 0..self.plan.len() {
+                self.run_op(i)
+            }
 
-        // copy outputs back
-        for i in 0..outputs.len() {
-            self.buffers[self.outputs[i]].copy_to_host(cast_slice_mut(outputs[i]));
+            // copy outputs back
+            for i in 0..outputs.len() {
+                self.buffers[self.outputs[i]]
+                    .copy_to_host_async(cast_slice_mut(outputs[i]), self.handle.stream());
+            }
+
+            self.handle.stream().synchronize();
         }
     }
 

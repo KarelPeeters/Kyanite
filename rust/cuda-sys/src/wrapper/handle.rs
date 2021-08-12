@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudnnCreate, cudnnDestroy, cudnnSetStream};
+use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudnnCreate, cudnnDestroy, cudnnSetStream, cudaStreamSynchronize};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::status::Status;
 
@@ -29,6 +29,8 @@ impl Device {
         self.0
     }
 
+    // Set the current cuda device to this device.
+    //TODO is this enough when there are multiple threads running?
     pub unsafe fn switch_to(self) {
         cudaSetDevice(self.0).unwrap()
     }
@@ -56,6 +58,12 @@ impl CudaStream {
             device.switch_to();
             cudaStreamCreate(&mut inner as *mut _).unwrap();
             CudaStream { device, inner }
+        }
+    }
+
+    pub fn synchronize(&mut self) {
+        unsafe {
+            cudaStreamSynchronize(self.inner()).unwrap()
         }
     }
 
@@ -98,8 +106,8 @@ impl CudnnHandle {
         self.stream.device()
     }
 
-    pub fn stream(&self) -> &CudaStream {
-        &self.stream
+    pub unsafe fn stream(&mut self) -> &mut CudaStream {
+        &mut self.stream
     }
 
     pub unsafe fn inner(&mut self) -> cudnnHandle_t {

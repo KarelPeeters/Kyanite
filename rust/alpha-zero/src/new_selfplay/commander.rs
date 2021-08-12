@@ -12,16 +12,8 @@ pub fn commander_main<B: Board>(
     cmd_senders: Vec<Sender<Command>>,
     update_sender: Sender<GeneratorUpdate<B>>,
 ) {
-    let mut buffer = vec![];
-
     loop {
-        buffer.clear();
-        reader.read_until(b'\n', &mut buffer).unwrap();
-
-        let str = str::from_utf8(&buffer).unwrap();
-        println!("Received command {}", str);
-
-        let cmd = serde_json::from_str::<Command>(str).unwrap();
+        let cmd = read_command(&mut reader);
 
         for s in &cmd_senders {
             s.send(cmd.clone()).unwrap();
@@ -32,4 +24,15 @@ pub fn commander_main<B: Board>(
             break;
         }
     }
+}
+
+pub fn read_command(reader: &mut BufReader<impl Read>) -> Command {
+    let mut buffer = vec![];
+    reader.read_until(b'\n', &mut buffer).unwrap();
+    buffer.pop();
+
+    let str = str::from_utf8(&buffer).unwrap();
+    println!("Received command {}", str);
+
+    serde_json::from_str::<Command>(str).unwrap()
 }

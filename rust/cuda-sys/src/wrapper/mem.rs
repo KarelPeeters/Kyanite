@@ -1,9 +1,9 @@
 use std::ffi::c_void;
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyKind, cudaMemset};
+use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyAsync, cudaMemcpyKind, cudaMemset};
+use crate::wrapper::handle::{CudaStream, Device};
 use crate::wrapper::status::Status;
-use crate::wrapper::handle::Device;
 
 #[derive(Debug)]
 pub struct DeviceMem {
@@ -51,6 +51,32 @@ impl DeviceMem {
         unsafe {
             self.device.switch_to();
             cudaMemset(self.dev_ptr, value as i32, self.size).unwrap()
+        }
+    }
+
+    pub unsafe fn copy_from_host_async(&mut self, buffer: &[u8], stream: &mut CudaStream) {
+        assert_eq!(self.size, buffer.len(), "copy buffer size mismatch");
+        self.device.switch_to();
+        cudaMemcpyAsync(
+            self.dev_ptr,
+            buffer.as_ptr() as *const c_void,
+            self.size,
+            cudaMemcpyKind::cudaMemcpyHostToDevice,
+            stream.inner(),
+        ).unwrap()
+    }
+
+    pub fn copy_to_host_async(&self, buffer: &mut [u8], stream: &mut CudaStream) {
+        assert_eq!(self.size, buffer.len(), "copy buffer size mismatch");
+        unsafe {
+            self.device.switch_to();
+            cudaMemcpyAsync(
+                buffer.as_mut_ptr() as *mut c_void,
+                self.dev_ptr,
+                self.size,
+                cudaMemcpyKind::cudaMemcpyDeviceToHost,
+                stream.inner(),
+            ).unwrap()
         }
     }
 

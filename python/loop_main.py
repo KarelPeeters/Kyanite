@@ -1,20 +1,25 @@
 import os
 import shutil
 
-import torch.jit
-
 from loop import LoopSettings, SelfplaySettings, run_loop
-from models import TowerModel
+from models import TowerModel, ResBlock
+from selfplay_client import StartupSettings
 from train import TrainSettings, WdlTarget
 
 
 def main():
-    selfplay_settings = SelfplaySettings(
+    startup_settings = StartupSettings(
         game="ataxx",
-        game_count=8,
+        output_folder="",
+        threads_per_device=1,
+        batch_size=256,
+        games_per_file=100,
+    )
+
+    selfplay_settings = SelfplaySettings(
         temperature=1.0,
         zero_temp_move_count=20,
-        max_game_length=300,
+        max_game_length=400,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
@@ -23,8 +28,7 @@ def main():
         part_iterations=500,
         exploration_weight=2.0,
         random_symmetries=True,
-        batch_size=128,
-        threads_per_device=2,
+        cache_size=0,
     )
 
     train_settings = TrainSettings(
@@ -36,21 +40,18 @@ def main():
         plot_smooth_points=50,
     )
 
-    root_path = "data/ataxx/loop1"
-    # TODO remove this again, pretty dangerous!
-    shutil.rmtree(root_path, ignore_errors=True)
+    root_path = "data/derp/test_loop"
+    assert not os.path.exists(root_path), f"{root_path} already exists"
     os.makedirs(root_path, exist_ok=True)
-    initial_path = os.path.join(root_path, "initial_network.pt")
 
-    model = TowerModel(64, 4, 2, 32, True, None, False)
-    model = torch.jit.script(model)
-    torch.jit.save(model, initial_path)
+    def initial_network():
+        return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None))
 
     settings = LoopSettings(
         root_path=root_path,
-        initial_network=initial_path,
-        generations=100,
-        buffer_gen_count=5,
+        initial_network=initial_network,
+        buffer_gen_count=1,
+        startup_settings=startup_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
         train_weight_decay=1e-5,

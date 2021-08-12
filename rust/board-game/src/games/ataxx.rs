@@ -540,6 +540,7 @@ fn player_symbol(player: Player) -> char {
 }
 
 impl AtaxxBoard {
+    //TODO this gives no/wrong errors if the line length or line count is wrong
     pub fn from_fen(fen: &str) -> AtaxxBoard {
         let mut board = AtaxxBoard::empty();
 

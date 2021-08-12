@@ -21,6 +21,7 @@ struct GameState<B: Board> {
     move_count: u32,
 }
 
+//TODO why is this not multithreaded anymore? does rayon maybe only launch one thread?
 pub fn run<B: Board>(
     opponents: &[OpponentConstructor<B>],
     start_board: &B,

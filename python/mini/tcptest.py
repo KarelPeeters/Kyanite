@@ -1,19 +1,28 @@
-import socket
+import time
+
+from selfplay_client import SelfplayClient, SelfplaySettings
 
 while True:
-    try:
-        s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-        s.connect(("::1", 63105))
-        print(s)
+    client = SelfplayClient()
+    settings = SelfplaySettings(
+        max_game_length=10,
+        exploration_weight=2.0,
+        random_symmetries=True,
+        keep_tree=False,
+        temperature=1.0,
+        zero_temp_move_count=20,
+        dirichlet_alpha=0.2,
+        dirichlet_eps=0.25,
+        full_search_prob=1.0,
+        full_iterations=2,
+        part_iterations=100,
+        cache_size=0
+    )
+    client.send_new_settings(settings)
+    client.send_new_network("C:/Documents/Programming/STTT/AlphaZero/data/derp/basic_res_model/model.onnx")
 
-        break
-    except ConnectionRefusedError as e:
-        print(e)
+    # client.send_stop()
+    while True:
+        print(client.wait_for_file())
 
-s.send(b'{"NewSettings":{"games_per_file":1000,"max_game_length":400,"exploration_weight":2.0,"random_symmetries":true,"keep_tree":false,"temperature":1.0,"zero_temp_move_count":20,"dirichlet_alpha":0.25,"dirichlet_eps":0.2,"full_search_prob":1.0,"full_iterations":500,"part_iterations":500,"cache_size":0}}\n')
-s.send(b'{"NewNetwork":"C:/Documents/Programming/STTT/AlphaZero/data/derp/basic_res_model/model.onnx"}\n')
-# s.send(b'"Stop"\n')
-
-# keep socket open
-while True:
-    pass
+    time.sleep(0.1)

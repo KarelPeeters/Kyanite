@@ -7,7 +7,6 @@ import numpy
 import numpy as np
 import torch
 from torch import nn
-from torch.fx._experimental.fuser import fuse
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device {DEVICE}")
@@ -147,21 +146,6 @@ def print_param_count(module: nn.Module, f=None):
     for name, child in module.named_children():
         child_param_count = sum(prod(p.shape) for p in child.parameters())
         print(f"  {name}: {child_param_count / param_count:.2f}", file=f)
-
-
-def save_fused_params(model, path):
-    """Save the parameters of a fused version of the model as an .npz file."""
-    model_fused = fuse(model)
-
-    params = []
-    for i, param in enumerate(model_fused.parameters()):
-        if prod(param.shape) == 1:
-            print(f"{i}: {param.data}")
-        else:
-            print(f"{i}: {param.shape}")
-        params.append(param.detach().numpy())
-
-    np.savez(path, *params)
 
 
 SYMMETRY_INDICES_O = torch.tensor([

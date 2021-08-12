@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::selfplay::Simulation;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartupSettings {
     pub game: String,
     pub output_folder: String,
@@ -11,11 +11,13 @@ pub struct StartupSettings {
     pub games_per_file: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Command {
-    Stop,
+    StartupSettings(StartupSettings),
     NewSettings(Settings),
     NewNetwork(String),
+    Stop,
 }
 
 #[derive(Debug)]
@@ -36,12 +38,14 @@ pub enum GeneratorUpdate<B> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum ServerUpdate {
     Stopped,
     FinishedFile { index: u32 }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone ,Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     // self-play game affecting settings
     pub max_game_length: u64,

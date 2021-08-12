@@ -45,16 +45,16 @@ fn main() {
     println!("{}", tree(&mut cnn_network).display(4));
 
     println!("bot_game");
-    let settings = ZeroSettings::new(2.0, true);
+    let settings = ZeroSettings::new(2.0, false);
     println!("{:#?}", bot_game::run(
         || AtaxxBoard::new_without_gaps(),
         || {
             let network = AtaxxTorchNetwork::load(torch_path, tch::Device::Cuda(0));
-            ZeroBot::new(100, settings, network, thread_rng())
+            ZeroBot::new(100, settings, network, PanicRng)
         },
         || {
             let network = AtaxxCNNNetwork::load(onnx_path, 1, Device::new(0));
-            ZeroBot::new(100, settings, network, thread_rng())
+            ZeroBot::new(100, settings, network, PanicRng)
         },
         1, true, Some(1),
     ));

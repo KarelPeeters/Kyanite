@@ -1,4 +1,4 @@
-use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Sender, SendError, TryRecvError};
 use itertools::{Itertools, zip_eq};
 use lru::LruCache;
 use rand::{Rng, thread_rng};
@@ -14,12 +14,12 @@ use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroEvaluation
 
 pub fn generator_main<B: Board, N: Network<B>>(
     start_pos: impl Fn() -> B,
-    load_network: impl Fn(String, Device) -> N,
+    load_network: impl Fn(String, usize, Device) -> N,
     device: Device,
     batch_size: usize,
     cmd_receiver: Receiver<Command>,
     update_sender: Sender<GeneratorUpdate<B>>,
-) {
+) -> Result<(), SendError<GeneratorUpdate<B>>> {
     let mut state = GeneratorState::new();
     let mut rng = thread_rng();
 
@@ -40,11 +40,13 @@ pub fn generator_main<B: Board, N: Network<B>>(
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
             Ok(Command::Stop) => break,
+            Ok(Command::StartupSettings(_)) => panic!("Already received startup settings"),
             Ok(Command::NewSettings(new_settings)) => {
                 settings = Some(new_settings)
             }
             Ok(Command::NewNetwork(path)) => {
-                network = Some(load_network(path, device));
+                println!("Generator thread loading new network {:?}", path);
+                network = Some(load_network(path, batch_size, device));
             }
         }
 
@@ -52,15 +54,18 @@ pub fn generator_main<B: Board, N: Network<B>>(
         if let Some(settings) = &settings {
             if let Some(executor) = &mut network {
                 state.cache.resize(settings.cache_size);
-                state.step(&start_pos, &update_sender, settings, executor, batch_size, &mut rng)
+                state.step(&start_pos, &update_sender, settings, executor, batch_size, &mut rng)?;
             }
         }
     }
+
+    Ok(())
 }
 
 #[derive(Debug)]
 struct GeneratorState<B: Board> {
     games: Vec<GameState<B>>,
+    responses: Vec<Response<B>>,
     cache: LruCache<B, ZeroEvaluation>,
 }
 
@@ -74,83 +79,80 @@ struct GameState<B: Board> {
 
 impl<B: Board> GeneratorState<B> {
     fn new() -> Self {
-        GeneratorState { games: Default::default(), cache: LruCache::new(0) }
+        GeneratorState { games: Default::default(), responses: Default::default(), cache: LruCache::new(0) }
     }
 
-    fn step(&mut self,
-            start_pos: impl Fn() -> B,
-            update_sender: &Sender<GeneratorUpdate<B>>,
-            settings: &Settings,
-            network: &mut impl Network<B>,
-            batch_size: usize,
-            rng: &mut impl Rng,
-    ) {
-        let mut games: Vec<GameState<B>> = vec![];
+    fn step(
+        &mut self,
+        start_pos: impl Fn() -> B,
+        update_sender: &Sender<GeneratorUpdate<B>>,
+        settings: &Settings,
+        network: &mut impl Network<B>,
+        batch_size: usize,
+        rng: &mut impl Rng,
+    ) -> Result<(), SendError<GeneratorUpdate<B>>> {
         let mut requests: Vec<Request<B>> = vec![];
-        let mut responses: Vec<Response<B>> = vec![];
 
-        loop {
-            let mut total_cached_eval_count = 0;
-            let mut total_move_count = 0;
+        let mut total_cached_eval_count = 0;
+        let mut total_move_count = 0;
 
-            // run all existing games and collect the requests
-            assert_eq!(games.len(), responses.len());
-            assert!(requests.is_empty());
-            let mut kept_games = vec![];
+        // run all existing games and collect the requests
+        assert_eq!(self.games.len(), self.responses.len());
+        assert!(requests.is_empty());
+        let mut kept_games = vec![];
 
-            for (mut game, response) in zip_eq(games.drain(..), responses.drain(..)) {
-                let (request, cached_eval_count, move_count) =
-                    game.run_until_request(rng, &mut self.cache, settings, Some(response), &update_sender);
+        for (mut game, response) in zip_eq(self.games.drain(..), self.responses.drain(..)) {
+            let (request, cached_eval_count, move_count) =
+                game.run_until_request(rng, &mut self.cache, settings, Some(response), &update_sender);
 
-                total_cached_eval_count += cached_eval_count;
-                total_move_count += move_count;
+            total_cached_eval_count += cached_eval_count;
+            total_move_count += move_count;
 
-                if let Some(request) = request {
-                    // this game is not done, keep it and its request
-                    kept_games.push(game);
-                    requests.push(request);
-                }
-            }
-
-            games = kept_games;
-
-            // create new games until we have enough and run them once
-            let new_game_count = batch_size.saturating_sub(games.len());
-            for _ in 0..new_game_count {
-                let zero = new_zero(settings, Tree::new(start_pos()), rng);
-                let mut game = GameState::new(zero);
-                let (request, cached_eval_count, move_count) =
-                    game.run_until_request(rng, &mut self.cache, settings, None, &update_sender);
-
-                total_cached_eval_count += cached_eval_count;
-                total_move_count += move_count;
-
-                let request = request.expect("The first run of a gamestate should always returns a request");
-
-                games.push(game);
+            if let Some(request) = request {
+                // this game is not done, keep it and its request
+                kept_games.push(game);
                 requests.push(request);
             }
-
-            let request_count = requests.len();
-            if request_count == 0 { break; }
-
-            //pass requests to network
-            assert!(responses.is_empty());
-            responses = network.evaluate_batch_requests(&requests);
-            requests.clear();
-
-            //insert responses into the cache
-            for response in &responses {
-                self.cache.put(response.request.board(), response.evaluation.clone());
-            }
-
-            //send the number of evaluations that happened
-            update_sender.send(GeneratorUpdate::Progress {
-                real_evals: request_count as u64,
-                cached_evals: total_cached_eval_count,
-                moves: total_move_count,
-            }).unwrap();
         }
+
+        self.games = kept_games;
+
+        // create new games until we have enough and run them once
+        let new_game_count = batch_size.saturating_sub(self.games.len());
+        for _ in 0..new_game_count {
+            let zero = new_zero(settings, Tree::new(start_pos()), rng);
+            let mut game = GameState::new(zero);
+            let (request, cached_eval_count, move_count) =
+                game.run_until_request(rng, &mut self.cache, settings, None, &update_sender);
+
+            total_cached_eval_count += cached_eval_count;
+            total_move_count += move_count;
+
+            let request = request.expect("The first run of a gamestate should always returns a request");
+
+            self.games.push(game);
+            requests.push(request);
+        }
+
+        let request_count = requests.len();
+
+        //pass requests to network
+        assert!(self.responses.is_empty());
+        self.responses = network.evaluate_batch_requests(&requests);
+
+        //insert responses into the cache
+        for response in &self.responses {
+            self.cache.put(response.request.board(), response.evaluation.clone());
+        }
+
+        //send the number of evaluations that happened
+        update_sender.send(GeneratorUpdate::Progress {
+            real_evals: request_count as u64,
+            cached_evals: total_cached_eval_count,
+            moves: total_move_count,
+        })?;
+
+        Ok(())
     }
 }
 
@@ -241,7 +243,7 @@ impl<B: Board> GameState<B> {
                             sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
 
                             //report that this game is done
-                            break None
+                            break None;
                         }
                     }
                 }
