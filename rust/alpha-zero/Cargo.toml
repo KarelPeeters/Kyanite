@@ -5,7 +5,7 @@ version = "0.2.0"
 edition = "2018"
 
 [features]
-default = ["tch"]
+#default = ["tch"]
 
 [dependencies]
 board-game = { path = "../board-game" }
