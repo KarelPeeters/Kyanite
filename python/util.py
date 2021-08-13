@@ -1,5 +1,4 @@
 import random
-from math import prod
 from pathlib import Path
 from typing import Optional
 
@@ -139,6 +138,11 @@ def uniform_window_filter(data: np.array, window_size: int) -> np.array:
     b = [1 / window_size] * window_size
     return filtfilt(b, a, data)
 
+def prod(i):
+    total = 1
+    for x in i:
+        total *= x
+    return total
 
 def print_param_count(module: nn.Module, f=None):
     param_count = sum(prod(p.shape) for p in module.parameters())

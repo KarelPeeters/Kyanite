@@ -1,4 +1,4 @@
-pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerfStruct, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
+pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
 use crate::bindings::cudnnPoolingForward;
 use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor};
 use crate::wrapper::handle::CudnnHandle;
@@ -11,7 +11,7 @@ pub fn find_conv_algorithms(
     filter: &FilterDescriptor,
     input: &TensorDescriptor,
     output: &TensorDescriptor,
-) -> Vec<cudnnConvolutionFwdAlgoPerfStruct> {
+) -> Vec<cudnnConvolutionFwdAlgoPerf_t> {
     unsafe {
         let mut max_algo_count = 0;
         cudnnGetConvolutionForwardAlgorithmMaxCount(handle.inner(), &mut max_algo_count as *mut _).unwrap();

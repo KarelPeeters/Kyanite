@@ -11,8 +11,8 @@ def main():
     startup_settings = StartupSettings(
         game="ataxx",
         output_folder="",
-        threads_per_device=1,
-        batch_size=256,
+        threads_per_device=2,
+        batch_size=512,
         games_per_file=100,
     )
 
