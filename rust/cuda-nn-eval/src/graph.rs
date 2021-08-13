@@ -34,12 +34,13 @@ pub enum Operation {
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConvShape {
+    pub batch_size: i32,
     pub input_channels: i32,
     pub output_channels: i32,
-    pub kernel_width: i32,
-    pub kernel_height: i32,
-    pub pad_w: i32,
-    pub pad_h: i32,
+    pub input_size: i32,
+    pub kernel_size: i32,
+    pub padding: i32,
+    pub output_size: i32,
 }
 
 impl Index<Value> for Graph {
@@ -112,7 +113,7 @@ impl Graph {
 
     /// 2D convolution.
     #[must_use]
-    pub fn conv(&mut self, input: Value, filter: Value, pad_w: i32, pad_h: i32) -> Value {
+    pub fn conv(&mut self, input: Value, filter: Value, padding: i32) -> Value {
         let [n, in_c, in_w, in_h] = self[input].shape;
         let [output_channels, input_channels, kernel_width, kernel_height] = self[filter].shape;
 
@@ -121,11 +122,22 @@ impl Graph {
 
         assert_eq!(in_c, input_channels, "Input channel mismatch");
 
-        let out_w = in_w - kernel_width + 1 + 2 * pad_w;
-        let out_h = in_h - kernel_height + 1 + 2 * pad_h;
+        assert_eq!(in_w, in_h, "Only square inputs supported");
+        assert_eq!(kernel_width, kernel_height, "Only square kernels supported");
+
+        let out_w = in_w - kernel_width + 1 + 2 * padding;
+        let out_h = in_h - kernel_height + 1 + 2 * padding;
         let output_shape = [n, output_channels, out_w, out_h];
 
-        let conv_shape = ConvShape { input_channels, output_channels, kernel_width, kernel_height, pad_w, pad_h };
+        let conv_shape = ConvShape {
+            batch_size: n,
+            input_channels,
+            output_channels,
+            input_size: in_w,
+            kernel_size: kernel_width,
+            padding,
+            output_size: out_w,
+        };
         self.push(
             output_shape,
             Operation::Conv { input, conv_shape, filter },

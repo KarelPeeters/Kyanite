@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use bytemuck::{cast_slice, cast_slice_mut};
 use unwrap_match::unwrap_match;
 
-use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
+use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t, cudnnActivationMode_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::DeviceMem;
 use cuda_sys::wrapper::operation::{ResInput, run_conv_bias_res_activation};
 
-use crate::fuser::{FusedGraph, FusedValue, FusedValueInfo};
+use crate::fuser::{FusedGraph, FusedValue, FusedValueInfo, Activation};
 use crate::graph::{ConvShape, Graph, Operation};
 
 #[derive(Debug)]
@@ -122,9 +122,9 @@ impl CudaGraphExecutor {
                     conv_shape, act_mode
                 } => {
                     let ConvShape {
+                        batch_size: _,
                         input_channels, output_channels,
-                        kernel_width, kernel_height,
-                        pad_w, pad_h
+                        input_size: _, kernel_size, padding, output_size: _
                     } = conv_shape;
 
                     let input_desc = shape_to_tensor_desc(input_shape_view);
@@ -132,13 +132,18 @@ impl CudaGraphExecutor {
                     let bias_desc = shape_to_tensor_desc(graph[fused_graph[bias].value()].shape);
 
                     let filter_desc = FilterDescriptor::new(
-                        output_channels, input_channels, kernel_height, kernel_width,
+                        output_channels, input_channels, kernel_size, kernel_size,
                         cudnnDataType_t::CUDNN_DATA_FLOAT, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
                     );
 
                     let conv_desc = ConvolutionDescriptor::new(
-                        pad_h, pad_w, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT,
+                        padding, padding, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT,
                     );
+
+                    let act_mode = match act_mode {
+                        Activation::Linear => cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
+                        Activation::Relu => cudnnActivationMode_t::CUDNN_ACTIVATION_RELU,
+                    };
 
                     let workspace_size = conv_desc.workspace_size(
                         &mut handle,
@@ -169,12 +174,8 @@ impl CudaGraphExecutor {
         }
 
         let outputs = graph.outputs().iter().map(|&value| {
-            // find fused value for this output
-            let fused_value = fused_graph.schedule().find(|&fused_value| {
-                fused_graph[fused_value].value() == value
-            }).unwrap_or_else(|| panic!("Output {:?} not found in fused graph", value));
-
-            // find buffer index for the fused value
+            // find buffer index for the fused value corresponding to this value
+            let fused_value =fused_graph.find(value);
             *buffer_map.get(&fused_value)
                 .unwrap_or_else(|| panic!("Output {:?} not found in buffer map", value))
         }).collect();

@@ -64,7 +64,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32) -> Graph {
                 let [output_channels, input_channels, kernel_w, kernel_h] = unwrap_4(&filter.dims);
 
                 assert_eq!(1, g);
-                assert!(ph0 == ph1 && pv0 == pv1);
+                assert!(ph0 == ph1 && pv0 == pv1 && ph0 == pv0);
                 assert!(dw == 1 && dh == 1);
                 assert!(sw == 1 && sh == 1);
                 assert!(kernel_w == kw && kernel_h == kh);
@@ -73,7 +73,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32) -> Graph {
                     cast_shape([output_channels, input_channels, kernel_w, kernel_h]),
                     get_tensor_f32_data(filter),
                 );
-                let conv = graph.conv(input, filter, ph0 as i32, pv0 as i32);
+                let conv = graph.conv(input, filter, ph0 as i32);
 
                 if let Some(bias) = bias {
                     let channels = unwrap_1(&bias.dims);
@@ -125,7 +125,7 @@ fn load_onnx_impl(path: &Path, batch_size: i32) -> Graph {
                     cast_shape([output_channels, input_channels, 1, 1]),
                     get_tensor_f32_data(weight),
                 );
-                let conv = graph.conv(input, filter, 0, 0);
+                let conv = graph.conv(input, filter, 0);
 
                 if let Some(bias) = bias {
                     let channels = unwrap_1(&bias.dims);

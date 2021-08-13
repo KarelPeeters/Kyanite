@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::ops::Index;
 
-use cuda_sys::bindings::cudnnActivationMode_t;
-
 use crate::graph::{ConvShape, Graph, Operation, Value};
 
 //TODO implement a proper scheduler, right now we're basically abusing the visit order as a topological sort
@@ -15,6 +13,12 @@ pub struct FusedGraph {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FusedValue(usize);
+
+#[derive(Debug, Copy, Clone)]
+pub enum Activation {
+    Linear,
+    Relu,
+}
 
 #[derive(Debug, Copy, Clone)]
 pub enum FusedValueInfo {
@@ -31,7 +35,7 @@ pub enum FusedValueInfo {
         conv_shape: ConvShape,
         bias: FusedValue,
         res_input: Option<FusedValue>,
-        act_mode: cudnnActivationMode_t,
+        act_mode: Activation,
     },
 }
 
@@ -60,6 +64,11 @@ impl FusedGraph {
         }
 
         result
+    }
+    
+    pub fn find(&self, value: Value) -> FusedValue {
+        *self.visited.get(&value)
+            .unwrap_or_else(|| panic!("Could not find value {:?}, maybe it was fused away", value))
     }
 
     pub fn schedule(&self) -> impl Iterator<Item=FusedValue> {
@@ -107,9 +116,9 @@ impl FusedGraph {
         // accept activation
         let act_mode = if let Operation::Relu { input } = g[next].operation {
             next = input;
-            cudnnActivationMode_t::CUDNN_ACTIVATION_RELU
+            Activation::Relu
         } else {
-            cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY
+            Activation::Linear
         };
 
         // accept residual
@@ -139,7 +148,7 @@ impl FusedGraph {
         value: Value,
         next: Value,
         res_input: Option<Value>,
-        act_mode: cudnnActivationMode_t,
+        act_mode: Activation,
     ) -> Option<FusedValue> {
         // require bias
         //TODO it's not that hard to remove this requirement

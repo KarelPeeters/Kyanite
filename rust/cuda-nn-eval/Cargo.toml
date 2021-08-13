@@ -12,6 +12,7 @@ prost = "0.8.0"
 unwrap-match = "0.1.0"
 cast_trait = "0.1.2"
 rand = "0.8.4"
+ndarray = "0.15.3"
 
 [build-dependencies]
 prost-build = "0.8.0"
