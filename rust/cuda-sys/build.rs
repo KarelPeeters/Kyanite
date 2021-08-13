@@ -1,21 +1,32 @@
 use std::env;
 use std::path::PathBuf;
 
-use bindgen::EnumVariation;
+use bindgen::{Builder, EnumVariation};
+
+//TODO rewrite this thing again to find cuda automatically (env Var & default location),
+// and verify that cudnn is installed
+
+#[cfg(target_family = "windows")]
+fn link_cuda(builder: Builder) -> Builder {
+    println!("cargo:rustc-link-search=native=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\");
+    println!("cargo:rustc-link-lib=dylib=cuda");
+    println!("cargo:rustc-link-lib=dylib=cudart");
+    println!("cargo:rustc-link-lib=dylib=cudnn");
+
+    builder
+        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include")
+        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include/nvtx3")
+}
 
 fn main() {
-    println!("cargo:rustc-link-lib=\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\cuda");
-    println!("cargo:rustc-link-lib=\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\cudart");
-    println!("cargo:rustc-link-lib=\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\cudnn");
+    println!("cargo:rustc-link-search=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\");
 
     println!("cargo:rerun-if-changed=wrapper.h");
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    bindgen::Builder::default()
+    link_cuda(Builder::default())
         // input
-        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include")
-        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include/nvtx3")
         .header("wrapper.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
 
