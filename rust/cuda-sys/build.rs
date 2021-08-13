@@ -18,12 +18,22 @@ fn link_cuda(builder: Builder) -> Builder {
         .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include/nvtx3")
 }
 
-fn main() {
-    println!("cargo:rustc-link-search=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\");
+#[cfg(target_family = "linux")]
+fn link_cuda(builder: Builder) -> Builder {
+    println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
+    println!("cargo:rustc-link-lib=dylib=cuda");
+    println!("cargo:rustc-link-lib=dylib=cudart");
+    println!("cargo:rustc-link-lib=dylib=cudnn");
 
+    builder
+        .clang_arg("-I/usr/local/include/cuda")
+        .clang_arg("-I/usr/local/include/nvtx3")
+}
+
+fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
     link_cuda(Builder::default())
         // input
