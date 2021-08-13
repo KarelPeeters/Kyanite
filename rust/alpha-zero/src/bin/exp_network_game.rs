@@ -1,15 +1,15 @@
-use cuda_sys::wrapper::handle::Device;
-use alpha_zero::zero::{ZeroSettings, ZeroBot};
-use board_game::games::ataxx::AtaxxBoard;
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use rand::thread_rng;
+
 use alpha_zero::bot_game_zero;
-use alpha_zero::selfplay::MoveSelector;
-use board_game::ai::simple::RandomBot;
-use board_game::heuristic::ataxx_heuristic::AtaxxTileHeuristic;
-use board_game::ai::mcts::MCTSBot;
 use alpha_zero::bot_game_zero::OpponentConstructor;
+use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::selfplay::MoveSelector;
+use alpha_zero::zero::ZeroSettings;
 use board_game::ai::minimax::MiniMaxBot;
+use board_game::ai::simple::RandomBot;
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::heuristic::ataxx_heuristic::AtaxxTileHeuristic;
+use cuda_sys::wrapper::handle::Device;
 
 fn main() {
     let device = Device::new(0);

@@ -1,8 +1,5 @@
-use itertools::Itertools;
-
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use alpha_zero::games::ataxx_output::AtaxxBinaryOutput;
-use alpha_zero::new_selfplay::core::{Command, Settings, StartupSettings};
 use alpha_zero::new_selfplay::server::selfplay_server_main;
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_sys::wrapper::handle::Device;
