@@ -1,20 +1,31 @@
+use std::fs::File;
 use std::io::{BufRead, stdin};
+use std::io::Write;
 
-use crate::ai::Bot;
-use crate::games::ataxx::AtaxxBoard;
+use itertools::Itertools;
+
+use crate::board::{Board, Player};
+use crate::games::ataxx::{AtaxxBoard, Move};
 use crate::uai::command::{Command, Position};
 
-pub fn run(mut bot: impl Bot<AtaxxBoard>) -> std::io::Result<()> {
+pub fn run(mut bot: impl FnMut(&AtaxxBoard, u32) -> (Move, u64)) -> std::io::Result<()> {
+    //warmup
+    bot(&AtaxxBoard::new_without_gaps(), 1000);
+
     let stdin = stdin();
     let mut handle = stdin.lock();
     let mut line = String::new();
 
     let mut curr_board = None;
 
+    let mut file = std::io::BufWriter::new(File::create("log.txt").unwrap());
+
     loop {
         line.clear();
         handle.read_line(&mut line)?;
         let line = line.trim();
+        write!(&mut file, "{}\n", line).unwrap();
+        file.flush().unwrap();
 
         println!("info > {}", line);
         let command = Command::parse(line)
@@ -36,6 +47,9 @@ pub fn run(mut bot: impl Bot<AtaxxBoard>) -> std::io::Result<()> {
 
                 println!("info < readyok");
             }
+            Command::SetOption { name, value } => {
+                println!("info < ignoring command setoption, name={}, value={}", name, value);
+            }
             Command::NewGame => {
                 curr_board = Some(AtaxxBoard::new_without_gaps());
             }
@@ -45,9 +59,27 @@ pub fn run(mut bot: impl Bot<AtaxxBoard>) -> std::io::Result<()> {
                     Position::Fen(fen) => AtaxxBoard::from_fen(fen),
                 })
             }
-            Command::Go(_) => {
+            Command::Go(derp) => {
+                let times = derp.chars()
+                    .filter(|c| c.is_ascii_digit() || c.is_whitespace())
+                    .collect::<String>()
+                    .split(" ")
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.parse::<u32>().unwrap())
+                    .collect_vec();
+                println!("{:?}", times);
+
                 let curr_board = curr_board.as_ref().unwrap();
-                let best_move = bot.select_move(&curr_board);
+
+                let time_left = match curr_board.next_player() {
+                    Player::A => times[0],
+                    Player::B => times[1],
+                };
+
+                let (best_move, nodes) = bot(curr_board, time_left);
+                write!(&mut file, "nodes: {}", nodes).unwrap();
+                file.flush().unwrap();
                 println!("bestmove {}", best_move.to_uai());
                 println!("info < bestmove {}", best_move.to_uai());
             }

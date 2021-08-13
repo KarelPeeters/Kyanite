@@ -6,6 +6,7 @@ pub enum Command<'a> {
     Quit,
     Position(Position<'a>),
     Go(&'a str),
+    SetOption { name: &'a str, value: &'a str },
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -25,10 +26,10 @@ impl<'a> Command<'a> {
 
 mod parse {
     use nom::branch::alt;
-    use nom::bytes::complete::{tag, take_while};
+    use nom::bytes::complete::{tag, take_while, take_until};
     use nom::combinator::{eof, map, value};
     use nom::IResult;
-    use nom::sequence::{preceded, terminated};
+    use nom::sequence::{preceded, terminated, tuple};
 
     use crate::uai::command::{Command, Position};
 
@@ -49,6 +50,21 @@ mod parse {
             ),
         );
 
+        let set_option = preceded(
+            tag("setoption "),
+            map(
+                tuple((
+                    tag("name "),
+                    take_until(" "),
+                    tag(" value "),
+                    take_while(|_| true)
+                )),
+                |(_, name, _, value)| {
+                    Command::SetOption { name, value }
+                }
+            )
+        );
+
         let main = alt((
             value(Command::UAI, tag("uai")),
             value(Command::IsReady, tag("isready")),
@@ -56,6 +72,7 @@ mod parse {
             value(Command::Quit, tag("quit")),
             position,
             go,
+            set_option,
         ));
 
         let mut complete = terminated(main, eof);

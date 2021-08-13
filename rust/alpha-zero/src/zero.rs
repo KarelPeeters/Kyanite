@@ -9,6 +9,7 @@ use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::Rng;
 use rand_distr::Distribution;
+
 use board_game::ai::Bot;
 use board_game::board::{Board, Outcome};
 use board_game::symmetry::{Symmetry, SymmetryDistribution};
@@ -472,12 +473,15 @@ pub fn zero_build_tree<B: Board>(
     settings: ZeroSettings,
     network: &mut impl Network<B>,
     rng: &mut impl Rng,
+    mut stop_cond: impl FnMut() -> bool,
 ) -> Tree<B> {
     let mut state = ZeroState::new(Tree::new(board.clone()), iterations, settings);
 
     let mut response = None;
 
     loop {
+        if stop_cond() { break; }
+
         let result = state.run_until_result(response, rng);
 
         match result {
@@ -513,7 +517,7 @@ impl<B: Board, N: Network<B>, R: Rng> ZeroBot<B, N, R> {
 
     /// Utility function that builds a tree with the settings of this bot.
     pub fn build_tree(&mut self, board: &B) -> Tree<B> {
-        zero_build_tree(board, self.iterations, self.settings, &mut self.network, &mut self.rng)
+        zero_build_tree(board, self.iterations, self.settings, &mut self.network, &mut self.rng, || false)
     }
 }
 
