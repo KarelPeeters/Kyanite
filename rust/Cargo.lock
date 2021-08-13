@@ -109,8 +109,8 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bindgen"
-version = "0.59.0"
-source = "git+https://github.com/KarelPeeters/rust-bindgen?rev=5b396301#5b396301fe7187157dd69043dbb2f485361ea8e0"
+version = "0.59.1"
+source = "git+https://github.com/rust-lang/rust-bindgen?rev=0f641061a78b8af93e977e072cfd8106461b3ca5#0f641061a78b8af93e977e072cfd8106461b3ca5"
 dependencies = [
  "bitflags",
  "cexpr",
@@ -126,7 +126,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex",
- "which 3.1.1",
+ "which",
 ]
 
 [[package]]
@@ -447,9 +447,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "env_logger"
-version = "0.8.4"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
+checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
 dependencies = [
  "atty",
  "humantime",
@@ -1013,7 +1013,7 @@ dependencies = [
  "prost",
  "prost-types",
  "tempfile",
- "which 4.2.2",
+ "which",
 ]
 
 [[package]]
@@ -1542,15 +1542,6 @@ name = "weezl"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b77fdfd5a253be4ab714e4ffa3c49caf146b4de743e97510c0656cf90f1e8e"
-
-[[package]]
-name = "which"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d011071ae14a2f6671d0b74080ae0cd8ebf3a6f8c9589a2cd45f23126fe29724"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "which"
