@@ -24,7 +24,7 @@ struct GameState<B: Board> {
 //TODO why is this not multithreaded anymore? does rayon maybe only launch one thread?
 pub fn run<B: Board>(
     opponents: &[OpponentConstructor<B>],
-    start_board: &B,
+    mut start_board: impl FnMut() -> B,
     iterations: u64,
     settings: ZeroSettings,
     network: &mut impl Network<B>,
@@ -42,7 +42,7 @@ pub fn run<B: Board>(
     for opponent in 0..opponents.len() {
         for &zero_first in &[true, false] {
             for _ in 0..games_per_side {
-                let mut board = start_board.clone();
+                let mut board = start_board();
                 let mut move_count = 0;
 
                 if !zero_first {
