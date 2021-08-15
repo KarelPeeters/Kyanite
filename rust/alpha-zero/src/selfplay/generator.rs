@@ -8,8 +8,8 @@ use board_game::board::{Board, Outcome};
 use cuda_sys::wrapper::handle::Device;
 
 use crate::network::Network;
-use crate::new_selfplay::core::{Command, GeneratorUpdate, Settings};
-use crate::selfplay::{MoveSelector, Position, Simulation};
+use crate::selfplay::core::{MoveSelector, Position, Simulation};
+use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroEvaluation, ZeroSettings, ZeroState};
 
 pub fn generator_main<B: Board, N: Network<B>>(

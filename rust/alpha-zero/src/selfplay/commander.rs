@@ -5,7 +5,7 @@ use crossbeam::channel::Sender;
 
 use board_game::board::Board;
 
-use crate::new_selfplay::core::{Command, GeneratorUpdate};
+use crate::selfplay::protocol::{Command, GeneratorUpdate};
 
 pub fn commander_main<B: Board>(
     mut reader: BufReader<impl Read>,

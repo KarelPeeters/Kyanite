@@ -7,11 +7,11 @@ use board_game::board::Board;
 use cuda_sys::wrapper::handle::Device;
 
 use crate::network::Network;
-use crate::new_selfplay::collector::collector_main;
-use crate::new_selfplay::commander::{commander_main, read_command};
-use crate::new_selfplay::core::{StartupSettings, Command};
-use crate::new_selfplay::generator::generator_main;
-use crate::selfplay::Output;
+use crate::selfplay::collector::collector_main;
+use crate::selfplay::commander::{commander_main, read_command};
+use crate::selfplay::core::Output;
+use crate::selfplay::generator::generator_main;
+use crate::selfplay::protocol::{Command, StartupSettings};
 
 pub fn selfplay_server_main<B: Board, O: Output<B>, N: Network<B>>(
     game_name: &str,

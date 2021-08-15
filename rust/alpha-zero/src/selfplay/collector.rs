@@ -5,8 +5,8 @@ use crossbeam::channel::Receiver;
 
 use board_game::board::Board;
 
-use crate::new_selfplay::core::{GeneratorUpdate, ServerUpdate};
-use crate::selfplay::Output;
+use crate::selfplay::core::Output;
+use crate::selfplay::protocol::{GeneratorUpdate, ServerUpdate};
 
 pub fn collector_main<B: Board, O: Output<B>>(
     mut writer: BufWriter<impl Write>,

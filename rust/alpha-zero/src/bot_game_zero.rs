@@ -7,7 +7,7 @@ use board_game::board::{Board, Outcome, Player};
 use board_game::wdl::WDL;
 
 use crate::network::Network;
-use crate::selfplay::MoveSelector;
+use crate::selfplay::core::MoveSelector;
 use crate::zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 
 pub type OpponentConstructor<B> = Box<dyn Fn() -> Box<dyn Bot<B>> + Sync>;

@@ -7,23 +7,8 @@ use board_game::games::ataxx::AtaxxBoard;
 use crate::games::ataxx_utils::{decode_output, encode_input};
 use crate::network::Network;
 use crate::network::torch_utils::{unwrap_ivalue_pair, unwrap_tensor_with_shape};
-use crate::selfplay::generate_zero::NetworkLoader;
 use crate::zero::ZeroEvaluation;
 use std::ffi::OsStr;
-
-#[derive(Debug)]
-pub struct AtaxxTorchLoader {
-    pub path: String,
-}
-
-impl NetworkLoader<AtaxxBoard> for AtaxxTorchLoader {
-    type Device = Device;
-    type Network = AtaxxTorchNetwork;
-
-    fn load_network(&self, device: Self::Device) -> Self::Network {
-        AtaxxTorchNetwork::load(&self.path, device)
-    }
-}
 
 #[derive(Debug)]
 pub struct AtaxxTorchNetwork {

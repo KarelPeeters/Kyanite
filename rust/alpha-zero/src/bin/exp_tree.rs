@@ -4,7 +4,7 @@ use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use alpha_zero::zero::{zero_build_tree, ZeroSettings};
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_sys::wrapper::handle::Device;
-use board_game::util::board_gen::{random_board_with_forced_win, random_board_with_moves};
+use board_game::util::board_gen::{random_board_with_moves};
 use board_game::board::Board;
 use board_game::ai::minimax::minimax;
 use board_game::heuristic::ataxx_heuristic::AtaxxTileHeuristic;

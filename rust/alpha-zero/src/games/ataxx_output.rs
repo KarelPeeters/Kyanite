@@ -8,7 +8,7 @@ use safe_transmute::transmute_to_bytes;
 use board_game::board::{Board, BoardAvailableMoves};
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
-use crate::selfplay::{Output, Simulation};
+use crate::selfplay::core::{Output, Simulation};
 
 #[derive(Debug)]
 pub struct AtaxxBinaryOutput {

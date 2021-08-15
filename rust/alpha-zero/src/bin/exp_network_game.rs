@@ -3,7 +3,7 @@ use rand::thread_rng;
 use alpha_zero::bot_game_zero;
 use alpha_zero::bot_game_zero::OpponentConstructor;
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
-use alpha_zero::selfplay::MoveSelector;
+use alpha_zero::selfplay::core::MoveSelector;
 use alpha_zero::zero::{ZeroSettings, ZeroBot};
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_sys::wrapper::handle::Device;
