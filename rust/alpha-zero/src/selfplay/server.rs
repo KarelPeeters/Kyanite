@@ -67,7 +67,7 @@ fn selfplay_handle_connection<B: Board, O: Output<B>, N: Network<B>>(
         }
 
         s.spawn(|_| {
-            collector_main(writer, startup.games_per_file, &startup.output_folder, output, update_receiver)
+            collector_main(writer, startup.games_per_gen, startup.first_gen, &startup.output_folder, output, update_receiver)
         });
 
         commander_main(reader, cmd_senders, update_sender);

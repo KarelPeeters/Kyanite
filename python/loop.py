@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from selfplay_client import SelfplaySettings, SelfplayClient, StartupSettings
+from selfplay_client import SelfplaySettings, SelfplayClient, StartupSettings, FixedSelfplaySettings
 from train import TrainSettings, train_model, TrainState
 from util import DATA_WIDTH, GameData, load_data, DEVICE
 
@@ -21,7 +21,7 @@ class LoopSettings:
     buffer_gen_count: int
     test_fraction: float
 
-    startup_settings: StartupSettings
+    fixed_settings: FixedSelfplaySettings
     selfplay_settings: SelfplaySettings
     train_settings: TrainSettings
     train_weight_decay: float
@@ -39,6 +39,7 @@ class Generation:
     gen_folder: str
     games_path: str
     prev_network_path: str
+    prev_network_path_onnx: str
     next_network_path: str
     next_network_path_onnx: str
 
@@ -53,9 +54,11 @@ class Generation:
             gi=gi,
             prev_gen_folder=prev_gen_folder,
             gen_folder=gen_folder,
-            games_path=path.join(settings.root_path, "selfplay_games", f"games_{gi}.bin"),
+            games_path=path.join(settings.root_path, "selfplay", f"games_{gi}.bin"),
             prev_network_path=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
-            if gi != 0 else settings.initial_network,
+            if gi != 0 else None,
+            prev_network_path_onnx=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.onnx")
+            if gi != 0 else None,
             next_network_path=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
             next_network_path_onnx=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.onnx"),
         )
@@ -108,22 +111,20 @@ def train_new_network(model, buffer: Buffer, gen: Generation):
     train_model(model, state)
 
 
-def find_last_finished_gen(settings: LoopSettings) -> Optional[int]:
+def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
+    """
+    Figure out how many gnerations are already finished.
+    Returns the next generation to start and the buffer state up to that point.
+    """
+    buffer = settings.new_buffer()
+
     for gi in itertools.count():
         gen = Generation.from_gi(gi, settings)
 
         if not path.exists(gen.next_network_path):
-            if gi >= 1:
-                return gi - 1
-            return None
+            return gen, buffer
 
-
-def load_resume_buffer(settings: LoopSettings, last_finished_gi: int) -> Buffer:
-    buffer = settings.new_buffer()
-    for gi in range(last_finished_gi + 1):
-        gen = Generation.from_gi(gi, settings)
         buffer.push_load_path(gen.games_path)
-    return buffer
 
 
 def save_onnx(network, onnx_path: str):
@@ -143,42 +144,43 @@ def save_onnx(network, onnx_path: str):
 
 
 def run_loop(settings: LoopSettings):
-    assert settings.startup_settings.output_folder == "", "Output folder is set automatically, don't set it manually"
-    settings.startup_settings.output_folder = path.abspath(path.join(settings.root_path, "selfplay_games"))
-
-    print(f"Starting loop in directory {os.getcwd()}")
+    print(f"Starting loop with cwd {os.getcwd()}")
     assert path.exists("./rust") and path.exists("./python"), "should be run in root STTTZero folder"
 
-    # check if we're resuming a run and restore the buffer if so
-    last_finished_gi = find_last_finished_gen(settings)
-    if last_finished_gi is not None:
-        start_gi = last_finished_gi + 1
-        print(f"Resuming {settings.root_path}, restarting with gen {start_gi}")
-        buffer = load_resume_buffer(settings, last_finished_gi)
+    root_path = settings.root_path
+    os.makedirs(root_path, exist_ok=True)
+    selfplay_folder = path.abspath(path.join(root_path, "selfplay"))
+
+    print("Figuring out which generation to start from")
+    start_gen, buffer = load_start_state(settings)
+    if start_gen.gi == 0:
+        print("Starting new run")
+        network = torch.jit.script(settings.initial_network())
+        selfplay_start_network_path = path.abspath(path.join(settings.root_path, "initial_network.onnx"))
+        save_onnx(network, selfplay_start_network_path)
     else:
-        print("Starting new run from gen 0")
-        start_gi = 0
-        buffer = settings.new_buffer()
+        print(f"Resuming run from gen {start_gen.gi}")
+        network = torch.jit.load(start_gen.prev_network_path)
+        selfplay_start_network_path = start_gen.prev_network_path_onnx
 
-    assert start_gi == 0, "Continuing a run is not supported yet"
-
-    network = torch.jit.script(settings.initial_network())
     network.to(DEVICE)
-
-    initial_network_path = path.abspath(path.join(settings.root_path, "initial_network.onnx"))
-    save_onnx(network, initial_network_path)
-
     # todo start selfplay client here at some point
 
-    client = SelfplayClient()
-    client.send_startup_settings(settings.startup_settings)
-    client.send_new_settings(settings.selfplay_settings)
-    client.send_new_network(initial_network_path)
+    startup_settings = StartupSettings(
+        output_folder=selfplay_folder,
+        first_gen=start_gen.gi,
+        **settings.fixed_settings.as_dict()
+    )
 
-    for gi in itertools.count():
+    client = SelfplayClient()
+    client.send_startup_settings(startup_settings)
+    client.send_new_settings(settings.selfplay_settings)
+    client.send_new_network(selfplay_start_network_path)
+
+    for gi in itertools.count(start_gen.gi):
         print(f"Waiting for gen {gi} games")
         actual_gi = client.wait_for_file()
-        assert gi == actual_gi
+        assert gi == actual_gi, f"Unexpected finished generation, expected {gi} got {actual_gi}"
 
         gen = Generation.from_gi(gi, settings)
         os.makedirs(gen.gen_folder, exist_ok=True)

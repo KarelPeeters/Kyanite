@@ -14,6 +14,7 @@ def main(path, gen_limit: int = None):
     for gi in itertools.count():
         if gi == gen_limit:
             break
+        print(f"Adding gen {gi}")
 
         try:
             all_axis.append(gi + np.load(os.path.join(path, f"gen_{gi}", "plot_axis.npy")))

@@ -1,19 +1,15 @@
-import os
-import shutil
-
 from loop import LoopSettings, SelfplaySettings, run_loop
 from models import TowerModel, ResBlock
-from selfplay_client import StartupSettings
+from selfplay_client import FixedSelfplaySettings
 from train import TrainSettings, WdlTarget
 
 
 def main():
-    startup_settings = StartupSettings(
+    fixed_settings = FixedSelfplaySettings(
         game="ataxx",
-        output_folder="",
         threads_per_device=2,
         batch_size=512,
-        games_per_file=100,
+        games_per_gen=100,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -40,18 +36,14 @@ def main():
         plot_smooth_points=50,
     )
 
-    root_path = "data/derp/test_loop"
-    assert not os.path.exists(root_path), f"{root_path} already exists"
-    os.makedirs(root_path, exist_ok=True)
-
     def initial_network():
         return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None))
 
     settings = LoopSettings(
-        root_path=root_path,
+        root_path="data/derp/test_loop",
         initial_network=initial_network,
         buffer_gen_count=1,
-        startup_settings=startup_settings,
+        fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
         train_weight_decay=1e-5,

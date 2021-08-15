@@ -6,12 +6,24 @@ from typing import Union
 
 
 @dataclass
+class FixedSelfplaySettings:
+    game: str
+    threads_per_device: int
+    batch_size: int
+    games_per_gen: int
+
+    def as_dict(self):
+        return dataclasses.asdict(self)
+
+
+@dataclass
 class StartupSettings:
     game: str
     output_folder: str
     threads_per_device: int
     batch_size: int
-    games_per_file: int
+    games_per_gen: int
+    first_gen: int
 
     def as_dict(self):
         return dataclasses.asdict(self)

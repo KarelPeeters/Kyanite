@@ -8,7 +8,8 @@ pub struct StartupSettings {
     pub output_folder: String,
     pub threads_per_device: usize,
     pub batch_size: usize,
-    pub games_per_file: usize,
+    pub games_per_gen: usize,
+    pub first_gen: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,10 +42,10 @@ pub enum GeneratorUpdate<B> {
 #[serde(deny_unknown_fields)]
 pub enum ServerUpdate {
     Stopped,
-    FinishedFile { index: u32 }
+    FinishedFile { index: u32 },
 }
 
-#[derive(Debug, Clone ,Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     // self-play game affecting settings
