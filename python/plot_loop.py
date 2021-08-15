@@ -5,20 +5,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def main(path, gen_limit: int = None):
+def main(path, start_gen: int = 0, gen_limit: int = None):
     if gen_limit is not None:
         print(f"Limiting to {gen_limit} generations")
 
     all_axis = []
     all_data = []
-    for gi in itertools.count():
+    for gi in itertools.count(start_gen):
         if gi == gen_limit:
             break
         print(f"Adding gen {gi}")
 
         try:
-            all_axis.append(gi + np.load(os.path.join(path, f"gen_{gi}", "plot_axis.npy")))
-            all_data.append(np.load(os.path.join(path, f"gen_{gi}", "plot_data.npy")))
+            all_axis.append(gi + np.load(os.path.join(path, "training", f"gen_{gi}", "plot_axis.npy")))
+            all_data.append(np.load(os.path.join(path, "training", f"gen_{gi}", "plot_data.npy")))
         except FileNotFoundError:
             break
 
@@ -42,4 +42,4 @@ def main(path, gen_limit: int = None):
 
 
 if __name__ == '__main__':
-    main("../data/derp/test_loop")
+    main("../data/ataxx/test_loop", 200)

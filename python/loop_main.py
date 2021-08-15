@@ -40,7 +40,7 @@ def main():
         return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None))
 
     settings = LoopSettings(
-        root_path="data/derp/test_loop",
+        root_path="data/ataxx/test_loop",
         initial_network=initial_network,
         buffer_gen_count=1,
         fixed_settings=fixed_settings,

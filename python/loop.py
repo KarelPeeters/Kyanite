@@ -45,22 +45,22 @@ class Generation:
 
     @classmethod
     def from_gi(cls, gi: int, settings: LoopSettings):
-        gen_folder = path.join(settings.root_path, f"gen_{gi}")
-        prev_gen_folder = path.join(settings.root_path, f"gen_{gi - 1}") \
+        gen_train_folder = path.join(settings.root_path, "training", f"gen_{gi}")
+        prev_gen_train_folder = path.join(settings.root_path, "training", f"gen_{gi - 1}") \
             if gi != 0 else None
 
         return Generation(
             settings=settings,
             gi=gi,
-            prev_gen_folder=prev_gen_folder,
-            gen_folder=gen_folder,
+            prev_gen_folder=prev_gen_train_folder,
+            gen_folder=gen_train_folder,
             games_path=path.join(settings.root_path, "selfplay", f"games_{gi}.bin"),
-            prev_network_path=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
+            prev_network_path=path.join(prev_gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
             if gi != 0 else None,
-            prev_network_path_onnx=path.join(prev_gen_folder, f"model_{settings.train_settings.epochs}_epochs.onnx")
+            prev_network_path_onnx=path.join(prev_gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.onnx")
             if gi != 0 else None,
-            next_network_path=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
-            next_network_path_onnx=path.join(gen_folder, f"model_{settings.train_settings.epochs}_epochs.onnx"),
+            next_network_path=path.join(gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
+            next_network_path_onnx=path.join(gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.onnx"),
         )
 
 
@@ -119,6 +119,7 @@ def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
     buffer = settings.new_buffer()
 
     for gi in itertools.count():
+        print(f"Trying generation {gi}")
         gen = Generation.from_gi(gi, settings)
 
         if not path.exists(gen.next_network_path):
@@ -153,19 +154,24 @@ def run_loop(settings: LoopSettings):
 
     print("Figuring out which generation to start from")
     start_gen, buffer = load_start_state(settings)
+
     if start_gen.gi == 0:
         print("Starting new run")
+
         network = torch.jit.script(settings.initial_network())
+        network.to(DEVICE)
+
         selfplay_start_network_path = path.abspath(path.join(settings.root_path, "initial_network.onnx"))
         save_onnx(network, selfplay_start_network_path)
     else:
         print(f"Resuming run from gen {start_gen.gi}")
+
         network = torch.jit.load(start_gen.prev_network_path)
+        network.to(DEVICE)
+
         selfplay_start_network_path = start_gen.prev_network_path_onnx
 
-    network.to(DEVICE)
     # todo start selfplay client here at some point
-
     startup_settings = StartupSettings(
         output_folder=selfplay_folder,
         first_gen=start_gen.gi,
