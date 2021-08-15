@@ -94,6 +94,15 @@ impl CpuExecutor {
             output.copy_from_slice(self.buffers.get(value).unwrap().as_slice().unwrap());
         }
     }
+
+    pub fn fused_graph(&self) -> &FusedGraph {
+        &self.fused_graph
+    }
+
+    /// Get the map containing the intermediate buffers, enables looking at internal activation after anb input was evaluated.
+    pub fn buffers(&self) -> &HashMap<FusedValue, Array4<f32>> {
+        &self.buffers
+    }
 }
 
 fn run_convolution(

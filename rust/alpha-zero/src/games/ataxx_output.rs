@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use internal_iterator::InternalIterator;
 use safe_transmute::transmute_to_bytes;
+
 use board_game::board::{Board, BoardAvailableMoves};
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
@@ -97,11 +98,19 @@ pub const FROM_DX_DY: [(i8, i8); 16] = [
 /// Call f for each possible move, and push the returned values to output.
 /// Will push `(1+16)*7*7` values in total, using `0.0` for nonsense moves (jumps near the edge).
 fn extend_with_policy_order(output: &mut Vec<f32>, f: impl Fn(Move) -> f32) {
+    visit_policy_order(|mv| {
+        output.push(mv.map_or(0.0, &f))
+    })
+}
+
+/// Visit moves in policy tensor order. Will always call `f` `(1+16)*17*17` times,
+/// passing `None` for locations that don't represent possible moves.
+pub fn visit_policy_order(mut f: impl FnMut(Option<Move>)) {
     for to in Coord::all() {
-        output.push(f(Move::Copy { to }))
+        f(Some(Move::Copy { to }))
     }
 
-    // Here we have to be careful to push 16 values every time,
+    // Here we have to be careful to visit 16 values every time,
     // and to keep the "from" axis first for consistency with the copy moves.
     for &(dx, dy) in &FROM_DX_DY {
         for to in Coord::all() {
@@ -110,9 +119,9 @@ fn extend_with_policy_order(output: &mut Vec<f32>, f: impl Fn(Move) -> f32) {
 
             if (0..7).contains(&fx) && (0..7).contains(&fy) {
                 let from = Coord::from_xy(fx as u8, fy as u8);
-                output.push(f(Move::Jump { from, to }))
+                f(Some(Move::Jump { from, to }))
             } else {
-                output.push(0.0);
+                f(None)
             }
         }
     }
