@@ -75,6 +75,7 @@ class TrainSettings:
     policy_weight: float
     batch_size: int
 
+    plot: bool
     # the number of plot points per epoch, for both test and train data
     plot_points: int
     plot_smooth_points: int
@@ -209,4 +210,5 @@ def train_model(model: nn.Module, s: TrainState):
         np.save(f"{output_path}/plot_data.npy", all_plot_data)
         np.save(f"{output_path}/plot_axis.npy", all_plot_axis)
 
-        plot_train_data(s)
+        if s.settings.plot:
+            plot_train_data(s)

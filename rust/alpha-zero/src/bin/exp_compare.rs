@@ -1,28 +1,26 @@
 use cuda_nn_eval::cpu_executor::CpuExecutor;
 use cuda_nn_eval::graph::Graph;
+use board_game::util::bot_game;
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::util::board_gen::random_board_with_moves;
+use rand::thread_rng;
+use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use cuda_sys::wrapper::handle::Device;
+use alpha_zero::zero::{ZeroBot, ZeroSettings};
+use rayon::ThreadBuilder;
 
 fn main() {
-    let n = 1;
+    println!("{:#?}", bot_game::run(
+        || random_board_with_moves(&AtaxxBoard::new_without_gaps(), 2, &mut thread_rng()),
+        || {
+            let network = AtaxxCNNNetwork::load("../data/ataxx/test_loop/training/gen_264/model_1_epochs.onnx", 1, Device::new(0));
+            ZeroBot::new(1000, ZeroSettings::new(2.0, true), network, thread_rng())
+        },
+        || {
+            let network = AtaxxCNNNetwork::load("../data/ataxx/test_loop/training/gen_264/model_1_epochs.onnx", 1, Device::new(0));
+            ZeroBot::new(1000, ZeroSettings::new(2.0, true), network, thread_rng())
+        },
+        20, true, Some(1)
+    ));
 
-    let graph = {
-        let mut graph = Graph::empty();
-
-        let input = graph.input([n as i32, 2, 2, 2]);
-        let filter = graph.constant([1, 2, 1, 1], vec![1.0, -1.0]);
-        let bias = graph.constant([1, 1, 1, 1], vec![0.0]);
-        let conv_output = graph.conv(input, filter, 0);
-        let bias_output = graph.bias(conv_output, bias);
-        graph.output(bias_output);
-
-        graph
-    };
-
-    let mut executor = CpuExecutor::new(&graph);
-
-    let input = vec![1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0];
-    let mut output = vec![0.0; 4 * n];
-    executor.evaluate(&[&input], &mut [&mut output]);
-
-    println!("{:?}", input);
-    println!("{:?}", output);
 }

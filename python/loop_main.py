@@ -30,8 +30,9 @@ def main():
     train_settings = TrainSettings(
         epochs=1,
         wdl_target=WdlTarget.Final,
-        policy_weight=2.0,
+        policy_weight=1.0,
         batch_size=128,
+        plot=False,
         plot_points=100,
         plot_smooth_points=50,
     )
