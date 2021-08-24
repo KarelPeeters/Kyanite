@@ -525,7 +525,7 @@ impl Coord {
 impl Move {
     pub fn to_uai(self) -> String {
         match self {
-            Move::Pass => "null".to_string(),
+            Move::Pass => "0000".to_string(),
             Move::Copy { to } => to.to_uai(),
             Move::Jump { from, to } => format!("{}{}", from.to_uai(), to.to_uai())
         }
