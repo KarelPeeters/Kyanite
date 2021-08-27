@@ -1,11 +1,19 @@
 import itertools
 import os
+from typing import Optional, List
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_loops(paths: [str], start_gen: int = 0, breaks=None, average: bool = False, gen_limit: int = np.inf):
+def plot_loops(
+        paths: [str],
+        start_gen: int = 0,
+        breaks=None, average:
+        bool = False,
+        gen_limit: int = np.inf,
+        offsets: Optional[List[int]] = None,
+):
     if gen_limit < np.inf:
         print(f"Limiting to {gen_limit} generations")
 
@@ -26,9 +34,11 @@ def plot_loops(paths: [str], start_gen: int = 0, breaks=None, average: bool = Fa
         break_outer = False
 
         for pi, path in enumerate(paths):
+            oi = offsets[pi] if offsets is not None else 0
+
             try:
-                axis = np.load(os.path.join(path, "training", f"gen_{gi}", "plot_axis.npy"))
-                data = np.load(os.path.join(path, "training", f"gen_{gi}", "plot_data.npy"))
+                axis = np.load(os.path.join(path, "training", f"gen_{gi + oi}", "plot_axis.npy"))
+                data = np.load(os.path.join(path, "training", f"gen_{gi + oi}", "plot_data.npy"))
 
                 if average:
                     gen_axis.append(gi)
@@ -65,21 +75,21 @@ def plot_loops(paths: [str], start_gen: int = 0, breaks=None, average: bool = Fa
             all_data[pi] = np.concatenate(all_data[pi])
 
     for pi in range(len(paths)):
-        plt.plot(all_axis[pi], all_data[pi][:, [0, 3]], label=[f"{pi}_train", f"{pi}_test"],  alpha=0.5)
+        plt.plot(all_axis[pi], all_data[pi][:, [0, 3]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Total")
     plt.show()
 
     for pi in range(len(paths)):
-        plt.plot(all_axis[pi], all_data[pi][:, [1, 4]], label=[f"{pi}_train", f"{pi}_test"],  alpha=0.5)
+        plt.plot(all_axis[pi], all_data[pi][:, [1, 4]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Value")
     plt.show()
 
     for pi in range(len(paths)):
-        plt.plot(all_axis[pi], all_data[pi][:, [2, 5]], label=[f"{pi}_train", f"{pi}_test"],  alpha=0.5)
+        plt.plot(all_axis[pi], all_data[pi][:, [2, 5]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Policy")

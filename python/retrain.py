@@ -8,26 +8,28 @@ from torch.optim import AdamW, Optimizer
 
 from loop import LoopSettings
 from models import TowerModel, ResBlock
+from plot_loop import plot_loops
 from train import train_model, TrainState, TrainSettings, WdlTarget
-from util import DEVICE
+from util import DEVICE, print_param_count
 
 
 def retrain(
         model: nn.Module,
-        selfplay_path: str,
-        temp_path: str,
+        prev_path: str,
+        prev_offset: int,
+        new_path: str,
         settings: LoopSettings,
         recreate_optimizer: bool,
         optimizer: Callable[[nn.Module, float], Optimizer],
 ):
-    train_path = os.path.join(temp_path, "training")
-    os.makedirs(train_path, exist_ok=True)
+    train_path = os.path.join(new_path, "training")
+    os.makedirs(train_path, exist_ok=False)
 
     buffer = settings.new_buffer()
     curr_optimizer = optimizer(model, settings.train_weight_decay)
 
     for gi in itertools.count():
-        games_path = os.path.join(selfplay_path, f"games_{gi}.bin")
+        games_path = os.path.join(prev_path, "selfplay", f"games_{gi + prev_offset}.bin")
         print(f"Trying to load {games_path}")
         if not os.path.exists(games_path):
             break
@@ -46,14 +48,27 @@ def retrain(
         )
         train_model(model, state)
 
+        if gi != 0 and gi % 10 == 0:
+            plot_loops([prev_path, new_path], average=True, offsets=[prev_offset, 0])
+
 
 def main():
-    selfplay_path = "../data/ataxx/test_loop/selfplay"
-    temp_path = "../data/derp/retrain_other/"
+    prev_path = "../data/ataxx/test_loop/"
+    new_path = "../data/derp/retrain_other/"
 
-    model = TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, True, None))
+    depth = 8
+    channels = 32
+    inner_channels = 32
+
+    def res_block():
+        return ResBlock(channels, inner_channels, True, False, None)
+
+    model = TowerModel(channels, depth, 16, True, True, True, res_block)
+
     model = torch.jit.script(model)
     model.to(DEVICE)
+
+    print_param_count(model)
 
     train_settings = TrainSettings(
         epochs=1,
@@ -73,13 +88,14 @@ def main():
         fixed_settings=None,
         selfplay_settings=None,
         train_settings=train_settings,
-        train_weight_decay=1e-6,
+        train_weight_decay=0.0,
     )
 
     retrain(
         model,
-        selfplay_path,
-        temp_path,
+        prev_path,
+        100,
+        new_path,
         settings,
         False,
         lambda net, decay: AdamW(net.parameters(), weight_decay=decay)

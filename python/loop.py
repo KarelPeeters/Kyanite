@@ -9,7 +9,7 @@ from torch import nn
 from torch.optim import Adam
 
 from selfplay_client import SelfplaySettings, SelfplayClient, StartupSettings, FixedSelfplaySettings
-from train import TrainSettings, train_model, TrainState
+from train import TrainSettings, train_model, TrainState, save_onnx
 from util import DATA_WIDTH, GameData, load_data, DEVICE
 
 
@@ -128,22 +128,6 @@ def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
         buffer.push_load_path(gen.games_path)
 
 
-def save_onnx(network, onnx_path: str):
-    print(f"Saving model to {onnx_path}")
-    network.eval()
-    example_input = torch.zeros(1, 3, 7, 7, device=DEVICE)
-    example_outputs = network(example_input)
-    torch.onnx.export(
-        model=network,
-        args=example_input,
-        f=onnx_path,
-        example_outputs=example_outputs,
-        input_names=["input"],
-        output_names=["wdl", "policy"],
-        dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
-    )
-
-
 def run_loop(settings: LoopSettings):
     print(f"Starting loop with cwd {os.getcwd()}")
     assert path.exists("./rust") and path.exists("./python"), "should be run in root STTTZero folder"
@@ -195,6 +179,4 @@ def run_loop(settings: LoopSettings):
         print(f"Buffer size: {len(buffer)}")
 
         train_new_network(network, buffer, gen)
-
-        save_onnx(network, gen.next_network_path_onnx)
         client.send_new_network(path.abspath(gen.next_network_path_onnx))

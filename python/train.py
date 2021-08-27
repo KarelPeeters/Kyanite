@@ -185,6 +185,21 @@ def plot_train_data(s: TrainState):
         pyplot.show()
 
 
+def save_onnx(network, onnx_path: str):
+    print(f"Saving model to {onnx_path}")
+    network.eval()
+    example_input = torch.zeros(1, 3, 7, 7, device=DEVICE)
+    example_outputs = network(example_input)
+    torch.onnx.export(
+        model=network,
+        args=example_input,
+        f=onnx_path,
+        example_outputs=example_outputs,
+        input_names=["input"],
+        output_names=["wdl", "policy"],
+        dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
+    )
+
 def train_model(model: nn.Module, s: TrainState):
     epochs = s.settings.epochs
     output_path = s.output_path
@@ -193,12 +208,14 @@ def train_model(model: nn.Module, s: TrainState):
 
     os.makedirs(s.output_path, exist_ok=True)
     torch.jit.save(model, f"{output_path}/model_{0}_epochs.pt")
+    save_onnx(model, f"{output_path}/model_{0}_epochs.onnx")
 
     for ei in range(epochs):
         print(f"Starting epoch {ei + 1}/{epochs}")
 
         plot_data = train_model_epoch(ei, model, s)
         torch.jit.save(model, f"{output_path}/model_{ei + 1}_epochs.pt")
+        save_onnx(model, f"{output_path}/model_{ei + 1}_epochs.onnx")
 
         if all_plot_data is None:
             all_plot_data = plot_data
