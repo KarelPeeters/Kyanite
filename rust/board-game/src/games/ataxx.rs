@@ -379,7 +379,7 @@ impl Tiles {
 
 impl Display for Tiles {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        assert!(self.0 & Tiles::FULL_MASK == self.0);
+        assert_eq!(self.0 & Tiles::FULL_MASK, self.0);
         for y in (0..7).rev() {
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
@@ -592,7 +592,7 @@ impl AtaxxBoard {
                 'o' => board.tiles_b |= Tiles::coord(Coord::from_xy(x, y)),
                 '-' => board.gaps |= Tiles::coord(Coord::from_xy(x, y)),
                 '/' => {
-                    assert!(x == 7, "Row not yet complete, unexpected '/' in '{}'", fen);
+                    assert_eq!(x, 7, "Row not yet complete, unexpected '/' in '{}'", fen);
                     x = 0;
                     y -= 1;
                     continue;
@@ -661,9 +661,11 @@ impl AtaxxBoard {
 
 impl Display for AtaxxBoard {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.to_fen())?;
+        writeln!(f, "FEN: {}", self.to_fen())?;
 
         for y in (0..7).rev() {
+            write!(f, "{} ", y + 1)?;
+
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
                 let tuple = (self.gaps.has(coord), self.tile(coord));
@@ -680,9 +682,9 @@ impl Display for AtaxxBoard {
             if y == 3 {
                 write!(f, "    {}  {}", player_symbol(self.next_player), self.moves_since_last_copy)?;
             }
-
             writeln!(f)?;
         }
+        writeln!(f, "  abcdefg")?;
 
         Ok(())
     }
