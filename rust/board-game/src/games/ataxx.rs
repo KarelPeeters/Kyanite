@@ -13,7 +13,7 @@ use crate::util::bits::{BitIter, get_nth_set_bit};
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Coord(u8);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Move {
     Pass,
     Copy { to: Coord },
@@ -463,7 +463,13 @@ impl<'a> InternalIterator for MoveIterator<'a> {
 
 impl Debug for Coord {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Coord({}, {})", self.x(), self.y())
+        write!(f, "{}", self.to_uai())
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_uai())
     }
 }
 
@@ -520,6 +526,13 @@ impl Coord {
     pub fn to_uai(self) -> String {
         format!("{}{}", ('a' as u8 + self.x()) as char, self.y() + 1)
     }
+
+    pub fn from_uai(s: &str) -> Coord {
+        assert_eq!(s.len(), 2);
+        let x = s.as_bytes()[0] - b'a';
+        let y = (s.as_bytes()[1] - b'0') - 1;
+        Coord::from_xy(x, y)
+    }
 }
 
 impl Move {
@@ -528,6 +541,15 @@ impl Move {
             Move::Pass => "0000".to_string(),
             Move::Copy { to } => to.to_uai(),
             Move::Jump { from, to } => format!("{}{}", from.to_uai(), to.to_uai())
+        }
+    }
+
+    pub fn from_uai(s: &str) -> Move {
+        match s {
+            "0000" => Move::Pass,
+            _ if s.len() == 2 => Move::Copy { to: Coord::from_uai(s) },
+            _ if s.len() == 4 => Move::Jump { from: Coord::from_uai(&s[..2]), to: Coord::from_uai(&s[2..]) },
+            _ => panic!("Invalid move uai string '{}'", s)
         }
     }
 }
