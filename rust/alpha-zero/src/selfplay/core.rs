@@ -5,8 +5,7 @@ use rand::Rng;
 
 use board_game::board::{Board, Outcome};
 use board_game::wdl::{POV, WDL};
-
-use crate::zero::ZeroEvaluation;
+use crate::network::ZeroEvaluation;
 
 pub trait Output<B> {
     fn append(&mut self, simulation: Simulation<B>);

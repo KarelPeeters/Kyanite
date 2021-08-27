@@ -1,10 +1,9 @@
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 use board_game::wdl::WDL;
-use crate::zero::ZeroEvaluation;
 use board_game::board::BoardAvailableMoves;
 use internal_iterator::InternalIterator;
 use crate::games::ataxx_output::FROM_DX_DY;
-use crate::network::softmax;
+use crate::network::{softmax, ZeroEvaluation};
 
 pub const INPUT_SIZE: usize = 3 * 7 * 7;
 pub const POLICY_SIZE: usize = (16 + 1) * 7 * 7;

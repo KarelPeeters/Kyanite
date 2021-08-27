@@ -156,6 +156,18 @@ impl<V: Copy + std::ops::Add<V, Output=V>> std::ops::Add<WDL<V>> for WDL<V> {
     }
 }
 
+impl<V: Copy + std::ops::Sub<V, Output=V>> std::ops::Sub<WDL<V>> for WDL<V> {
+    type Output = WDL<V>;
+
+    fn sub(self, rhs: WDL<V>) -> Self::Output {
+        WDL {
+            win: self.win - rhs.win,
+            draw: self.draw - rhs.draw,
+            loss: self.loss - rhs.loss,
+        }
+    }
+}
+
 impl<V: Copy + std::ops::Add<V, Output=V>> std::ops::AddAssign<WDL<V>> for WDL<V> {
     fn add_assign(&mut self, rhs: WDL<V>) {
         *self = *self + rhs;

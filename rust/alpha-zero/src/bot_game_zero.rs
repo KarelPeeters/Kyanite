@@ -1,14 +1,15 @@
-use itertools::Itertools;
+use itertools::{Itertools, zip_eq};
 use rand::{Rng, thread_rng};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::ParallelIterator;
+
 use board_game::ai::Bot;
 use board_game::board::{Board, Outcome, Player};
 use board_game::wdl::WDL;
 
 use crate::network::Network;
+use crate::old_zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::selfplay::core::MoveSelector;
-use crate::zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 
 pub type OpponentConstructor<B> = Box<dyn Fn() -> Box<dyn Bot<B>> + Sync>;
 
@@ -80,7 +81,11 @@ pub fn run<B: Board>(
         }
 
         //evaluate requests
-        let responses = network.evaluate_batch_requests(&requests);
+        let boards = requests.iter().map(|req| req.board()).collect_vec();
+        let evals = network.evaluate_batch(&boards);
+        let responses = zip_eq(requests, evals)
+            .map(|(req, eval)| Response { request: req, evaluation: eval })
+            .collect_vec();
 
         //continue playing games, using the responses
         let running_games = games.iter_mut()

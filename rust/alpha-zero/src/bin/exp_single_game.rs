@@ -1,18 +1,19 @@
 use rand::thread_rng;
 
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
-use alpha_zero::zero::{ZeroBot, ZeroSettings};
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_sys::wrapper::handle::Device;
+use alpha_zero::zero::{ZeroSettings, ZeroBot};
 
 fn main() {
-    let path = "../data/derp/good_test_loop/gen_39/model_1_epochs.onnx";
+    let path = "../data/ataxx/test_loop/training/gen_240/model_1_epochs.onnx";
 
-    let network = AtaxxCNNNetwork::load(path, 1, Device::new(0));
+    let batch_size = 20;
+    let network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
 
-    let settings = ZeroSettings::new(2.0, true);
-    let mut bot = ZeroBot::new(1000, settings, network, thread_rng());
+    let settings = ZeroSettings::new(batch_size, 2.0, true);
+    let mut bot = ZeroBot::new(100_000, settings, network, thread_rng());
 
     let mut board = AtaxxBoard::from_fen("x3xox/3xxox/3xoxx/3oxxx/2ooox1/xo1oox1/xx4x");
 

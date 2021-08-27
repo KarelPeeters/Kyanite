@@ -5,9 +5,8 @@ use tch::{CModule, Device, IValue, maybe_init_cuda, Tensor};
 use board_game::games::ataxx::AtaxxBoard;
 
 use crate::games::ataxx_utils::{decode_output, encode_input};
-use crate::network::Network;
+use crate::network::{Network, ZeroEvaluation};
 use crate::network::torch_utils::{unwrap_ivalue_pair, unwrap_tensor_with_shape};
-use crate::zero::ZeroEvaluation;
 use std::ffi::OsStr;
 
 #[derive(Debug)]

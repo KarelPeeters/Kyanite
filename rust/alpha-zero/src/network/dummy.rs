@@ -5,8 +5,7 @@ use itertools::zip;
 use board_game::board::Board;
 use board_game::wdl::WDL;
 
-use crate::network::Network;
-use crate::zero::ZeroEvaluation;
+use crate::network::{Network, ZeroEvaluation};
 
 /// A `Network` that always returns value and a uniform policy.
 #[derive(Debug)]

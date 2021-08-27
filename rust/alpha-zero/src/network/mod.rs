@@ -1,26 +1,26 @@
 use std::fmt::Debug;
 
-use itertools::Itertools;
-use itertools::izip;
 use board_game::board::Board;
 
-use crate::zero::{Request, Response, ZeroEvaluation};
+use board_game::wdl::WDL;
 
 pub mod dummy;
 
 #[cfg(feature = "tch")]
 pub mod torch_utils;
 
+/// A board evaluation, either as returned by the network or as the final output of a zero tree search.
+#[derive(Debug, Clone)]
+pub struct ZeroEvaluation {
+    /// The win, draw and loss probabilities, after normalization.
+    pub wdl: WDL<f32>,
+
+    /// The policy "vector", only containing the available moves in the order they are yielded by `available_moves`.
+    pub policy: Vec<f32>,
+}
+
 pub trait Network<B: Board>: Debug {
     fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation>;
-
-    fn evaluate_batch_requests(&mut self, requests: &[Request<B>]) -> Vec<Response<B>> {
-        let boards = requests.iter().map(|r| r.board()).collect_vec();
-        let evaluations = self.evaluate_batch(&boards);
-        izip!(requests, evaluations)
-            .map(|(request, evaluation)| Response { request: request.clone(), evaluation })
-            .collect_vec()
-    }
 
     fn evaluate(&mut self, board: &B) -> ZeroEvaluation {
         let mut result = self.evaluate_batch(&[board.clone()]);

@@ -4,7 +4,7 @@ use alpha_zero::bot_game_zero;
 use alpha_zero::bot_game_zero::OpponentConstructor;
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use alpha_zero::selfplay::core::MoveSelector;
-use alpha_zero::zero::{ZeroBot, ZeroSettings};
+use alpha_zero::old_zero::{ZeroBot, ZeroSettings};
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::util::board_gen::random_board_with_moves;
 use cuda_sys::wrapper::handle::Device;

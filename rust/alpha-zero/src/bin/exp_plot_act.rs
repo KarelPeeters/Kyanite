@@ -6,7 +6,7 @@ use rand::thread_rng;
 use alpha_zero::games::ataxx_cpu_network::AtaxxCPUNetwork;
 use alpha_zero::games::ataxx_output::visit_policy_order;
 use alpha_zero::games::ataxx_utils::encode_input;
-use alpha_zero::zero::{zero_build_tree, ZeroSettings};
+use alpha_zero::old_zero::{zero_build_tree, ZeroSettings};
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_nn_eval::cpu_executor::CpuExecutor;

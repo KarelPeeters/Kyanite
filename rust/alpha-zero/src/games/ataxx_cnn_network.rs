@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 
 
@@ -10,11 +10,11 @@ use cuda_nn_eval::onnx::load_onnx_graph;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 
 use crate::games::ataxx_utils::{decode_output, encode_input, INPUT_SIZE, POLICY_SIZE};
-use crate::network::Network;
-use crate::zero::ZeroEvaluation;
+use crate::network::{Network, ZeroEvaluation};
+use std::fmt::{Debug, Formatter};
 
-#[derive(Debug)]
 pub struct AtaxxCNNNetwork {
+    path: PathBuf,
     executor: CudaGraphExecutor,
     max_batch_size: usize,
 }
@@ -28,7 +28,7 @@ impl AtaxxCNNNetwork {
         let handle = CudnnHandle::new(CudaStream::new(device));
         let executor = CudaGraphExecutor::new(handle, &graph);
 
-        AtaxxCNNNetwork { executor, max_batch_size }
+        AtaxxCNNNetwork { path: path.to_owned(), executor, max_batch_size }
     }
 }
 
@@ -52,5 +52,11 @@ impl Network<AtaxxBoard> for AtaxxCNNNetwork {
         let output_policy_logit = &output_policy_logit[0..batch_size * POLICY_SIZE];
 
         decode_output(boards, output_wdl_logit, output_policy_logit)
+    }
+}
+
+impl Debug for AtaxxCNNNetwork {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AtaxxCNNNetwork {{ path: {:?} }}", self.path)
     }
 }

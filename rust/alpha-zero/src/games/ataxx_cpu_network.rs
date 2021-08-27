@@ -8,8 +8,7 @@ use board_game::games::ataxx::AtaxxBoard;
 use cuda_nn_eval::onnx::load_onnx_graph;
 
 use crate::games::ataxx_utils::{decode_output, encode_input, INPUT_SIZE, POLICY_SIZE};
-use crate::network::Network;
-use crate::zero::ZeroEvaluation;
+use crate::network::{Network, ZeroEvaluation};
 use cuda_nn_eval::cpu_executor::CpuExecutor;
 
 #[derive(Debug)]

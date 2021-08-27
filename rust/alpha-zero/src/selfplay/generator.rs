@@ -7,10 +7,10 @@ use rand_distr::Dirichlet;
 use board_game::board::{Board, Outcome};
 use cuda_sys::wrapper::handle::Device;
 
-use crate::network::Network;
+use crate::network::{Network, ZeroEvaluation};
+use crate::old_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::selfplay::core::{MoveSelector, Position, Simulation};
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
-use crate::zero::{KeepResult, Request, Response, RunResult, Tree, ZeroEvaluation, ZeroSettings, ZeroState};
 
 pub fn generator_main<B: Board, N: Network<B>>(
     start_pos: impl Fn() -> B,
@@ -138,7 +138,12 @@ impl<B: Board> GeneratorState<B> {
 
         //pass requests to network
         assert!(self.responses.is_empty());
-        self.responses = network.evaluate_batch_requests(&requests);
+
+        let boards = requests.iter().map(|req| req.board()).collect_vec();
+        let evals = network.evaluate_batch(&boards);
+        self.responses = zip_eq(requests, evals)
+            .map(|(req, eval)| Response { request: req, evaluation: eval })
+            .collect_vec();
 
         //insert responses into the cache
         for response in &self.responses {

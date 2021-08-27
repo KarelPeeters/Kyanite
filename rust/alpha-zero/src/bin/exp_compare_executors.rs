@@ -4,7 +4,7 @@ use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use alpha_zero::games::ataxx_cpu_network::AtaxxCPUNetwork;
 use alpha_zero::network::Network;
 use alpha_zero::util::PanicRng;
-use alpha_zero::zero::{Tree, zero_build_tree, ZeroSettings, ZeroBot};
+use alpha_zero::old_zero::{Tree, zero_build_tree, ZeroSettings, ZeroBot};
 use board_game::games::ataxx::AtaxxBoard;
 use cuda_sys::wrapper::handle::Device;
 use board_game::util::bot_game;
