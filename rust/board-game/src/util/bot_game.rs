@@ -9,7 +9,9 @@ use rayon::iter::ParallelIterator;
 
 use crate::ai::Bot;
 use crate::board::{Board, Outcome};
+use itertools::Itertools;
 
+#[must_use]
 pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     start: impl Fn() -> B + Sync,
     bot_l: impl Fn() -> L + Sync,
@@ -25,7 +27,12 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
     let progress_counter = AtomicU32::default();
     let game_count = if both_sides { 2 * games_per_side } else { games_per_side };
 
-    let result: ReductionResult = (0..game_count).into_par_iter().panic_fuse().map(|i| {
+    let starts = (0..games_per_side).map(|_| start()).collect_vec();
+
+    let result: ReductionResult = (0..games_per_side).into_par_iter().panic_fuse().map(|game_i| {
+        let pair_i = if both_sides { game_i / 2 } else { game_i };
+        let start = starts[pair_i as usize].clone();
+
         let mut bot_l = bot_l();
         let mut bot_r = bot_r();
 
@@ -34,17 +41,17 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         let mut move_count_l: u32 = 0;
         let mut move_count_r: u32 = 0;
 
-        let flip = if both_sides { i % 2 == 1 } else { false };
-        let mut board = start();
+        let flip = if both_sides { game_i % 2 == 1 } else { false };
+        let mut board = start;
         let player_first = board.next_player();
 
-        for i in 0.. {
+        for move_i in 0.. {
             if board.is_done() {
                 break;
             }
 
             let start = Instant::now();
-            let mv = if flip ^ (i % 2 == 0) {
+            let mv = if flip ^ (move_i % 2 == 0) {
                 let mv = bot_l.select_move(&board);
                 total_time_l += (Instant::now() - start).as_secs_f32();
                 move_count_l += 1;
@@ -81,6 +88,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
 
     BotGameResult {
         game_count,
+        game_length: (result.move_count_l + result.move_count_r) as f32 / (game_count) as f32,
         win_rate_l: (result.wins_l as f32) / (game_count as f32),
         draw_rate: (draws as f32) / (game_count as f32),
         win_rate_r: (result.wins_r as f32) / (game_count as f32),
@@ -118,10 +126,13 @@ impl std::ops::Add for ReductionResult {
 }
 
 #[derive(Debug)]
-#[must_use]
 pub struct BotGameResult {
     pub game_count: u32,
 
+    //average game length, the total number of moves played per game
+    pub game_length: f32,
+
+    //wdl
     pub win_rate_l: f32,
     pub draw_rate: f32,
     pub win_rate_r: f32,
@@ -133,6 +144,7 @@ pub struct BotGameResult {
     pub time_l: f32,
     pub time_r: f32,
 
+    // bot debug strings
     pub debug_l: String,
     pub debug_r: String,
 }
