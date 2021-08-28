@@ -22,11 +22,12 @@ pub struct ZeroSettings {
     pub batch_size: usize,
     pub exploration_weight: f32,
     pub random_symmetries: bool,
+    pub new_virtual: bool,
 }
 
 impl ZeroSettings {
     pub fn new(batch_size: usize, exploration_weight: f32, random_symmetries: bool) -> Self {
-        ZeroSettings { batch_size, exploration_weight, random_symmetries }
+        ZeroSettings { batch_size, exploration_weight, random_symmetries, new_virtual: false }
     }
 }
 
@@ -81,6 +82,8 @@ pub struct Node<M> {
     /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value.
     /// Called `W` in the paper.
     pub total_wdl: WDL<f32>,
+
+    pub virtual_loss: i32,
 }
 
 impl<N> Node<N> {
@@ -95,24 +98,30 @@ impl<N> Node<N> {
 
             visits: 0,
             total_wdl: WDL::default(),
+            virtual_loss: 0,
         }
     }
 
-    /// The WDL of this node from the POV of the player that could play this move.
+    /// The (normalized) WDL of this node from the POV of the player that could play this move.
+    /// Does not include virtual loss.
     pub fn wdl(&self) -> WDL<f32> {
-        //TODO why did we need to change this? did this call never happen for STTT if there were no visits? why?
         if self.visits == 0 {
             WDL::default()
         } else {
-            self.total_wdl / self.visits as f32
+            self.total_wdl / self.total_wdl.sum()
         }
     }
 
-    pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
-        let q = (self.wdl().value() + 1.0) / 2.0;
+    pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> N32 {
+        let v = if self.visits == 0 {
+            0.0
+        } else {
+            (self.total_wdl.value() - (self.virtual_loss as f32)) / (self.visits as f32)
+        };
+        let q = (v + 1.0) / 2.0;
         let u = self.net_policy * ((parent_visits - 1) as f32).sqrt() / (1 + self.visits) as f32;
 
-        q + exploration_weight * u
+        N32::from(q + exploration_weight * u)
     }
 }
 
@@ -160,7 +169,7 @@ impl<B: Board> Tree<B> {
     }
 
     //TODO flip at the start or not?
-    fn propagate_wdl(&mut self, node: usize, mut wdl: WDL<f32>, count_visit: bool) {
+    fn propagate_wdl(&mut self, node: usize, mut wdl: WDL<f32>, virtual_loss: i32, count_visit: bool) {
         let mut curr_index = node;
 
         loop {
@@ -171,6 +180,7 @@ impl<B: Board> Tree<B> {
                 curr_node.visits += 1;
             }
             curr_node.total_wdl += wdl;
+            curr_node.virtual_loss += virtual_loss;
 
             if curr_index == 0 { break; };
             curr_index = curr_node.parent;
@@ -257,9 +267,23 @@ pub struct TreeDisplay<'a, B: Board> {
     parent_visits: u64,
 }
 
+struct PolicyDisplay(f32);
+
+impl Display for PolicyDisplay {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.0 > 0.01 {
+            write!(f, "{:.3}", self.0)
+        } else {
+            write!(f, "{:e}", self.0)
+        }
+    }
+}
+
 impl<B: Board> Display for TreeDisplay<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.curr_depth == 0 {
+            let wdl = self.tree.wdl();
+            writeln!(f, "wdl: ({:.3}/{:.3}/{:.3}), best move: {:?}", wdl.win, wdl.draw, wdl.loss, self.tree.best_move())?;
             writeln!(f, "move: visits zero(w/d/l, policy) net(w/d/l, policy)")?;
         }
 
@@ -272,7 +296,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
 
         writeln!(
             f,
-            "{:?}: {} zero({:.3}/{:.3}/{:.3}, {:.3}) net({:.3}/{:.3}/{:.3}, {:.3})",
+            "{:?}: {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
             node.last_move, node.visits,
             node_wdl.win, node_wdl.draw, node_wdl.loss,
             (node.visits as f32) / (self.parent_visits as f32),
@@ -432,7 +456,11 @@ impl<B: Board> ZeroState<B> {
                         self.tree[curr_node].net_wdl = None;
 
                         //add virtual loss
-                        self.tree.propagate_wdl(curr_node, VIRTUAL_WDL, true);
+                        if self.settings.new_virtual {
+                            self.tree.propagate_wdl(curr_node, WDL::default(), 1, true);
+                        } else {
+                            self.tree.propagate_wdl(curr_node, VIRTUAL_WDL, 0, true);
+                        }
 
                         //record the request
                         let sym = self.gen_symmetry(rng);
@@ -447,14 +475,14 @@ impl<B: Board> ZeroState<B> {
                 //continue selecting, pick the best child
                 let parent_visits = self.tree[curr_node].visits;
                 let selected = children.iter().max_by_key(|&child| {
-                    N32::from(self.tree[child].uct(self.settings.exploration_weight, parent_visits))
+                    self.tree[child].uct(self.settings.exploration_weight, parent_visits)
                 }).expect("Board is not done, this node should have a child");
 
                 curr_node = selected;
                 curr_board.play(self.tree[curr_node].last_move.unwrap());
             };
 
-            self.tree.propagate_wdl(curr_node, wdl, true);
+            self.tree.propagate_wdl(curr_node, wdl, 0, true);
         }
 
         // return the requests if any, otherwise we're done
@@ -487,7 +515,11 @@ impl<B: Board> ZeroState<B> {
                 child_node.net_policy = p;
             });
 
-            tree.propagate_wdl(curr_node, wdl - VIRTUAL_WDL, false);
+            if self.settings.new_virtual {
+                tree.propagate_wdl(curr_node, wdl, -1, false);
+            } else {
+                tree.propagate_wdl(curr_node, wdl - VIRTUAL_WDL, 0, false);
+            }
         }
     }
 }
