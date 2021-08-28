@@ -109,8 +109,9 @@ impl<N> Node<N> {
     }
 
     pub fn uct(&self, exploration_weight: f32, parent_visits: u64) -> f32 {
-        let q = self.wdl().value();
-        let u = self.net_policy * (parent_visits as f32).sqrt() / (1 + self.visits) as f32;
+        let q = (self.wdl().value() + 1.0) / 2.0;
+        let u = self.net_policy * ((parent_visits - 1) as f32).sqrt() / (1 + self.visits) as f32;
+
         q + exploration_weight * u
     }
 }
