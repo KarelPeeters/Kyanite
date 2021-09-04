@@ -4,12 +4,12 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
+use itertools::Itertools;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 use crate::ai::Bot;
 use crate::board::{Board, Outcome};
-use itertools::Itertools;
 
 #[must_use]
 pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
@@ -69,7 +69,7 @@ pub fn run<B: Board, L: Bot<B>, R: Bot<B>>(
         if let Some(print_progress) = print_progress_every {
             let progress = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
             if progress % print_progress == 0 {
-                println!("Progress: {}", progress as f32 / game_count as f32);
+                println!("Progress: {}", progress as f32 / games_per_side as f32);
             }
         }
 
