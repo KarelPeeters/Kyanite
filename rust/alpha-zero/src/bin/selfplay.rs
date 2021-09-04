@@ -11,5 +11,5 @@ fn main() {
 
     let output = |path: &str| AtaxxBinaryOutput::new(path);
 
-    selfplay_server_main("ataxx", AtaxxBoard::new_without_gaps, output, load_network);
+    selfplay_server_main("ataxx", AtaxxBoard::default, output, load_network);
 }

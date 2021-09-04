@@ -5,6 +5,7 @@ use std::fmt::Write;
 use internal_iterator::InternalIterator;
 use newtype_ops::newtype_ops;
 use rand::Rng;
+use regex::Regex;
 
 use crate::board::{Board, BoardAvailableMoves, Outcome, Player};
 use crate::symmetry::D4Symmetry;
@@ -22,7 +23,7 @@ pub enum Move {
 
 const MAX_MOVES_SINCE_LAST_COPY: u8 = 100;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct AtaxxBoard {
     tiles_a: Tiles,
     tiles_b: Tiles,
@@ -30,6 +31,19 @@ pub struct AtaxxBoard {
     moves_since_last_copy: u8,
     next_player: Player,
     outcome: Option<Outcome>,
+}
+
+impl Default for AtaxxBoard {
+    fn default() -> Self {
+        AtaxxBoard {
+            tiles_a: Tiles::CORNERS_A,
+            tiles_b: Tiles::CORNERS_B,
+            gaps: Tiles::empty(),
+            moves_since_last_copy: 0,
+            next_player: Player::A,
+            outcome: None,
+        }
+    }
 }
 
 impl AtaxxBoard {
@@ -41,17 +55,6 @@ impl AtaxxBoard {
             moves_since_last_copy: 0,
             next_player: Player::A,
             outcome: Some(Outcome::Draw),
-        }
-    }
-
-    pub fn new_without_gaps() -> Self {
-        AtaxxBoard {
-            tiles_a: Tiles::CORNERS_A,
-            tiles_b: Tiles::CORNERS_B,
-            gaps: Tiles::empty(),
-            moves_since_last_copy: 0,
-            next_player: Player::A,
-            outcome: None,
         }
     }
 
@@ -81,7 +84,7 @@ impl AtaxxBoard {
         !(self.tiles_a | self.tiles_b | self.gaps)
     }
 
-    /// Return whether tha player with the given tiles has to pass, ie. cannot make a copy or jump move.
+    /// Return whether the player with the given tiles has to pass, ie. cannot make a copy or jump move.
     fn must_pass(&self, tiles: Tiles) -> bool {
         let possible_targets = tiles.copy_targets() | tiles.jump_targets();
         (possible_targets & self.free_tiles()).is_empty()
@@ -561,58 +564,48 @@ fn player_symbol(player: Player) -> char {
     }
 }
 
+const FEN_REGEX: &str = r"(?x)(?-u)
+    ^ ([ox\-\d]+)/([ox\-\d]+)/([ox\-\d]+)/([ox\-\d]+)/([ox\-\d]+)/([ox\-\d]+)/([ox\-\d]+)
+    \s (?P<next>[ox]) \s (?P<half>\d+) \s (?P<full>\d+) $
+";
+
 impl AtaxxBoard {
     //TODO this gives no/wrong errors if the line length or line count is wrong
     pub fn from_fen(fen: &str) -> AtaxxBoard {
         let mut board = AtaxxBoard::empty();
 
-        let mut x = 0;
-        let mut y = 6;
-        let mut expect_next = false;
-        let mut done = false;
+        let regex = Regex::new(FEN_REGEX).unwrap();
+        let captures = regex.captures(fen)
+            .unwrap_or_else(|| panic!("Invalid fen {:?}", fen));
+        assert_eq!(1 + 7 + 3, captures.len());
 
-        for c in fen.chars() {
-            if done {
-                assert!(c.is_ascii_digit() || c == ' ', "Unexpected '{}' near end in '{}'", c, fen);
-                continue;
-            }
-
-            if expect_next {
+        for y in (0..7).rev() {
+            let line = &captures[1 + y];
+            let mut x = 0;
+            for c in line.chars() {
+                if x >= 7 { panic!("Line {:?} too long", line) }
+                let tiles = Tiles::coord(Coord::from_xy(x, y as u8));
                 match c {
-                    'x' => board.next_player = Player::A,
-                    'o' => board.next_player = Player::B,
-                    _ => panic!("Expected next player, got '{}' in '{}'", c, fen),
+                    'x' => board.tiles_a |= tiles,
+                    'o' => board.tiles_b |= tiles,
+                    '-' => board.gaps |= tiles,
+                    d if d.is_ascii_digit() => {
+                        x += d.to_digit(10).unwrap() as u8;
+                        continue;
+                    }
+                    _ => unreachable!(),
                 }
-                done = true;
-                continue;
+                x += 1;
             }
-
-            match c {
-                'x' => board.tiles_a |= Tiles::coord(Coord::from_xy(x, y)),
-                'o' => board.tiles_b |= Tiles::coord(Coord::from_xy(x, y)),
-                '-' => board.gaps |= Tiles::coord(Coord::from_xy(x, y)),
-                '/' => {
-                    assert_eq!(x, 7, "Row not yet complete, unexpected '/' in '{}'", fen);
-                    x = 0;
-                    y -= 1;
-                    continue;
-                }
-                ' ' => {
-                    assert!(x == 7 && y == 0, "Board not yet complete, unexpected ' ' in '{}'", fen);
-                    expect_next = true;
-                    continue;
-                }
-                d if d.is_ascii_digit() => {
-                    let d = d.to_digit(10).unwrap() as u8;
-                    assert!(0 < d && d <= 7, "Unexpected gap size {} in '{}'", d, fen);
-                    x += d;
-                    continue;
-                }
-                _ => panic!("Expected next tile or gap, got '{}' in '{}'", c, fen),
-            }
-
-            x = x.wrapping_add(1);
+            assert_eq!(x, 7, "Line {:?} too short", line);
         }
+
+        board.next_player = match &captures["next"] {
+            "x" => Player::A,
+            "o" => Player::B,
+            _ => unreachable!(),
+        };
+        board.moves_since_last_copy = captures["half"].parse::<u8>().unwrap();
 
         board.update_outcome();
         board
@@ -626,7 +619,7 @@ impl AtaxxBoard {
                 write!(&mut s, "/").unwrap();
             }
 
-            let mut space = 0;
+            let mut empty_count = 0;
 
             for x in 0..7 {
                 let coord = Coord::from_xy(x, y);
@@ -635,27 +628,33 @@ impl AtaxxBoard {
                         if self.gaps.has(coord) {
                             write!(&mut s, "-").unwrap();
                         } else {
-                            space += 1;
+                            empty_count += 1;
                         }
                     }
                     Some(player) => {
-                        if space != 0 {
-                            write!(&mut s, "{}", space).unwrap();
-                            space = 0;
+                        if empty_count != 0 {
+                            write!(&mut s, "{}", empty_count).unwrap();
+                            empty_count = 0;
                         }
                         write!(&mut s, "{}", player_symbol(player)).unwrap();
                     }
                 }
             }
 
-            if space != 0 {
-                write!(&mut s, "{}", space).unwrap();
+            if empty_count != 0 {
+                write!(&mut s, "{}", empty_count).unwrap();
             }
         }
 
-        write!(&mut s, " {}", player_symbol(self.next_player)).unwrap();
+        write!(&mut s, " {} {} 1", player_symbol(self.next_player), self.moves_since_last_copy).unwrap();
 
         s
+    }
+}
+
+impl Debug for AtaxxBoard {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AtaxxBoard(\"{}\")", self.to_fen())
     }
 }
 

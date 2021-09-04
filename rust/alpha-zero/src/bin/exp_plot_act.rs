@@ -108,7 +108,7 @@ fn main() {
     let mut network = AtaxxCPUNetwork::load(path, 1);
     let mut executor = CpuExecutor::new(&graph);
 
-    let mut board = AtaxxBoard::new_without_gaps();
+    let mut board = AtaxxBoard::default();
 
     for i in 0.. {
         if board.is_done() { break; }

@@ -35,12 +35,12 @@ fn sttt_draw() {
 
 #[test]
 fn ataxx_empty() {
-    test_main(&AtaxxBoard::new_without_gaps())
+    test_main(&AtaxxBoard::default())
 }
 
 #[test]
 fn ataxx_few() {
-    test_main(&random_board_with_moves(&AtaxxBoard::new_without_gaps(), 10, &mut consistent_rng()))
+    test_main(&random_board_with_moves(&AtaxxBoard::default(), 10, &mut consistent_rng()))
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn ataxx_close() {
     let mut rng = consistent_rng();
 
     // generate a board that's pretty full instead of the more likely empty board
-    let start = random_board_with_moves(&AtaxxBoard::new_without_gaps(), 120, &mut rng);
+    let start = random_board_with_moves(&AtaxxBoard::default(), 120, &mut rng);
     let board = random_board_with_forced_win(&start, 5, &mut rng);
 
     test_main(&board)
@@ -56,12 +56,12 @@ fn ataxx_close() {
 
 #[test]
 fn ataxx_done() {
-    test_main(&random_board_with_outcome(&AtaxxBoard::new_without_gaps(), Outcome::WonBy(Player::A), &mut consistent_rng()))
+    test_main(&random_board_with_outcome(&AtaxxBoard::default(), Outcome::WonBy(Player::A), &mut consistent_rng()))
 }
 
 #[test]
 fn ataxx_forced_pass() {
-    let board = AtaxxBoard::from_fen("xxxxxxx/-------/-------/o6/7/7/7 x");
+    let board = AtaxxBoard::from_fen("xxxxxxx/-------/-------/o6/7/7/7 x 0 0");
     assert!(!board.is_done(), "Board is not done, player B can still play");
     test_main(&board)
 }

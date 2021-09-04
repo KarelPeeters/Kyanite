@@ -1,10 +1,10 @@
 use std::io::{BufRead, BufReader, BufWriter, Read};
 use std::io::Write;
+use std::time::Instant;
 
 use crate::board::{Board, Player};
 use crate::games::ataxx::{AtaxxBoard, Move};
-use crate::uai::command::{Command, Position, GoTimeSettings};
-use std::time::Instant;
+use crate::uai::command::{Command, GoTimeSettings, Position};
 
 pub fn run(
     mut bot: impl FnMut(&AtaxxBoard, u32) -> (Move, String),
@@ -19,7 +19,7 @@ pub fn run(
     let log = &mut BufWriter::new(log);
 
     //warmup
-    bot(&AtaxxBoard::new_without_gaps(), 1000);
+    bot(&AtaxxBoard::default(), 1000);
 
     let mut line = String::new();
     let mut curr_board = None;
@@ -50,11 +50,11 @@ pub fn run(
                 writeln!(output, "info < ignoring command setoption, name={}, value={}", name, value)?;
             }
             Command::NewGame => {
-                curr_board = Some(AtaxxBoard::new_without_gaps());
+                curr_board = Some(AtaxxBoard::default());
             }
             Command::Position(position) => {
                 curr_board = Some(match position {
-                    Position::StartPos => AtaxxBoard::new_without_gaps(),
+                    Position::StartPos => AtaxxBoard::default(),
                     Position::Fen(fen) => AtaxxBoard::from_fen(fen),
                 });
             }

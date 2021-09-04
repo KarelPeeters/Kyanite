@@ -24,7 +24,7 @@ fn main() {
 
     let start_board = || {
         let mut rng = thread_rng();
-        random_board_with_moves(&AtaxxBoard::new_without_gaps(), 2, &mut rng)
+        random_board_with_moves(&AtaxxBoard::default(), 2, &mut rng)
     };
 
     bot_game_zero::run(

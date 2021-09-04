@@ -20,7 +20,7 @@ fn main() {
     // let mut onnx_network = AtaxxOnnxNetwork::load(onnx_v7_path);
 
     println!("Root board eval");
-    let board = AtaxxBoard::new_without_gaps();
+    let board = AtaxxBoard::default();
     println!("{}", board);
 
     // println!("{:?}", torch_network.evaluate(&board));
@@ -30,7 +30,7 @@ fn main() {
 
     println!("Tree");
     fn tree(network: &mut impl Network<AtaxxBoard>) -> Tree<AtaxxBoard> {
-        let board = AtaxxBoard::new_without_gaps();
+        let board = AtaxxBoard::default();
         let start = Instant::now();
         let tree = zero_build_tree(
             &board,
@@ -59,7 +59,7 @@ fn main() {
     println!("bot_game");
     let settings = ZeroSettings::new(2.0, false);
     println!("{:#?}", bot_game::run(
-        || AtaxxBoard::new_without_gaps(),
+        || AtaxxBoard::default(),
         || {
             let network = AtaxxCPUNetwork::load(onnx_path, 1);
             ZeroBot::new(100, settings, network, PanicRng)

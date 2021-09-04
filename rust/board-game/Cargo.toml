@@ -10,12 +10,12 @@ edition = "2018"
 rand = { version = "0.8.4", features = ["small_rng"] }
 itertools = "0.10.1"
 rayon = "1.5.1"
-derive_more = "0.99.16"
-decorum = { version = "0.3.1", default-features=false, features=["std"] }
+decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 newtype-ops = "0.1.4"
 internal-iterator = "0.1.2"
 num = "0.4.0"
-nom = "6.2.1"
+nom = "7.0.0"
+regex = { version = "1.5.4", default-features = false, features = ["std"] }
 rand_xoshiro = "0.6.0"
 cast_trait = "0.1.2"
 
