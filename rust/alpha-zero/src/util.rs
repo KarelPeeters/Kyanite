@@ -1,20 +1,6 @@
-use rand::{Error, RngCore};
+use std::cmp::Ordering;
 
-/// Like `Option::unwrap` but for arbitrary patterns.
-/// ```
-/// assert_eq!(5, unwrap_match!(Some(5), Some(x) => x));
-/// ```
-macro_rules! unwrap_match {
-    ($value: expr, $($pattern: pat)|+ => $result: expr) => {
-        match $value {
-            $($pattern)|+ =>
-                $result,
-            ref value =>
-                panic!("unwrap_match failed: `{:?}` does not match `{}`", value, stringify!($($pattern)|+)),
-        }
-    };
-}
-
+use rand::{Error, Rng, RngCore};
 
 /// An Rng implementation that panics as soon as it is called.
 /// Useful to assert that something doesn't actually use any randomness.
@@ -37,4 +23,39 @@ impl RngCore for PanicRng {
     fn try_fill_bytes(&mut self, _: &mut [u8]) -> Result<(), Error> {
         panic!("Tried to use PanicRng")
     }
+}
+
+/// Similar to [rand::seq::IteratorRandom::choose] but will only pick items with the maximum key.
+/// Equivalent to first finding the max key, then filtering items matching that key and then choosing a random element,
+/// but implemented in a single pass over the iterator.
+pub fn choose_max_by_key<T, I: IntoIterator<Item=T>, K: Ord, F: FnMut(&T) -> K>(
+    iter: I,
+    mut key: F,
+    rng: &mut impl Rng,
+) -> Option<T> {
+    let mut iter = iter.into_iter();
+
+    let mut curr = iter.next()?;
+    let mut max_key = key(&curr);
+    let mut i = 1;
+
+    for next in iter {
+        let next_key = key(&next);
+        match next_key.cmp(&max_key) {
+            Ordering::Less => continue,
+            Ordering::Equal => {
+                i += 1;
+                if rng.gen_range(0..i) == 0 {
+                    curr = next;
+                }
+            }
+            Ordering::Greater => {
+                i = 1;
+                curr = next;
+                max_key = next_key;
+            }
+        }
+    }
+
+    Some(curr)
 }

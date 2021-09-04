@@ -2,6 +2,7 @@ use itertools::{Itertools, zip_eq};
 use rand::{Rng, thread_rng};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::ParallelIterator;
+use unwrap_match::unwrap_match;
 
 use board_game::ai::Bot;
 use board_game::board::{Board, Outcome, Player};

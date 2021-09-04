@@ -42,8 +42,16 @@ impl OutcomeWDL {
         }
     }
 
+    pub fn inf_sign<V: num::Float>(self) -> V {
+        match self {
+            OutcomeWDL::Win => V::infinity(),
+            OutcomeWDL::Draw => V::zero(),
+            OutcomeWDL::Loss => V::neg_infinity(),
+        }
+    }
+
     /// Combine outcomes together in minimax-style.. `None` means unknown.
-    pub fn best(children: impl IntoIterator<Item=Option<OutcomeWDL>>) -> Option<OutcomeWDL> {
+    pub fn best<I: IntoIterator<Item=Option<OutcomeWDL>>>(children: I) -> Option<OutcomeWDL> {
         let mut any_unknown = false;
         let mut all_known_are_loss = true;
 
