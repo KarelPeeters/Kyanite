@@ -9,7 +9,8 @@ class ResBlock(nn.Module):
             channels: int,
             bottleneck_channels: int,
             res: bool,
-            separable: bool,
+            depth_separable: bool,
+            space_separable: bool,
             squeeze_size: Optional[int],
     ):
         super().__init__()
@@ -18,11 +19,22 @@ class ResBlock(nn.Module):
         self.channels = channels
 
         def conv(from_channels: int, to_channels: int):
-            if separable:
+            if depth_separable and space_separable:
+                return [
+                    nn.Conv2d(from_channels, from_channels, (3, 1), padding=(1, 0), bias=False, groups=from_channels),
+                    nn.Conv2d(from_channels, from_channels, (1, 3), padding=(0, 1), bias=False, groups=from_channels),
+                    nn.Conv2d(from_channels, to_channels, (1, 1), bias=False),
+                ]
+            elif depth_separable:
                 return [
                     # TODO what channels to use where here?
                     nn.Conv2d(from_channels, from_channels, (3, 3), padding=(1, 1), bias=False, groups=from_channels),
                     nn.Conv2d(from_channels, to_channels, (1, 1), bias=False),
+                ]
+            elif space_separable:
+                return [
+                    nn.Conv2d(from_channels, from_channels, (3, 1), padding=(1, 0), bias=False),
+                    nn.Conv2d(from_channels, to_channels, (1, 3), padding=(0, 1), bias=False),
                 ]
             else:
                 return [

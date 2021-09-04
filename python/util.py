@@ -129,14 +129,14 @@ def linspace_int(stop: int, num: int) -> np.array:
         return np.linspace(0, stop - 1, num).astype(int)
 
 
-def uniform_window_filter(data: np.array, window_size: int) -> np.array:
+def uniform_window_filter(data: np.array, window_size: int, axis: int) -> np.array:
     if len(data) <= window_size * 3 or window_size < 2:
         return data
 
     from scipy.signal import filtfilt
     a = 1
     b = [1 / window_size] * window_size
-    return filtfilt(b, a, data)
+    return filtfilt(b, a, data, axis=axis)
 
 def prod(i):
     total = 1

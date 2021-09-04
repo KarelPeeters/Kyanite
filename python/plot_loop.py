@@ -5,12 +5,15 @@ from typing import Optional, List
 import matplotlib.pyplot as plt
 import numpy as np
 
+from util import uniform_window_filter
+
 
 def plot_loops(
         paths: [str],
         start_gen: int = 0,
-        breaks=None, average:
-        bool = False,
+        breaks=None,
+        average:bool = False,
+        smooth_window: int = 1,
         gen_limit: int = np.inf,
         offsets: Optional[List[int]] = None,
 ):
@@ -26,7 +29,7 @@ def plot_loops(
     for gi in itertools.count(start_gen):
         if gi == gen_limit:
             break
-        print(f"Adding gen {gi}")
+        print(f"Trying gen {gi}")
 
         gen_axis = []
         gen_data = []
@@ -74,26 +77,31 @@ def plot_loops(
             all_axis[pi] = np.concatenate(all_axis[pi])
             all_data[pi] = np.concatenate(all_data[pi])
 
+    all_data = [uniform_window_filter(d, smooth_window, 0) for d in all_data]
+
+    plt.figure()
     for pi in range(len(paths)):
         plt.plot(all_axis[pi], all_data[pi][:, [0, 3]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Total")
-    plt.show()
+    plt.show(block=False)
 
+    plt.figure()
     for pi in range(len(paths)):
         plt.plot(all_axis[pi], all_data[pi][:, [1, 4]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Value")
-    plt.show()
+    plt.show(block=False)
 
+    plt.figure()
     for pi in range(len(paths)):
         plt.plot(all_axis[pi], all_data[pi][:, [2, 5]], label=[f"{pi}_train", f"{pi}_test"], alpha=0.5)
     add_breaks()
     plt.legend()
     plt.title("Policy")
-    plt.show()
+    plt.show(block=True)
 
     return gi
 
@@ -101,6 +109,6 @@ def plot_loops(
 if __name__ == '__main__':
     loops = [
         "../data/ataxx/test_loop",
-        "../data/derp/retrain_other/",
+        # "../data/derp/retrain/",
     ]
-    plot_loops(loops, start_gen=0, average=True, breaks=[239, 289, 330])
+    plot_loops(loops, start_gen=100, average=True, smooth_window=7, breaks=[330, 379])

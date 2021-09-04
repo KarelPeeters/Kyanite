@@ -1,7 +1,7 @@
 from loop import LoopSettings, SelfplaySettings, run_loop
 from models import TowerModel, ResBlock
 from selfplay_client import FixedSelfplaySettings
-from train import TrainSettings, WdlTarget
+from train import TrainSettings, WdlTarget, WdlLoss
 
 
 def main():
@@ -14,14 +14,14 @@ def main():
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        zero_temp_move_count=20,
+        zero_temp_move_count=10,
         max_game_length=500,
         keep_tree=False,
         dirichlet_alpha=0.2,
-        dirichlet_eps=0.25,
+        dirichlet_eps=0.1,
         full_search_prob=1.0,
-        full_iterations=600,
-        part_iterations=600,
+        full_iterations=1000,
+        part_iterations=1000,
         exploration_weight=2.0,
         random_symmetries=True,
         cache_size=0,
@@ -30,6 +30,7 @@ def main():
     train_settings = TrainSettings(
         epochs=1,
         wdl_target=WdlTarget.Final,
+        wdl_loss=WdlLoss.CrossEntropy,
         policy_weight=1.0,
         batch_size=128,
         plot=False,
@@ -38,12 +39,12 @@ def main():
     )
 
     def initial_network():
-        return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, None))
+        return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
 
     settings = LoopSettings(
         root_path="data/ataxx/test_loop",
         initial_network=initial_network,
-        buffer_gen_count=1,
+        buffer_gen_count=20,
         fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,

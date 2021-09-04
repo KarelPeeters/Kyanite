@@ -9,7 +9,7 @@ from torch.optim import AdamW, Optimizer
 from loop import LoopSettings
 from models import TowerModel, ResBlock
 from plot_loop import plot_loops
-from train import train_model, TrainState, TrainSettings, WdlTarget
+from train import train_model, TrainState, TrainSettings, WdlTarget, WdlLoss
 from util import DEVICE, print_param_count
 
 
@@ -49,19 +49,22 @@ def retrain(
         train_model(model, state)
 
         if gi != 0 and gi % 10 == 0:
-            plot_loops([prev_path, new_path], average=True, offsets=[prev_offset, 0])
+            average = gi > 20
+            window = 20 if gi > 200 else 10 if gi > 100 else 1
+
+            plot_loops([prev_path, new_path], average=average, smooth_window=window, offsets=[prev_offset, 0])
 
 
 def main():
     prev_path = "../data/ataxx/test_loop/"
-    new_path = "../data/derp/retrain_other/"
+    new_path = "../data/derp/retrain/"
 
     depth = 8
     channels = 32
     inner_channels = 32
 
     def res_block():
-        return ResBlock(channels, inner_channels, True, False, None)
+        return ResBlock(channels, inner_channels, True, False, False, None)
 
     model = TowerModel(channels, depth, 16, True, True, True, res_block)
 
@@ -73,6 +76,7 @@ def main():
     train_settings = TrainSettings(
         epochs=1,
         wdl_target=WdlTarget.Final,
+        wdl_loss=WdlLoss.MSE,
         policy_weight=2.0,
         batch_size=128,
         plot=False,
@@ -92,13 +96,13 @@ def main():
     )
 
     retrain(
-        model,
-        prev_path,
-        100,
-        new_path,
-        settings,
-        False,
-        lambda net, decay: AdamW(net.parameters(), weight_decay=decay)
+        model=model,
+        prev_path=prev_path,
+        prev_offset=0,
+        new_path=new_path,
+        settings=settings,
+        recreate_optimizer=False,
+        optimizer=lambda net, decay: AdamW(net.parameters(), weight_decay=decay)
     )
 
 

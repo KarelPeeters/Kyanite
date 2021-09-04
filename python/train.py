@@ -43,14 +43,16 @@ def evaluate_model(model, data: GameData, target: 'WdlTarget'):
     wdl_logit, policy_logit = model(data.board)
 
     wdl_target = target.get_target(data.wdl_final, data.wdl_est)
-    wdl_loss = cross_entropy_masked(wdl_logit, wdl_target, None)
+    wdl_loss_ce = cross_entropy_masked(wdl_logit, wdl_target, None)
+    wdl_loss_mse = nn.functional.mse_loss(nn.functional.softmax(wdl_logit, -1), wdl_target)
+
     policy_loss = cross_entropy_masked(
         policy_logit.flatten(start_dim=1),
         data.policy.flatten(start_dim=1),
         data.policy_mask.flatten(start_dim=1)
     )
 
-    return wdl_loss, policy_loss
+    return wdl_loss_ce, wdl_loss_mse, policy_loss
 
 
 class WdlTarget(Enum):
@@ -68,10 +70,23 @@ class WdlTarget(Enum):
         assert False, self
 
 
+class WdlLoss(Enum):
+    CrossEntropy = auto()
+    MSE = auto()
+
+    def select(self, ce, mse):
+        if self == WdlLoss.CrossEntropy:
+            return ce
+        if self == WdlLoss.MSE:
+            return mse
+        assert False, self
+
+
 @dataclass
 class TrainSettings:
     epochs: int
     wdl_target: WdlTarget
+    wdl_loss: WdlLoss
     policy_weight: float
     batch_size: int
 
@@ -115,14 +130,23 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
             test_data_batch = s.test_data[test_batch_i].random_symmetry()
 
-            test_value_loss, test_policy_loss = evaluate_model(model, test_data_batch, s.settings.wdl_target)
+            test_value_loss_ce, test_value_loss_mse, test_policy_loss = \
+                evaluate_model(model, test_data_batch, s.settings.wdl_target)
+            test_value_loss = s.settings.wdl_loss.select(test_value_loss_ce, test_value_loss_mse)
+
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
             plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss], device=DEVICE)
 
-            print(f"Test batch: {test_loss:.2f} = {test_value_loss:.2f} + c * {test_policy_loss:.2f}")
+            print(
+                f"Test batch: {test_loss:.2f} = {test_value_loss:.2f} + c * {test_policy_loss:.2f},"
+                f" note: ce={test_value_loss_ce}, mse={test_value_loss_mse}"
+            )
 
         model.train()
-        train_value_loss, train_policy_loss = evaluate_model(model, train_data_batch, s.settings.wdl_target)
+        train_value_loss_ce, train_value_loss_mse, train_policy_loss = \
+            evaluate_model(model, train_data_batch, s.settings.wdl_target)
+        train_value_loss = s.settings.wdl_loss.select(train_value_loss_ce, train_value_loss_mse)
+
         train_loss = train_value_loss + s.settings.policy_weight * train_policy_loss
 
         if is_plot_batch:
@@ -135,7 +159,9 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
 
         print(
             f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.2f} ="
-            f" {train_value_loss:.2f} + c * {train_policy_loss:.2f}")
+            f" {train_value_loss:.2f} + c * {train_policy_loss:.2f},"
+            f" note: ce={train_value_loss_ce}, mse={train_value_loss_mse}"
+        )
 
         s.optimizer.zero_grad()
         train_loss.backward()
@@ -164,10 +190,10 @@ def plot_train_data(s: TrainState):
 
         smooth_window_size = int(len(all_plot_data) / s.settings.plot_smooth_points) + 1
 
-        train_smooth_values = uniform_window_filter(all_plot_data[:, i], smooth_window_size)
+        train_smooth_values = uniform_window_filter(all_plot_data[:, i], smooth_window_size, 0)
         pyplot.plot(all_plot_axis, train_smooth_values, label="train")
 
-        test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], smooth_window_size)
+        test_smooth_values = uniform_window_filter(all_plot_data[:, 3 + i], smooth_window_size, 0)
         pyplot.plot(all_plot_axis, test_smooth_values, label="test")
 
         pyplot.title(TRAIN_PLOT_TITLES[i])
@@ -199,6 +225,7 @@ def save_onnx(network, onnx_path: str):
         output_names=["wdl", "policy"],
         dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
     )
+
 
 def train_model(model: nn.Module, s: TrainState):
     epochs = s.settings.epochs
