@@ -260,15 +260,19 @@ impl<B: Board> GameState<B> {
 }
 
 fn add_dirichlet_noise<B: Board>(settings: &Settings, tree: &mut Tree<B>, rng: &mut impl Rng) {
+    let a = settings.dirichlet_alpha;
+    let e = settings.dirichlet_eps;
+
     let children = tree[0].children
         .expect("root node has no children yet, it must have been visited at least once");
 
     if children.length > 1 {
-        let distr = Dirichlet::new_with_size(settings.dirichlet_alpha, children.length as usize).unwrap();
+        let distr = Dirichlet::new_with_size(a, children.length as usize).unwrap();
         let noise = rng.sample(distr);
 
         for (child, n) in zip_eq(children, noise) {
-            tree[child].net_policy += n
+            let p = &mut tree[child].net_policy;
+            *p = (1.0 - e) * (*p) + e * n;
         }
     }
 }
