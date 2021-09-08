@@ -3,7 +3,7 @@ name = "board-game"
 version = "0.3.0"
 authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "A board game abstraction and bots and utilities around it."
-license-file = "NONE.md"
+license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
