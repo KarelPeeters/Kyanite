@@ -1,10 +1,13 @@
 [package]
 name = "board-game"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
 description = "A board game abstraction and bots and utilities around it."
 license = "MIT OR Apache-2.0"
 edition = "2018"
+keywords = ["board", "ai", "ataxx", "sttt"]
+categories = ["algorithms", "games"]
+repository = "https://github.com/KarelPeeters/AlphaZero/tree/master/rust/board-game"
 
 [dependencies]
 rand = { version = "0.8.4", features = ["small_rng"] }
