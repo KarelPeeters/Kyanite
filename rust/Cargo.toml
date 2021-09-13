@@ -3,8 +3,6 @@
 members = [
     "cuda-sys",
     "cuda-nn-eval",
-
-    "board-game",
     "alpha-zero",
 ]
 
@@ -14,3 +12,11 @@ debug = true
 
 [profile.dev]
 opt-level = 1
+
+# temporary fix until https://github.com/jordanbray/chess/pull/67 is merged
+[profile.dev.build-override]
+opt-level = 3
+[profile.release.build-override]
+opt-level = 3
+[profile.test.build-override]
+opt-level = 3

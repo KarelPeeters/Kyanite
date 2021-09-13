@@ -1,12 +1,12 @@
-use rand::{Rng, thread_rng};
-
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
-use alpha_zero::zero::{ZeroSettings, ZeroBot};
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::util::board_gen::random_board_with_moves;
 use board_game::util::bot_game;
-use cuda_sys::wrapper::handle::Device;
 use board_game::util::bot_game::BotGameResult;
+use rand::{Rng, thread_rng};
+
+use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::zero::{ZeroBot, ZeroSettings};
+use cuda_sys::wrapper::handle::Device;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
@@ -54,14 +54,14 @@ fn compare_bots<R1: Rng, R2: Rng>(
     game: bool,
 ) -> Option<BotGameResult> {
     if tree {
-        let board = AtaxxBoard::new_without_gaps();
+        let board = AtaxxBoard::default();
         println!("{}", bot_l().build_tree(&board).display(2));
         println!("{}", bot_r().build_tree(&board).display(2));
     }
 
     if game {
         let result = bot_game::run(
-            || random_board_with_moves(&AtaxxBoard::new_without_gaps(), 2, &mut thread_rng()),
+            || random_board_with_moves(&AtaxxBoard::default(), 2, &mut thread_rng()),
             bot_l,
             bot_r,
             20, true, Some(1),

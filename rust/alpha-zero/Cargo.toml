@@ -8,7 +8,7 @@ edition = "2018"
 #default = ["tch"]
 
 [dependencies]
-board-game = { path = "../board-game" }
+board-game = { version = "0.3.6", path = "../../../board-game-rs" }
 
 # TODO update to 0.5.0, but cl compiler error
 tch = { version = "0.4.1", optional = true }

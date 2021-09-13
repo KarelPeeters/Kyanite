@@ -1,11 +1,11 @@
-use rand::thread_rng;
-
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::util::board_gen::random_board_with_moves;
 use board_game::util::bot_game;
+use rand::thread_rng;
+
+use alpha_zero::{old_zero, zero};
+use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use cuda_sys::wrapper::handle::Device;
-use alpha_zero::{zero, old_zero};
 
 fn main() {
     let path = "../data/ataxx/test_loop/training/gen_264/model_1_epochs.onnx";
@@ -28,7 +28,7 @@ fn main() {
         let old_settings = old_zero::ZeroSettings::new(normal_exploration_weight, random);
         let mut old_bot = old_zero::ZeroBot::new(normal_iterations, old_settings, old_network, thread_rng());
 
-        let board = AtaxxBoard::new_without_gaps();
+        let board = AtaxxBoard::default();
         println!("{}", batched_bot.build_tree(&board).display(2));
         println!("{}", old_bot.build_tree(&board).display(2));
     }
@@ -39,7 +39,7 @@ fn main() {
         .unwrap();
 
     println!("{:#?}", bot_game::run(
-        || random_board_with_moves(&AtaxxBoard::new_without_gaps(), 2, &mut thread_rng()),
+        || random_board_with_moves(&AtaxxBoard::default(), 2, &mut thread_rng()),
         || {
             let network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
             let settings = zero::ZeroSettings::new(batch_size, batch_exploration_weight, random);

@@ -1,9 +1,9 @@
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::util::board_gen::random_board_with_moves;
 use rand::thread_rng;
 
 use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
 use alpha_zero::zero::{ZeroBot, ZeroSettings};
-use board_game::games::ataxx::AtaxxBoard;
-use board_game::util::board_gen::random_board_with_moves;
 use cuda_sys::wrapper::handle::Device;
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
     let network = AtaxxCNNNetwork::load(path, batch_size, device);
     let mut zero_bot = ZeroBot::new(iterations, settings, network, thread_rng());
 
-    let board = random_board_with_moves(&AtaxxBoard::new_without_gaps(), 4, &mut thread_rng());
+    let board = random_board_with_moves(&AtaxxBoard::default(), 4, &mut thread_rng());
     println!("{}", board);
 
     let tree = zero_bot.build_tree(&board);
