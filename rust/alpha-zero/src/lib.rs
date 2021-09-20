@@ -5,9 +5,8 @@ pub mod old_zero;
 pub mod network;
 
 pub mod selfplay;
+pub mod bot_game_zero;
 
 #[macro_use]
 pub mod util;
-pub mod bot_game_zero;
-
-pub mod games;
+pub mod mapping;

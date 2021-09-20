@@ -57,7 +57,8 @@ class Generation:
             games_path=path.join(settings.root_path, "selfplay", f"games_{gi}.bin"),
             prev_network_path=path.join(prev_gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.pt")
             if gi != 0 else None,
-            prev_network_path_onnx=path.join(prev_gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.onnx")
+            prev_network_path_onnx=path.join(prev_gen_train_folder,
+                                             f"model_{settings.train_settings.epochs}_epochs.onnx")
             if gi != 0 else None,
             next_network_path=path.join(gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.pt"),
             next_network_path_onnx=path.join(gen_train_folder, f"model_{settings.train_settings.epochs}_epochs.onnx"),
@@ -129,6 +130,8 @@ def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
 
 
 def run_loop(settings: LoopSettings):
+    game = settings.fixed_settings.game
+
     print(f"Starting loop with cwd {os.getcwd()}")
     assert path.exists("./rust") and path.exists("./python"), "should be run in root STTTZero folder"
 
@@ -146,7 +149,7 @@ def run_loop(settings: LoopSettings):
         network.to(DEVICE)
 
         selfplay_start_network_path = path.abspath(path.join(settings.root_path, "initial_network.onnx"))
-        save_onnx(network, selfplay_start_network_path)
+        save_onnx(game, network, selfplay_start_network_path)
     else:
         print(f"Resuming run from gen {start_gen.gi}")
 

@@ -4,7 +4,8 @@ use board_game::util::bot_game;
 use board_game::util::bot_game::BotGameResult;
 use rand::{Rng, thread_rng};
 
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
+use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::zero::{ZeroBot, ZeroSettings};
 use cuda_sys::wrapper::handle::Device;
 
@@ -30,11 +31,11 @@ fn main() {
 
         let result = compare_bots(
             || {
-                let network = AtaxxCNNNetwork::load(path_l, settings_l.batch_size, Device::new(0));
+                let network = CudnnNetwork::load(AtaxxStdMapper, path_l, settings_l.batch_size, Device::new(0));
                 ZeroBot::new(iterations_l, settings_l, network, thread_rng())
             },
             || {
-                let network = AtaxxCNNNetwork::load(path_r, settings_r.batch_size, Device::new(0));
+                let network = CudnnNetwork::load(AtaxxStdMapper, path_r, settings_r.batch_size, Device::new(0));
                 ZeroBot::new(iterations_r, settings_r, network, thread_rng())
             },
             false,
@@ -48,8 +49,8 @@ fn main() {
 }
 
 fn compare_bots<R1: Rng, R2: Rng>(
-    bot_l: impl Fn() -> ZeroBot<AtaxxBoard, AtaxxCNNNetwork, R1> + Sync,
-    bot_r: impl Fn() -> ZeroBot<AtaxxBoard, AtaxxCNNNetwork, R2> + Sync,
+    bot_l: impl Fn() -> ZeroBot<AtaxxBoard, CudnnNetwork<AtaxxBoard, AtaxxStdMapper>, R1> + Sync,
+    bot_r: impl Fn() -> ZeroBot<AtaxxBoard, CudnnNetwork<AtaxxBoard, AtaxxStdMapper>, R2> + Sync,
     tree: bool,
     game: bool,
 ) -> Option<BotGameResult> {

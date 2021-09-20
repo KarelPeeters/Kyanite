@@ -4,7 +4,8 @@ use board_game::util::bot_game;
 use rand::thread_rng;
 
 use alpha_zero::{old_zero, zero};
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
+use alpha_zero::network::cudnn::CudnnNetwork;
 use cuda_sys::wrapper::handle::Device;
 
 fn main() {
@@ -20,11 +21,11 @@ fn main() {
     let normal_exploration_weight = 2.0;
 
     if false {
-        let batched_network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
+        let batched_network = CudnnNetwork::load(AtaxxStdMapper, path, batch_size, Device::new(0));
         let batched_settings = zero::ZeroSettings::new(batch_size, batch_exploration_weight, random);
         let mut batched_bot = zero::ZeroBot::new(batch_iterations, batched_settings, batched_network, thread_rng());
 
-        let old_network = AtaxxCNNNetwork::load(path, 1, Device::new(0));
+        let old_network = CudnnNetwork::load(AtaxxStdMapper, path, 1, Device::new(0));
         let old_settings = old_zero::ZeroSettings::new(normal_exploration_weight, random);
         let mut old_bot = old_zero::ZeroBot::new(normal_iterations, old_settings, old_network, thread_rng());
 
@@ -41,12 +42,12 @@ fn main() {
     println!("{:#?}", bot_game::run(
         || random_board_with_moves(&AtaxxBoard::default(), 2, &mut thread_rng()),
         || {
-            let network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
+            let network = CudnnNetwork::load(AtaxxStdMapper, path, batch_size, Device::new(0));
             let settings = zero::ZeroSettings::new(batch_size, batch_exploration_weight, random);
             zero::ZeroBot::new(batch_iterations, settings, network, thread_rng())
         },
         || {
-            let network = AtaxxCNNNetwork::load(path, 1, Device::new(0));
+            let network = CudnnNetwork::load(AtaxxStdMapper, path, 1, Device::new(0));
             let settings = old_zero::ZeroSettings::new(normal_exploration_weight, random);
             old_zero::ZeroBot::new(normal_iterations, settings, network, thread_rng())
         },

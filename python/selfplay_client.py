@@ -4,10 +4,12 @@ import socket
 from dataclasses import dataclass
 from typing import Union
 
+from games import Game
+
 
 @dataclass
 class FixedSelfplaySettings:
-    game: str
+    game: Game
     threads_per_device: int
     batch_size: int
     games_per_gen: int

@@ -1,24 +1,25 @@
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use internal_iterator::InternalIterator;
-use itertools::zip;
 use board_game::board::Board;
 use board_game::wdl::WDL;
+use internal_iterator::InternalIterator;
+use itertools::zip;
 
 use crate::network::{Network, ZeroEvaluation};
 
-/// A `Network` that always returns value and a uniform policy.
+/// A `Network` that always returns uniform wdl and policy..
 #[derive(Debug)]
 pub struct DummyNetwork;
 
-/// A `Network` that returns value 0 and a policy as returned by the inner network.
+/// A `Network` wrapper that returns uniform wdl and the policy as evaluated by the inner network.
 #[derive(Debug)]
 pub struct DummyValueNetwork<B: Board, N: Network<B>> {
     inner: N,
     ph: PhantomData<*const B>,
 }
 
-/// A `Network` that returns the value returned by the inner network and a uniform policy.
+/// A `Network` wrapper that returns wdl evaluated by the inner network and uniform policy.
 #[derive(Debug)]
 pub struct DummyPolicyNetwork<B: Board, N: Network<B>> {
     inner: N,
@@ -38,18 +39,18 @@ impl<B: Board, N: Network<B>> DummyPolicyNetwork<B, N> {
 }
 
 impl<B: Board> Network<B> for DummyNetwork {
-    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
         boards.iter()
             .map(|board| ZeroEvaluation {
                 wdl: uniform_wdl(),
-                policy: uniform_policy(board),
+                policy: uniform_policy(board.borrow()),
             })
             .collect()
     }
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
-    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
         let mut result = self.inner.evaluate_batch(boards);
         for eval in &mut result {
             eval.wdl = uniform_wdl();
@@ -59,10 +60,10 @@ impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
-    fn evaluate_batch(&mut self, boards: &[B]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
         let mut result = self.inner.evaluate_batch(boards);
         for (board, eval) in zip(boards, &mut result) {
-            eval.policy = uniform_policy(board);
+            eval.policy = uniform_policy(board.borrow());
         }
         result
     }

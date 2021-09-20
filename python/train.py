@@ -9,6 +9,7 @@ from matplotlib import pyplot
 from torch import nn
 from torch.optim import Optimizer
 
+from games import Game
 from util import DEVICE, linspace_int, uniform_window_filter, GameData
 
 
@@ -211,10 +212,10 @@ def plot_train_data(s: TrainState):
         pyplot.show()
 
 
-def save_onnx(network, onnx_path: str):
+def save_onnx(game: Game, network, onnx_path: str):
     print(f"Saving model to {onnx_path}")
     network.eval()
-    example_input = torch.zeros(1, 3, 7, 7, device=DEVICE)
+    example_input = torch.zeros(1, *game.input_shape(), device=DEVICE)
     example_outputs = network(example_input)
     torch.onnx.export(
         model=network,

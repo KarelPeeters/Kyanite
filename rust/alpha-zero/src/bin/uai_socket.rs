@@ -2,14 +2,15 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::time::Instant;
 
+use board_game::board::Board;
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::uai;
 use rand::thread_rng;
 
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
+use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::zero::{zero_build_tree, ZeroSettings};
-use board_game::board::Board;
-use board_game::uai;
 use cuda_sys::wrapper::handle::Device;
-use board_game::games::ataxx::AtaxxBoard;
 
 const PASSWORD: &str = "635A26AD425331A6";
 
@@ -18,7 +19,7 @@ fn main() -> std::io::Result<()> {
     let batch_size = 100;
     let settings = ZeroSettings::new(batch_size, 2.0, true);
 
-    let mut network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
+    let mut network = CudnnNetwork::load(AtaxxStdMapper, path, batch_size, Device::new(0));
     let mut rng = thread_rng();
 
     let bot = move |board: &AtaxxBoard, time_to_use| {

@@ -1,20 +1,21 @@
 use std::time::Instant;
 
-use rand::thread_rng;
-
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
-use alpha_zero::zero::{zero_build_tree, ZeroSettings};
-use board_game::uai;
-use cuda_sys::wrapper::handle::Device;
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
+use board_game::uai;
+use rand::thread_rng;
+
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
+use alpha_zero::network::cudnn::CudnnNetwork;
+use alpha_zero::zero::{zero_build_tree, ZeroSettings};
+use cuda_sys::wrapper::handle::Device;
 
 fn main() -> std::io::Result<()> {
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/ataxx/test_loop/training/gen_240/model_1_epochs.onnx";
     let batch_size = 20;
     let settings = ZeroSettings::new(batch_size, 2.0, true);
 
-    let mut network = AtaxxCNNNetwork::load(path, batch_size, Device::new(0));
+    let mut network = CudnnNetwork::load(AtaxxStdMapper, path, batch_size, Device::new(0));
     let mut rng = thread_rng();
 
     let bot = move |board: &AtaxxBoard, time_to_use| {

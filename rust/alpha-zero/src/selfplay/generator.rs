@@ -1,20 +1,22 @@
+use board_game::board::{Board, Outcome};
 use crossbeam::channel::{Receiver, Sender, SendError, TryRecvError};
 use itertools::{Itertools, zip_eq};
 use lru::LruCache;
 use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
 
-use board_game::board::{Board, Outcome};
 use cuda_sys::wrapper::handle::Device;
 
+use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
+use crate::network::cudnn::CudnnNetwork;
 use crate::old_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::selfplay::core::{MoveSelector, Position, Simulation};
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 
-pub fn generator_main<B: Board, N: Network<B>>(
+pub fn generator_main<B: Board>(
+    mapper: impl BoardMapper<B>,
     start_pos: impl Fn() -> B,
-    load_network: impl Fn(String, usize, Device) -> N,
     device: Device,
     batch_size: usize,
     cmd_receiver: Receiver<Command>,
@@ -46,15 +48,15 @@ pub fn generator_main<B: Board, N: Network<B>>(
             }
             Ok(Command::NewNetwork(path)) => {
                 println!("Generator thread loading new network {:?}", path);
-                network = Some(load_network(path, batch_size, device));
+                network = Some(CudnnNetwork::load(mapper, path, batch_size, device));
             }
         }
 
         // advance generator
         if let Some(settings) = &settings {
-            if let Some(executor) = &mut network {
+            if let Some(network) = &mut network {
                 state.cache.resize(settings.cache_size);
-                state.step(&start_pos, &update_sender, settings, executor, batch_size, &mut rng)?;
+                state.step(&start_pos, &update_sender, settings, network, batch_size, &mut rng)?;
             }
         }
     }

@@ -5,16 +5,18 @@ version = "0.2.0"
 edition = "2018"
 
 [features]
-#default = ["tch"]
+default = ["cuda"]
+cuda = ["cuda-nn-eval", "cuda-sys"]
 
 [dependencies]
 board-game = { version = "0.3.6", path = "../../../board-game-rs" }
+cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
+cuda-sys = { path = "../cuda-sys", optional = true }
 
-# TODO update to 0.5.0, but cl compiler error
-tch = { version = "0.4.1", optional = true }
+# TODO re-enable and implement these networks
+#  (update their versions too)
+#tch = { version = "0.4.1", optional = true }
 #onnxruntime = { version = "0.0.14", optional = true }
-cuda-nn-eval = { path = "../cuda-nn-eval" }
-cuda-sys = { path = "../cuda-sys" }
 
 num_cpus = "1.13.0"
 crossbeam = "0.8.1"
@@ -35,3 +37,4 @@ lru = "0.6.6"
 ndarray = "0.15.3"
 ndarray-stats = "0.5.0"
 unwrap-match = "0.1.0"
+chess = "3.2.0"

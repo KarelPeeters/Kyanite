@@ -1,3 +1,4 @@
+from games import find_game
 from loop import LoopSettings, SelfplaySettings, run_loop
 from models import TowerModel, ResBlock
 from selfplay_client import FixedSelfplaySettings
@@ -5,8 +6,10 @@ from train import TrainSettings, WdlTarget, WdlLoss
 
 
 def main():
+    game = find_game("chess")
+
     fixed_settings = FixedSelfplaySettings(
-        game="ataxx",
+        game=game,
         threads_per_device=2,
         batch_size=512,
         games_per_gen=100,
@@ -39,10 +42,10 @@ def main():
     )
 
     def initial_network():
-        return TowerModel(32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
+        return TowerModel(game, 32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
 
     settings = LoopSettings(
-        root_path="data/ataxx/test_loop",
+        root_path="data/var_game/test_loop",
         initial_network=initial_network,
         buffer_gen_count=20,
         fixed_settings=fixed_settings,

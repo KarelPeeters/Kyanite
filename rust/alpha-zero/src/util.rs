@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 
 use rand::{Error, Rng, RngCore};
 
@@ -58,4 +59,27 @@ pub fn choose_max_by_key<T, I: IntoIterator<Item=T>, K: Ord, F: FnMut(&T) -> K>(
     }
 
     Some(curr)
+}
+
+pub trait IndexOf<T> {
+    fn index_of(self, element: T) -> Option<usize>;
+}
+
+impl<T: PartialEq, I: Iterator<Item=T>> IndexOf<T> for I {
+    fn index_of(mut self, element: I::Item) -> Option<usize> {
+        self.position(|cand| cand == element)
+    }
+}
+
+pub fn display_option<T: Display>(value: Option<T>) -> impl Display {
+    struct Wrapper<T>(Option<T>);
+    impl<T: Display> Display for Wrapper<T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match &self.0 {
+                None => write!(f, "None"),
+                Some(value) => write!(f, "Some({})", value),
+            }
+        }
+    }
+    Wrapper(value)
 }

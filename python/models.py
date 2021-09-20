@@ -2,6 +2,8 @@ from typing import Optional, Callable
 
 from torch import nn
 
+from games import Game
+
 
 class ResBlock(nn.Module):
     def __init__(
@@ -104,6 +106,8 @@ class MobileV2Block(nn.Module):
 class TowerModel(nn.Module):
     def __init__(
             self,
+            game: Game,
+
             tower_channels: int,
             tower_depth: int,
             wdl_size: int,
@@ -117,7 +121,7 @@ class TowerModel(nn.Module):
         super().__init__()
 
         self.tower = nn.Sequential(
-            nn.Conv2d(3, tower_channels, (3, 3), padding=(1, 1), bias=False),
+            nn.Conv2d(game.input_channels, tower_channels, (3, 3), padding=(1, 1), bias=False),
             *[
                 nn.BatchNorm2d(tower_channels),
                 nn.ReLU()
@@ -127,7 +131,7 @@ class TowerModel(nn.Module):
 
         if policy_conv:
             self.policy_head = nn.Sequential(
-                nn.Conv2d(tower_channels, 17, (1, 1)),
+                nn.Conv2d(tower_channels, game.policy_channels, (1, 1)),
             )
         else:
             self.policy_head = nn.Sequential(
@@ -135,8 +139,8 @@ class TowerModel(nn.Module):
                 nn.BatchNorm2d(8),
                 nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(8 * 7 * 7, 17 * 7 * 7),
-                nn.Unflatten(1, (17, 7, 7))
+                nn.Linear(8 * game.board_size ** 2, game.policy_channels * game.board_size ** 2),
+                nn.Unflatten(1, (game.policy_channels, game.board_size, game.board_size))
             )
 
         if value_conv:
@@ -145,30 +149,21 @@ class TowerModel(nn.Module):
                 nn.BatchNorm2d(1),
                 nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(7*7, wdl_size),
+                nn.Linear(game.board_size * game.board_size, wdl_size),
                 nn.ReLU(),
                 nn.Linear(wdl_size, 3),
             )
         else:
             self.wdl_head = nn.Sequential(
-                nn.AvgPool2d((7, 7)),
+                nn.AvgPool2d((game.board_size, game.board_size)),
                 nn.Flatten(),
                 nn.Linear(tower_channels, wdl_size),
                 nn.ReLU(),
                 nn.Linear(wdl_size, 3),
             )
 
-
     def forward(self, input):
-        """
-        Returns `(wdl, policy)`
-         * `input` is a tensor of shape (B, 5, 9, 9)
-         * `wdl` is a tensor of shape (B, 3) with win/draw/loss logits
-         * `policy` is a tensor of shape (B, 9, 9)
-        """
-
         common = self.tower(input)
         wdl = self.wdl_head(common)
         policy = self.policy_head(common)
-
         return wdl, policy

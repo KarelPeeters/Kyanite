@@ -10,9 +10,6 @@ members = [
 # lto = true
 debug = true
 
-[profile.dev]
-opt-level = 1
-
 # temporary fix until https://github.com/jordanbray/chess/pull/67 is merged
 [profile.dev.build-override]
 opt-level = 3

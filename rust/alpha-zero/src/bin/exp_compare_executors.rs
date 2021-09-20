@@ -1,13 +1,15 @@
 use std::time::Instant;
 
-use alpha_zero::games::ataxx_cnn_network::AtaxxCNNNetwork;
-use alpha_zero::games::ataxx_cpu_network::AtaxxCPUNetwork;
-use alpha_zero::network::Network;
-use alpha_zero::util::PanicRng;
-use alpha_zero::old_zero::{Tree, zero_build_tree, ZeroSettings, ZeroBot};
 use board_game::games::ataxx::AtaxxBoard;
-use cuda_sys::wrapper::handle::Device;
 use board_game::util::bot_game;
+
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
+use alpha_zero::network::cpu::CPUNetwork;
+use alpha_zero::network::cudnn::CudnnNetwork;
+use alpha_zero::network::Network;
+use alpha_zero::old_zero::{Tree, zero_build_tree, ZeroBot, ZeroSettings};
+use alpha_zero::util::PanicRng;
+use cuda_sys::wrapper::handle::Device;
 
 fn main() {
     // let torch_path = "../data/derp/good_test_loop/gen_40/model_1_epochs.pt";
@@ -15,8 +17,8 @@ fn main() {
     // let onnx_v7_path = "../data/derp/good_test_loop/gen_40/model_1_epochs_v7.onnx";
 
     // let mut torch_network = AtaxxTorchNetwork::load(torch_path, tch::Device::Cuda(0));
-    let mut cnn_network = AtaxxCNNNetwork::load(onnx_path, 1, Device::new(0));
-    let mut cpu_network = AtaxxCPUNetwork::load(onnx_path, 1);
+    let mut cnn_network = CudnnNetwork::load(AtaxxStdMapper, onnx_path, 1, Device::new(0));
+    let mut cpu_network = CPUNetwork::load(AtaxxStdMapper, onnx_path, 1);
     // let mut onnx_network = AtaxxOnnxNetwork::load(onnx_v7_path);
 
     println!("Root board eval");
@@ -55,20 +57,18 @@ fn main() {
     // println!("ONNX:");
     // println!("{}", tree(&mut onnx_network).display(4));
 
-
     println!("bot_game");
     let settings = ZeroSettings::new(2.0, false);
     println!("{:#?}", bot_game::run(
         || AtaxxBoard::default(),
         || {
-            let network = AtaxxCPUNetwork::load(onnx_path, 1);
+            let network = CPUNetwork::load(AtaxxStdMapper, onnx_path, 1);
             ZeroBot::new(100, settings, network, PanicRng)
         },
         || {
-            let network = AtaxxCNNNetwork::load(onnx_path, 1, Device::new(0));
+            let network = CudnnNetwork::load(AtaxxStdMapper, onnx_path, 1, Device::new(0));
             ZeroBot::new(100, settings, network, PanicRng)
         },
         1, true, Some(1),
     ));
-
 }

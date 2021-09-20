@@ -1,25 +1,37 @@
+use std::fs::{create_dir_all, File};
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
+use board_game::board::Board;
 use crossbeam::channel::Receiver;
 
-use board_game::board::Board;
-
+use crate::mapping::binary_output::BinaryOutput;
+use crate::mapping::BoardMapper;
 use crate::selfplay::core::Output;
 use crate::selfplay::protocol::{GeneratorUpdate, ServerUpdate};
 
-pub fn collector_main<B: Board, O: Output<B>>(
+pub fn collector_main<B: Board>(
     mut writer: BufWriter<impl Write>,
     games_per_file: usize,
     first_gen: u32,
     output_folder: &str,
-    output: impl Fn(&str) -> O,
+    mapper: impl BoardMapper<B>,
     update_receiver: Receiver<GeneratorUpdate<B>>,
 ) {
+    let new_output = |gen: u32| {
+        let path = format!("{}/games_{}.bin", output_folder, gen);
+        println!("Collector: start writing to {}", path);
+
+        let file = File::create(&path)
+            .expect("Failed to create output file");
+        BinaryOutput::new(mapper, file)
+    };
+
+    create_dir_all(&output_folder)
+        .expect("Failed to create output folder");
+
     let mut curr_gen = first_gen;
-    let curr_path = format!("{}/games_{}.bin", output_folder, curr_gen);
-    let mut curr_output = output(&curr_path);
-    println!("Collector: start writing to {}", curr_path);
+    let mut curr_output = new_output(curr_gen);
 
     let mut curr_game_count = 0;
     let mut estimator = ThroughputEstimator::new();
@@ -37,10 +49,7 @@ pub fn collector_main<B: Board, O: Output<B>>(
                     let prev_i = curr_gen;
                     curr_gen += 1;
                     curr_game_count = 0;
-
-                    let curr_path = format!("{}/games_{}.bin", output_folder, curr_gen);
-                    curr_output = output(&curr_path);
-                    println!("Collector: start writing to {}", curr_path);
+                    curr_output = new_output(curr_gen);
 
                     let message = ServerUpdate::FinishedFile { index: prev_i };
                     writer.write_all(serde_json::to_string(&message).unwrap().as_bytes()).unwrap();

@@ -1,28 +1,53 @@
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
+use board_game::board::Board;
+use board_game::games::ataxx::AtaxxBoard;
+use board_game::games::chess::ChessBoard;
 use crossbeam::channel;
 
-use board_game::board::Board;
 use cuda_sys::wrapper::handle::Device;
 
-use crate::network::Network;
+use crate::mapping::ataxx::AtaxxStdMapper;
+use crate::mapping::BoardMapper;
+use crate::mapping::chess::ChessStdMapper;
 use crate::selfplay::collector::collector_main;
 use crate::selfplay::commander::{commander_main, read_command};
-use crate::selfplay::core::Output;
 use crate::selfplay::generator::generator_main;
 use crate::selfplay::protocol::{Command, StartupSettings};
 
-pub fn selfplay_server_main<B: Board, O: Output<B>, N: Network<B>>(
-    game_name: &str,
-    start_pos: impl Fn() -> B + Sync,
-    output: impl Fn(&str) -> O + Send,
-    load_network: impl Fn(String, usize, Device) -> N + Sync,
-) {
+pub fn selfplay_server_main() {
     let (stream, addr) = TcpListener::bind("::1:63105").unwrap()
         .accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
-    selfplay_handle_connection(game_name, start_pos, output, load_network, stream);
+
+    let writer = BufWriter::new(&stream);
+    let mut reader = BufReader::new(&stream);
+
+    let startup_settings = wait_for_startup_settings(&mut reader);
+    println!("Received startup settings:\n{:#?}", startup_settings);
+
+    match &*startup_settings.game {
+        "ataxx" => {
+            selfplay_start(
+                startup_settings,
+                AtaxxBoard::default,
+                AtaxxStdMapper,
+                reader, writer,
+            )
+        }
+        "chess" => {
+            selfplay_start(
+                startup_settings,
+                ChessBoard::default,
+                ChessStdMapper,
+                reader, writer,
+            )
+        }
+        game => {
+            panic!("Unknown game '{}'", game);
+        }
+    }
 }
 
 fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSettings {
@@ -34,19 +59,13 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
     }
 }
 
-fn selfplay_handle_connection<B: Board, O: Output<B>, N: Network<B>>(
-    game_name: &str,
+fn selfplay_start<B: Board>(
+    startup: StartupSettings,
     start_pos: impl Fn() -> B + Sync,
-    output: impl Fn(&str) -> O + Send,
-    load_network: impl Fn(String, usize, Device) -> N + Sync,
-    stream: TcpStream,
+    mapper: impl BoardMapper<B>,
+    reader: BufReader<impl Read>,
+    writer: BufWriter<impl Write + Send>,
 ) {
-    let writer = BufWriter::new(&stream);
-    let mut reader = BufReader::new(&stream);
-
-    let startup = wait_for_startup_settings(&mut reader);
-    assert_eq!(game_name, startup.game);
-
     let mut cmd_senders = vec![];
     let (update_sender, update_receiver) = channel::unbounded();
 
@@ -58,16 +77,15 @@ fn selfplay_handle_connection<B: Board, O: Output<B>, N: Network<B>>(
                 let update_sender = update_sender.clone();
 
                 let start_pos = &start_pos;
-                let load_network = &load_network;
                 let batch_size = startup.batch_size;
                 s.spawn(move |_| {
-                    generator_main(start_pos, load_network, device, batch_size, cmd_receiver, update_sender)
+                    generator_main(mapper, start_pos, device, batch_size, cmd_receiver, update_sender)
                 });
             }
         }
 
         s.spawn(|_| {
-            collector_main(writer, startup.games_per_gen, startup.first_gen, &startup.output_folder, output, update_receiver)
+            collector_main(writer, startup.games_per_gen, startup.first_gen, &startup.output_folder, mapper, update_receiver)
         });
 
         commander_main(reader, cmd_senders, update_sender);
