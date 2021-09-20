@@ -7,6 +7,8 @@ use chess::{Board, ChessMove, File, Piece, Rank, Square};
 use crate::mapping::{InputMapper, PolicyMapper};
 use crate::util::IndexOf;
 
+//TODO try different embeddings discussed in Discord
+//TODO AlphaZero also adds history, why?
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
 
