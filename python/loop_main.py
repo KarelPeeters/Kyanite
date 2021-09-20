@@ -9,7 +9,7 @@ def main():
     game = find_game("chess")
 
     fixed_settings = FixedSelfplaySettings(
-        game=game,
+        game=game.name,
         threads_per_device=2,
         batch_size=512,
         games_per_gen=100,

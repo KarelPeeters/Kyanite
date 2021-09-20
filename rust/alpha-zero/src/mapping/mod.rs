@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use board_game::board::Board;
 
@@ -9,7 +10,7 @@ pub mod chess;
 pub mod binary_output;
 
 /// A way to encode a board as a tensor.
-pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync {
+pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
     const INPUT_SHAPE: [usize; 3];
     const INPUT_SIZE: usize = Self::INPUT_SHAPE[0] * Self::INPUT_SHAPE[1] * Self::INPUT_SHAPE[2];
 
@@ -18,7 +19,7 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync {
 }
 
 /// A way to encode and decode moves on a board into a tensor.
-pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync {
+pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
     const POLICY_SHAPE: [usize; 3];
     const POLICY_SIZE: usize = Self::POLICY_SHAPE[0] * Self::POLICY_SHAPE[1] * Self::POLICY_SHAPE[2];
 

@@ -15,7 +15,7 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
 ) -> Vec<ZeroEvaluation> {
     let batch_size = boards.len();
     assert_eq!(batch_size * 3, batch_wdl_logit.len());
-    assert_eq!(batch_size * P::POLICY_SIZE, batch_wdl_logit.len());
+    assert_eq!(batch_size * P::POLICY_SIZE, batch_policy_logit.len());
 
     boards.iter().enumerate().map(|(bi, board)| {
         let board = board.borrow();

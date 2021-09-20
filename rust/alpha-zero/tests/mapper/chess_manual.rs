@@ -11,6 +11,11 @@ use alpha_zero::util::display_option;
 use crate::mapper::test_valid_mapping;
 
 #[test]
+fn basic_board_mapping() {
+    test_valid_mapping(ChessStdMapper, &ChessBoard::default());
+}
+
+#[test]
 fn queen_distance() {
     // mostly empty with white queen on A1
     let board = board("8/8/8/6k1/8/6K1/8/Q7 w - - 0 1");

@@ -66,11 +66,10 @@ impl PolicyMapper<ChessBoard> for ChessStdMapper {
         let channel = index / (8 * 8);
         let from_index = index % (8 * 8);
 
-        //TODO handle out of bounds moves for all three types!
         let classified = ClassifiedMove::from_channel(channel);
         let from = index_to_square(from_index);
 
-        Some(classified.to_move(board.inner(), from))
+        classified.to_move(board.inner(), from)
     }
 }
 
@@ -87,7 +86,7 @@ pub enum ClassifiedMove {
 }
 
 impl ClassifiedMove {
-    pub fn to_move(self, board: &Board, from: Square) -> ChessMove {
+    pub fn to_move(self, board: &Board, from: Square) -> Option<ChessMove> {
         match self {
             ClassifiedMove::Queen { direction, distance_m1 } => {
                 let (rank_dir, file_dir) = QUEEN_DIRECTIONS[direction];
@@ -95,7 +94,7 @@ impl ClassifiedMove {
                 let to = square(
                     from.get_rank().to_index() as isize + distance as isize * rank_dir,
                     from.get_file().to_index() as isize + distance as isize * file_dir,
-                );
+                )?;
 
                 let moving_pawn = board.piece_on(from) == Some(Piece::Pawn);
                 let to_backrank = to.get_rank() == board.side_to_move().to_their_backrank();
@@ -105,26 +104,26 @@ impl ClassifiedMove {
                     None
                 };
 
-                ChessMove::new(from, to, promotion)
+                Some(ChessMove::new(from, to, promotion))
             }
             ClassifiedMove::Knight { direction } => {
                 let (rank_delta, file_delta) = KNIGHT_DELTAS[direction];
                 let to = square(
                     from.get_rank().to_index() as isize + rank_delta,
                     from.get_file().to_index() as isize + file_delta,
-                );
+                )?;
 
-                ChessMove::new(from, to, None)
+                Some(ChessMove::new(from, to, None))
             }
             ClassifiedMove::UnderPromotion { direction, piece } => {
                 let to = square(
                     board.side_to_move().to_their_backrank().to_index() as isize,
                     from.get_file() as isize + (direction as isize - 1),
-                );
+                )?;
 
                 let promotion = UNDERPROMOTION_PIECES[piece];
 
-                ChessMove::new(from, to, Some(promotion))
+                Some(ChessMove::new(from, to, Some(promotion)))
             }
         }
     }
@@ -200,9 +199,12 @@ impl ClassifiedMove {
     }
 }
 
-fn square(rank: isize, file: isize) -> Square {
-    assert!((0..8).contains(&rank) && (0..8).contains(&file));
-    Square::make_square(Rank::from_index(rank as usize), File::from_index(file as usize))
+fn square(rank: isize, file: isize) -> Option<Square> {
+    if (0..8).contains(&rank) && (0..8).contains(&file) {
+        Some(Square::make_square(Rank::from_index(rank as usize), File::from_index(file as usize)))
+    } else {
+        None
+    }
 }
 
 const QUEEN_DISTANCE_COUNT: usize = 7;

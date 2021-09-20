@@ -9,7 +9,7 @@ from games import Game
 
 @dataclass
 class FixedSelfplaySettings:
-    game: Game
+    game: str
     threads_per_device: int
     batch_size: int
     games_per_gen: int

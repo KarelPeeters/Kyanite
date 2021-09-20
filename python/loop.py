@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
+from games import find_game
 from selfplay_client import SelfplaySettings, SelfplayClient, StartupSettings, FixedSelfplaySettings
 from train import TrainSettings, train_model, TrainState, save_onnx
 from util import DATA_WIDTH, GameData, load_data, DEVICE
@@ -28,6 +29,10 @@ class LoopSettings:
 
     def new_buffer(self):
         return Buffer(self.buffer_gen_count, self.test_fraction, self.train_settings.batch_size)
+
+    @property
+    def game(self):
+        return find_game(self.fixed_settings.game)
 
 
 @dataclass
@@ -130,7 +135,7 @@ def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
 
 
 def run_loop(settings: LoopSettings):
-    game = settings.fixed_settings.game
+    game = settings.game
 
     print(f"Starting loop with cwd {os.getcwd()}")
     assert path.exists("./rust") and path.exists("./python"), "should be run in root STTTZero folder"
