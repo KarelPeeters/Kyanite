@@ -53,7 +53,9 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
 
             // policy
             for i in 0..M::POLICY_SIZE {
+                // get the policy value if the move exists and is available
                 let p = self.mapper.index_to_move(&board, i)
+                    .filter(|&mv| board.is_available_move(mv))
                     .map_or(0.0, |mv| {
                         let policy_index = moves.iter().position(|&cand| cand == mv).unwrap();
                         policy[policy_index]
