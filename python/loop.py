@@ -8,10 +8,10 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from games import find_game
+from data import GameData, load_data, DEVICE
+from games import find_game, Game
 from selfplay_client import SelfplaySettings, SelfplayClient, StartupSettings, FixedSelfplaySettings
 from train import TrainSettings, train_model, TrainState, save_onnx
-from util import DATA_WIDTH, GameData, load_data, DEVICE
 
 
 @dataclass
@@ -28,7 +28,7 @@ class LoopSettings:
     train_weight_decay: float
 
     def new_buffer(self):
-        return Buffer(self.buffer_gen_count, self.test_fraction, self.train_settings.batch_size)
+        return Buffer(self.game, self.buffer_gen_count, self.test_fraction, self.train_settings.batch_size)
 
     @property
     def game(self):
@@ -73,19 +73,20 @@ class Generation:
 # TODO buffer may not fit in memory, load files in sequence instead
 #   extra advantage: the last gen will always be trained on last
 class Buffer:
-    def __init__(self, max_gen_count: int, test_fraction: float, min_test_size: int):
+    def __init__(self, game: Game, max_gen_count: int, test_fraction: float, min_test_size: int):
+        self.game = game
         self.max_gen_count = max_gen_count
         self.test_fraction = test_fraction
         self.min_test_size = min_test_size
 
-        self.buffer = torch.zeros(0, DATA_WIDTH)
+        self.buffer = torch.zeros(0, game.data_width)
         self.gen_lengths = []
 
         self.train_data: Optional[GameData] = None
         self.test_data: Optional[GameData] = None
 
     def push_load_path(self, games_path: str):
-        train_data, test_data = load_data(games_path, self.test_fraction, limit=None)
+        train_data, test_data = load_data(self.game, games_path, self.test_fraction, limit=None)
 
         if len(self.gen_lengths) == self.max_gen_count:
             start = self.gen_lengths[0]
@@ -96,8 +97,8 @@ class Buffer:
         self.gen_lengths.append(len(train_data))
         self.buffer = torch.cat([self.buffer[start:], train_data.full], dim=0)
 
-        self.train_data = GameData(self.buffer).to(DEVICE)
-        self.test_data = test_data.to(DEVICE)
+        self.train_data = GameData(self.game, self.buffer)
+        self.test_data = test_data
 
     def __len__(self):
         return len(self.buffer)
@@ -119,7 +120,7 @@ def train_new_network(model, buffer: Buffer, gen: Generation):
 
 def load_start_state(settings: LoopSettings) -> (Generation, Buffer):
     """
-    Figure out how many gnerations are already finished.
+    Figure out how many generations are already finished.
     Returns the next generation to start and the buffer state up to that point.
     """
     buffer = settings.new_buffer()

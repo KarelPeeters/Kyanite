@@ -9,8 +9,9 @@ from matplotlib import pyplot
 from torch import nn
 from torch.optim import Optimizer
 
+from data import GameData
 from games import Game
-from util import DEVICE, linspace_int, uniform_window_filter, GameData
+from util import DEVICE, linspace_int, uniform_window_filter
 
 
 def cross_entropy_masked(logits, target, mask):
@@ -85,6 +86,8 @@ class WdlLoss(Enum):
 
 @dataclass
 class TrainSettings:
+    game: Game
+
     epochs: int
     wdl_target: WdlTarget
     wdl_loss: WdlLoss
@@ -115,32 +118,32 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
     batch_count = len(s.train_data) // batch_size
 
     plot_batches = linspace_int(batch_count, s.settings.plot_points)
-    plot_data = torch.full((len(plot_batches), 7), np.nan, device=DEVICE)
+    plot_data = torch.full((len(plot_batches), 7), np.nan)
     next_plot_i = 0
 
-    train_shuffle = torch.randperm(len(s.train_data), device=DEVICE)
+    train_shuffle = torch.randperm(len(s.train_data))
 
     for bi in range(batch_count):
         is_plot_batch = bi in plot_batches
 
         train_batch_i = train_shuffle[bi * batch_size:(bi + 1) * batch_size]
-        train_data_batch = s.train_data[train_batch_i].random_symmetry()
+        train_data_batch = s.train_data[train_batch_i].random_symmetry().to(DEVICE)
 
         if is_plot_batch:
             model.eval()
-            test_batch_i = torch.randint(len(s.test_data), (batch_size,), device=DEVICE)
-            test_data_batch = s.test_data[test_batch_i].random_symmetry()
+            test_batch_i = torch.randint(len(s.test_data), (batch_size,))
+            test_data_batch = s.test_data[test_batch_i].random_symmetry().to(DEVICE)
 
             test_value_loss_ce, test_value_loss_mse, test_policy_loss = \
                 evaluate_model(model, test_data_batch, s.settings.wdl_target)
             test_value_loss = s.settings.wdl_loss.select(test_value_loss_ce, test_value_loss_mse)
 
             test_loss = test_value_loss + s.settings.policy_weight * test_policy_loss
-            plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss], device=DEVICE)
+            plot_data[next_plot_i, 3:6] = torch.tensor([test_loss, test_value_loss, test_policy_loss])
 
             print(
-                f"Test batch: {test_loss:.2f} = {test_value_loss:.2f} + c * {test_policy_loss:.2f},"
-                f" note: ce={test_value_loss_ce}, mse={test_value_loss_mse}"
+                f"Test batch: {test_loss:.3f} = {test_value_loss:.3f} + c * {test_policy_loss:.3f},"
+                f" note: ce={test_value_loss_ce:.3f}, mse={test_value_loss_mse:.3f}"
             )
 
         model.train()
@@ -159,9 +162,9 @@ def train_model_epoch(ei: int, model: nn.Module, s: TrainState) -> (np.array, np
             next_plot_i += 1
 
         print(
-            f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.2f} ="
-            f" {train_value_loss:.2f} + c * {train_policy_loss:.2f},"
-            f" note: ce={train_value_loss_ce}, mse={train_value_loss_mse}"
+            f"Epoch {ei + 1}, train batch {bi}/{batch_count}: {train_loss:.3f} ="
+            f" {train_value_loss:.3f} + c * {train_policy_loss:.3f},"
+            f" note: ce={train_value_loss_ce:.3f}, mse={train_value_loss_mse:.3f}"
         )
 
         s.optimizer.zero_grad()
@@ -215,7 +218,7 @@ def plot_train_data(s: TrainState):
 def save_onnx(game: Game, network, onnx_path: str):
     print(f"Saving model to {onnx_path}")
     network.eval()
-    example_input = torch.zeros(1, *game.input_shape(), device=DEVICE)
+    example_input = torch.zeros(1, *game.input_shape, device=DEVICE)
     example_outputs = network(example_input)
     torch.onnx.export(
         model=network,
@@ -229,6 +232,7 @@ def save_onnx(game: Game, network, onnx_path: str):
 
 
 def train_model(model: nn.Module, s: TrainState):
+    game = s.settings.game
     epochs = s.settings.epochs
     output_path = s.output_path
 
@@ -236,14 +240,14 @@ def train_model(model: nn.Module, s: TrainState):
 
     os.makedirs(s.output_path, exist_ok=True)
     torch.jit.save(model, f"{output_path}/model_{0}_epochs.pt")
-    save_onnx(model, f"{output_path}/model_{0}_epochs.onnx")
+    save_onnx(game, model, f"{output_path}/model_{0}_epochs.onnx")
 
     for ei in range(epochs):
         print(f"Starting epoch {ei + 1}/{epochs}")
 
         plot_data = train_model_epoch(ei, model, s)
         torch.jit.save(model, f"{output_path}/model_{ei + 1}_epochs.pt")
-        save_onnx(model, f"{output_path}/model_{ei + 1}_epochs.onnx")
+        save_onnx(game, model, f"{output_path}/model_{ei + 1}_epochs.onnx")
 
         if all_plot_data is None:
             all_plot_data = plot_data

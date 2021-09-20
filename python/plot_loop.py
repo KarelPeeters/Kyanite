@@ -108,7 +108,6 @@ def plot_loops(
 
 if __name__ == '__main__':
     loops = [
-        "../data/ataxx/test_loop",
-        # "../data/derp/retrain/",
+        "../data/var_game/test_loop",
     ]
-    plot_loops(loops, start_gen=100, average=True, smooth_window=7, breaks=[330, 379])
+    plot_loops(loops, start_gen=0, average=False, smooth_window=1, breaks=[])

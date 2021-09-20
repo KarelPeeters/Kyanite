@@ -11,43 +11,44 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game.name,
         threads_per_device=2,
-        batch_size=512,
-        games_per_gen=100,
+        batch_size=256,
+        games_per_gen=64,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
         zero_temp_move_count=10,
-        max_game_length=500,
+        max_game_length=200,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.1,
         full_search_prob=1.0,
-        full_iterations=1000,
-        part_iterations=1000,
+        full_iterations=400,
+        part_iterations=400,
         exploration_weight=2.0,
         random_symmetries=True,
         cache_size=0,
     )
 
     train_settings = TrainSettings(
+        game=game,
         epochs=1,
         wdl_target=WdlTarget.Final,
         wdl_loss=WdlLoss.CrossEntropy,
         policy_weight=1.0,
-        batch_size=128,
+        batch_size=512,
         plot=False,
         plot_points=100,
         plot_smooth_points=50,
     )
 
     def initial_network():
-        return TowerModel(game, 32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
+        return TowerModel(game, 32, 1, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
 
     settings = LoopSettings(
         root_path="data/var_game/test_loop",
         initial_network=initial_network,
-        buffer_gen_count=20,
+        buffer_gen_count=2,
         fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,

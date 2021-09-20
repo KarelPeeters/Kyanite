@@ -103,6 +103,7 @@ class MobileV2Block(nn.Module):
         return output
 
 
+# TODO try increasing the number of channels as depth increases
 class TowerModel(nn.Module):
     def __init__(
             self,

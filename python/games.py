@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from util import prod
+
 
 @dataclass
 class Game:
@@ -8,11 +10,25 @@ class Game:
     input_channels: int
     policy_channels: int
 
+    @property
     def input_shape(self):
         return self.input_channels, self.board_size, self.board_size
 
+    @property
     def policy_shape(self):
         return self.policy_channels, self.board_size, self.board_size
+
+    @property
+    def input_size(self):
+        return prod(self.input_shape)
+
+    @property
+    def policy_size(self):
+        return prod(self.policy_shape)
+
+    @property
+    def data_width(self):
+        return 3 + 3 + 2 * self.policy_size + self.input_size
 
 
 # TODO add repetition and n-move rule counters to board inputs?
