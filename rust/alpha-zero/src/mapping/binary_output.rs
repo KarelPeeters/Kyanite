@@ -16,6 +16,10 @@ pub struct BinaryOutput<W: Write, B: Board, M: BoardMapper<B>> {
     ph: PhantomData<B>,
 }
 
+pub fn binary_output_width<B: Board, M: BoardMapper<B>>() -> usize {
+    1 + 1 + 2 * 3 + 2 * M::POLICY_SIZE + M::INPUT_SIZE
+}
+
 impl<W: Write, B: Board, M: BoardMapper<B>> BinaryOutput<W, B, M> {
     pub fn new(mapper: M, writer: W) -> Self {
         BinaryOutput { mapper, writer, next_game_id: 0, ph: PhantomData }
@@ -24,6 +28,8 @@ impl<W: Write, B: Board, M: BoardMapper<B>> BinaryOutput<W, B, M> {
 
 impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> {
     fn append(&mut self, simulation: Simulation<B>) {
+        let expected_single_size = binary_output_width::<B, M>();
+
         let game_id = self.next_game_id;
         self.next_game_id += 1;
 
@@ -31,14 +37,17 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
         let position_count = simulation.positions.len();
 
         // fill data
-        for pos in simulation.iter() {
+        for (pos_id, pos) in simulation.iter().enumerate() {
             let board = pos.board;
 
             let moves: Vec<_> = board.available_moves().collect();
             let policy = pos.evaluation.policy;
 
-            // game id
+            let len_before_position = data.len();
+
+            // game and position id
             data.push(game_id as f32);
+            data.push(pos_id as f32);
 
             // wdls
             data.extend_from_slice(&pos.final_wdl.to_slice());
@@ -64,12 +73,13 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
             }
 
             // board input
-            let start = data.len();
+            let len_before_input = data.len();
             self.mapper.append_board_to(&mut data, &board);
-            assert_eq!(M::INPUT_SIZE, data.len() - start);
+            assert_eq!(M::INPUT_SIZE, data.len() - len_before_input);
+
+            assert_eq!(expected_single_size, data.len() - len_before_position);
         }
 
-        let expected_single_size = 1 + 2 * 3 + 2 * M::POLICY_SIZE + M::INPUT_SIZE;
         let expected_data_size = position_count * expected_single_size;
         assert_eq!(expected_data_size, data.len());
 

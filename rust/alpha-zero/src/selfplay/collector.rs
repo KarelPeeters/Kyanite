@@ -4,6 +4,8 @@ use std::time::Instant;
 
 use board_game::board::Board;
 use crossbeam::channel::Receiver;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
@@ -19,12 +21,14 @@ pub fn collector_main<B: Board>(
     update_receiver: Receiver<GeneratorUpdate<B>>,
 ) {
     let new_output = |gen: u32| {
-        let path = format!("{}/games_{}.bin", output_folder, gen);
+        let path = format!("{}/games_{}.bin.gz", output_folder, gen);
         println!("Collector: start writing to {}", path);
 
         let file = File::create(&path)
             .expect("Failed to create output file");
-        BinaryOutput::new(mapper, file)
+        // TODO try different compression levels
+        let writer = GzEncoder::new(file, Compression::fast());
+        BinaryOutput::new(mapper, writer)
     };
 
     create_dir_all(&output_folder)
