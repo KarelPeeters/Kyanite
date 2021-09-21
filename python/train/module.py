@@ -1,5 +1,4 @@
 import torch.nn.functional as nnf
-from pytorch_lightning import LightningModule
 from torch import nn
 from torch.optim import Adam
 
@@ -8,7 +7,7 @@ from data.view import GameDataView
 from train.loss import cross_entropy_masked
 
 
-class TrainModule(LightningModule):
+class TrainModule:
     def __init__(self, game: Game, model: nn.Module):
         super().__init__()
 

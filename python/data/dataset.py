@@ -1,16 +1,11 @@
 import gzip
 import os
-from abc import ABC
 
 import h5py
 import numpy as np
+from torch.utils.data import Dataset
 
 from data.games import Game
-
-
-class Dataset(ABC):
-    def __getitem__(self, index):
-        pass
 
 
 class GameDataset(Dataset):

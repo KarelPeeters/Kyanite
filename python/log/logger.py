@@ -1,21 +1,13 @@
-import itertools
-import os
-import random
-import signal
-import sys
-import time
 from dataclasses import dataclass
-from threading import Thread
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 
-
 @dataclass
 class FinishedLogData:
-    gen_keys: List[str]
-    batch_keys: List[str]
+    gen_keys: List[Tuple[str, str]]
+    batch_keys: List[Tuple[str, str]]
 
     gen_data: np.array
     gen_average_data: np.array
@@ -101,7 +93,9 @@ class Logger:
 
         self._curr_batch_data = None
 
-    def log_gen(self, key: str, value):
+    def log_gen(self, ty: str, key: str, value):
+        key = (ty, key)
+
         assert self._curr_gen_data is not None, "No gen has started yet"
         assert key not in self._curr_gen_data, f"Value for {key} already logged in this gen"
         if self.gen_keys is not None:
@@ -109,7 +103,9 @@ class Logger:
 
         self._curr_gen_data[key] = value
 
-    def log_batch(self, key: str, value):
+    def log_batch(self, ty: str, key: str, value):
+        key = (ty, key)
+
         assert self._curr_batch_data is not None, "No batch has started yet"
         assert key not in self._curr_batch_data, f"Value for {key} already logged in this batch"
         if self.batch_keys is not None:
@@ -144,48 +140,3 @@ class GrowableArray:
         # actually append values
         self._values[self._next_i, :] = values
         self._next_i += 1
-
-
-def main_thread(logger: Logger, plotter):
-    loss_a = 1.0
-    loss_b = 1.0
-    loss_c = 1.0
-
-    for _ in itertools.count():
-        logger.start_gen()
-
-        loss_c *= random.uniform(0.9, 1.1)
-        logger.log_gen("loss_c", loss_c)
-
-        for bi in range(20):
-            logger.start_batch()
-
-            loss_a *= random.uniform(0.9, 1.1)
-            loss_b *= random.uniform(0.9, 1.1)
-            logger.log_batch("loss_a", loss_a)
-            logger.log_batch("loss_b", loss_b)
-
-            logger.finish_batch()
-
-        logger.finish_gen()
-        plotter.update()
-
-        time.sleep(1/60)
-
-
-def main():
-    from log.plotter import LogPlotter
-    from log.plotter import start_qt_app
-    app = start_qt_app()
-
-    logger = Logger()
-    plotter = LogPlotter(logger)
-
-    thread = Thread(target=main_thread, args=(logger, plotter))
-    thread.start()
-
-    app.exec()
-
-
-if __name__ == '__main__':
-    main()
