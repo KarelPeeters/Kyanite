@@ -2,7 +2,7 @@ from typing import Optional, Callable
 
 from torch import nn
 
-from games import Game
+from data.games import Game
 
 
 class ResBlock(nn.Module):
@@ -103,7 +103,6 @@ class MobileV2Block(nn.Module):
         return output
 
 
-# TODO try increasing the number of channels as depth increases
 class TowerModel(nn.Module):
     def __init__(
             self,
@@ -135,14 +134,7 @@ class TowerModel(nn.Module):
                 nn.Conv2d(tower_channels, game.policy_channels, (1, 1)),
             )
         else:
-            self.policy_head = nn.Sequential(
-                nn.Conv2d(tower_channels, 8, (1, 1)),
-                nn.BatchNorm2d(8),
-                nn.ReLU(),
-                nn.Flatten(),
-                nn.Linear(8 * game.board_size ** 2, game.policy_channels * game.board_size ** 2),
-                nn.Unflatten(1, (game.policy_channels, game.board_size, game.board_size))
-            )
+            assert False, "Currently not supported"
 
         if value_conv:
             self.wdl_head = nn.Sequential(
@@ -164,7 +156,15 @@ class TowerModel(nn.Module):
             )
 
     def forward(self, input):
+        """
+        Returns `(wdl, policy)`
+         * `input` is a tensor of shape (B, *game.input_shape)
+         * `wdl` is a tensor of shape (B, 3) with win/draw/loss logits
+         * `policy` is a tensor of shape (B, *game.policy_shape)
+        """
+
         common = self.tower(input)
         wdl = self.wdl_head(common)
         policy = self.policy_head(common)
+
         return wdl, policy

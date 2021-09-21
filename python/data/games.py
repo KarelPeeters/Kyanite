@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-
-from util import prod
+from math import prod
 
 
 @dataclass
@@ -28,12 +27,18 @@ class Game:
 
     @property
     def data_width(self):
-        return 3 + 3 + 2 * self.policy_size + self.input_size
+        # game id, position id, final wdl, est wdl, policy mask, policy, input
+        return 1 + 1 + 3 + 3 + 2 * self.policy_size + self.input_size
+
+    @classmethod
+    def find(cls, name: str):
+        for game in GAMES:
+            if game.name == name:
+                return game
+        raise KeyError("Game '{}' not found", name)
 
 
 # TODO add repetition and n-move rule counters to board inputs?
-# TODO try separating en passant for different colors
-
 GAMES = [
     Game(
         name="ataxx",
@@ -42,6 +47,7 @@ GAMES = [
         policy_channels=17,
     ),
     Game(
+        # TODO experiment with policy encodings
         name="chess",
         board_size=8,
         input_channels=2 + 6 * 2 + 4 + 1,
@@ -54,10 +60,3 @@ GAMES = [
         policy_channels=1,
     )
 ]
-
-
-def find_game(name: str):
-    for game in GAMES:
-        if game.name == name:
-            return game
-    raise KeyError("Game '{}' not found", name)
