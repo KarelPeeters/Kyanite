@@ -1,6 +1,4 @@
-import itertools
 import random
-import time
 from threading import Thread
 
 from lib.logger import Logger, FinishedLogData

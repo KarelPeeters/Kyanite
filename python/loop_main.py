@@ -13,20 +13,20 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=64,
-        games_per_gen=16,
+        batch_size=256,
+        games_per_gen=64,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
         zero_temp_move_count=10,
-        max_game_length=100,
+        max_game_length=150,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.1,
         full_search_prob=1.0,
-        full_iterations=20,
-        part_iterations=20,
+        full_iterations=600,
+        part_iterations=600,
         exploration_weight=2.0,
         random_symmetries=True,
         cache_size=0,
@@ -36,19 +36,19 @@ def main():
         game=game,
         wdl_target=WdlTarget.Final,
         wdl_loss=WdlLoss.MSE,
-        policy_weight=1.0,
-        batch_size=32,
-        batches=10,
+        policy_weight=1/3,
+        batch_size=256,
+        batches=8,
     )
 
     def initial_network():
-        return TowerModel(game, 32, 1, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
+        return TowerModel(game, 32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         root_path="data/new_loop/test",
         initial_network=initial_network,
-        target_buffer_size=1024,
+        target_buffer_size=65_000,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-5),
 
