@@ -20,13 +20,16 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
     fn append_board_to(&self, result: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
 
-        //next player
+        //absolute reference for the current player
         for color in chess::ALL_COLORS {
             result.extend(std::iter::repeat((inner.side_to_move() == color) as u8 as f32).take(8 * 8));
         }
 
+        // everything else is from the next player's POV
+        let pov_colors = [inner.side_to_move(), !inner.side_to_move()];
+
         //pieces
-        for color in chess::ALL_COLORS {
+        for &color in &pov_colors {
             for piece in chess::ALL_PIECES {
                 for square in chess::ALL_SQUARES {
                     let value = inner.color_on(square) == Some(color) && inner.piece_on(square) == Some(piece);
@@ -36,7 +39,7 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         }
 
         //castling rights
-        for color in chess::ALL_COLORS {
+        for &color in &pov_colors {
             let rights = inner.castle_rights(color);
             result.extend(std::iter::repeat((rights.has_kingside()) as u8 as f32).take(8 * 8));
             result.extend(std::iter::repeat((rights.has_queenside()) as u8 as f32).take(8 * 8));
