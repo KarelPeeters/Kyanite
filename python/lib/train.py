@@ -51,22 +51,22 @@ class TrainSettings:
     batches: int
 
     def run_train(self, dataset: Dataset, optimizer: Optimizer, network: nn.Module, logger: Logger):
-        # noinspection PyTypeChecker
-        random_sampler = RandomSampler(dataset, replacement=True)
-        batch_sampler = BatchSampler(random_sampler, batch_size=self.batch_size, drop_last=True)
-        loader = DataLoader(dataset, batch_sampler=batch_sampler)
+        loader = batch_loader(dataset, self.batch_size)
 
         # noinspection PyTypeChecker
         visits_per_sample = self.batches * self.batch_size / len(dataset)
         logger.log_gen("small", "visits_per_sample", visits_per_sample)
 
-        for batch in loader:
+        for bi, batch in enumerate(loader):
+            if bi > self.batches:
+                break
             batch = batch.to(DEVICE)
 
             logger.start_batch()
 
             optimizer.zero_grad(set_to_none=True)
-            loss = self.evaluate_loss(network, logger, batch)
+            network.train()
+            loss = self.evaluate_loss(network, "train", logger.log_batch, batch)
             loss.backward()
             optimizer.step()
 
@@ -77,8 +77,7 @@ class TrainSettings:
 
             logger.finish_batch()
 
-    def evaluate_loss(self, network: nn.Module, logger: Logger, batch: torch.Tensor):
-        network.train()
+    def evaluate_loss(self, network: nn.Module, log_prefix: str, log, batch: torch.Tensor):
         view = GameDataView(self.game, batch)
 
         wdl_logit, policy_logit = network(view.input)
@@ -96,11 +95,21 @@ class TrainSettings:
         )
         loss_total = loss_wdl + self.policy_weight * loss_policy_ce
 
-        logger.log_batch("loss", "wdl_final_ce", loss_wdl_final_ce)
-        logger.log_batch("loss", "wdl_final_mse", loss_wdl_final_mse)
-        logger.log_batch("loss", "wdl_est_ce", loss_wdl_est_ce)
-        logger.log_batch("loss", "wdl_est_mse", loss_wdl_est_mse)
-        logger.log_batch("loss", "policy_ce", loss_policy_ce)
-        logger.log_batch("loss", "total", loss_total)
+        if False and log_prefix == "train":
+            log("loss-wdl", f"{log_prefix} final_ce", loss_wdl_final_ce)
+            log("loss-wdl", f"{log_prefix} est_ce", loss_wdl_est_ce)
+            log("loss-wdl", f"{log_prefix} est_mse", loss_wdl_est_mse)
+
+        log("loss-wdl", f"{log_prefix} final_mse", loss_wdl_final_mse)
+        log("loss-policy", f"{log_prefix} policy_ce", loss_policy_ce)
+        log("loss-total", f"{log_prefix} total", loss_total)
 
         return loss_total
+
+
+def batch_loader(dataset: Dataset, batch_size: int) -> DataLoader:
+    # noinspection PyTypeChecker
+    random_sampler = RandomSampler(dataset, replacement=True)
+    batch_sampler = BatchSampler(random_sampler, batch_size=batch_size, drop_last=True)
+    loader = DataLoader(dataset, batch_sampler=batch_sampler)
+    return loader

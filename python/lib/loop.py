@@ -4,20 +4,20 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
-from typing import Callable, Optional, Tuple, Iterator
+from typing import Callable, Optional, Tuple, Iterator, List
 
 import torch
 from torch import nn
 from torch.optim import Optimizer
 from torch.utils.data import ConcatDataset
 
-from lib.dataset import GameDataset
+from lib.dataset import GameDataset, GameDataFile
 from lib.games import Game
 from lib.logger import Logger, FinishedLogData
 from lib.plotter import LogPlotter, start_qt_app
 from lib.save_onnx import save_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
-from lib.train import TrainSettings
+from lib.train import TrainSettings, batch_loader
 from lib.util import DEVICE, print_param_count
 
 
@@ -45,6 +45,7 @@ class LoopSettings:
     initial_network: Callable[[], nn.Module]
 
     target_buffer_size: int
+    test_fraction: float
     optimizer: Callable[[Iterator[nn.Parameter]], Optimizer]
 
     fixed_settings: FixedSelfplaySettings
@@ -81,6 +82,8 @@ class LoopSettings:
 
         app = start_qt_app()
         plotter = LogPlotter(logger)
+        if start_gen.gi != 0:
+            plotter.update()
 
         thread = Thread(target=self.run_loop_thread,
                         args=(start_gen, buffer, logger, plotter, network, network_path_onnx))
@@ -120,11 +123,12 @@ class LoopSettings:
             os.makedirs(gen.train_path, exist_ok=True)
 
             buffer.append(logger, gen.games_path)
-            buffer_dataset = buffer.as_dataset()
+            self.evaluate_network(buffer, logger, network)
 
+            train_dataset = buffer.full_train_dataset()
+            print(f"Training network on buffer with size {len(train_dataset)}")
             start = time.perf_counter()
-            print(f"Training network on buffer with size {len(buffer_dataset)}")
-            self.train_settings.run_train(buffer_dataset, optimizer, network, logger)
+            self.train_settings.run_train(train_dataset, optimizer, network, logger)
             logger.log_gen("time", "train", time.perf_counter() - start)
 
             torch.jit.save(network, gen.network_path_pt)
@@ -141,7 +145,7 @@ class LoopSettings:
 
     def load_start_state(self) -> Tuple['Generation', 'Buffer', Logger, nn.Module, str]:
         game = self.fixed_settings.game
-        buffer = Buffer(game, self.target_buffer_size)
+        buffer = Buffer(game, self.target_buffer_size, self.test_fraction)
 
         for gi in itertools.count():
             gen = Generation.from_gi(self, gi)
@@ -170,6 +174,21 @@ class LoopSettings:
 
             print(f"Found finished generation {gi}")
             buffer.append(None, gen.games_path)
+
+    def evaluate_network(self, buffer: 'Buffer', logger: Logger, network: nn.Module):
+        setups = [
+            ("eval-test-buffer", buffer.full_test_dataset()),
+            ("eval-test-last", buffer.last_test_dataset()),
+            ("eval-train-buffer", buffer.full_train_dataset()),
+            ("eval-train-last", buffer.last_train_dataset()),
+        ]
+
+        network.eval()
+        for prefix, dataset in setups:
+            # noinspection PyTypeChecker
+            batch_size = min(len(dataset), self.train_settings.batch_size)
+            batch = next(iter(batch_loader(dataset, batch_size))).to(DEVICE)
+            self.train_settings.evaluate_loss(network, prefix, logger.log_gen, batch)
 
 
 @dataclass
@@ -205,27 +224,46 @@ class Generation:
 
 
 class Buffer:
-    def __init__(self, game: Game, target_size: int):
+    def __init__(self, game: Game, target_size: int, test_fraction: float):
         self.game = game
         self.target_size = target_size
-        self.current = []
+        self.test_fraction = test_fraction
+
+        self.current_train: List[GameDataset] = []
+        self.current_test: List[GameDataset] = []
 
     def append(self, logger: Optional[Logger], path: str):
-        new = GameDataset.convert_and_open(self.game, path)
-        self.current.append(new)
+        new = GameDataFile(self.game, path)
+
+        new_train, new_test = new.split_dataset(self.test_fraction)
+        self.current_train.append(new_train)
+        self.current_test.append(new_test)
 
         # drop old datasets until we would go below the target size
-        while sum([len(d) for d in self.current[1:]]) > self.target_size:
-            del self.current[0]
+        while sum([len(d) for d in self.current_train[1:]]) > self.target_size:
+            del self.current_train[0]
+            del self.current_test[0]
 
+        new_full = new.full_dataset()
         if logger:
             logger.log_gen("game", "games/gen", new.game_count)
-            logger.log_gen("game", "positions/game", len(new) / new.game_count)
+            logger.log_gen("game", "positions/game", len(new_full) / new.game_count)
             logger.log_gen("game", "shortest game", min(new.game_lengths))
             logger.log_gen("game", "longest game", max(new.game_lengths))
 
-            logger.log_gen("buffer", "gens", len(self.current))
-            logger.log_gen("buffer", "positions", len(self.as_dataset()))
+            logger.log_gen("buffer", "gens", len(self.current_train))
+            logger.log_gen("buffer", "train positions", len(self.full_train_dataset()))
+            logger.log_gen("buffer", "test positions", len(self.full_test_dataset()))
+            logger.log_gen("buffer", "last test positions", len(self.last_test_dataset()))
 
-    def as_dataset(self):
-        return ConcatDataset(self.current)
+    def full_train_dataset(self):
+        return ConcatDataset(self.current_train)
+
+    def last_train_dataset(self):
+        return self.current_train[-1]
+
+    def full_test_dataset(self):
+        return ConcatDataset(self.current_test)
+
+    def last_test_dataset(self):
+        return self.current_test[-1]

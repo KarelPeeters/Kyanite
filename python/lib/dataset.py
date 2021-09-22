@@ -8,43 +8,67 @@ from torch.utils.data import Dataset
 from lib.games import Game
 
 
-class GameDataset(Dataset):
+class GameDataFile:
     def __init__(self, game: Game, path: str):
-        super().__init__()
-        assert path.endswith(".hdf5"), "Expected .hdf5 file, maybe you meant to use convert_and_open?"
-
-        f = h5py.File(path, "r")
+        f = load_as_h5_file(game, path)
         actual_game = f["game"][()].decode()
         assert game.name == actual_game, f"Expected game {game.name}, got {actual_game}"
-
         self.game = game
+
         self.positions = f["positions"]
-
-        game_ids = self.positions[:, 0]
-        position_ids = self.positions[:, 1]
-
-        self.game_count = int(np.max(game_ids) + 1)
-        self.game_lengths = (position_ids[np.diff(position_ids, append=0) < 0] + 1).astype(int)
-
         assert len(self.positions.shape) == 2
         assert self.positions.shape[1] == game.data_width
 
+        self.game_ids = self.positions[:, 0].astype(int)
+        self.position_ids = self.positions[:, 1].astype(int)
+
+        self.position_count = len(self.positions)
+        self.game_count = int(np.max(self.game_ids) + 1)
+
+        # TODO this assumes all positions are in the data file, which will not be true with full_search_prob != 1
+        self.game_lengths = (self.position_ids[np.diff(self.position_ids, append=0) < 0] + 1).astype(int)
+
+    def full_dataset(self) -> 'GameDataset':
+        indices = np.arange(self.position_count)
+        return GameDataset(self, indices)
+
+    def split_dataset(self, test_fraction: float) -> ('GameDataset', 'GameDataset'):
+        assert 0.0 <= test_fraction <= 1
+        test_count = int(test_fraction * self.game_count)
+
+        test_game_indices = np.random.choice(self.game_count, test_count, replace=False)
+        is_test_game = np.zeros(self.game_count, dtype=bool)
+        is_test_game[test_game_indices] = True
+
+        test_indices = np.argwhere(is_test_game[self.game_ids]).squeeze(1)
+        train_indices = np.argwhere(~is_test_game[self.game_ids]).squeeze(1)
+
+        return GameDataset(self, train_indices), GameDataset(self, test_indices)
+
+
+class GameDataset(Dataset):
+    def __init__(self, file: GameDataFile, indices: np.array):
+        self.file = file
+        self.indices = indices
+
     def __getitem__(self, index):
-        return self.positions[index, :]
+        return self.file.positions[self.indices[index], :]
 
     def __len__(self):
-        return len(self.positions)
+        return len(self.indices)
 
-    @classmethod
-    def convert_and_open(cls, game: Game, path: str):
-        if path.endswith(".bin.gz"):
-            h5_path = map_bin_gz_to_hdf5(game, path)
-        else:
-            assert path.endswith(".hdf5"), f"Expected .hdf5 or .bin.gz file, got {path}"
-            h5_path = path
 
-        print(f"Loading {h5_path}")
-        return GameDataset(game, h5_path)
+def load_as_h5_file(game: Game, path: str):
+    assert path.endswith(".bin.gz") or path.endswith(".hdf5"), f"Expected .hdf5 or .bin.gz file, got {path}"
+    assert os.path.exists(path), f"Path {os.path.abspath(path)} does not exist"
+
+    if path.endswith(".bin.gz"):
+        h5_path = map_bin_gz_to_hdf5(game, path)
+    else:
+        h5_path = path
+
+    print(f"Loading {h5_path}")
+    return h5py.File(h5_path, "r")
 
 
 def map_bin_gz_to_hdf5(game: Game, bin_path: str) -> str:

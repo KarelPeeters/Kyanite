@@ -75,17 +75,26 @@ class LogPlotter(QObject):
         control_layout.addWidget(autoRangeButton)
         autoRangeButton.pressed.connect(self.on_auto_range_pressed)
 
-        smooth_slider = QSlider(Qt.Horizontal)
-        smooth_slider.setMinimum(1)
-        smooth_slider.setMaximum(21)
-        smooth_slider.setSingleStep(2)
-        smooth_slider.setValue(10)
-        smooth_slider.valueChanged.connect(self.data_update_slot)
-        self.smooth_slider = smooth_slider
-        control_layout.addWidget(smooth_slider)
+        def slider(value: int, max_value: int):
+            assert max_value % 2 != 0
 
-        self.smooth_view = QLabel()
-        control_layout.addWidget(self.smooth_view)
+            slider = QSlider(Qt.Horizontal)
+            slider.setMinimum(1)
+            slider.setMaximum(max_value)
+            slider.setSingleStep(2)
+            slider.setValue(value)
+            slider.valueChanged.connect(self.data_update_slot)
+            return slider
+
+        self.batch_smooth_slider = slider(11, 101)
+        control_layout.addWidget(self.batch_smooth_slider)
+        self.batch_smooth_label = QLabel()
+        control_layout.addWidget(self.batch_smooth_label)
+
+        self.gen_smooth_slider = slider(1, 21)
+        control_layout.addWidget(self.gen_smooth_slider)
+        self.gen_smooth_label = QLabel()
+        control_layout.addWidget(self.gen_smooth_label)
 
         control_layout.addStretch(1)
 
@@ -132,23 +141,25 @@ class LogPlotter(QObject):
     def update_plot_data(self, data: FinishedLogData):
         gen_axis = 0.5 + np.arange(len(data.gen_data))
 
-        filter_size = self.smooth_slider.value() // 2 * 2 + 1
-        self.smooth_view.setText(str(filter_size))
-
-        def filter(x):
-            x_filter_size = min(len(x), filter_size)
-            if x_filter_size < 3:
+        def filter(x, filter_size: int):
+            window_length = min(len(x), filter_size) // 2 * 2 + 1
+            if window_length < 3 or len(x) < window_length:
                 return x
             else:
-                return scipy.signal.savgol_filter(x, x_filter_size, polyorder=2)
+                return scipy.signal.savgol_filter(x, window_length, polyorder=2)
+
+        gen_filter_size = self.gen_smooth_slider.value()
+        batch_filter_size = self.batch_smooth_slider.value()
+        self.gen_smooth_label.setText(str(gen_filter_size))
+        self.batch_smooth_label.setText(str(batch_filter_size))
 
         for i, k in enumerate(data.gen_keys):
-            self.gen_plots[k].setData(gen_axis, filter(data.gen_data[:, i]))
+            self.gen_plots[k].setData(gen_axis, filter(data.gen_data[:, i], gen_filter_size))
         for i, k in enumerate(data.batch_keys):
-            self.gen_average_plots[k].setData(gen_axis, filter(data.gen_average_data[:, i]))
+            self.gen_average_plots[k].setData(gen_axis, filter(data.gen_average_data[:, i], gen_filter_size))
 
         for i, k in enumerate(data.batch_keys):
-            self.batch_plots[k].setData(data.batch_axis, filter(data.batch_data[:, i]))
+            self.batch_plots[k].setData(data.batch_axis, filter(data.batch_data[:, i], batch_filter_size))
 
 
 class PlotterThread(QThread):
