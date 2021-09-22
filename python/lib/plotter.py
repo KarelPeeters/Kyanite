@@ -6,16 +6,18 @@ from typing import Optional
 import darkdetect
 import numpy as np
 import pyqtgraph as pg
+import scipy.signal
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, Qt
 from PyQt5.QtGui import QColor, QColorConstants
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
+    QSlider, QLabel
 from pyqtgraph import PlotWidget
 
 from lib.logger import Logger, FinishedLogData
 
 
 class LogPlotter(QObject):
-    data_update_slot = pyqtSignal(object)
+    data_update_slot = pyqtSignal()
 
     def __init__(self, logger: Logger):
         super().__init__()
@@ -31,11 +33,13 @@ class LogPlotter(QObject):
         self.batch_plots = None
 
     def update(self):
-        data = self.logger.get_finished_data()
+        self.data = self.logger.get_finished_data()
         # noinspection PyUnresolvedReferences
-        self.data_update_slot.emit(data)
+        self.data_update_slot.emit()
 
-    def on_update_data(self, data: FinishedLogData):
+    def on_update_data(self):
+        data = self.data
+
         if self.window is None:
             self.create_window()
             self.create_plots(data)
@@ -71,7 +75,19 @@ class LogPlotter(QObject):
         control_layout.addWidget(autoRangeButton)
         autoRangeButton.pressed.connect(self.on_auto_range_pressed)
 
-        control_layout.addStretch()
+        smooth_slider = QSlider(Qt.Horizontal)
+        smooth_slider.setMinimum(1)
+        smooth_slider.setMaximum(21)
+        smooth_slider.setSingleStep(2)
+        smooth_slider.setValue(10)
+        smooth_slider.valueChanged.connect(self.data_update_slot)
+        self.smooth_slider = smooth_slider
+        control_layout.addWidget(smooth_slider)
+
+        self.smooth_view = QLabel()
+        control_layout.addWidget(self.smooth_view)
+
+        control_layout.addStretch(1)
 
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
@@ -116,13 +132,23 @@ class LogPlotter(QObject):
     def update_plot_data(self, data: FinishedLogData):
         gen_axis = 0.5 + np.arange(len(data.gen_data))
 
+        filter_size = self.smooth_slider.value() // 2 * 2 + 1
+        self.smooth_view.setText(str(filter_size))
+
+        def filter(x):
+            x_filter_size = min(len(x), filter_size)
+            if x_filter_size < 3:
+                return x
+            else:
+                return scipy.signal.savgol_filter(x, x_filter_size, polyorder=2)
+
         for i, k in enumerate(data.gen_keys):
-            self.gen_plots[k].setData(gen_axis, data.gen_data[:, i])
+            self.gen_plots[k].setData(gen_axis, filter(data.gen_data[:, i]))
         for i, k in enumerate(data.batch_keys):
-            self.gen_average_plots[k].setData(gen_axis, data.gen_average_data[:, i])
+            self.gen_average_plots[k].setData(gen_axis, filter(data.gen_average_data[:, i]))
 
         for i, k in enumerate(data.batch_keys):
-            self.batch_plots[k].setData(data.batch_axis, data.batch_data[:, i])
+            self.batch_plots[k].setData(data.batch_axis, filter(data.batch_data[:, i]))
 
 
 class PlotterThread(QThread):
@@ -157,6 +183,6 @@ def set_pg_defaults():
         pg.setConfigOption('background', QColorConstants.DarkGray.darker().darker())
         pg.setConfigOption('foreground', QColorConstants.LightGray)
     else:
-        pg.setConfigOption('background', QColorConstants.LightGray)
-        pg.setConfigOption('foreground', QColorConstants.DarkGray)
+        pg.setConfigOption('background', QColorConstants.LightGray.lighter())
+        pg.setConfigOption('foreground', QColorConstants.Black)
     pg.setConfigOption('antialias', True)
