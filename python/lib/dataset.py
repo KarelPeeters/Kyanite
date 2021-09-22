@@ -19,8 +19,9 @@ class GameDataFile:
         assert len(self.positions.shape) == 2
         assert self.positions.shape[1] == game.data_width
 
-        self.game_ids = self.positions[:, 0].astype(int)
-        self.position_ids = self.positions[:, 1].astype(int)
+        ids = self.positions[:, 0:2].astype(int)
+        self.game_ids = ids[:, 0]
+        self.position_ids = ids[:, 1]
 
         self.position_count = len(self.positions)
         self.game_count = int(np.max(self.game_ids) + 1)
