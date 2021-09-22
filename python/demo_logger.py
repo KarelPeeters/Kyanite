@@ -3,7 +3,7 @@ import random
 import time
 from threading import Thread
 
-from log.logger import Logger
+from lib.logger import Logger, FinishedLogData
 
 
 def main_thread(logger: Logger, plotter):
@@ -11,7 +11,7 @@ def main_thread(logger: Logger, plotter):
     loss_b = 1.0
     loss_c = 1.0
 
-    for _ in itertools.count():
+    for _ in range(10):
         logger.start_gen()
 
         loss_c *= random.uniform(0.9, 1.1)
@@ -29,14 +29,22 @@ def main_thread(logger: Logger, plotter):
             logger.finish_batch()
 
         logger.finish_gen()
-        plotter.update_data()
+        plotter.update()
 
-        time.sleep(0.2)
+        # time.sleep(0.2)
+
+    data = logger.get_finished_data()
+    data.save("test.npz")
+
+    data = FinishedLogData.load("test.npz")
+    logger = Logger.from_finished_data(data)
+
+    print(logger)
 
 
 def main():
-    from log.plotter import LogPlotter
-    from log.plotter import start_qt_app
+    from lib.plotter import LogPlotter
+    from lib.plotter import start_qt_app
     app = start_qt_app()
 
     logger = Logger()

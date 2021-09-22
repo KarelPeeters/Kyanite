@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -15,8 +16,22 @@ class FinishedLogData:
     batch_axis: np.array
     batch_data: np.array
 
+    def save(self, path: str):
+        np.savez(path, **dataclasses.asdict(self))
 
-# TODO serialize and deserialize log data
+    @classmethod
+    def load(cls, path: str):
+        d = np.load(path)
+        return FinishedLogData(
+            gen_keys=[tuple(k) for k in d["gen_keys"]],
+            batch_keys=[tuple(k) for k in d["batch_keys"]],
+            gen_data=d["gen_data"],
+            gen_average_data=d["gen_average_data"],
+            batch_axis=d["batch_axis"],
+            batch_data=d["batch_data"],
+        )
+
+
 class Logger:
     def __init__(self):
         self.gen_keys = None
@@ -30,6 +45,17 @@ class Logger:
         self._curr_gen_data = None
         self._curr_gen_batch_data = None
         self._curr_batch_data = None
+
+    @classmethod
+    def from_finished_data(cls, data: FinishedLogData):
+        result = Logger()
+        result.gen_keys = data.gen_keys
+        result.batch_keys = data.batch_keys
+        result.gen_data = GrowableArray(len(data.gen_keys), initial_values=data.gen_data)
+        result.gen_average_data = GrowableArray(len(data.batch_keys), initial_values=data.gen_average_data)
+        result.batch_axis = GrowableArray(1, initial_values=data.batch_axis[:, None])
+        result.batch_data = GrowableArray(len(data.batch_keys), initial_values=data.batch_data)
+        return result
 
     def get_finished_data(self) -> FinishedLogData:
         # we don't copy anything here since every we pass is immutable
@@ -115,11 +141,16 @@ class Logger:
 
 
 class GrowableArray:
-    def __init__(self, width: int):
+    def __init__(self, width: int, initial_values=None):
         self.width = width
 
-        self._values = np.full((1, width), np.NaN)
-        self._next_i = 0
+        if initial_values is None:
+            self._values = np.full((1, width), np.NaN)
+            self._next_i = 0
+        else:
+            assert initial_values.shape[1] == width
+            self._values = initial_values
+            self._next_i = len(initial_values)
 
     def __len__(self):
         return self._next_i

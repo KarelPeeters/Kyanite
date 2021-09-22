@@ -11,7 +11,7 @@ from PyQt5.QtGui import QColor, QColorConstants
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget
 from pyqtgraph import PlotWidget
 
-from log.logger import Logger, FinishedLogData
+from lib.logger import Logger, FinishedLogData
 
 
 class LogPlotter(QObject):
@@ -30,7 +30,7 @@ class LogPlotter(QObject):
         self.gen_plots = None
         self.batch_plots = None
 
-    def update_data(self):
+    def update(self):
         data = self.logger.get_finished_data()
         # noinspection PyUnresolvedReferences
         self.data_update_slot.emit(data)
@@ -39,6 +39,8 @@ class LogPlotter(QObject):
         if self.window is None:
             self.create_window()
             self.create_plots(data)
+
+            assert self.window is not None
             self.window.show()
 
         self.update_plot_data(data)
@@ -75,32 +77,41 @@ class LogPlotter(QObject):
         main_layout.addWidget(self.tab_widget)
 
     def create_plots(self, data: FinishedLogData):
-        all_types = list(dict.fromkeys([k for k, _ in data.gen_keys] + [k for k, _ in data.batch_keys]))
+        all_types = [k for k, _ in data.gen_keys] + [k for k, _ in data.batch_keys]
+        all_types_unique = list(dict.fromkeys(all_types))
 
         self.plot_widgets = {}
-        for ty in all_types:
+
+        self.gen_plots = {}
+        self.gen_average_plots = {}
+        self.batch_plots = {}
+
+        for ty in all_types_unique:
             widget = PlotWidget()
             widget.addLegend()
             self.plot_widgets[ty] = widget
             self.tab_widget.addTab(widget, ty)
 
-        num_colors = len(data.gen_keys) + len(data.batch_keys)
-        colors_main = generate_distinct_colors(1, 1, num_colors)
-        colors_extra = generate_distinct_colors(0.5, 0.8, num_colors)
+            num_colors = all_types.count(ty)
+            colors_main = generate_distinct_colors(1, 1, num_colors)
+            colors_extra = generate_distinct_colors(0.5, 0.8, num_colors)
 
-        self.gen_plots = {
-            (ty, k): self.plot_widgets[ty].plot(name=f"Gen {ty} {k}", pen=pg.mkPen(colors_main[i]))
-            for i, (ty, k) in enumerate(data.gen_keys)}
-        self.gen_average_plots = {
-            (ty, k): self.plot_widgets[ty].plot(name=f"Mean {ty} {k}",
-                                                pen=pg.mkPen(colors_main[len(data.gen_keys) + i]))
-            for i, (ty, k) in enumerate(data.batch_keys)
-        }
-        self.batch_plots = {
-            (ty, k): self.plot_widgets[ty].plot(name=f"Batch {ty} {k}",
-                                                pen=pg.mkPen(colors_extra[len(data.gen_keys) + i]))
-            for i, (ty, k) in enumerate(data.batch_keys)
-        }
+            def plot_all_matching(target, keys, prefix, colors):
+                nonlocal next_color
+                for (curr_ty, k) in keys:
+                    if ty != curr_ty:
+                        continue
+                    pen = pg.mkPen(colors[next_color])
+                    target[(ty, k)] = self.plot_widgets[ty].plot(name=f"{prefix} {ty} {k}", pen=pen)
+                    next_color += 1
+
+            next_color = 0
+            plot_all_matching(self.batch_plots, data.batch_keys, "Batch", colors_extra)
+            next_color = 0
+            plot_all_matching(self.gen_average_plots, data.batch_keys, "Mean", colors_main)
+
+            # don't reset color here, use the leftover colors
+            plot_all_matching(self.gen_plots, data.gen_keys, "Gen", colors_main)
 
     def update_plot_data(self, data: FinishedLogData):
         gen_axis = 0.5 + np.arange(len(data.gen_data))

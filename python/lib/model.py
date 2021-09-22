@@ -2,7 +2,7 @@ from typing import Optional, Callable
 
 from torch import nn
 
-from data.games import Game
+from lib.games import Game
 
 
 class ResBlock(nn.Module):

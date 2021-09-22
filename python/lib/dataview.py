@@ -1,4 +1,4 @@
-from data.games import Game
+from lib.games import Game
 
 
 class GameDataView:

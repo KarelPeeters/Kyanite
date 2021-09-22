@@ -4,9 +4,9 @@ from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader
 
 from benchmark_limit import bench_limit
-from data.dataset import GameDataset
-from data.games import Game
-from models.model import TowerModel, ResBlock
+from lib.dataset import GameDataset
+from lib.games import Game
+from lib.model import TowerModel, ResBlock
 from train.module import TrainModule
 
 
