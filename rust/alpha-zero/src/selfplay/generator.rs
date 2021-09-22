@@ -41,8 +41,11 @@ pub fn generator_main<B: Board>(
         match cmd {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
-            Ok(Command::Stop) => break,
             Ok(Command::StartupSettings(_)) => panic!("Already received startup settings"),
+            Ok(Command::Stop) => break,
+            Ok(Command::WaitForNewNetwork) => {
+                network = None;
+            }
             Ok(Command::NewSettings(new_settings)) => {
                 settings = Some(new_settings)
             }

@@ -18,6 +18,7 @@ pub enum Command {
     StartupSettings(StartupSettings),
     NewSettings(Settings),
     NewNetwork(String),
+    WaitForNewNetwork,
     Stop,
 }
 

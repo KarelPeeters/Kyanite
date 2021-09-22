@@ -67,6 +67,9 @@ class SelfplayClient:
     def send_new_network(self, path: str):
         self.send({"NewNetwork": path})
 
+    def send_wait_for_new_network(self):
+        self.send("WaitForNewNetwork")
+
     def send_stop(self):
         self.send("Stop")
 

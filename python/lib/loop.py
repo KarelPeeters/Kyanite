@@ -112,6 +112,7 @@ class LoopSettings:
             print(f"Waiting for gen {gi} games")
             start = time.perf_counter()
             actual_gi = client.wait_for_file()
+            client.send_wait_for_new_network()
             logger.log_gen("time", "selfplay", time.perf_counter() - start)
             assert gi == actual_gi, f"Unexpected finished generation, expected {gi} got {actual_gi}"
 
