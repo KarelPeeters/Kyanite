@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::Debug;
 
 use board_game::games::chess::ChessBoard;
-use chess::{Board, ChessMove, File, Piece, Rank, Square};
+use chess::{ALL_FILES, ALL_RANKS, Board, ChessMove, Color, File, Piece, Rank, Square};
 
 use crate::mapping::{InputMapper, PolicyMapper};
 use crate::util::IndexOf;
@@ -20,21 +20,34 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
     fn append_board_to(&self, result: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
 
+        //TODO maybe remove this? is the game indeed fully symmetric after the pov stuff below?
         //absolute reference for the current player
         for color in chess::ALL_COLORS {
             result.extend(std::iter::repeat((inner.side_to_move() == color) as u8 as f32).take(8 * 8));
         }
 
-        // everything else is from the next player's POV
+        // everything else is from the next player's POV (color is normalized and board is flipped rank-wise)
         let pov_colors = [inner.side_to_move(), !inner.side_to_move()];
+        let pov_ranks = if inner.side_to_move() == Color::White { &ALL_RANKS } else { &ALL_RANKS_REV };
 
         //pieces
         for &color in &pov_colors {
             for piece in chess::ALL_PIECES {
-                for square in chess::ALL_SQUARES {
-                    let value = inner.color_on(square) == Some(color) && inner.piece_on(square) == Some(piece);
-                    result.push(value as u8 as f32);
+                for &rank in pov_ranks {
+                    for file in ALL_FILES {
+                        let square = Square::make_square(rank, file);
+                        let value = inner.color_on(square) == Some(color) && inner.piece_on(square) == Some(piece);
+                        result.push(value as u8 as f32);
+                    }
                 }
+            }
+        }
+
+        //en passant
+        for &rank in pov_ranks {
+            for file in ALL_FILES {
+                let square = Square::make_square(rank, file);
+                result.push((inner.en_passant() == Some(square)) as u8 as f32);
             }
         }
 
@@ -43,11 +56,6 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
             let rights = inner.castle_rights(color);
             result.extend(std::iter::repeat((rights.has_kingside()) as u8 as f32).take(8 * 8));
             result.extend(std::iter::repeat((rights.has_queenside()) as u8 as f32).take(8 * 8));
-        }
-
-        //en passant
-        for square in chess::ALL_SQUARES {
-            result.push((inner.en_passant() == Some(square)) as u8 as f32);
         }
     }
 }
@@ -232,3 +240,14 @@ const QUEEN_DIRECTIONS: [(isize, isize); QUEEN_DIRECTION_COUNT] =
 
 const UNDERPROMOTION_PIECES: [Piece; 3] =
     [Piece::Rook, Piece::Bishop, Piece::Knight];
+
+const ALL_RANKS_REV: [Rank; 8] = [
+    Rank::Eighth,
+    Rank::Seventh,
+    Rank::Sixth,
+    Rank::Fifth,
+    Rank::Fourth,
+    Rank::Third,
+    Rank::Second,
+    Rank::First,
+];
