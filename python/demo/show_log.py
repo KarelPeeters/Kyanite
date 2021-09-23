@@ -12,4 +12,4 @@ def show_log(path: str):
 
 
 if __name__ == '__main__':
-    show_log("../../data/new_loop/test/log.npz")
+    show_log("../../data/new_loop/full_pov/log.npz")

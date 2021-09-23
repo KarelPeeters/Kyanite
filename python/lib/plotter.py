@@ -10,7 +10,7 @@ import scipy.signal
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, Qt
 from PyQt5.QtGui import QColor, QColorConstants
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
-    QSlider, QLabel
+    QSlider, QLabel, QCheckBox
 from pyqtgraph import PlotWidget
 
 from lib.logger import Logger, FinishedLogData
@@ -96,6 +96,10 @@ class LogPlotter(QObject):
         self.gen_smooth_label = QLabel()
         control_layout.addWidget(self.gen_smooth_label)
 
+        self.enable_mean_plots = QCheckBox("plot mean")
+        self.enable_mean_plots.stateChanged.connect(self.data_update_slot)
+        control_layout.addWidget(self.enable_mean_plots)
+
         control_layout.addStretch(1)
 
         self.tab_widget = QTabWidget()
@@ -139,27 +143,32 @@ class LogPlotter(QObject):
             plot_all_matching(self.gen_plots, data.gen_keys, "Gen", colors_main)
 
     def update_plot_data(self, data: FinishedLogData):
-        gen_axis = 0.5 + np.arange(len(data.gen_data))
-
-        def filter(x, filter_size: int):
-            window_length = min(len(x), filter_size) // 2 * 2 + 1
-            if window_length < 3 or len(x) < window_length:
-                return x
-            else:
-                return scipy.signal.savgol_filter(x, window_length, polyorder=2)
-
         gen_filter_size = self.gen_smooth_slider.value()
         batch_filter_size = self.batch_smooth_slider.value()
         self.gen_smooth_label.setText(str(gen_filter_size))
         self.batch_smooth_label.setText(str(batch_filter_size))
 
+        show_mean = self.enable_mean_plots.isChecked()
+        for p in self.gen_average_plots.values():
+            p.setVisible(show_mean)
+
+        gen_axis = 0.5 + np.arange(len(data.gen_data))
+
         for i, k in enumerate(data.gen_keys):
-            self.gen_plots[k].setData(gen_axis, filter(data.gen_data[:, i], gen_filter_size))
+            self.gen_plots[k].setData(gen_axis, smooth_data(data.gen_data[:, i], gen_filter_size))
         for i, k in enumerate(data.batch_keys):
-            self.gen_average_plots[k].setData(gen_axis, filter(data.gen_average_data[:, i], gen_filter_size))
+            self.gen_average_plots[k].setData(gen_axis, smooth_data(data.gen_average_data[:, i], gen_filter_size))
 
         for i, k in enumerate(data.batch_keys):
-            self.batch_plots[k].setData(data.batch_axis, filter(data.batch_data[:, i], batch_filter_size))
+            self.batch_plots[k].setData(data.batch_axis, smooth_data(data.batch_data[:, i], batch_filter_size))
+
+
+def smooth_data(x, filter_size: int):
+    window_length = min(len(x), filter_size) // 2 * 2 + 1
+    if window_length < 3 or len(x) < window_length:
+        return x
+    else:
+        return scipy.signal.savgol_filter(x, window_length, polyorder=2)
 
 
 class PlotterThread(QThread):
