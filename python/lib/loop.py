@@ -173,6 +173,7 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
+            # TODO this splits train/test differently than the original one so plots may look strange
             buffer.append(None, gen.games_path)
 
     def evaluate_network(self, buffer: 'Buffer', logger: Logger, network: nn.Module):
