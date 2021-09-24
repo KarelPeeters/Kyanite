@@ -111,6 +111,25 @@ class TrainSettings:
         log("loss-policy", f"{log_prefix} policy_ce", loss_policy_ce)
         log("loss-total", f"{log_prefix} total", loss_total)
 
+        wdl_argmax = torch.argmax(wdl_logit, dim=1)
+        final_argmax = torch.argmax(view.wdl_final, dim=1)
+        est_argmax = torch.argmax(view.wdl_est, dim=1)
+
+        batch_size = len(batch)
+        wdl_final_acc = (wdl_argmax == final_argmax).sum() / batch_size
+        wdl_est_acc = (wdl_argmax == est_argmax).sum() / batch_size
+        wdl_cross_acc = (final_argmax == est_argmax).sum() / batch_size
+
+        policy_acc = (
+                             torch.argmax(policy_logit.view(batch_size, -1), dim=1) ==
+                             torch.argmax(view.policy.view(batch_size, -1), dim=1)
+                     ).sum() / batch_size
+
+        log("accuracy", f"{log_prefix} wdl final", wdl_final_acc)
+        log("accuracy", f"{log_prefix} wdl est", wdl_est_acc)
+        log("accuracy", f"{log_prefix} wdl final vs cross", wdl_cross_acc)
+        log("accuracy", f"{log_prefix} policy", policy_acc)
+
         return loss_total
 
 
