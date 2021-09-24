@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as nnf
 from torch import nn
+from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 from torch.utils.data import BatchSampler, RandomSampler, DataLoader, Dataset
 
@@ -50,6 +51,8 @@ class TrainSettings:
     batch_size: int
     batches: int
 
+    clip_norm: float
+
     def run_train(self, dataset: Dataset, optimizer: Optimizer, network: nn.Module, logger: Logger):
         loader = batch_loader(dataset, self.batch_size)
 
@@ -65,15 +68,19 @@ class TrainSettings:
             logger.start_batch()
 
             optimizer.zero_grad(set_to_none=True)
+
             network.train()
             loss = self.evaluate_loss(network, "train", logger.log_batch, batch)
             loss.backward()
+
+            grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
             optimizer.step()
 
             grad_norms = calc_gradient_norms(network)
             logger.log_batch("grad_norm", "min", np.min(grad_norms))
             logger.log_batch("grad_norm", "mean", np.mean(grad_norms))
             logger.log_batch("grad_norm", "max", np.max(grad_norms))
+            logger.log_batch("grad_norm", "torch", grad_norm)
 
             logger.finish_batch()
 
@@ -107,6 +114,7 @@ class TrainSettings:
         return loss_total
 
 
+# TODO pin memory?
 def batch_loader(dataset: Dataset, batch_size: int) -> DataLoader:
     # noinspection PyTypeChecker
     random_sampler = RandomSampler(dataset, replacement=True)

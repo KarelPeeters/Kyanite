@@ -242,6 +242,8 @@ class Buffer:
 
         # drop old datasets until we would go below the target size
         while sum([len(d) for d in self.current_train[1:]]) > self.target_size:
+            # we only need to close the file once since they share it
+            self.current_train[0].file.close()
             del self.current_train[0]
             del self.current_test[0]
 

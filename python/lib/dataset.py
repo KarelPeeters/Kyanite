@@ -10,15 +10,20 @@ from lib.games import Game
 
 class GameDataFile:
     def __init__(self, game: Game, path: str):
-        f = load_as_h5_file(game, path)
-        actual_game = f["game"][()].decode()
+        self.f = load_as_h5_file(game, path)
+        actual_game = self.f["game"][()].decode()
         assert game.name == actual_game, f"Expected game {game.name}, got {actual_game}"
         self.game = game
 
-        self.positions = f["positions"]
-        self.position_count = f["position_count"][()]
-        self.game_count = f["game_count"][()]
-        self.game_ids = f["game_ids"]
+        self.positions = self.f["positions"]
+        self.position_count = self.f["position_count"][()]
+        self.game_count = self.f["game_count"][()]
+
+        self.game_ids = self.f["game_ids"]
+        self.position_ids = self.f["position_ids"]
+
+        # TODO this assumes all positions are in the data file, which will not be true when full_search_prob != 1
+        self.game_lengths = (self.position_ids[np.diff(self.position_ids, append=0) < 0] + 1)
 
         assert len(self.positions.shape) == 2
         assert self.positions.shape[1] == game.data_width
@@ -39,6 +44,9 @@ class GameDataFile:
         train_indices = np.argwhere(~is_test_game[self.game_ids]).squeeze(1)
 
         return GameDataset(self, train_indices), GameDataset(self, test_indices)
+
+    def close(self):
+        self.f.close()
 
 
 class GameDataset(Dataset):
@@ -74,8 +82,7 @@ def map_bin_gz_to_hdf5(game: Game, bin_path: str) -> str:
     # reuse the old mapping if it's up to date (with the bin file *and* the source of this file
     assert os.path.exists(bin_path)
     if os.path.exists(h5_path):
-        h5_time = os.path.getmtime(h5_path)
-        if h5_time > os.path.getmtime(bin_path) and h5_time > os.path.getmtime(__file__):
+        if os.path.getmtime(h5_path) > os.path.getmtime(bin_path):
             print(f"Reusing existing {h5_path}")
             return h5_path
 
@@ -108,10 +115,6 @@ def map_bin_gz_to_hdf5(game: Game, bin_path: str) -> str:
 
         f.create_dataset("position_count", data=len(positions))
         f.create_dataset("game_count", data=np.max(game_ids) + 1)
-
-        # TODO this assumes all positions are in the data file, which will not be true when full_search_prob != 1
-        game_lengths = (position_ids[np.diff(position_ids, append=0) < 0] + 1)
-        f.create_dataset("game_lengths", data=game_lengths)
 
         f.flush()
 

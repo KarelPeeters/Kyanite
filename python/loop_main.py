@@ -1,4 +1,4 @@
-from torch.optim import AdamW
+from torch.optim import AdamW, SGD
 
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
@@ -21,15 +21,15 @@ def main():
     )
 
     selfplay_settings = SelfplaySettings(
-        temperature=2.0,
+        temperature=1.0,
         zero_temp_move_count=20,
         # TODO give this information to zero tree search too! now it might be stalling without a good reason
-        max_game_length=400,
+        max_game_length=300,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        # TODO increase this again
+        # TODO increase this again?
         full_iterations=400,
         part_iterations=400,
         exploration_weight=2.0,
@@ -41,20 +41,20 @@ def main():
         game=game,
         wdl_target=WdlTarget.Final,
         wdl_loss=WdlLoss.MSE,
-        policy_weight=1,
+        policy_weight=4,
         batch_size=256,
-        batches=16,
+        batches=4,
     )
 
     def initial_network():
-        return TowerModel(game, 64, 4, 16, True, True, True, lambda: ResBlock(64, 32, True, False, False, None))
+        return TowerModel(game, 32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
-        root_path="data/new_loop/second_test",
+        root_path="data/new_loop/full_pov",
         initial_network=initial_network,
         target_buffer_size=100_000,
-        test_fraction=2 / fixed_settings.games_per_gen,
+        test_fraction=1 / fixed_settings.games_per_gen,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-5),
 

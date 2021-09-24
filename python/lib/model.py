@@ -8,12 +8,14 @@ from lib.games import Game
 class ResBlock(nn.Module):
     def __init__(
             self,
+            game: Game,
             channels: int,
             bottleneck_channels: int,
             res: bool,
             depth_separable: bool,
             space_separable: bool,
             squeeze_size: Optional[int],
+            pooling: bool,
     ):
         super().__init__()
 
@@ -63,12 +65,24 @@ class ResBlock(nn.Module):
                 nn.Sigmoid(),
             )
 
+        if pooling:
+            # TODO add relu?
+            self.pooling = nn.Sequential(
+                nn.AvgPool2d(kernel_size=game.board_size),
+                nn.Conv2d(channels, channels, kernel_size=(1, 1))
+            )
+        else:
+            self.pooling = None
+
     def forward(self, x):
         y = self.convs(x)
 
         if self.squeeze is not None:
             excitation = self.squeeze(y)
             y = y * excitation[:, :, None, None]
+
+        if self.pooling is not None:
+            y = y + self.pooling(x)
 
         if self.res:
             y = y + x
@@ -131,10 +145,21 @@ class TowerModel(nn.Module):
 
         if policy_conv:
             self.policy_head = nn.Sequential(
+                nn.Conv2d(tower_channels, tower_channels, (1, 1)),
+                nn.BatchNorm2d(tower_channels),
+                nn.ReLU(),
                 nn.Conv2d(tower_channels, game.policy_channels, (1, 1)),
             )
         else:
             assert False, "Currently not supported"
+
+        # self.wdl_head = nn.Sequential(
+        #     nn.Conv2d(tower_channels, wdl_size, (1, 1)),
+        #     nn.AvgPool2d(kernel_size=(game.board_size, game.board_size)),
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     nn.Linear(wdl_size, 3)
+        # )
 
         if value_conv:
             self.wdl_head = nn.Sequential(

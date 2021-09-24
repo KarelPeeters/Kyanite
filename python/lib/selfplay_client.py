@@ -75,4 +75,5 @@ class SelfplayClient:
 
     def wait_for_file(self) -> int:
         message = json.loads(self.f.readline())
+        print(f"Received message {message}")
         return message["FinishedFile"]["index"]
