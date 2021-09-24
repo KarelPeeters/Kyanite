@@ -13,7 +13,6 @@ class FinishedLogData:
     batch_keys: List[Tuple[str, str]]
 
     gen_data: np.array
-    gen_average_data: np.array
 
     batch_axis: np.array
     batch_data: np.array
@@ -28,7 +27,6 @@ class FinishedLogData:
             gen_keys=[tuple(k) for k in d["gen_keys"]],
             batch_keys=[tuple(k) for k in d["batch_keys"]],
             gen_data=d["gen_data"],
-            gen_average_data=d["gen_average_data"],
             batch_axis=d["batch_axis"],
             batch_data=d["batch_data"],
         )
@@ -40,7 +38,6 @@ class Logger:
         self.batch_keys = None
 
         self.gen_data: Optional[GrowableArray] = None
-        self.gen_average_data: Optional[GrowableArray] = None
         self.batch_data: Optional[GrowableArray] = None
         self.batch_axis = GrowableArray(1)
 
@@ -54,7 +51,6 @@ class Logger:
         result.gen_keys = data.gen_keys
         result.batch_keys = data.batch_keys
         result.gen_data = GrowableArray(len(data.gen_keys), initial_values=data.gen_data)
-        result.gen_average_data = GrowableArray(len(data.batch_keys), initial_values=data.gen_average_data)
         result.batch_axis = GrowableArray(1, initial_values=data.batch_axis[:, None])
         result.batch_data = GrowableArray(len(data.batch_keys), initial_values=data.batch_data)
         return result
@@ -63,7 +59,7 @@ class Logger:
         # we don't copy anything here since every we pass is immutable
         return FinishedLogData(
             gen_keys=self.gen_keys, batch_keys=self.batch_keys,
-            gen_data=self.gen_data.values, gen_average_data=self.gen_average_data.values,
+            gen_data=self.gen_data.values,
             batch_axis=self.batch_axis.values.squeeze(1), batch_data=self.batch_data.values,
         )
 
@@ -93,9 +89,6 @@ class Logger:
 
         batch_len = len(self.batch_data) - len(self.batch_axis)
 
-        # average the batch data and store it
-        self.gen_average_data.append(np.mean(self.batch_data.values[-batch_len:, :], axis=0))
-
         # extend batch_axis array
         if batch_len > 0:
             for p in np.linspace(0, 1, num=batch_len, endpoint=False):
@@ -112,7 +105,6 @@ class Logger:
             assert self.batch_data is None
             self.batch_keys = list(self._curr_batch_data.keys())
             self.batch_data = GrowableArray(len(self.batch_keys))
-            self.gen_average_data = GrowableArray(len(self.batch_keys))
 
         values = np.full(len(self.batch_keys), np.NaN)
         for i, k in enumerate(self.batch_keys):
