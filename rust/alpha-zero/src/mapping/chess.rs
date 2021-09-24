@@ -21,6 +21,7 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         let inner = board.inner();
 
         //TODO maybe remove this? is the game indeed fully symmetric after the pov stuff below?
+        //TODO yeah just remove this, doesn't make a lot of sense
         //absolute reference for the current player
         for color in chess::ALL_COLORS {
             result.extend(std::iter::repeat((inner.side_to_move() == color) as u8 as f32).take(8 * 8));
