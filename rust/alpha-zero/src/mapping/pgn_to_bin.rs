@@ -1,25 +1,28 @@
-use pgn_reader::{BufferedReader, Visitor, RawHeader, Skip, SanPlus, Outcome, Color};
 use std::io::{Read, Write};
 use std::io;
-use crate::selfplay::core::{Simulation, Position, Output};
-use board_game::games::chess::ChessBoard;
-use chess::{ChessMove, Square, Rank, File, Piece};
+
 use board_game::board::{Board, BoardAvailableMoves, Player};
-use crate::network::ZeroEvaluation;
-use board_game::wdl::WDL;
-use internal_iterator::InternalIterator;
 use board_game::board;
-use crate::mapping::BoardMapper;
-use crate::mapping::binary_output::BinaryOutput;
+use board_game::games::chess::{ChessBoard, Rules};
+use board_game::wdl::WDL;
+use chess::{ChessMove, File, Piece, Rank, Square};
+use internal_iterator::InternalIterator;
+use pgn_reader::{BufferedReader, Color, Outcome, RawHeader, SanPlus, Skip, Visitor};
 use shakmaty::{Chess, Move, Position as OtherPosition, Role};
 
-pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(input_pgn: impl Read, binary_output: &mut BinaryOutput<W, ChessBoard, M>, max_games: Option<usize>) -> io::Result<()> {
+use crate::mapping::binary_output::BinaryOutput;
+use crate::mapping::BoardMapper;
+use crate::network::ZeroEvaluation;
+use crate::selfplay::core::{Output, Position, Simulation};
+
+pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(rules: Rules, input_pgn: impl Read, binary_output: &mut BinaryOutput<W, ChessBoard, M>, max_games: Option<usize>) -> io::Result<()> {
     let mut visitor = ToBinVisitor {
+        rules,
         min_elo: 0,
         binary_output,
         skip_next: true,
         max_games,
-        curr_board: ChessBoard::default(),
+        curr_board: ChessBoard::default_with_rules(rules),
         curr_board_other: Chess::default(),
         positions: None,
     };
@@ -29,6 +32,7 @@ pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(input_pgn: impl Read, bi
 }
 
 struct ToBinVisitor<'a, W: Write, M: BoardMapper<ChessBoard>> {
+    rules: Rules,
     binary_output: &'a mut BinaryOutput<W, ChessBoard, M>,
     min_elo: u32,
 
@@ -76,7 +80,7 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
         let skip = self.skip_next || self.binary_output.next_game_id() > self.max_games.unwrap_or(usize::MAX);
         if !skip {
             self.positions = Some(vec![]);
-            self.curr_board = ChessBoard::default();
+            self.curr_board = ChessBoard::default_with_rules(self.rules);
             self.curr_board_other = Chess::default();
         }
 

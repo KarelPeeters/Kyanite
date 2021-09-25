@@ -1,20 +1,24 @@
 use std::fs::File;
-use alpha_zero::mapping::pgn_to_bin::pgn_to_bin;
-use alpha_zero::mapping::chess::ChessStdMapper;
-use tar::Archive;
-use bzip2::read::BzDecoder;
-use alpha_zero::mapping::binary_output::BinaryOutput;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use std::path::Path;
+
+use board_game::games::chess::Rules;
+use bzip2::read::BzDecoder;
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use tar::Archive;
+
+use alpha_zero::mapping::binary_output::BinaryOutput;
+use alpha_zero::mapping::chess::ChessStdMapper;
+use alpha_zero::mapping::pgn_to_bin::pgn_to_bin;
 
 fn main() {
     let input = "../data/pgn-games/ccrl-pgn.tar.bz2";
     let output = "../data/pgn-games/";
-    convert(input, output, None, None);
+    let rules = Rules::ccrl();
+    convert(rules, input, output, None, None);
 }
 
-fn convert(input_path: &str, output_folder: &str, max_entries: Option<usize>, max_games_per_entry: Option<usize>) {
+fn convert(rules: Rules, input_path: &str, output_folder: &str, max_entries: Option<usize>, max_games_per_entry: Option<usize>) {
     let input = File::open(input_path).expect("Failed to open input file");
     let mut archive = Archive::new(BzDecoder::new(input));
 
@@ -39,7 +43,7 @@ fn convert(input_path: &str, output_folder: &str, max_entries: Option<usize>, ma
         let output = File::create(&output_path).expect("Failed to create output file");
         let mut binary_output = BinaryOutput::new(ChessStdMapper, GzEncoder::new(output, Compression::fast()));
 
-        pgn_to_bin(entry, &mut binary_output, max_games_per_entry)
+        pgn_to_bin(rules, entry, &mut binary_output, max_games_per_entry)
             .expect("Error white writing to binary");
     }
 }
