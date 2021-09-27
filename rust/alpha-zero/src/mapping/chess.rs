@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::Debug;
 
 use board_game::games::chess::ChessBoard;
-use chess::{ALL_FILES, ALL_RANKS, Board, ChessMove, Color, File, Piece, Rank, Square};
+use chess::{ALL_FILES, ALL_RANKS, ChessMove, Color, File, Piece, Rank, Square};
 
 use crate::mapping::{InputMapper, PolicyMapper};
 use crate::util::IndexOf;
@@ -73,8 +73,10 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
 impl PolicyMapper<ChessBoard> for ChessStdMapper {
     const POLICY_SHAPE: [usize; 3] = [POLICY_CHANNELS, 8, 8];
 
-    fn move_to_index(&self, _: &ChessBoard, mv: ChessMove) -> Option<usize> {
-        let classified = ClassifiedMove::from_move(mv);
+    fn move_to_index(&self, board: &ChessBoard, mv_abs: ChessMove) -> Option<usize> {
+        let mv = move_pov(board.inner().side_to_move(), mv_abs);
+
+        let classified = ClassifiedPovMove::from_move(mv);
         let channel = classified.to_channel();
         assert!(channel < POLICY_CHANNELS);
 
@@ -89,29 +91,31 @@ impl PolicyMapper<ChessBoard> for ChessStdMapper {
         let channel = index / (8 * 8);
         let from_index = index % (8 * 8);
 
-        let classified = ClassifiedMove::from_channel(channel);
-        let from = index_to_square(from_index);
+        let classified = ClassifiedPovMove::from_channel(channel);
+        let from = square_from_index(from_index);
 
-        classified.to_move(board.inner(), from)
+        let pov = board.inner().side_to_move();
+        let from_abs = square_pov(pov, from);
+        let moving_pawn = board.inner().piece_on(from_abs) == Some(Piece::Pawn);
+
+        let mv = classified.to_move(moving_pawn, from);
+        let mv_abs = mv.map(|mv_pov| move_pov(pov, mv_pov));
+
+        mv_abs
     }
 }
 
-fn index_to_square(index: usize) -> Square {
-    assert!(index < 8 * 8);
-    unsafe { Square::new(index as u8) }
-}
-
 #[derive(Debug, Copy, Clone)]
-pub enum ClassifiedMove {
+pub enum ClassifiedPovMove {
     Queen { direction: usize, distance_m1: usize },
     Knight { direction: usize },
     UnderPromotion { direction: usize, piece: usize },
 }
 
-impl ClassifiedMove {
-    pub fn to_move(self, board: &Board, from: Square) -> Option<ChessMove> {
+impl ClassifiedPovMove {
+    pub fn to_move(self, moving_pawn: bool, from: Square) -> Option<ChessMove> {
         match self {
-            ClassifiedMove::Queen { direction, distance_m1 } => {
+            ClassifiedPovMove::Queen { direction, distance_m1 } => {
                 let (rank_dir, file_dir) = QUEEN_DIRECTIONS[direction];
                 let distance = distance_m1 + 1;
                 let to = square(
@@ -119,8 +123,7 @@ impl ClassifiedMove {
                     from.get_file().to_index() as isize + distance as isize * file_dir,
                 )?;
 
-                let moving_pawn = board.piece_on(from) == Some(Piece::Pawn);
-                let to_backrank = to.get_rank() == board.side_to_move().to_their_backrank();
+                let to_backrank = to.get_rank() == Rank::Eighth;
                 let promotion = if moving_pawn && to_backrank {
                     Some(Piece::Queen)
                 } else {
@@ -129,7 +132,7 @@ impl ClassifiedMove {
 
                 Some(ChessMove::new(from, to, promotion))
             }
-            ClassifiedMove::Knight { direction } => {
+            ClassifiedPovMove::Knight { direction } => {
                 let (rank_delta, file_delta) = KNIGHT_DELTAS[direction];
                 let to = square(
                     from.get_rank().to_index() as isize + rank_delta,
@@ -138,9 +141,9 @@ impl ClassifiedMove {
 
                 Some(ChessMove::new(from, to, None))
             }
-            ClassifiedMove::UnderPromotion { direction, piece } => {
+            ClassifiedPovMove::UnderPromotion { direction, piece } => {
                 let to = square(
-                    board.side_to_move().to_their_backrank().to_index() as isize,
+                    Rank::Eighth.to_index() as isize,
                     from.get_file() as isize + (direction as isize - 1),
                 )?;
 
@@ -162,7 +165,7 @@ impl ClassifiedMove {
         if let Some(piece) = mv.get_promotion() {
             if let Some(piece) = UNDERPROMOTION_PIECES.iter().index_of(&piece) {
                 let direction = (file_delta.signum() + 1) as usize;
-                return ClassifiedMove::UnderPromotion { direction, piece };
+                return ClassifiedPovMove::UnderPromotion { direction, piece };
             }
         }
 
@@ -173,13 +176,13 @@ impl ClassifiedMove {
             let (rank_dir, file_dir) = QUEEN_DIRECTIONS[direction];
             if rank_delta == rank_dir * distance && file_delta == file_dir * distance {
                 let distance_m1 = (distance - 1) as usize;
-                return ClassifiedMove::Queen { direction, distance_m1 };
+                return ClassifiedPovMove::Queen { direction, distance_m1 };
             }
         }
 
         // knight
         if let Some(direction) = KNIGHT_DELTAS.iter().index_of(&(rank_delta, file_delta)) {
-            return ClassifiedMove::Knight { direction };
+            return ClassifiedPovMove::Knight { direction };
         }
 
         panic!("Could not find move type for {}", mv);
@@ -187,15 +190,15 @@ impl ClassifiedMove {
 
     pub fn to_channel(self) -> usize {
         match self {
-            ClassifiedMove::Queen { direction, distance_m1 } => {
+            ClassifiedPovMove::Queen { direction, distance_m1 } => {
                 assert!(direction < 8 && distance_m1 < 7);
                 direction * 7 + distance_m1
             }
-            ClassifiedMove::Knight { direction } => {
+            ClassifiedPovMove::Knight { direction } => {
                 assert!(direction < 8);
                 QUEEN_CHANNELS + direction
             }
-            ClassifiedMove::UnderPromotion { direction, piece } => {
+            ClassifiedPovMove::UnderPromotion { direction, piece } => {
                 assert!(direction < 3 && piece < 3);
                 QUEEN_CHANNELS + KNIGHT_CHANNELS + direction * 3 + piece
             }
@@ -208,18 +211,26 @@ impl ClassifiedMove {
         if channel < QUEEN_CHANNELS {
             let direction = channel / 7;
             let distance_m1 = channel % 7;
-            ClassifiedMove::Queen { direction, distance_m1 }
+            ClassifiedPovMove::Queen { direction, distance_m1 }
         } else if channel < QUEEN_CHANNELS + KNIGHT_CHANNELS {
             let direction = channel - QUEEN_CHANNELS;
-            ClassifiedMove::Knight { direction }
+            ClassifiedPovMove::Knight { direction }
         } else {
             let left = channel - (QUEEN_CHANNELS + KNIGHT_CHANNELS);
             assert!(left < UNDERPROMOTION_CHANNELS);
             let direction = left / 3;
             let piece = left % 3;
-            ClassifiedMove::UnderPromotion { direction, piece }
+            ClassifiedPovMove::UnderPromotion { direction, piece }
         }
     }
+}
+
+fn square_from_index(index: usize) -> Square {
+    assert!(index < 8 * 8);
+    Square::make_square(
+        Rank::from_index(index / 8),
+        File::from_index(index % 8),
+    )
 }
 
 fn square(rank: isize, file: isize) -> Option<Square> {
@@ -228,6 +239,26 @@ fn square(rank: isize, file: isize) -> Option<Square> {
     } else {
         None
     }
+}
+
+/// View a square from the given pov.
+/// This function can be used for both the abs->pov and pov->abs directions.
+fn square_pov(pov: Color, sq: Square) -> Square {
+    match pov {
+        Color::White => sq,
+        Color::Black => {
+            let rank_pov = Rank::from_index(7 - sq.get_rank().to_index());
+            Square::make_square(rank_pov, sq.get_file())
+        }
+    }
+}
+
+fn move_pov(pov: Color, mv: ChessMove) -> ChessMove {
+    ChessMove::new(
+        square_pov(pov, mv.get_source()),
+        square_pov(pov, mv.get_dest()),
+        mv.get_promotion(),
+    )
 }
 
 const QUEEN_DISTANCE_COUNT: usize = 7;
