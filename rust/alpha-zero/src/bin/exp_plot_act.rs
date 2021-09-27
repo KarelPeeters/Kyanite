@@ -110,9 +110,9 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
 fn main() {
     let mapper = ChessStdMapper;
 
-    let path = "../data/new_loop/second_test/training/gen_30/network.onnx";
+    let path = "../data/supervised/initial/network_6.onnx";
 
-    let iterations = 10_000;
+    let iterations = 1000;
     let batch_size = 20;
     let settings = ZeroSettings::new(batch_size, 2.0, true);
 

@@ -3,7 +3,7 @@ use std::io;
 
 use board_game::board::{Board, BoardAvailableMoves, Player};
 use board_game::board;
-use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::chess::{ChessBoard, Rules, moves_to_pgn};
 use board_game::wdl::WDL;
 use chess::{ChessMove, File, Piece, Rank, Square};
 use internal_iterator::InternalIterator;
@@ -25,6 +25,7 @@ pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(rules: Rules, input_pgn:
         curr_board: ChessBoard::default_with_rules(rules),
         curr_board_other: Chess::default(),
         positions: None,
+        moves: vec![],
     };
 
     let mut reader = BufferedReader::new(input_pgn);
@@ -43,6 +44,7 @@ struct ToBinVisitor<'a, W: Write, M: BoardMapper<ChessBoard>> {
     curr_board: ChessBoard,
     curr_board_other: Chess,
     positions: Option<Vec<Position<ChessBoard>>>,
+    moves: Vec<ChessMove>,
 }
 
 impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
@@ -92,11 +94,22 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
             .unwrap_or_else(|e| panic!("Failed to parse move {} for board {}: {:?}", san_plus.san, self.curr_board, e));
 
         let mv = map_mv(mv_other.clone());
+        self.moves.push(mv);
 
-        assert!(
-            self.curr_board.is_available_move(mv),
-            "Parsed unavailable move {} on board {}", mv, self.curr_board
-        );
+        if self.curr_board.is_done() || !self.curr_board.is_available_move(mv) {
+            eprintln!("{}", moves_to_pgn(&self.moves));
+            eprintln!("{}", self.curr_board);
+
+            assert!(
+                !self.curr_board.is_done(),
+                "Board is already done, tried to parse new move {}", mv
+            );
+
+            assert!(
+                self.curr_board.is_available_move(mv),
+                "Parsed unavailable move {} on board {}", mv, self.curr_board
+            );
+        }
 
         //one-hot encode the policy
         let policy = self.curr_board.available_moves()
@@ -121,6 +134,7 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
 
     fn outcome(&mut self, outcome: Option<Outcome>) {
         let positions = self.positions.take().unwrap();
+        self.moves.clear();
 
         let outcome = match outcome {
             None => return,
@@ -130,6 +144,11 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
         };
 
         if let Some(expected) = self.curr_board.outcome() {
+            if outcome != expected {
+                eprintln!("{}", moves_to_pgn(&self.moves));
+                eprintln!("{}", self.curr_board);
+            }
+
             assert_eq!(outcome, expected);
         }
 

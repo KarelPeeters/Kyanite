@@ -2,7 +2,7 @@ from torch.optim import AdamW, SGD
 
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model import TowerModel, ResBlock
+from lib.model_blocks import TowerModel, ResBlock
 from lib.selfplay_client import SelfplaySettings
 from lib.train import TrainSettings, WdlTarget, WdlLoss
 
@@ -22,7 +22,8 @@ def main():
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        zero_temp_move_count=20,
+        # TODO alphazero uses value 30 (plies, 15 moves)
+        zero_temp_move_count=30,
         # TODO give this information to zero tree search too! now it might be stalling without a good reason
         max_game_length=300,
         keep_tree=False,

@@ -1,6 +1,7 @@
-import os
 import signal
-import sys
+from typing import Optional
+
+import signal
 from typing import Optional
 
 import darkdetect
@@ -10,7 +11,7 @@ import scipy.signal
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, Qt
 from PyQt5.QtGui import QColor, QColorConstants
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
-    QSlider, QLabel, QCheckBox
+    QSlider, QLabel
 from pyqtgraph import PlotWidget
 
 from lib.logger import Logger, FinishedLogData
@@ -165,15 +166,6 @@ class PlotterThread(QThread):
 def start_qt_app():
     # make ctrl+C exit the program more quickly
     signal.signal(signal.SIGINT, signal.SIG_DFL)
-
-    # make exceptions terminate the program immediately
-    old_hook = sys.excepthook
-
-    def hook(*args):
-        old_hook(*args)
-        os.kill(os.getpid(), signal.SIGINT)
-
-    sys.excepthook = hook
 
     app = QApplication([])
     return app

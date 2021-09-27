@@ -31,6 +31,8 @@ impl<W: Write, B: Board, M: BoardMapper<B>> BinaryOutput<W, B, M> {
 }
 
 impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> {
+    //TODO how to implement history here?
+    //TODO just try basic planes first (50_count, repetitions, total_moves)d
     fn append(&mut self, simulation: Simulation<B>) {
         let expected_single_size = binary_output_width::<B, M>();
 

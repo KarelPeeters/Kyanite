@@ -8,10 +8,19 @@ class Game:
     board_size: int
     input_channels: int
     policy_channels: int
+    history: int = 1
+
+    @property
+    def input_channels_history(self):
+        return self.input_channels * self.history
 
     @property
     def input_shape(self):
         return self.input_channels, self.board_size, self.board_size
+
+    @property
+    def input_shape_history(self):
+        return self.input_channels_history, self.board_size, self.board_size
 
     @property
     def policy_shape(self):
@@ -22,13 +31,17 @@ class Game:
         return prod(self.input_shape)
 
     @property
+    def input_size_history(self):
+        return prod(self.input_shape_history)
+
+    @property
     def policy_size(self):
         return prod(self.policy_shape)
 
     @property
     def data_width(self):
         # game id, position id, final wdl, est wdl, policy mask, policy, input
-        return 1 + 1 + 3 + 3 + 2 * self.policy_size + self.input_size
+        return 1 + 1 + 3 + 3 + 2 * self.policy_size + self.input_channels * self.board_size ** 2
 
     @classmethod
     def find(cls, name: str):
@@ -50,7 +63,7 @@ GAMES = [
         # TODO experiment with policy encodings
         name="chess",
         board_size=8,
-        input_channels=2 + 6 * 2 + 4 + 1,
+        input_channels=2 + 6 * 2 + 4 + 1 + 4,
         policy_channels=7 * 8 + 8 + 3 * 3,
     ),
     Game(

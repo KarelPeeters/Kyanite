@@ -3,7 +3,7 @@ use std::net::{TcpListener, TcpStream};
 
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
-use board_game::games::chess::ChessBoard;
+use board_game::games::chess::{ChessBoard, Rules};
 use crossbeam::channel;
 
 use cuda_sys::wrapper::handle::Device;
@@ -39,7 +39,7 @@ pub fn selfplay_server_main() {
         "chess" => {
             selfplay_start(
                 startup_settings,
-                ChessBoard::default,
+                || ChessBoard::default(),
                 ChessStdMapper,
                 reader, writer,
             )

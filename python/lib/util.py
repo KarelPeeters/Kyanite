@@ -21,6 +21,6 @@ def calc_gradient_norms(module: nn.Module):
 
     for param in module.parameters():
         if param.grad is not None:
-            norms.append((param.grad.detach() ** 2).sum().item())
+            norms.append((param.grad.detach() ** 2).mean().item())
 
     return np.array(norms)

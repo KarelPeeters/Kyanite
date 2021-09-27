@@ -3,8 +3,10 @@ import os
 
 import h5py
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 
+from lib.dataview import GameDataView
 from lib.games import Game
 from lib.growable_array import GrowableArray
 
@@ -55,8 +57,30 @@ class GameDataset(Dataset):
         self.file = file
         self.indices = indices
 
-    def __getitem__(self, index):
-        return self.file.positions[self.indices[index], :]
+    def __getitem__(self, view_index):
+        game = self.file.game
+        index = self.indices[view_index]
+
+        history = game.history
+        actual_history = min(history, self.file.position_ids[index] + 1)
+
+        result = np.zeros((history, game.data_width), dtype=np.float32)
+        result[-actual_history:] = self.file.positions[index - actual_history + 1:index + 1]
+
+        history_view = GameDataView(game, torch.tensor(result), includes_history=True)
+        last_view = GameDataView(game, torch.tensor(result[-1, None]), includes_history=False)
+
+        new_full = torch.cat([
+            last_view.game_id,
+            last_view.position_id,
+            last_view.wdl_final,
+            last_view.wdl_est,
+            last_view.policy_mask.view(1, -1),
+            last_view.policy.view(1, -1),
+            history_view.input.view(1, -1)
+        ], dim=1)
+
+        return new_full.squeeze(0)
 
     def __len__(self):
         return len(self.indices)

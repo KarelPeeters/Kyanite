@@ -10,7 +10,8 @@ def save_onnx(game: Game, path: str, network: nn.Module):
     print(f"Saving model to {path}")
 
     network.eval()
-    example_input = torch.zeros(1, *game.input_shape, device=DEVICE)
+    network.to("cpu")
+    example_input = torch.zeros(1, *game.input_shape_history)
     example_outputs = network(example_input)
     torch.onnx.export(
         model=network,
@@ -21,3 +22,4 @@ def save_onnx(game: Game, path: str, network: nn.Module):
         output_names=["wdl", "policy"],
         dynamic_axes={"input": {0: "batch_size"}, "wdl": {0: "batch_size"}, "policy": {0: "batch_size"}},
     )
+    network.to(DEVICE)

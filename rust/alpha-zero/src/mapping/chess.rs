@@ -12,7 +12,7 @@ use crate::util::IndexOf;
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
 
-const INPUT_CHANNELS: usize = 2 + 2 * 6 + 4 + 1;
+const INPUT_CHANNELS: usize = 2 + (2 * 6) + 1 + (2 * 2) + 4;
 
 impl InputMapper<ChessBoard> for ChessStdMapper {
     const INPUT_SHAPE: [usize; 3] = [INPUT_CHANNELS, 8, 8];
@@ -58,6 +58,15 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
             result.extend(std::iter::repeat((rights.has_kingside()) as u8 as f32).take(8 * 8));
             result.extend(std::iter::repeat((rights.has_queenside()) as u8 as f32).take(8 * 8));
         }
+
+        //TODO this is sketch since cclr data has games with more than 2 repetitions
+        //repetitions (as a binary vector)
+        result.extend(std::iter::repeat((board.repetitions & 1) as f32).take(8 * 8));
+        result.extend(std::iter::repeat((board.repetitions / 2) as f32).take(8 * 8));
+
+        //move counters (as simple integers)
+        result.extend(std::iter::repeat(board.game_length as f32).take(8 * 8));
+        result.extend(std::iter::repeat(board.non_pawn_or_capture_moves as f32).take(8 * 8));
     }
 }
 
