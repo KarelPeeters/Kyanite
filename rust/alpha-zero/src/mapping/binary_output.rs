@@ -24,6 +24,10 @@ impl<W: Write, B: Board, M: BoardMapper<B>> BinaryOutput<W, B, M> {
     pub fn new(mapper: M, writer: W) -> Self {
         BinaryOutput { mapper, writer, next_game_id: 0, ph: PhantomData }
     }
+
+    pub fn next_game_id(&self) -> usize {
+        self.next_game_id
+    }
 }
 
 impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> {
@@ -53,10 +57,13 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
             data.extend_from_slice(&pos.final_wdl.to_slice());
             data.extend_from_slice(&pos.evaluation.wdl.to_slice());
 
+            // cache available moves here because it may be slow on board and we call it a lot
+            let available_moves: Vec<B::Move> = board.available_moves().collect();
+
             // policy mask
             for i in 0..M::POLICY_SIZE {
                 let is_available = self.mapper.index_to_move(&board, i)
-                    .map_or(0.0, |mv| board.is_available_move(mv) as u8 as f32);
+                    .map_or(0.0, |mv| available_moves.contains(&mv) as u8 as f32);
                 data.push(is_available);
             }
 
@@ -64,7 +71,7 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
             for i in 0..M::POLICY_SIZE {
                 // get the policy value if the move exists and is available
                 let p = self.mapper.index_to_move(&board, i)
-                    .filter(|&mv| board.is_available_move(mv))
+                    .filter(|&mv| available_moves.contains(&mv))
                     .map_or(0.0, |mv| {
                         let policy_index = moves.iter().position(|&cand| cand == mv).unwrap();
                         policy[policy_index]
@@ -86,8 +93,6 @@ impl<W: Write, B: Board, M: BoardMapper<B>> Output<B> for BinaryOutput<W, B, M> 
         // write data
         self.writer.write_all(transmute_to_bytes(&data))
             .expect("Failed to write data");
-        self.writer.flush()
-            .expect("Failed to flush");
     }
 }
 

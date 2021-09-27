@@ -40,6 +40,7 @@ impl MoveSelector {
 /// A full game.
 #[derive(Debug)]
 pub struct Simulation<B> {
+    //TODO this is a bad encoding, since it assumes that player A is always the first to play
     pub outcome: Outcome,
     pub positions: Vec<Position<B>>,
 }
