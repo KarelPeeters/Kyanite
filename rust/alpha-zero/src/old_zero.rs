@@ -4,16 +4,15 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
+use board_game::ai::Bot;
+use board_game::board::{Board, Outcome};
+use board_game::symmetry::{Symmetry, SymmetryDistribution};
+use board_game::wdl::{Flip, POV, WDL};
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::Rng;
 use rand_distr::Distribution;
-
-use board_game::ai::Bot;
-use board_game::board::{Board, Outcome};
-use board_game::symmetry::{Symmetry, SymmetryDistribution};
-use board_game::wdl::{Flip, POV, WDL};
 
 use crate::network::{Network, ZeroEvaluation};
 
@@ -146,8 +145,14 @@ impl<B: Board> Tree<B> {
         Tree { root_board, nodes: vec![root] }
     }
 
+    /// The number of nodes in this tree.
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// The number of times the root node was visited.
+    pub fn root_visits(&self) -> u64 {
+        self.nodes[0].visits
     }
 
     pub fn root_board(&self) -> &B {

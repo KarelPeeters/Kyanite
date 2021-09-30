@@ -1,16 +1,15 @@
+use board_game::ai::Bot;
+use board_game::board::{Board, Outcome, Player};
+use board_game::wdl::WDL;
 use itertools::{Itertools, zip_eq};
 use rand::{Rng, thread_rng};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::ParallelIterator;
 use unwrap_match::unwrap_match;
 
-use board_game::ai::Bot;
-use board_game::board::{Board, Outcome, Player};
-use board_game::wdl::WDL;
-
 use crate::network::Network;
 use crate::old_zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
-use crate::selfplay::core::MoveSelector;
+use crate::selfplay::move_selector::MoveSelector;
 
 pub type OpponentConstructor<B> = Box<dyn Fn() -> Box<dyn Bot<B>> + Sync>;
 

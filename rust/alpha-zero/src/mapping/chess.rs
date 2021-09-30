@@ -5,31 +5,42 @@ use board_game::games::chess::ChessBoard;
 use chess::{ALL_FILES, ALL_RANKS, ChessMove, Color, File, Piece, Rank, Square};
 
 use crate::mapping::{InputMapper, PolicyMapper};
+use crate::mapping::bit_buffer::BitBuffer;
 use crate::util::IndexOf;
 
-//TODO try different embeddings discussed in Discord
-//TODO AlphaZero also adds history, why?
+//TODO try different (policy) embeddings discussed in Discord
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
 
-const INPUT_CHANNELS: usize = 2 + (2 * 6) + 1 + (2 * 2) + 4;
-
 impl InputMapper<ChessBoard> for ChessStdMapper {
-    const INPUT_SHAPE: [usize; 3] = [INPUT_CHANNELS, 8, 8];
+    const INPUT_BOARD_SIZE: usize = 8;
+    // pieces, en passant
+    const INPUT_BOOL_PLANES: usize = (2 * 6) + 1;
+    // side to move, 50 move counter, repetition counter, castling rights,
+    const INPUT_SCALAR_COUNT: usize = 2 + (1 + 1) + (2 * 2);
 
-    fn append_board_to(&self, result: &mut Vec<f32>, board: &ChessBoard) {
+    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
-
-        //TODO maybe remove this? is the game indeed fully symmetric after the pov stuff below?
-        //TODO yeah just remove this, doesn't make a lot of sense
-        //absolute reference for the current player
-        for color in chess::ALL_COLORS {
-            result.extend(std::iter::repeat((inner.side_to_move() == color) as u8 as f32).take(8 * 8));
-        }
-
-        // everything else is from the next player's POV (color is normalized and board is flipped rank-wise)
         let pov_colors = [inner.side_to_move(), !inner.side_to_move()];
         let pov_ranks = if inner.side_to_move() == Color::White { &ALL_RANKS } else { &ALL_RANKS_REV };
+
+        //TODO maybe remove this? is the game indeed fully symmetric after the pov stuff below?
+        //  leave for now but remove once we can reproduce LC0
+        //absolute reference for the current player, everything else is from POV
+        for color in chess::ALL_COLORS {
+            scalars.push((inner.side_to_move() == color) as u8 as f32);
+        }
+
+        //castling rights
+        for &color in &pov_colors {
+            let rights = inner.castle_rights(color);
+            scalars.push(rights.has_kingside() as u8 as f32);
+            scalars.push(rights.has_queenside() as u8 as f32);
+        }
+
+        // counters
+        scalars.push(board.repetitions as f32);
+        scalars.push(board.non_pawn_or_capture_moves as f32);
 
         //pieces
         for &color in &pov_colors {
@@ -37,8 +48,10 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
                 for &rank in pov_ranks {
                     for file in ALL_FILES {
                         let square = Square::make_square(rank, file);
-                        let value = inner.color_on(square) == Some(color) && inner.piece_on(square) == Some(piece);
-                        result.push(value as u8 as f32);
+                        bools.push(
+                            inner.color_on(square) == Some(color) &&
+                                inner.piece_on(square) == Some(piece)
+                        );
                     }
                 }
             }
@@ -48,30 +61,15 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         for &rank in pov_ranks {
             for file in ALL_FILES {
                 let square = Square::make_square(rank, file);
-                result.push((inner.en_passant() == Some(square)) as u8 as f32);
+                bools.push(inner.en_passant() == Some(square));
             }
         }
-
-        //castling rights
-        for &color in &pov_colors {
-            let rights = inner.castle_rights(color);
-            result.extend(std::iter::repeat((rights.has_kingside()) as u8 as f32).take(8 * 8));
-            result.extend(std::iter::repeat((rights.has_queenside()) as u8 as f32).take(8 * 8));
-        }
-
-        //TODO this is sketch since cclr data has games with more than 2 repetitions
-        //repetitions (as a binary vector)
-        result.extend(std::iter::repeat((board.repetitions & 1) as f32).take(8 * 8));
-        result.extend(std::iter::repeat((board.repetitions / 2) as f32).take(8 * 8));
-
-        //move counters (as simple integers)
-        result.extend(std::iter::repeat(board.game_length as f32).take(8 * 8));
-        result.extend(std::iter::repeat(board.non_pawn_or_capture_moves as f32).take(8 * 8));
     }
 }
 
 impl PolicyMapper<ChessBoard> for ChessStdMapper {
-    const POLICY_SHAPE: [usize; 3] = [POLICY_CHANNELS, 8, 8];
+    const POLICY_BOARD_SIZE: usize = 8;
+    const POLICY_PLANES: usize = POLICY_CHANNELS;
 
     fn move_to_index(&self, board: &ChessBoard, mv_abs: ChessMove) -> Option<usize> {
         let mv = move_pov(board.inner().side_to_move(), mv_abs);

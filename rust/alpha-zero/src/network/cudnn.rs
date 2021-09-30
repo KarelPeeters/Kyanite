@@ -40,7 +40,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
         let handle = CudnnHandle::new(CudaStream::new(device));
         let executor = CudaGraphExecutor::new(handle, &graph);
 
-        let input = vec![0.0; max_batch_size * M::INPUT_SIZE];
+        let input = vec![0.0; max_batch_size * M::INPUT_FULL_SIZE];
         let wdl_logit = vec![0.0; max_batch_size * 3];
         let policy_logit = vec![0.0; max_batch_size * M::POLICY_SIZE];
 
@@ -53,7 +53,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
         assert_eq!(1, inputs.len(), "Wrong number of inputs");
         let [input_n, input_c, input_w, input_h] = graph[inputs[0]].shape;
         assert_eq!(batch_size, input_n);
-        assert_eq!(M::INPUT_SIZE as i32, input_c * input_w * input_h, "Unexpected input size {:?}", graph[inputs[0]].shape);
+        assert_eq!(M::INPUT_FULL_SIZE as i32, input_c * input_w * input_h, "Unexpected input size {:?}", graph[inputs[0]].shape);
 
         // outputs
         let outputs = graph.outputs();
@@ -82,11 +82,11 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         // encode input
         self.input.clear();
         for board in boards {
-            self.mapper.append_board_to(&mut self.input, board.borrow())
+            self.mapper.encode_full(&mut self.input, board.borrow())
         }
 
         // fill rest of input with zeros
-        self.input.resize(max_batch_size * M::INPUT_SIZE, f32::NAN);
+        self.input.resize(max_batch_size * M::INPUT_FULL_SIZE, f32::NAN);
 
         // run the actual computation
         self.executor.run(&[&self.input], &mut [&mut self.wdl_logit, &mut self.policy_logit]);

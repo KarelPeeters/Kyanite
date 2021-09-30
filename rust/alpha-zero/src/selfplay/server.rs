@@ -3,7 +3,7 @@ use std::net::{TcpListener, TcpStream};
 
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
-use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::chess::ChessBoard;
 use crossbeam::channel;
 
 use cuda_sys::wrapper::handle::Device;
@@ -85,7 +85,15 @@ fn selfplay_start<B: Board>(
         }
 
         s.spawn(|_| {
-            collector_main(writer, startup.games_per_gen, startup.first_gen, &startup.output_folder, mapper, update_receiver)
+            collector_main(
+                &startup.game,
+                writer,
+                startup.games_per_gen,
+                startup.first_gen,
+                &startup.output_folder,
+                mapper,
+                update_receiver,
+            )
         });
 
         commander_main(reader, cmd_senders, update_sender);

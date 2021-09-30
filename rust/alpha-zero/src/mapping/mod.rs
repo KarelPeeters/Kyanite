@@ -4,25 +4,56 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use board_game::board::Board;
 
+use crate::mapping::bit_buffer::BitBuffer;
+
 pub mod ataxx;
 pub mod chess;
+pub mod bit_buffer;
 
 pub mod binary_output;
 pub mod pgn_to_bin;
 
 /// A way to encode a board as a tensor.
 pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
-    const INPUT_SHAPE: [usize; 3];
-    const INPUT_SIZE: usize = Self::INPUT_SHAPE[0] * Self::INPUT_SHAPE[1] * Self::INPUT_SHAPE[2];
+    const INPUT_BOARD_SIZE: usize;
 
-    /// Encode this board, appending the resulting `INPUT_SIZE` values to `output`.
-    fn append_board_to(&self, result: &mut Vec<f32>, board: &B);
+    const INPUT_BOOL_PLANES: usize;
+    const INPUT_SCALAR_COUNT: usize;
+
+    const INPUT_BOOL_COUNT: usize = Self::INPUT_BOOL_PLANES * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
+
+    const INPUT_FULL_SHAPE: [usize; 3] = [Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES, Self::INPUT_BOARD_SIZE, Self::INPUT_BOARD_SIZE];
+    const INPUT_FULL_SIZE: usize = (Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES) * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
+
+    /// Encode this board.
+    /// Should append `BOOL_COUNT` booleans to `bool_result` and `FLOAT_COUNT` floats to `float_result`..
+    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B);
+
+    fn encode_full(&self, result: &mut Vec<f32>, board: &B) {
+        let mut bools = BitBuffer::new(Self::INPUT_BOOL_COUNT);
+        let mut scalars = vec![];
+
+        self.encode(&mut bools, &mut scalars, board);
+
+        assert_eq!(Self::INPUT_BOOL_COUNT, bools.len());
+        assert_eq!(Self::INPUT_SCALAR_COUNT, scalars.len());
+
+        for s in scalars {
+            result.extend(std::iter::repeat(s).take(Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE));
+        }
+        for i in 0..Self::INPUT_BOOL_COUNT {
+            result.push(bools[i] as u8 as f32)
+        }
+    }
 }
 
 /// A way to encode and decode moves on a board into a tensor.
 pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
-    const POLICY_SHAPE: [usize; 3];
-    const POLICY_SIZE: usize = Self::POLICY_SHAPE[0] * Self::POLICY_SHAPE[1] * Self::POLICY_SHAPE[2];
+    const POLICY_BOARD_SIZE: usize;
+    const POLICY_PLANES: usize;
+
+    const POLICY_SHAPE: [usize; 3] = [Self::POLICY_PLANES, Self::POLICY_BOARD_SIZE, Self::POLICY_BOARD_SIZE];
+    const POLICY_SIZE: usize = Self::POLICY_PLANES * Self::POLICY_BOARD_SIZE * Self::POLICY_BOARD_SIZE;
 
     /// Get the index in the policy tensor corresponding to the given move.
     /// A return of `None` means that this move is structurally forced and does not get a place in the policy tensor.
@@ -65,15 +96,18 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Clone for ComposedMapper<B
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Copy for ComposedMapper<B, I, P> {}
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> InputMapper<B> for ComposedMapper<B, I, P> {
-    const INPUT_SHAPE: [usize; 3] = I::INPUT_SHAPE;
+    const INPUT_BOARD_SIZE: usize = I::INPUT_BOARD_SIZE;
+    const INPUT_BOOL_PLANES: usize = I::INPUT_BOOL_PLANES;
+    const INPUT_SCALAR_COUNT: usize = I::INPUT_SCALAR_COUNT;
 
-    fn append_board_to(&self, result: &mut Vec<f32>, board: &B) {
-        self.input_mapper.append_board_to(result, board)
+    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B) {
+        self.input_mapper.encode(bools, scalars, board)
     }
 }
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> PolicyMapper<B> for ComposedMapper<B, I, P> {
-    const POLICY_SHAPE: [usize; 3] = P::POLICY_SHAPE;
+    const POLICY_BOARD_SIZE: usize = P::POLICY_BOARD_SIZE;
+    const POLICY_PLANES: usize = P::POLICY_PLANES;
 
     fn move_to_index(&self, board: &B, mv: B::Move) -> Option<usize> {
         self.policy_mapper.move_to_index(board, mv)

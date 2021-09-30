@@ -43,12 +43,12 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
         //encore the input
         let mut input = vec![];
         for board in boards {
-            self.mapper.append_board_to(&mut input, board.borrow())
+            self.mapper.encode_full(&mut input, board.borrow())
         }
 
         // fill rest of input with zeros
-        assert_eq!(batch_size * M::INPUT_SIZE, input.len());
-        input.resize(max_batch_size * M::INPUT_SIZE, f32::NAN);
+        assert_eq!(batch_size * M::INPUT_FULL_SIZE, input.len());
+        input.resize(max_batch_size * M::INPUT_FULL_SIZE, f32::NAN);
 
         // do the actual computation
         let mut output_wdl_logit = vec![0.0; max_batch_size * 3];

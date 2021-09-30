@@ -1,4 +1,5 @@
 use board_game::board::{Board, Outcome};
+use board_game::wdl::WDL;
 use crossbeam::channel::{Receiver, Sender, SendError, TryRecvError};
 use itertools::{Itertools, zip_eq};
 use lru::LruCache;
@@ -11,8 +12,9 @@ use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
 use crate::network::cudnn::CudnnNetwork;
 use crate::old_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
-use crate::selfplay::core::{MoveSelector, Position, Simulation};
+use crate::selfplay::move_selector::MoveSelector;
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
+use crate::selfplay::simulation::{Position, Simulation};
 
 pub fn generator_main<B: Board>(
     mapper: impl BoardMapper<B>,
@@ -221,13 +223,21 @@ impl<B: Board> GameState<B> {
                     assert!(iterations == settings.full_iterations || iterations == settings.part_iterations);
                     let should_store = iterations == settings.full_iterations;
 
+                    let net_evaluation = ZeroEvaluation {
+                        wdl: WDL::nan(),
+                        policy: vec![f32::NAN; policy.len()],
+                    };
+                    let zero_evaluation = ZeroEvaluation {
+                        wdl: tree.wdl(),
+                        policy,
+                    };
+
                     self.positions.push(Position {
-                        board: self.zero.tree.root_board().clone(),
+                        board: tree.root_board().clone(),
                         should_store,
-                        evaluation: ZeroEvaluation {
-                            wdl: tree.wdl(),
-                            policy,
-                        },
+                        zero_visits: tree.root_visits(),
+                        net_evaluation,
+                        zero_evaluation,
                     });
                     move_count += 1;
 

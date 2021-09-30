@@ -1,9 +1,9 @@
-use std::io::{Read, Write};
 use std::io;
+use std::io::Read;
 
 use board_game::board::{Board, BoardAvailableMoves, Player};
 use board_game::board;
-use board_game::games::chess::{ChessBoard, Rules, moves_to_pgn};
+use board_game::games::chess::{ChessBoard, moves_to_pgn, Rules};
 use board_game::wdl::WDL;
 use chess::{ChessMove, File, Piece, Rank, Square};
 use internal_iterator::InternalIterator;
@@ -13,9 +13,14 @@ use shakmaty::{Chess, Move, Position as OtherPosition, Role};
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
 use crate::network::ZeroEvaluation;
-use crate::selfplay::core::{Output, Position, Simulation};
+use crate::selfplay::simulation::{Position, Simulation};
 
-pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(rules: Rules, input_pgn: impl Read, binary_output: &mut BinaryOutput<W, ChessBoard, M>, max_games: Option<usize>) -> io::Result<()> {
+pub fn pgn_to_bin<M: BoardMapper<ChessBoard>>(
+    rules: Rules,
+    input_pgn: impl Read,
+    binary_output: &mut BinaryOutput<ChessBoard, M>,
+    max_games: Option<usize>,
+) -> io::Result<()> {
     let mut visitor = ToBinVisitor {
         rules,
         min_elo: 0,
@@ -32,9 +37,9 @@ pub fn pgn_to_bin<W: Write, M: BoardMapper<ChessBoard>>(rules: Rules, input_pgn:
     reader.read_all(&mut visitor)
 }
 
-struct ToBinVisitor<'a, W: Write, M: BoardMapper<ChessBoard>> {
+struct ToBinVisitor<'a, M: BoardMapper<ChessBoard>> {
     rules: Rules,
-    binary_output: &'a mut BinaryOutput<W, ChessBoard, M>,
+    binary_output: &'a mut BinaryOutput<ChessBoard, M>,
     min_elo: u32,
 
     skip_next: bool,
@@ -47,7 +52,7 @@ struct ToBinVisitor<'a, W: Write, M: BoardMapper<ChessBoard>> {
     moves: Vec<ChessMove>,
 }
 
-impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
+impl<M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, M> {
     type Result = ();
 
     fn begin_headers(&mut self) {
@@ -79,7 +84,7 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
     fn end_headers(&mut self) -> Skip {
         assert!(self.positions.is_none());
 
-        let skip = self.skip_next || self.binary_output.next_game_id() > self.max_games.unwrap_or(usize::MAX);
+        let skip = self.skip_next || self.binary_output.game_count() > self.max_games.unwrap_or(usize::MAX);
         if !skip {
             self.positions = Some(vec![]);
             self.curr_board = ChessBoard::default_with_rules(self.rules);
@@ -112,17 +117,17 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
         }
 
         //one-hot encode the policy
-        let policy = self.curr_board.available_moves()
+        let policy: Vec<f32> = self.curr_board.available_moves()
             .map(|cand| (cand == mv) as u8 as f32)
             .collect();
 
         let position = Position {
             board: self.curr_board.clone(),
             should_store: true,
-            evaluation: ZeroEvaluation {
-                wdl: WDL::nan(),
-                policy,
-            },
+
+            zero_visits: 0,
+            net_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy: vec![f32::NAN; policy.len()] },
+            zero_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy },
         };
 
         //append the position from before the move, so we always have a policy
@@ -153,9 +158,10 @@ impl<W: Write, M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, W, M> {
         }
 
         let simulation = Simulation { positions, outcome };
-        self.binary_output.append(simulation);
+        self.binary_output.append(simulation)
+            .expect("Error during simulation appending");
 
-        println!("Appended game {}", self.binary_output.next_game_id() - 1);
+        // println!("Appended game {}", self.binary_output.next_game_id() - 1);
     }
 
     fn end_game(&mut self) -> Self::Result {

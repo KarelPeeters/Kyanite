@@ -1,23 +1,27 @@
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
 use crate::mapping::{InputMapper, PolicyMapper};
+use crate::mapping::bit_buffer::BitBuffer;
 
 #[derive(Debug, Copy, Clone)]
 pub struct AtaxxStdMapper;
 
 impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
-    const INPUT_SHAPE: [usize; 3] = [3, 7, 7];
+    const INPUT_BOARD_SIZE: usize = 7;
+    const INPUT_BOOL_PLANES: usize = 3;
+    const INPUT_SCALAR_COUNT: usize = 0;
 
-    fn append_board_to(&self, result: &mut Vec<f32>, board: &AtaxxBoard) {
+    fn encode(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
         let (next_tiles, other_tiles) = board.tiles_pov();
-        result.extend(Coord::all().map(|c| next_tiles.has(c) as u8 as f32));
-        result.extend(Coord::all().map(|c| other_tiles.has(c) as u8 as f32));
-        result.extend(Coord::all().map(|c| board.gaps().has(c) as u8 as f32));
+        bools.extend(Coord::all().map(|c| next_tiles.has(c)));
+        bools.extend(Coord::all().map(|c| other_tiles.has(c)));
+        bools.extend(Coord::all().map(|c| board.gaps().has(c)));
     }
 }
 
 impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
-    const POLICY_SHAPE: [usize; 3] = [17, 7, 7];
+    const POLICY_BOARD_SIZE: usize = 7;
+    const POLICY_PLANES: usize = 17;
 
     fn move_to_index(&self, _: &AtaxxBoard, mv: Move) -> Option<usize> {
         let index = match mv {

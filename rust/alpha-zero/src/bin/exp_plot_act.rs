@@ -24,8 +24,8 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
     executor: &mut CpuExecutor,
 ) -> ImageBuffer<Luma<u8>, Vec<u8>> {
     let mut input = vec![];
-    mapper.append_board_to(&mut input, board);
-    assert_eq!(M::INPUT_SIZE, input.len());
+    mapper.encode_full(&mut input, board);
+    assert_eq!(M::INPUT_FULL_SIZE, input.len());
 
     let mut output_wdl = vec![0.0; 3];
     let mut output_policy = vec![0.0; M::POLICY_SIZE];
@@ -56,7 +56,7 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
 
                 let is_output = graph.outputs().contains(&value);
                 let is_wdl = is_output && shape == [3, 1, 1];
-                let is_policy = is_output && shape == M::POLICY_SHAPE;
+                let is_policy = is_output && shape == [M::POLICY_PLANES, M::POLICY_BOARD_SIZE, M::POLICY_BOARD_SIZE];
 
                 // mask policy
                 if is_policy {
@@ -81,13 +81,16 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
                         *data.slice(s![0, ci, .., ..]).max().unwrap()
                     };
 
-                    assert!(max.is_finite() && max >= 0.0);
+                    // println!("{} {:?}", max, shape);
+
+                    //TODO re-enable this assert, the >= is there because values are expected to be after ReLUs
+                    // assert!(max.is_finite() && max >= 0.0);
                     let max = if max != 0.0 { max } else { 1.0 };
 
                     for wi in 0..w as usize {
                         for hi in 0..h as usize {
                             let value = data[(0, ci, wi, hi)];
-                            assert!((0.0..=max).contains(&value), "failed range check: 0.0 <= {} <= {}", value, max);
+                            // assert!((0.0..=max).contains(&value), "failed range check: 0.0 <= {} <= {}", value, max);
 
                             let value_int = (value / max * 255.0) as u8;
 
@@ -110,9 +113,9 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
 fn main() {
     let mapper = ChessStdMapper;
 
-    let path = "../data/supervised/initial/network_6.onnx";
+    let path = "../data/supervised/initial/network_100.onnx";
 
-    let iterations = 1000;
+    let iterations = 10_000;
     let batch_size = 20;
     let settings = ZeroSettings::new(batch_size, 2.0, true);
 

@@ -1,13 +1,13 @@
+use board_game::games::chess::ChessBoard;
 use board_game::util::board_gen::random_board_with_moves;
 use board_game::util::bot_game;
 use board_game::util::bot_game::BotGameResult;
 use rand::{Rng, thread_rng};
 
+use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::zero::{ZeroBot, ZeroSettings};
 use cuda_sys::wrapper::handle::Device;
-use alpha_zero::mapping::chess::ChessStdMapper;
-use board_game::games::chess::ChessBoard;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
@@ -38,6 +38,7 @@ fn main() {
         true,
     ).unwrap();
 
+    println!("{:?}", result);
 }
 
 fn compare_bots<R1: Rng, R2: Rng>(

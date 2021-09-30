@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::selfplay::core::Simulation;
+use crate::selfplay::simulation::Simulation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartupSettings {

@@ -1,18 +1,16 @@
-use std::fs::{create_dir_all, File};
+use std::fs::create_dir_all;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use board_game::board::Board;
 use crossbeam::channel::Receiver;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
-use crate::selfplay::core::Output;
 use crate::selfplay::protocol::{GeneratorUpdate, ServerUpdate};
 
 pub fn collector_main<B: Board>(
+    game: &str,
     mut writer: BufWriter<impl Write>,
     games_per_file: usize,
     first_gen: u32,
@@ -21,14 +19,10 @@ pub fn collector_main<B: Board>(
     update_receiver: Receiver<GeneratorUpdate<B>>,
 ) {
     let new_output = |gen: u32| {
-        let path = format!("{}/games_{}.bin.gz", output_folder, gen);
+        let path = format!("{}/games_{}", output_folder, gen);
         println!("Collector: start writing to {}", path);
-
-        let file = File::create(&path)
-            .expect("Failed to create output file");
-        // TODO try different compression levels
-        let writer = GzEncoder::new(file, Compression::fast());
-        BinaryOutput::new(mapper, writer)
+        BinaryOutput::new(path, game, mapper)
+            .expect("Error while creating output files")
     };
 
     create_dir_all(&output_folder)
@@ -46,10 +40,14 @@ pub fn collector_main<B: Board>(
             GeneratorUpdate::FinishedSimulation(simulation) => {
                 estimator.add_game();
 
-                curr_output.append(simulation);
+                curr_output.append(simulation)
+                    .expect("Error during simulation appending");
                 curr_game_count += 1;
 
                 if curr_game_count >= games_per_file {
+                    curr_output.finish()
+                        .expect("Error while finishing output file");
+
                     let prev_i = curr_gen;
                     curr_gen += 1;
                     curr_game_count = 0;

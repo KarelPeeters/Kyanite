@@ -7,7 +7,7 @@ use alpha_zero::bot_game_zero::OpponentConstructor;
 use alpha_zero::mapping::ataxx::AtaxxStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::old_zero::{ZeroBot, ZeroSettings};
-use alpha_zero::selfplay::core::MoveSelector;
+use alpha_zero::selfplay::move_selector::MoveSelector;
 use cuda_sys::wrapper::handle::Device;
 
 fn main() {
