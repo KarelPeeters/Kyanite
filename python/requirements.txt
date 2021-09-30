@@ -1,6 +1,7 @@
 numpy~=1.19.5
-h5py~=3.1.0
 torch~=1.9.0+cu111
+
+aiofiles~=0.7.0
 
 PyQt5~=5.15.4
 pyqtgraph~=0.12.2

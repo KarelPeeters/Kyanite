@@ -135,7 +135,7 @@ class TowerModel(nn.Module):
         super().__init__()
 
         self.tower = nn.Sequential(
-            nn.Conv2d(game.input_channels, tower_channels, (3, 3), padding=(1, 1), bias=False),
+            nn.Conv2d(game.full_input_channels, tower_channels, (3, 3), padding=(1, 1), bias=False),
             *[
                 nn.BatchNorm2d(tower_channels),
                 nn.ReLU()

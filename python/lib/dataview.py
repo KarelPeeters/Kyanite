@@ -28,7 +28,7 @@ class GameDataView:
             input_shape = game.input_shape_history
         else:
             input_size = game.input_size
-            input_shape = game.input_shape
+            input_shape = game.full_input_shape
 
         self.input = take(input_size).reshape(-1, *input_shape)
 

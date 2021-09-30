@@ -42,7 +42,7 @@ fn convert(
     std::fs::create_dir_all(output_folder)
         .expect("Failed to create output folder");
 
-    let thread_count = 4;
+    let thread_count = 6;
     let (sender, receiver) = crossbeam::channel::bounded(thread_count);
 
     crossbeam::scope(|s| {

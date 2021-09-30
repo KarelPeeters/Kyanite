@@ -1,47 +1,30 @@
-from dataclasses import dataclass
-from math import prod
+from dataclasses import dataclass, field
+from typing import Tuple
 
 
 @dataclass
 class Game:
     name: str
+
     board_size: int
-    input_channels: int
+    input_bool_channels: int
+    input_scalar_channels: int
     policy_channels: int
-    history: int = 1
 
-    @property
-    def input_channels_history(self):
-        return self.input_channels * self.history
+    input_bool_shape: Tuple[int, int, int] = field(init=False)
+    input_scalar_shape: Tuple[int, int, int] = field(init=False)
 
-    @property
-    def input_shape(self):
-        return self.input_channels, self.board_size, self.board_size
+    full_input_channels: int = field(init=False)
+    full_input_shape: Tuple[int, int, int] = field(init=False)
+    policy_shape: Tuple[int, int, int] = field(init=False)
 
-    @property
-    def input_shape_history(self):
-        return self.input_channels_history, self.board_size, self.board_size
+    def __post_init__(self):
+        self.input_bool_shape = (self.input_bool_channels, self.board_size, self.board_size)
+        self.input_scalar_shape = (self.input_scalar_channels, self.board_size, self.board_size)
 
-    @property
-    def policy_shape(self):
-        return self.policy_channels, self.board_size, self.board_size
-
-    @property
-    def input_size(self):
-        return prod(self.input_shape)
-
-    @property
-    def input_size_history(self):
-        return prod(self.input_shape_history)
-
-    @property
-    def policy_size(self):
-        return prod(self.policy_shape)
-
-    @property
-    def data_width(self):
-        # game id, position id, final wdl, est wdl, policy mask, policy, input
-        return 1 + 1 + 3 + 3 + 2 * self.policy_size + self.input_channels * self.board_size ** 2
+        self.full_input_channels = self.input_bool_channels + self.input_scalar_channels
+        self.full_input_shape = (self.full_input_channels, self.board_size, self.board_size)
+        self.policy_shape = (self.policy_channels, self.board_size, self.board_size)
 
     @classmethod
     def find(cls, name: str):
@@ -51,25 +34,29 @@ class Game:
         raise KeyError("Game '{}' not found", name)
 
 
+SCALAR_COUNT = 5 + 2 + 3 * 3
+
 # TODO add repetition and n-move rule counters to board inputs?
 GAMES = [
     Game(
         name="ataxx",
         board_size=7,
-        input_channels=3,
+        input_bool_channels=3,
+        input_scalar_channels=0,
         policy_channels=17,
     ),
     Game(
-        # TODO experiment with policy encodings
         name="chess",
         board_size=8,
-        input_channels=2 + 6 * 2 + 4 + 1 + 4,
-        policy_channels=7 * 8 + 8 + 3 * 3,
+        input_bool_channels=13,
+        input_scalar_channels=8,
+        policy_channels=73,
     ),
     Game(
         name="sttt",
         board_size=9,
-        input_channels=3,
+        input_bool_channels=2,
+        input_scalar_channels=0,
         policy_channels=1,
     )
 ]

@@ -2,7 +2,7 @@ use std::ops::Index;
 
 #[derive(Debug)]
 pub struct BitBuffer {
-    storage: Vec<u32>,
+    storage: Vec<u8>,
     capacity: usize,
     len: usize,
 }
@@ -39,13 +39,13 @@ impl BitBuffer {
         self.len
     }
 
-    pub fn storage(&self) -> &[u32] {
+    pub fn storage(&self) -> &[u8] {
         &self.storage
     }
 }
 
-fn split(index: usize) -> (usize, u32) {
-    (index / 32, (index % 32) as u32)
+fn split(index: usize) -> (usize, u8) {
+    (index / 8, (index % 8) as u8)
 }
 
 const TRUE: bool = true;
@@ -85,22 +85,22 @@ mod test {
 
     #[test]
     fn edge_length() {
-        let mut buf = BitBuffer::new(32);
-        buf.extend(std::iter::repeat(false).take(32));
-        assert_eq!(&[0], buf.storage());
+        let mut buf = BitBuffer::new(8);
+        buf.extend(std::iter::repeat(true).take(8));
+        assert_eq!(&[0b1111_1111], buf.storage());
 
-        let mut buf = BitBuffer::new(33);
-        buf.extend(std::iter::repeat(false).take(33));
-        assert_eq!(&[0, 0], buf.storage());
+        let mut buf = BitBuffer::new(9);
+        buf.extend(std::iter::repeat(true).take(9));
+        assert_eq!(&[0b1111_1111, 0b1], buf.storage());
     }
 
     #[test]
     fn longer() {
-        let mut buf = BitBuffer::new(60);
-        for i in 0..40 {
-            buf.push(i == 1 || i == 10 || i == 36);
+        let mut buf = BitBuffer::new(16);
+        for i in 0..16 {
+            buf.push(i == 1 || i == 5 || i == 12);
         }
-        assert_eq!(&[0b10000000010, 0b10000], buf.storage());
+        assert_eq!(&[0b0010_0010, 0b1_0000], buf.storage());
     }
 
     #[test]

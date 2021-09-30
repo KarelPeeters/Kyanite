@@ -19,7 +19,7 @@ class LC0FixupModel(nn.Module):
         super().__init__()
         assert game.name == "chess"
 
-        self.tower = FixupResNet(game.input_channels, channels, FixupBasicBlock, [2, 2, 2])
+        self.tower = FixupResNet(game.full_input_channels, channels, FixupBasicBlock, [2, 2, 2])
 
         self.value_head = nn.Sequential(
             nn.Conv2d(channels, 16, kernel_size=(1, 1)),

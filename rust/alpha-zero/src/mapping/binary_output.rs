@@ -103,7 +103,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
             assert_eq!(M::INPUT_BOOL_COUNT, board_bools.len());
             assert_eq!(M::INPUT_SCALAR_COUNT, board_scalars.len());
-            assert_eq!((M::INPUT_BOOL_COUNT + 31) / 32, board_bools.storage().len());
+            assert_eq!((M::INPUT_BOOL_COUNT + 7) / 8, board_bools.storage().len());
 
             // policy
             let mut got_none = false;
@@ -160,7 +160,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
     pub fn finish(&mut self) -> Result<()> {
         if self.finished {
-            return Ok(());
+            panic!("This output is already finished")
         }
         self.finished = true;
 

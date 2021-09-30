@@ -18,7 +18,7 @@
 
 * contain as much metadata as possible
 
-* maybe: _gracefully handle input and output encoding changing over time_
+* maybe: _gracefully handle input and output encoding changing over time
 
 * immediately write HDF5 files / some other file type from Rust without intermediate recompression in Python
 
