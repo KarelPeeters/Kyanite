@@ -2,38 +2,35 @@ import itertools
 import os
 import random
 import shutil
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import Pool
 from threading import Thread
 from typing import Tuple
 
-import numpy as np
+import torch
 import torch.nn.functional as nnf
 from torch.optim import AdamW
-from torch.utils.data import Subset
 
+from experimental.grad_norms import plot_grad_norms
 from lib.dataset import GameDataFile
 from lib.dataview import GameDataView
 from lib.games import Game
 from lib.logger import Logger
 from lib.loop import Buffer
 from lib.model.lc0 import LC0Model
-from lib.model.simple import SimpleNetwork
+from lib.model.lc0_fixup import LC0FixupModel
 from lib.plotter import LogPlotter, start_qt_app
 from lib.save_onnx import save_onnx
-from lib.train import TrainSettings, WdlTarget, WdlLoss, batch_loader
+from lib.train import TrainSettings, batch_loader
 from lib.util import DEVICE, print_param_count
 
-
-def forward_hook(module, input, output):
-    print("forward", module)
-
-
-def backward_hook(module, grad_input, grad_output):
-    print("backward", module)
-
+#TODO note:
+#  how can value even possibly overfit? the only real difference is the BN layers!
+#  in plot_act for gen 200 (after some value overwriting) the value dense layer output barely changes,
+#    even for completely different boards!
+#  try removing move count and even the color planes!
 
 def thread_main(logger: Logger, plotter: LogPlotter):
-    data_folder = f"../../data/pgn-games-hist/cclr/test/"
+    data_folder = f"../../data/pgn-games/cclr/test/"
     network_folder = "../../data/supervised/initial/"
 
     shutil.rmtree(network_folder, ignore_errors=True)
@@ -45,33 +42,28 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     for p in paths:
         print(f"  {p}")
 
-    batch_size = 256
-    buffer_size = int(1e7)
+    batch_size = 512
+    buffer_size = int(1e6)
 
     settings = TrainSettings(
         game=game,
-        wdl_target=WdlTarget.Final,
-        wdl_loss=WdlLoss.MSE,
-        policy_weight=0.1,
+        policy_weight=1.0,
         batch_size=batch_size,
         batches=32,
         clip_norm=100,
     )
 
-    network = LC0Model(game, 64, 2, False)
+    network = LC0Model(game, 32, 4, True)
+    # network = LC0FixupModel(game, True, 64)
     network.to(DEVICE)
     # network = SimpleNetwork(game, False)
-
-    # for _, module in network.named_modules():
-    #     module.register_forward_hook(forward_hook)
-    #     module.register_full_backward_hook(backward_hook)
 
     print_param_count(network)
 
     # TODO weight decay?
     # TODO SDG vs Adam?
 
-    # optimizer = SGD(network.parameters(), lr=0.001)
+    # optimizer = SGD(network.parameters(), lr=0.2)
     # scheduler = CyclicLR(optimizer, 1e-4, 1e-1, step_size_up=1, step_size_down=100)
     optimizer = AdamW(network.parameters(), weight_decay=1e-5)
 
@@ -87,6 +79,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
 
     for gi in itertools.count():
         print(f"Starting gen {gi}")
+
         logger.start_gen()
 
         # append a random buffer each time as a coarse form of shuffling
@@ -108,15 +101,17 @@ def thread_main(logger: Logger, plotter: LogPlotter):
 
         # compare to just predicting the mean value
         wdl = GameDataView(game, test_test_batch, includes_history=False).wdl_final
-        value = wdl[:, 0] - wdl[:, 2]
-        mean_value = value.mean()
-        mean_value_loss = nnf.mse_loss(mean_value.expand(len(value)), value)
-        logger.log_gen("loss-wdl", "trivial", mean_value_loss.item())
-
-        save_onnx(game, os.path.join(network_folder, f"network_{gi}.onnx"), network)
+        mean_wdl = wdl.mean(dim=0, keepdims=True)
+        loss_wdl_mean = nnf.mse_loss(mean_wdl.expand(len(wdl), 3), wdl)
+        logger.log_gen("loss-wdl", "trivial", loss_wdl_mean.item())
 
         logger.finish_gen()
         plotter.update()
+
+        if gi % 100 == 0:
+            # plot_grad_norms(settings, network, test_test_batch)
+            save_onnx(game, os.path.join(network_folder, f"network_{gi}.onnx"), network)
+            torch.jit.script(network).save(os.path.join(network_folder, f"network_{gi}.pb"))
 
 
 def main():
@@ -139,7 +134,7 @@ def find_all_files(game: Game, folder: str, pre_map: bool):
 
     if pre_map:
         # TODO switch this back to multiprocessing once the "precess termination" issue with h5py is resolved
-        pool = ThreadPool()
+        pool = Pool()
         args = [(game, p) for p in paths]
         pool.imap_unordered(map_single, args)
 

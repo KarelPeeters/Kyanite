@@ -4,7 +4,7 @@ from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model_blocks import TowerModel, ResBlock
 from lib.selfplay_client import SelfplaySettings
-from lib.train import TrainSettings, WdlTarget, WdlLoss
+from lib.train import TrainSettings, ValueTarget, ValueLoss
 
 
 # TODO fix startup behaviour, only release games in the order they were started to ensure a constant
@@ -40,8 +40,8 @@ def main():
 
     train_settings = TrainSettings(
         game=game,
-        wdl_target=WdlTarget.Final,
-        wdl_loss=WdlLoss.MSE,
+        wdl_target=ValueTarget.Final,
+        wdl_loss=ValueLoss.MSE,
         policy_weight=4,
         batch_size=256,
         batches=4,

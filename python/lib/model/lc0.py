@@ -48,10 +48,10 @@ class LC0Block(nn.Module):
         super().__init__()
         self.seq = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1), bias=False),
-            batch_norm(channels, scale=False),
+            batch_norm(channels),
             nn.ReLU(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1), bias=False),
-            batch_norm(channels, scale=True, gamma=0),
+            batch_norm(channels, gamma=1),
             # TODO add squeeze-excitation here
         )
 

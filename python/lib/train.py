@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import Enum, auto
 
 import numpy as np
 import torch
@@ -16,36 +15,10 @@ from lib.loss import cross_entropy_masked
 from lib.util import DEVICE, calc_gradient_norms
 
 
-class WdlTarget(Enum):
-    Final = auto()
-    Estimate = auto()
-
-    def select(self, final, est):
-        if self == WdlTarget.Final:
-            return final
-        if self == WdlTarget.Estimate:
-            return est
-        assert False, self
-
-
-class WdlLoss(Enum):
-    CrossEntropy = auto()
-    MSE = auto()
-
-    def select(self, ce, mse):
-        if self == WdlLoss.CrossEntropy:
-            return ce
-        if self == WdlLoss.MSE:
-            return mse
-        assert False, self
-
-
 @dataclass
 class TrainSettings:
     game: Game
 
-    wdl_target: WdlTarget
-    wdl_loss: WdlLoss
     policy_weight: float
 
     batch_size: int
@@ -96,37 +69,34 @@ class TrainSettings:
         print(view.input[0, :, :, :], file=f)
         print(view.wdl_final[0, :], file=f)
 
-        value_logit, policy_logit = network(view.input)
-        value = torch.tanh(value_logit).squeeze(1) * 1.01
+        wdl_logit, policy_logit = network(view.input)
+        wdl = nnf.softmax(wdl_logit, -1)
 
-        value_final = view.wdl_final[:, 0] - view.wdl_final[:, 1]
-        value_est = view.wdl_est[:, 0] - view.wdl_est[:, 1]
+        # losses
+        loss_wdl = nnf.mse_loss(wdl, view.wdl_final)
+        loss_value = nnf.mse_loss(wdl[:, 0] - wdl[:, 2], view.wdl_final[:, 0] - view.wdl_final[:, 1])
+        loss_policy = cross_entropy_masked(policy_logit, view.policy, view.policy_mask)
+        loss_total = loss_wdl + self.policy_weight * loss_policy
 
-        loss_wdl_final_mse = nnf.mse_loss(value, value_final)
-        loss_wdl_est_mse = nnf.mse_loss(value, value_est)
-
-        loss_policy_ce = cross_entropy_masked(policy_logit, view.policy, view.policy_mask)
-
-        loss_wdl = self.wdl_target.select(loss_wdl_final_mse, loss_wdl_est_mse)
-        loss_total = loss_wdl + self.policy_weight * loss_policy_ce
-
-        log("loss-wdl", f"{log_prefix} est_mse", loss_wdl_est_mse)
-        log("loss-wdl", f"{log_prefix} final_mse", loss_wdl_final_mse)
-        log("loss-policy", f"{log_prefix} policy_ce", loss_policy_ce)
+        log("loss-wdl", f"{log_prefix} wdl", loss_wdl)
+        log("loss-value", f"{log_prefix} value", loss_value)
+        log("loss-policy", f"{log_prefix} policy", loss_policy)
         log("loss-total", f"{log_prefix} total", loss_total)
 
+        # accuracies
+        # TODO check that all of this calculates the correct values in the presence of pass moves
+        # TODO actually, for games like ataxx just never ask the network about pass positions
         batch_size = len(batch)
-        value_final_acc = (value.sign() == value_final.sign()).sum() / batch_size
-        value_est_acc = (value.sign() == value_est.sign()).sum() / batch_size
 
-        policy_acc = (
-                             torch.argmax(policy_logit.view(batch_size, -1), dim=1) ==
-                             torch.argmax(view.policy.view(batch_size, -1), dim=1)
-                     ).sum() / batch_size
+        acc_wdl = (wdl_logit.argmax(dim=-1) == view.wdl_final.argmax(dim=-1)).sum() / batch_size
 
-        log("accuracy", f"{log_prefix} value final", value_final_acc)
-        log("accuracy", f"{log_prefix} value est", value_est_acc)
-        log("accuracy", f"{log_prefix} policy", policy_acc)
+        policy_argmax = (policy_logit * view.policy_mask).flatten(1).argmax(dim=-1)
+        acc_policy = (policy_argmax == view.policy.flatten(1).argmax(dim=-1)).sum() / batch_size
+        acc_policy_captured = torch.gather(view.policy.flatten(1), 1, policy_argmax.view(-1, 1)).sum() / batch_size
+
+        log("acc-wdl", f"{log_prefix} wdl", acc_wdl)
+        log("acc-policy", f"{log_prefix} acc", acc_policy)
+        log("acc-policy", f"{log_prefix} captured", acc_policy_captured)
 
         return loss_total
 

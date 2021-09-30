@@ -1,7 +1,7 @@
 from math import prod
 
 import numpy as np
-import torch.cuda
+import torch
 from torch import nn
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
