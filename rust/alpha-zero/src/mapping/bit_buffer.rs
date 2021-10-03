@@ -1,6 +1,6 @@
+use std::fmt::{Debug, Formatter};
 use std::ops::Index;
 
-#[derive(Debug)]
 pub struct BitBuffer {
     storage: Vec<u8>,
     capacity: usize,
@@ -56,7 +56,7 @@ impl Index<usize> for BitBuffer {
 
     fn index(&self, index: usize) -> &Self::Output {
         let (index, bit) = split(index);
-        match (self.storage[index] >> bit) != 0 {
+        match ((self.storage[index] >> bit) & 1) != 0 {
             true => &TRUE,
             false => &FALSE,
         }
@@ -66,6 +66,20 @@ impl Index<usize> for BitBuffer {
 impl Extend<bool> for BitBuffer {
     fn extend<T: IntoIterator<Item=bool>>(&mut self, iter: T) {
         iter.into_iter().for_each(|b| self.push(b))
+    }
+}
+
+impl Debug for BitBuffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_list();
+        for i in 0..self.capacity {
+            if i < self.len() {
+                d.entry(&(self[i] as u8));
+            } else {
+                d.entry(&'-');
+            }
+        }
+        d.finish()
     }
 }
 

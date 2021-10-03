@@ -38,12 +38,17 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUn
         assert_eq!(Self::INPUT_BOOL_COUNT, bools.len());
         assert_eq!(Self::INPUT_SCALAR_COUNT, scalars.len());
 
+        let result_start = result.len();
+
         for s in scalars {
             result.extend(std::iter::repeat(s).take(Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE));
         }
         for i in 0..Self::INPUT_BOOL_COUNT {
             result.push(bools[i] as u8 as f32)
         }
+
+        let result_delta = result.len() - result_start;
+        assert_eq!(Self::INPUT_FULL_SIZE, result_delta);
     }
 }
 
