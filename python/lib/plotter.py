@@ -164,9 +164,6 @@ class PlotterThread(QThread):
 
 
 def start_qt_app():
-    # make ctrl+C exit the program more quickly
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-
     app = QApplication([])
     return app
 

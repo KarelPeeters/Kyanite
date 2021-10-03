@@ -1,7 +1,6 @@
 import json
-from multiprocessing.pool import ThreadPool
 from pathlib import Path
-from typing import List
+from threading import Lock
 
 import numpy as np
 
@@ -30,28 +29,28 @@ class DataFile:
 
         self.f = open(bin_path, "rb", buffering=0)
 
-        self.position_offsets_offset = self.meta["position_offsets_offset"]
-        self.f.seek(self.position_offsets_offset)
-        self.offsets = np.frombuffer(self.f.read(8 * self.meta["position_count"]), dtype=np.int64)
+        self.lock = Lock()
+
+        with self.lock:
+            self.position_offsets_offset = self.meta["position_offsets_offset"]
+            self.f.seek(self.position_offsets_offset)
+
+            offsets_byte_count = 8 * self.meta["position_count"]
+            offsets_bytes = self.f.read(offsets_byte_count)
+            assert len(offsets_bytes) == offsets_byte_count, f"File {path} too short"
+
+        self.offsets = np.frombuffer(offsets_bytes, dtype=np.int64)
 
     def __len__(self):
         return self.meta["position_count"]
 
-    def __getitem__(self, item) -> Position:
-        assert isinstance(item, int)
-
+    def __getitem__(self, item: int) -> Position:
         start_offset = self.offsets[item]
         end_offset = self.offsets[item + 1] if item + 1 < len(self.offsets) else self.position_offsets_offset
 
-        # TODO this combination of seek+read makes this non-thread-safe
-        self.f.seek(start_offset)
-        return Position(self.game, self.f.read(end_offset - start_offset))
+        with self.lock:
+            self.f.seek(start_offset)
+            return Position(self.game, self.f.read(end_offset - start_offset))
 
     def close(self):
         self.f.close()
-
-
-class DataFileLoader:
-    def __init__(self, files: List[DataFile]):
-        self.files = files
-        self.pool = ThreadPool()

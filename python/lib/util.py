@@ -5,6 +5,7 @@ import torch
 from torch import nn
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+PIN_MEMORY = DEVICE == "cuda"
 
 
 def print_param_count(module: nn.Module, ):

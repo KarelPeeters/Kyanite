@@ -18,7 +18,7 @@ class LC0Model(nn.Module):
 
         # TODO expand at least byte->float and maybe even bit->float here so we need to transfer less data
         self.tower = nn.Sequential(
-            conv_block(game.input_channels_history, channels, 3, bn_scale=True),
+            conv_block(game.full_input_channels, channels, 3, bn_scale=True),
             *(LC0Block(channels) for _ in range(block_count)),
         )
 

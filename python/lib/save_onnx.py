@@ -11,7 +11,7 @@ def save_onnx(game: Game, path: str, network: nn.Module):
 
     network.eval()
     network.to("cpu")
-    example_input = torch.zeros(1, *game.input_shape_history)
+    example_input = torch.zeros(1, *game.full_input_shape)
     example_outputs = network(example_input)
     torch.onnx.export(
         model=network,

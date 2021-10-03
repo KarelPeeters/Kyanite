@@ -6,19 +6,20 @@ import torch.nn.functional as nnf
 from torch import nn
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
-from torch.utils.data import BatchSampler, RandomSampler, DataLoader, Dataset
 
-from lib.dataview import GameDataView
+from lib.data.buffer import FileBuffer
+from lib.data.position import PositionBatch
 from lib.games import Game
 from lib.logger import Logger
-from lib.loss import cross_entropy_masked
-from lib.util import DEVICE, calc_gradient_norms
+from lib.util import calc_gradient_norms
 
 
 @dataclass
 class TrainSettings:
     game: Game
 
+    wdl_weight: float
+    value_weight: float
     policy_weight: float
 
     batch_size: int
@@ -26,24 +27,20 @@ class TrainSettings:
 
     clip_norm: float
 
-    def run_train(self, dataset: Dataset, optimizer: Optimizer, network: nn.Module, logger: Logger, scheduler=None):
-        loader = batch_loader(dataset, self.batch_size)
-
+    def run_train(self, buffer: FileBuffer, optimizer: Optimizer, network: nn.Module, logger: Logger, scheduler=None):
         # noinspection PyTypeChecker
-        visits_per_sample = self.batches * self.batch_size / len(dataset)
+        visits_per_sample = self.batches * self.batch_size / len(buffer)
         logger.log_gen("small", "visits_per_sample", visits_per_sample)
 
-        for bi, batch in enumerate(loader):
-            if bi >= self.batches:
-                break
-            batch = batch.to(DEVICE)
+        for bi in range(self.batches):
+            batch = buffer.sample_batch(self.batch_size)
 
             logger.start_batch()
 
             optimizer.zero_grad(set_to_none=True)
 
             network.train()
-            loss = self.evaluate_loss(network, "train", logger.log_batch, batch)
+            loss = self.evaluate_batch(network, "train", logger.log_batch, batch)
             loss.backward()
 
             grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
@@ -61,22 +58,21 @@ class TrainSettings:
 
             logger.finish_batch()
 
-    def evaluate_loss(self, network: nn.Module, log_prefix: str, log, batch: torch.Tensor):
-        view = GameDataView(self.game, batch, includes_history=True)
+    def evaluate_batch(self, network: nn.Module, log_prefix: str, log, batch: PositionBatch):
+        """Returns the total loss for the given batch while logging a bunch of statistics"""
 
-        torch.set_printoptions(threshold=np.inf)
-        f = open("test.txt", "w")
-        print(view.input[0, :, :, :], file=f)
-        print(view.wdl_final[0, :], file=f)
+        value_logit, wdl_logit, policy_logit = network(batch.input_full)
 
-        wdl_logit, policy_logit = network(view.input)
+        value = torch.tanh(value_logit)
         wdl = nnf.softmax(wdl_logit, -1)
 
+        batch_value = batch.value_final()
+
         # losses
-        loss_wdl = nnf.mse_loss(wdl, view.wdl_final)
-        loss_value = nnf.mse_loss(wdl[:, 0] - wdl[:, 2], view.wdl_final[:, 0] - view.wdl_final[:, 1])
-        loss_policy = cross_entropy_masked(policy_logit, view.policy, view.policy_mask)
-        loss_total = loss_wdl + self.policy_weight * loss_policy
+        loss_wdl = nnf.mse_loss(wdl, batch.wdl_final)
+        loss_value = nnf.mse_loss(value, batch_value)
+        loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logit, batch.policy_indices, batch.policy_values)
+        loss_total = self.wdl_weight * loss_wdl + self.value_weight * loss_value + self.policy_weight * loss_policy
 
         log("loss-wdl", f"{log_prefix} wdl", loss_wdl)
         log("loss-value", f"{log_prefix} value", loss_value)
@@ -88,23 +84,40 @@ class TrainSettings:
         # TODO actually, for games like ataxx just never ask the network about pass positions
         batch_size = len(batch)
 
-        acc_wdl = (wdl_logit.argmax(dim=-1) == view.wdl_final.argmax(dim=-1)).sum() / batch_size
+        acc_value = torch.eq(value.sign(), batch_value.sign()).sum() / (batch_value != 0).sum()
+        acc_wdl = torch.eq(wdl_logit.argmax(dim=-1), batch.wdl_final.argmax(dim=-1)).sum() / batch_size
 
-        policy_argmax = (policy_logit * view.policy_mask).flatten(1).argmax(dim=-1)
-        acc_policy = (policy_argmax == view.policy.flatten(1).argmax(dim=-1)).sum() / batch_size
-        acc_policy_captured = torch.gather(view.policy.flatten(1), 1, policy_argmax.view(-1, 1)).sum() / batch_size
-
+        log("acc-wdl", f"{log_prefix} value", acc_value)
         log("acc-wdl", f"{log_prefix} wdl", acc_wdl)
         log("acc-policy", f"{log_prefix} acc", acc_policy)
-        log("acc-policy", f"{log_prefix} captured", acc_policy_captured)
+        log("acc-policy", f"{log_prefix} captured", cap_policy)
 
         return loss_total
 
 
-# TODO pin memory?
-def batch_loader(dataset: Dataset, batch_size: int) -> DataLoader:
-    # noinspection PyTypeChecker
-    random_sampler = RandomSampler(dataset, replacement=True)
-    batch_sampler = BatchSampler(random_sampler, batch_size=batch_size, drop_last=True)
-    loader = DataLoader(dataset, batch_sampler=batch_sampler)
-    return loader
+def evaluate_policy(logits, indices, values):
+    """Returns the cross-entropy loss, the accuracy and the value of the argmax policy."""
+    assert len(indices.shape) == 2
+    assert indices.shape == values.shape
+    assert len(logits) == len(indices)
+    (batch_size, max_mv_count) = indices.shape
+
+    logits = logits.flatten(1)
+
+    selected_logits = torch.gather(logits, 1, indices)
+
+    selected_logits.cpu()[values.cpu() == -1] = -np.inf
+    selected_logits[values == -1] = -np.inf
+
+    loss = values * torch.log_softmax(selected_logits, 1)
+
+    masked_moves = loss.isinf()
+    loss[masked_moves] = 0
+    total_loss = -loss.sum(axis=1).mean(axis=0)
+
+    # accuracy
+    selected_argmax = selected_logits.argmax(dim=1, keepdim=True)
+    acc = torch.sum(torch.eq(selected_argmax, values.argmax(dim=1, keepdim=True))) / batch_size
+    cap = torch.gather(values, 1, selected_argmax).mean()
+
+    return total_loss, acc, cap

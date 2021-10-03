@@ -9,9 +9,7 @@ from typing import Callable, Optional, Tuple, Iterator, List
 import torch
 from torch import nn
 from torch.optim import Optimizer
-from torch.utils.data import ConcatDataset
 
-from lib.dataset import GameDataset, GameDataFile
 from lib.games import Game
 from lib.logger import Logger, FinishedLogData
 from lib.plotter import LogPlotter, start_qt_app
@@ -189,7 +187,7 @@ class LoopSettings:
             # noinspection PyTypeChecker
             batch_size = min(len(dataset), self.train_settings.batch_size)
             batch = next(iter(batch_loader(dataset, batch_size))).to(DEVICE)
-            self.train_settings.evaluate_loss(network, prefix, logger.log_gen, batch)
+            self.train_settings.evaluate_batch(network, prefix, logger.log_gen, batch)
 
 
 @dataclass
@@ -222,51 +220,3 @@ class Generation:
         if self.gi == 0:
             return None
         return Generation.from_gi(self.settings, self.gi - 1)
-
-
-class Buffer:
-    def __init__(self, game: Game, target_size: int, test_fraction: float):
-        self.game = game
-        self.target_size = target_size
-        self.test_fraction = test_fraction
-
-        self.current_train: List[GameDataset] = []
-        self.current_test: List[GameDataset] = []
-
-    def append(self, logger: Optional[Logger], path: str):
-        new = GameDataFile(self.game, path)
-
-        new_train, new_test = new.split_dataset(self.test_fraction)
-        self.current_train.append(new_train)
-        self.current_test.append(new_test)
-
-        # drop old datasets until we would go below the target size
-        while sum([len(d) for d in self.current_train[1:]]) > self.target_size:
-            # we only need to close the file once since they share it
-            self.current_train[0].file.close()
-            del self.current_train[0]
-            del self.current_test[0]
-
-        new_full = new.full_dataset()
-        if logger:
-            logger.log_gen("game", "games/gen", new.game_count)
-            logger.log_gen("game", "positions/game", len(new_full) / new.game_count)
-            logger.log_gen("game", "shortest game", min(new.game_lengths))
-            logger.log_gen("game", "longest game", max(new.game_lengths))
-
-            logger.log_gen("buffer", "gens", len(self.current_train))
-            logger.log_gen("buffer", "train positions", len(self.full_train_dataset()))
-            logger.log_gen("buffer", "test positions", len(self.full_test_dataset()))
-            logger.log_gen("buffer", "last test positions", len(self.last_test_dataset()))
-
-    def full_train_dataset(self):
-        return ConcatDataset(self.current_train)
-
-    def last_train_dataset(self):
-        return self.current_train[-1]
-
-    def full_test_dataset(self):
-        return ConcatDataset(self.current_test)
-
-    def last_test_dataset(self):
-        return self.current_test[-1]
