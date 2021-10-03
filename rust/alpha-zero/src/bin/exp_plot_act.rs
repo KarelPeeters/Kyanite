@@ -113,13 +113,17 @@ fn plot_network_activations<B: Board, M: BoardMapper<B>>(
 fn main() {
     let mapper = ChessStdMapper;
 
-    let path = "../data/supervised/initial/network_100.onnx";
+    let path = "../data/supervised/new/network_900.onnx";
 
-    let iterations = 10_000;
+    let iterations = 1000;
     let batch_size = 20;
     let settings = ZeroSettings::new(batch_size, 2.0, true);
 
-    std::fs::create_dir_all("ignored/activations").unwrap();
+    let output_folder = "ignored/activations";
+    if std::fs::metadata(output_folder).is_ok() {
+        std::fs::remove_dir_all(output_folder).unwrap();
+    }
+    std::fs::create_dir_all(output_folder).unwrap();
 
     let mut network = CudnnNetwork::load(mapper, path, batch_size, Device::new(0));
     let graph = load_onnx_graph(path, 1);

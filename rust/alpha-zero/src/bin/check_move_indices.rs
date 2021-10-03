@@ -1,10 +1,13 @@
-use alpha_zero::mapping::chess::ChessStdMapper;
-use alpha_zero::mapping::PolicyMapper;
+use std::cmp::{max, min};
+
+use board_game::board::{Board, BoardAvailableMoves};
 use board_game::games::chess::ChessBoard;
-use board_game::board::{BoardAvailableMoves, Board};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::thread_rng;
+
+use alpha_zero::mapping::chess::ChessStdMapper;
+use alpha_zero::mapping::PolicyMapper;
 
 fn main() {
     println!("Hello world");
@@ -23,15 +26,23 @@ fn main() {
     println!("total: {}", policy_size);
     println!("total shape: {:?}", policy_shape);
 
+    let mut max_available_moves = 0;
+    let mut min_available_moves = usize::MAX;
+    let mut total_available_moves = 0;
+    let mut position_count = 0;
+
     let mut visited = vec![(0, None); policy_size];
-    for i in 0..100_000 {
+    let game_count = 100_000;
+
+    for i in 0..game_count {
         if i % 1000 == 0 {
-            println!("{}", i);
+            println!("{}/{}", i, game_count);
         }
         let mut board = ChessBoard::default();
 
         while !board.is_done() {
-            let mut count = 0;
+            let mut available_moves = 0;
+            position_count += 1;
 
             board.available_moves().for_each(|mv| {
                 if let Some(index) = mapper.move_to_index(&board, mv) {
@@ -39,10 +50,12 @@ fn main() {
                     visited[index] = (prev.0 + 1, Some(mv));
                 }
 
-                count += 1;
+                available_moves += 1;
             });
 
-            println!("Available moves: {}", count);
+            min_available_moves = min(min_available_moves, available_moves);
+            max_available_moves = max(max_available_moves, available_moves);
+            total_available_moves += available_moves;
 
             board.play(board.random_available_move(&mut rng));
         }
@@ -51,9 +64,22 @@ fn main() {
     println!("visited min/max: {:?}", visited.iter().filter(|&&n| n.0 != 0).minmax());
     println!("visited count {}", visited.iter().filter(|&&n| n.0 != 0).count());
 
+    println!("available moves:");
+    println!("  min: {}", min_available_moves);
+    println!("  avg: {:.2}", total_available_moves as f32 / position_count as f32);
+    println!("  max: {}", max_available_moves);
+
     for (i, &(count, mv)) in visited.iter().enumerate() {
         if let Some(mv) = mv {
-            println!("{}: {:?}, {}", i,  mv.to_string(), count);
+            println!("{}: {:?}, {}", i, mv.to_string(), count);
         }
     }
+
+    let occupied = visited.iter()
+        .enumerate()
+        .filter(|(_, (c, _))| *c != 0)
+        .map(|(i, _)| i)
+        .collect_vec();
+
+    println!("Occupied: {:?}", occupied);
 }
