@@ -23,7 +23,7 @@ class LCZOldNetwork(nn.Module):
         self.policy_head = nn.Sequential(
             conv_block(1, channels, 32),
             nn.Flatten(),
-            nn.Linear(32*8*8, game.policy_channels*8*8),
+            nn.Linear(32 * 8 * 8, game.policy_channels * 8 * 8),
         )
 
         self.value_head = nn.Sequential(
@@ -52,7 +52,7 @@ class ResBlock(nn.Module):
             batch_norm(channels, scale=False),
             nn.ReLU(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
-            batch_norm(channels, scale=False),
+            batch_norm(channels, scale=False, gamma=0),
         )
 
     def forward(self, x):
@@ -70,9 +70,12 @@ def conv_block(kernel_size: int, in_channels: int, out_channels: int) -> nn.Modu
     )
 
 
-def batch_norm(channels: int, scale: bool) -> nn.Module:
+def batch_norm(channels: int, scale: bool, gamma: float = 1.0) -> nn.Module:
+    # TODO virtual batch size?
     if scale:
-        return nn.BatchNorm2d(channels)
+        d = nn.BatchNorm2d(channels)
+        d.weight.fill_(gamma)
+        return d
     else:
         return BatchNormNoScale(channels)
 
