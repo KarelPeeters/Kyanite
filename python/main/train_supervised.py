@@ -14,6 +14,7 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.lc0_old import LCZOldNetwork
+from lib.model.lc0_pre_act import LCZOldPreNetwork
 from lib.plotter import LogPlotter, qt_app
 from lib.save_onnx import save_onnx
 from lib.schedule import Schedule
@@ -24,7 +25,7 @@ from lib.util import DEVICE, print_param_count
 def thread_main(logger: Logger, plotter: LogPlotter):
     train_pattern = f"../../data/pgn-games/ccrl/train/*.json"
     test_pattern = f"../../data/pgn-games/ccrl/test/*.json"
-    output_folder = "../../data/supervised/derp2/"
+    output_folder = "../../data/supervised/repro/"
 
     shutil.rmtree(output_folder, ignore_errors=True)
     # assert not os.path.exists(output_folder)
@@ -32,26 +33,27 @@ def thread_main(logger: Logger, plotter: LogPlotter):
 
     game = Game.find("chess")
 
-    batch_size = 128
+    batch_size = 1024
+
     test_steps = 16
-    save_steps = 1000
+    save_steps = 1028
 
     settings = TrainSettings(
         game=game,
-        wdl_weight=0.1,
-        value_weight=1.0,
+        wdl_weight=0.5,
+        value_weight=0.5,
         policy_weight=1.0,
         batch_size=batch_size,
         clip_norm=100,
     )
 
-    network = LCZOldNetwork(game, 32, 4)
+    network = LCZOldPreNetwork(game, 256, 8)
     network.to(DEVICE)
 
     print_param_count(network)
 
-    optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.1)
-    schedule = Schedule(20, [0.1, 0.01, 0.001], [100, 200])
+    optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0)
+    schedule = Schedule(40, [0.2, 0.02, 0.002, 0.0002], [4000, 8000, 12000])
 
     # optimizer = AdamW(network.parameters(), weight_decay=1e-5)
     # scheduler = None
@@ -71,6 +73,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     print(f"Test position count: {len(test_buffer)}")
 
     for bi in itertools.count():
+        print(f"Starting batch {bi}")
         logger.start_batch()
 
         if schedule is not None:
@@ -104,15 +107,18 @@ def thread_main(logger: Logger, plotter: LogPlotter):
 
             plotter.update(logger)
 
+            print("Saving log")
+            tmp_log_path = os.path.join(output_folder, "log.tmp.npz")
+            log_path = os.path.join(output_folder, "log.npz")
+            logger.save(tmp_log_path)
+            os.replace(tmp_log_path, log_path)
+
         if bi % save_steps == 0:
+            print("Saving network")
             # plot_grad_norms(settings, network, test_test_batch)
             save_onnx(game, os.path.join(output_folder, f"network_{bi}.onnx"), network)
             torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pb"))
 
-        tmp_log_path = os.path.join(output_folder, "log.tmp.npz")
-        log_path = os.path.join(output_folder, "log.npz")
-        logger.save(tmp_log_path)
-        os.replace(tmp_log_path, log_path)
 
 
 def main():

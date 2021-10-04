@@ -102,9 +102,9 @@ class LogPlotter(QObject):
             self.on_update_logger(self.prev_data)
 
     def on_update_logger(self, data: LoggerData):
-        self.data = data
+        self.prev_data = data
 
-        if len(self.plot_items) != len(self.data.values):
+        if len(self.plot_items) != len(data.values):
             self.update_plot_items(data)
 
         window_size = self.smooth_slider.value()
@@ -113,7 +113,7 @@ class LogPlotter(QObject):
     def update_plot_items(self, data: LoggerData):
         self.plot_items = {}
         groups = list(dict.fromkeys(g for g, _ in data.values))
-        keys_per_group = {g: {k for h, k in data.values if h == g} for g in groups}
+        keys_per_group = {g: dict.fromkeys(k for h, k in data.values if h == g) for g in groups}
 
         for g in groups:
             widget = self.widget_for_group(g)
@@ -129,7 +129,7 @@ class LogPlotter(QObject):
 
     def update_data(self, data: LoggerData, window_size: int):
         for (g, k), v in data.values.items():
-            x, y = clean_data(self.data.axis, v, window_size)
+            x, y = clean_data(data.axis, v, window_size)
             self.plot_items[(g, k)].setData(x, y)
 
 

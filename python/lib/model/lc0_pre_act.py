@@ -19,7 +19,7 @@ class LCZOldPreNetwork(nn.Module):
             nn.Conv2d(game.full_input_channels, channels, kernel_size=(3, 3), padding=(1, 1)),
             *[PreResBlock(channels) for _ in range(depth)],
             batch_norm(channels, scale=True),
-            nn.LeakyReLU()
+            nn.ReLU6()
         )
 
         self.policy_head = nn.Sequential(
@@ -32,7 +32,7 @@ class LCZOldPreNetwork(nn.Module):
             conv_block(1, channels, 32),
             nn.Flatten(),
             nn.Linear(32 * 8 * 8, 128),
-            nn.LeakyReLU(),
+            nn.ReLU6(),
             nn.Linear(128, 4),
         )
 
@@ -51,10 +51,10 @@ class PreResBlock(nn.Module):
         super().__init__()
         self.seq = nn.Sequential(
             batch_norm(channels, scale=True),
-            nn.LeakyReLU(),
+            nn.ReLU6(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
             batch_norm(channels, scale=True),
-            nn.LeakyReLU(),
+            nn.ReLU6(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
         )
 
@@ -69,7 +69,7 @@ def conv_block(kernel_size: int, in_channels: int, out_channels: int) -> nn.Modu
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, kernel_size=(kernel_size, kernel_size), padding=(padding, padding)),
         batch_norm(out_channels, scale=False),
-        nn.LeakyReLU(),
+        nn.ReLU6(),
     )
 
 

@@ -1,4 +1,4 @@
-from lib.logger import Logger, FinishedLogData
+from lib.logger import Logger
 from lib.plotter import qt_app, LogPlotter
 
 

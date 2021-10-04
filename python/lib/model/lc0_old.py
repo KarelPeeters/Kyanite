@@ -52,11 +52,34 @@ class ResBlock(nn.Module):
             batch_norm(channels, scale=False),
             nn.ReLU(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
-            batch_norm(channels, scale=False, gamma=0),
+            batch_norm(channels, scale=False),
         )
 
     def forward(self, x):
         return (self.seq(x) + x).relu()
+
+
+class GlobalBias(nn.Module):
+    def forward(self, input):
+        channel_mean = input.flatten(2).mean(2)
+        return input + channel_mean[:, :, None, None]
+
+
+class GlobalDense(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seq = nn.Sequential(
+            nn.Linear(8 * 8, 8 * 8),
+            nn.ReLU(),
+        )
+
+    def forward(self, input):
+        picked = input[:, 0, :, :].flatten(1)
+        output = self.seq(picked)
+        return torch.cat([
+            output.view(-1, 1, 8, 8),
+            input[:, 1:, :, :],
+        ], dim=1)
 
 
 def conv_block(kernel_size: int, in_channels: int, out_channels: int) -> nn.Module:

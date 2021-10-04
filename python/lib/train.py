@@ -73,8 +73,8 @@ class TrainSettings:
         acc_value = torch.eq(value.sign(), batch_value.sign()).sum() / (batch_value != 0).sum()
         acc_wdl = torch.eq(wdl_logit.argmax(dim=-1), batch.wdl_final.argmax(dim=-1)).sum() / batch_size
 
-        logger.log("acc-wdl", f"{log_prefix} value", acc_value)
-        logger.log("acc-wdl", f"{log_prefix} wdl", acc_wdl)
+        logger.log("acc-value", f"{log_prefix} value", acc_value)
+        logger.log("acc-value", f"{log_prefix} wdl", acc_wdl)
         logger.log("acc-policy", f"{log_prefix} acc", acc_policy)
         logger.log("acc-policy", f"{log_prefix} captured", cap_policy)
 
