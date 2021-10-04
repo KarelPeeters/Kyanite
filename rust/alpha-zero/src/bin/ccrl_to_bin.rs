@@ -16,7 +16,7 @@ fn main() {
     let input = "../data/pgn-games/ccrl-pgn.tar.bz2";
     let output = "../data/pgn-games/";
 
-    let rules = Rules::ccrl();
+    let rules = Rules::unlimited();
     let mapper = ChessStdMapper;
 
     convert(
@@ -24,6 +24,7 @@ fn main() {
         mapper,
         input,
         output,
+        8,
         true,
         None,
         None,
@@ -35,6 +36,7 @@ fn convert(
     mapper: impl BoardMapper<ChessBoard>,
     input_path: &str,
     output_folder: &str,
+    thread_count: usize,
     skip_existing: bool,
     max_entries: Option<usize>,
     max_games_per_entry: Option<usize>,
@@ -42,11 +44,10 @@ fn convert(
     std::fs::create_dir_all(output_folder)
         .expect("Failed to create output folder");
 
-    let thread_count = 6;
     let (sender, receiver) = crossbeam::channel::bounded(thread_count);
 
     crossbeam::scope(|s| {
-        s.spawn(|_| loader_main(input_path, &sender, max_entries));
+        s.spawn(|_| loader_main(input_path, sender, max_entries));
 
         for _ in 0..thread_count {
             s.spawn(|_| mapper_main(output_folder, &receiver, rules, mapper, skip_existing, max_games_per_entry));
@@ -54,7 +55,7 @@ fn convert(
     }).unwrap();
 }
 
-fn loader_main(input_path: &str, sender: &Sender<(String, Vec<u8>)>, max_entries: Option<usize>) {
+fn loader_main(input_path: &str, sender: Sender<(String, Vec<u8>)>, max_entries: Option<usize>) {
     let input = File::open(input_path).expect("Failed to open input file");
     let mut archive = Archive::new(BzDecoder::new(input));
 
@@ -83,7 +84,10 @@ fn mapper_main(
     max_games_per_entry: Option<usize>,
 ) {
     loop {
-        let (path, data) = receiver.recv().unwrap();
+        let (path, data) = match receiver.recv() {
+            Ok(content) => content,
+            Err(_) => break,
+        };
 
         let mut output_path = Path::new(output_folder).join(&path);
         output_path.set_extension("");
@@ -93,11 +97,11 @@ fn mapper_main(
         std::fs::create_dir_all(parent)
             .expect("Error while creating output dirs");
 
-        let output_path_json = output_path.with_extension(".json");
+        let output_path_json = output_path.with_extension("json");
 
         if skip_existing && std::fs::metadata(&output_path_json).is_ok() {
             println!("Skipping {:?} because it already exists", path);
-            return;
+            continue;
         }
 
         println!("Mapping {:?} to {:?}", path, output_path);

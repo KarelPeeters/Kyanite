@@ -1,13 +1,12 @@
 use std::io;
 use std::io::Read;
 
-use board_game::board::{Board, BoardAvailableMoves, Player};
-use board_game::board;
+use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
 use board_game::games::chess::{ChessBoard, moves_to_pgn, Rules};
 use board_game::wdl::WDL;
 use chess::{ChessMove, File, Piece, Rank, Square};
 use internal_iterator::InternalIterator;
-use pgn_reader::{BufferedReader, Color, Outcome, RawHeader, SanPlus, Skip, Visitor};
+use pgn_reader::{BufferedReader, Color, RawHeader, SanPlus, Skip, Visitor};
 use shakmaty::{Chess, Move, Position as OtherPosition, Role};
 
 use crate::mapping::binary_output::BinaryOutput;
@@ -137,31 +136,41 @@ impl<M: BoardMapper<ChessBoard>> Visitor for ToBinVisitor<'_, M> {
         self.curr_board_other = self.curr_board_other.clone().play(&mv_other).unwrap();
     }
 
-    fn outcome(&mut self, outcome: Option<Outcome>) {
+    fn outcome(&mut self, outcome: Option<shakmaty::Outcome>) {
         let positions = self.positions.take().unwrap();
-        self.moves.clear();
 
-        let outcome = match outcome {
-            None => return,
-            Some(Outcome::Draw) => board::Outcome::Draw,
-            Some(Outcome::Decisive { winner: Color::White }) => board::Outcome::WonBy(Player::A),
-            Some(Outcome::Decisive { winner: Color::Black }) => board::Outcome::WonBy(Player::B),
+        let pgn_outcome = match outcome {
+            None => None,
+            Some(shakmaty::Outcome::Draw) => Some(Outcome::Draw),
+            Some(shakmaty::Outcome::Decisive { winner: Color::White }) => Some(Outcome::WonBy(Player::A)),
+            Some(shakmaty::Outcome::Decisive { winner: Color::Black }) => Some(Outcome::WonBy(Player::B)),
         };
 
-        if let Some(expected) = self.curr_board.outcome() {
-            if outcome != expected {
-                eprintln!("{}", moves_to_pgn(&self.moves));
-                eprintln!("{}", self.curr_board);
-            }
+        let expected_outcome = self.curr_board.outcome();
 
-            assert_eq!(outcome, expected);
+        let (outcome, consistent) = match (pgn_outcome, expected_outcome) {
+            (Some(p), Some(e)) => (Some(e), p == e),
+            (None, Some(e)) => (Some(e), false),
+            // this just means one of the bots resigned
+            //  what about draws? investigate some more!
+            (Some(p), None) => (Some(p), true),
+            (None, None) => (None, false)
+        };
+
+        if !consistent {
+            eprintln!("Inconsistent game outcome, pgn contains {:?}, expected {:?}", pgn_outcome, expected_outcome);
+            eprintln!("Assuming outcome {:?}", outcome);
+            eprintln!("Moves: {}", moves_to_pgn(&self.moves));
+            eprintln!("Board: {}", self.curr_board);
         }
 
-        let simulation = Simulation { positions, outcome };
-        self.binary_output.append(simulation)
-            .expect("Error during simulation appending");
+        if let Some(outcome) = outcome {
+            let simulation = Simulation { positions, outcome };
+            self.binary_output.append(simulation)
+                .expect("Error during simulation appending");
+        }
 
-        // println!("Appended game {}", self.binary_output.next_game_id() - 1);
+        self.moves.clear();
     }
 
     fn end_game(&mut self) -> Self::Result {

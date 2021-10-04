@@ -39,12 +39,11 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 ## Training 
 
 * stochastic weight averaging
-
 * learning rate schedule
-
 * cyclic learning rate
-
-* use value estimate as training target instead of (only) the final value
+* use value estimate as training target instead of (only) the final value, see https://ala2020.vub.ac.be/papers/ALA2020_paper_18.pdf
+* policy learning
+* label smoothing (don't push the network to inf in softmax output layers)
 
 ## Loop infrastructure
 
