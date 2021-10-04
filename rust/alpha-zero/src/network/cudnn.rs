@@ -13,7 +13,7 @@ use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
-use crate::network::decode_policy::decode_output;
+use crate::network::decode_output::decode_output;
 
 pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,

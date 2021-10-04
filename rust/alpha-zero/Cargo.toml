@@ -5,7 +5,7 @@ version = "0.2.0"
 edition = "2018"
 
 [features]
-default = ["cuda"]
+default = ["cuda", "onnxruntime"]
 cuda = ["cuda-nn-eval", "cuda-sys"]
 
 [dependencies]
@@ -16,14 +16,15 @@ cuda-sys = { path = "../cuda-sys", optional = true }
 # TODO re-enable and implement these networks
 #  (update their versions too)
 #tch = { version = "0.4.1", optional = true }
-#onnxruntime = { version = "0.0.14", optional = true }
+
+onnxruntime = { version = "0.0.14", optional = true }
 
 crossbeam = "0.8.1"
 rayon = "1.5.1"
 itertools = "0.10.1"
 rand = "0.8.4"
 ta = "0.5.0"
-self_cell = "0.9.0"
+self_cell = "0.9.2"
 rand_distr = "0.4.1"
 serde = { version = "1.0.126", features = ["derive"] }
 serde_json = "1.0.64"
@@ -33,7 +34,7 @@ safe-transmute = "0.11.2"
 image = { version = "0.23.14", default-features = false, features = ["png"] }
 anyhow = "1.0.42"
 lru = "0.6.6"
-ndarray = "0.15.3"
+ndarray = "0.15.1"
 ndarray-stats = "0.5.0"
 unwrap-match = "0.1.0"
 chess = "3.2.0"

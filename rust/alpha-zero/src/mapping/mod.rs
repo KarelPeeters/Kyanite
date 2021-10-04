@@ -22,7 +22,8 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUn
 
     const INPUT_BOOL_COUNT: usize = Self::INPUT_BOOL_PLANES * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
 
-    const INPUT_FULL_SHAPE: [usize; 3] = [Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES, Self::INPUT_BOARD_SIZE, Self::INPUT_BOARD_SIZE];
+    const INPUT_FULL_PLANES: usize = Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES;
+    const INPUT_FULL_SHAPE: [usize; 3] = [Self::INPUT_FULL_PLANES, Self::INPUT_BOARD_SIZE, Self::INPUT_BOARD_SIZE];
     const INPUT_FULL_SIZE: usize = (Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES) * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
 
     /// Encode this board.

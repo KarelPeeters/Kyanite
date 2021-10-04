@@ -11,7 +11,7 @@ use cuda_nn_eval::onnx::load_onnx_graph;
 
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
-use crate::network::decode_policy::decode_output;
+use crate::network::decode_output::decode_output;
 
 pub struct CPUNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
