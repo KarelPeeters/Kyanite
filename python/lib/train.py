@@ -23,42 +23,28 @@ class TrainSettings:
     policy_weight: float
 
     batch_size: int
-    batches: int
 
     clip_norm: float
 
-    def run_train(self, buffer: FileBuffer, optimizer: Optimizer, network: nn.Module, logger: Logger, scheduler=None):
-        # noinspection PyTypeChecker
-        visits_per_sample = self.batches * self.batch_size / len(buffer)
-        logger.log_gen("small", "visits_per_sample", visits_per_sample)
+    def train_step(self, buffer: FileBuffer, network: nn.Module, optimizer: Optimizer, logger: Logger):
+        batch = buffer.sample_batch(self.batch_size)
 
-        for bi in range(self.batches):
-            batch = buffer.sample_batch(self.batch_size)
+        optimizer.zero_grad(set_to_none=True)
 
-            logger.start_batch()
+        network.train()
+        loss = self.evaluate_batch(network, "train", logger, batch)
+        loss.backward()
 
-            optimizer.zero_grad(set_to_none=True)
+        grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
+        optimizer.step()
 
-            network.train()
-            loss = self.evaluate_batch(network, "train", logger.log_batch, batch)
-            loss.backward()
+        grad_norms = calc_gradient_norms(network)
+        logger.log("grad_norm", "min", np.min(grad_norms))
+        logger.log("grad_norm", "mean", np.mean(grad_norms))
+        logger.log("grad_norm", "max", np.max(grad_norms))
+        logger.log("grad_norm", "torch", grad_norm)
 
-            grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
-            optimizer.step()
-
-            if scheduler is not None:
-                logger.log_batch("schedule", "lr", scheduler.get_last_lr()[0])
-                scheduler.step()
-
-            grad_norms = calc_gradient_norms(network)
-            logger.log_batch("grad_norm", "min", np.min(grad_norms))
-            logger.log_batch("grad_norm", "mean", np.mean(grad_norms))
-            logger.log_batch("grad_norm", "max", np.max(grad_norms))
-            logger.log_batch("grad_norm", "torch", grad_norm)
-
-            logger.finish_batch()
-
-    def evaluate_batch(self, network: nn.Module, log_prefix: str, log, batch: PositionBatch):
+    def evaluate_batch(self, network: nn.Module, log_prefix: str, logger: Logger, batch: PositionBatch):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
         value_logit, wdl_logit, policy_logit = network(batch.input_full)
@@ -74,10 +60,10 @@ class TrainSettings:
         loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logit, batch.policy_indices, batch.policy_values)
         loss_total = self.wdl_weight * loss_wdl + self.value_weight * loss_value + self.policy_weight * loss_policy
 
-        log("loss-wdl", f"{log_prefix} wdl", loss_wdl)
-        log("loss-value", f"{log_prefix} value", loss_value)
-        log("loss-policy", f"{log_prefix} policy", loss_policy)
-        log("loss-total", f"{log_prefix} total", loss_total)
+        logger.log("loss-wdl", f"{log_prefix} wdl", loss_wdl)
+        logger.log("loss-value", f"{log_prefix} value", loss_value)
+        logger.log("loss-policy", f"{log_prefix} policy", loss_policy)
+        logger.log("loss-total", f"{log_prefix} total", loss_total)
 
         # accuracies
         # TODO check that all of this calculates the correct values in the presence of pass moves
@@ -87,10 +73,10 @@ class TrainSettings:
         acc_value = torch.eq(value.sign(), batch_value.sign()).sum() / (batch_value != 0).sum()
         acc_wdl = torch.eq(wdl_logit.argmax(dim=-1), batch.wdl_final.argmax(dim=-1)).sum() / batch_size
 
-        log("acc-wdl", f"{log_prefix} value", acc_value)
-        log("acc-wdl", f"{log_prefix} wdl", acc_wdl)
-        log("acc-policy", f"{log_prefix} acc", acc_policy)
-        log("acc-policy", f"{log_prefix} captured", cap_policy)
+        logger.log("acc-wdl", f"{log_prefix} value", acc_value)
+        logger.log("acc-wdl", f"{log_prefix} wdl", acc_wdl)
+        logger.log("acc-policy", f"{log_prefix} acc", acc_policy)
+        logger.log("acc-policy", f"{log_prefix} captured", cap_policy)
 
         return loss_total
 

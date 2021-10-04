@@ -1,11 +1,11 @@
 from lib.logger import Logger, FinishedLogData
-from lib.plotter import start_qt_app, LogPlotter
+from lib.plotter import qt_app, LogPlotter
 
 
 def show_log(path: str):
     logger = Logger.from_finished_data(FinishedLogData.load(path))
 
-    app = start_qt_app()
+    app = qt_app()
     plotter = LogPlotter(logger)
     plotter.update()
     app.exec()

@@ -1,60 +1,42 @@
-import signal
-from typing import Optional
-
-import signal
-from typing import Optional
+from typing import Dict, Tuple
 
 import darkdetect
 import numpy as np
 import pyqtgraph as pg
 import scipy.signal
-from PyQt5.QtCore import pyqtSignal, QObject, QThread, Qt
+from PyQt5.QtCore import pyqtSignal, QObject, Qt
 from PyQt5.QtGui import QColor, QColorConstants
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
     QSlider, QLabel
 from pyqtgraph import PlotWidget
 
-from lib.logger import Logger, FinishedLogData
+from lib.logger import Logger, LoggerData
 
 
 class LogPlotter(QObject):
-    data_update_slot = pyqtSignal()
+    update_logger_slot = pyqtSignal(object)
+    update_control_slot = pyqtSignal()
 
-    def __init__(self, logger: Logger):
+    def __init__(self):
         super().__init__()
 
-        self.logger = logger
+        self.prev_data = None
 
         # noinspection PyUnresolvedReferences
-        self.data_update_slot.connect(self.on_update_data)
-
-        self.window: Optional[QMainWindow] = None
-        self.plot_widgets: Optional[dict[str, PlotWidget]]
-        self.gen_plots = None
-        self.batch_plots = None
-
-    def update(self):
-        self.data = self.logger.get_finished_data()
+        self.update_logger_slot.connect(self.on_update_logger)
         # noinspection PyUnresolvedReferences
-        self.data_update_slot.emit()
+        self.update_control_slot.connect(self.on_update_control)
 
-    def on_update_data(self):
-        data = self.data
+        self.create_window()
 
-        if self.window is None:
-            self.create_window()
-            self.create_plots(data)
+        self.plot_widgets: Dict[str, PlotWidget] = {}
+        self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
 
-            assert self.window is not None
-            self.window.show()
+        self.on_update_control()
 
-        self.update_plot_data(data)
-
-    def on_auto_range_pressed(self):
-        if self.plot_widgets is not None:
-            for plot_widget in self.plot_widgets.values():
-                plot_widget.autoPixelRange = True
-                plot_widget.enableAutoRange(x=True, y=True)
+    def update(self, logger: Logger):
+        # noinspection PyUnresolvedReferences
+        self.update_logger_slot.emit(logger.finished_data())
 
     def create_window(self):
         set_pg_defaults()
@@ -62,6 +44,8 @@ class LogPlotter(QObject):
         self.window = QMainWindow()
         self.window.setWindowTitle("kZero training progress")
         self.window.setWindowFlag(Qt.WindowCloseButtonHint, False)
+
+        self.window.resize(800, 500)
 
         main_widget = QWidget()
         self.window.setCentralWidget(main_widget)
@@ -76,94 +60,94 @@ class LogPlotter(QObject):
         control_layout.addWidget(autoRangeButton)
         autoRangeButton.pressed.connect(self.on_auto_range_pressed)
 
-        def slider(value: int, max_value: int):
-            assert max_value % 2 != 0
+        self.smooth_slider = QSlider(Qt.Horizontal)
+        self.smooth_slider.setMinimum(1)
+        self.smooth_slider.setMaximum(101)
+        self.smooth_slider.setSingleStep(2)
+        self.smooth_slider.setValue(11)
+        self.smooth_slider.valueChanged.connect(self.update_control_slot)
+        control_layout.addWidget(self.smooth_slider)
 
-            slider = QSlider(Qt.Horizontal)
-            slider.setMinimum(1)
-            slider.setMaximum(max_value)
-            slider.setSingleStep(2)
-            slider.setValue(value)
-            slider.valueChanged.connect(self.data_update_slot)
-            return slider
-
-        self.batch_smooth_slider = slider(11, 101)
-        control_layout.addWidget(self.batch_smooth_slider)
         self.batch_smooth_label = QLabel()
         control_layout.addWidget(self.batch_smooth_label)
-
-        self.gen_smooth_slider = slider(1, 21)
-        control_layout.addWidget(self.gen_smooth_slider)
-        self.gen_smooth_label = QLabel()
-        control_layout.addWidget(self.gen_smooth_label)
 
         control_layout.addStretch(1)
 
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
 
-    def create_plots(self, data: FinishedLogData):
-        all_types = [k for k, _ in data.gen_keys] + [k for k, _ in data.batch_keys]
-        all_types_unique = list(dict.fromkeys(all_types))
+        self.window.show()
 
-        self.plot_widgets = {}
+    def on_auto_range_pressed(self):
+        for plot_widget in self.plot_widgets.values():
+            plot_widget.autoPixelRange = True
+            plot_widget.enableAutoRange(x=False, y=False)
+            plot_widget.enableAutoRange(x=True, y=True)
 
-        self.gen_plots = {}
-        self.batch_plots = {}
+    def widget_for_group(self, g: str):
+        if g in self.plot_widgets:
+            return self.plot_widgets[g]
 
-        for ty in all_types_unique:
-            widget = PlotWidget()
+        widget = PlotWidget()
+        widget.addLegend()
+        self.plot_widgets[g] = widget
+        self.tab_widget.addTab(widget, g)
+        return widget
+
+    def on_update_control(self):
+        window_size = self.smooth_slider.value()
+        self.batch_smooth_label.setText(str(window_size))
+
+        if self.prev_data is not None:
+            self.on_update_logger(self.prev_data)
+
+    def on_update_logger(self, data: LoggerData):
+        self.data = data
+
+        if len(self.plot_items) != len(self.data.values):
+            self.update_plot_items(data)
+
+        window_size = self.smooth_slider.value()
+        self.update_data(data, window_size)
+
+    def update_plot_items(self, data: LoggerData):
+        self.plot_items = {}
+        groups = list(dict.fromkeys(g for g, _ in data.values))
+        keys_per_group = {g: {k for h, k in data.values if h == g} for g in groups}
+
+        for g in groups:
+            widget = self.widget_for_group(g)
+            widget.clear()
             widget.addLegend()
-            self.plot_widgets[ty] = widget
-            self.tab_widget.addTab(widget, ty)
 
-            num_colors = all_types.count(ty)
-            colors_main = generate_distinct_colors(1, 1, num_colors)
-            colors_extra = generate_distinct_colors(0.5, 0.8, num_colors)
+            keys = keys_per_group[g]
+            colors = generate_distinct_colors(1.0, 1.0, len(keys))
 
-            def plot_all_matching(target, keys, prefix, colors):
-                nonlocal next_color
-                for (curr_ty, k) in keys:
-                    if ty != curr_ty:
-                        continue
-                    pen = pg.mkPen(colors[next_color])
-                    target[(ty, k)] = self.plot_widgets[ty].plot(name=f"{prefix} {ty} {k}", pen=pen)
-                    next_color += 1
+            for (k, color) in zip(keys, colors):
+                pen = pg.mkPen(color)
+                self.plot_items[(g, k)] = widget.plot(name=f"{g} {k}", pen=pen)
 
-            next_color = 0
-            plot_all_matching(self.batch_plots, data.batch_keys, "Batch", colors_extra)
-            plot_all_matching(self.gen_plots, data.gen_keys, "Gen", colors_main)
-
-    def update_plot_data(self, data: FinishedLogData):
-        gen_filter_size = self.gen_smooth_slider.value()
-        batch_filter_size = self.batch_smooth_slider.value()
-        self.gen_smooth_label.setText(str(gen_filter_size))
-        self.batch_smooth_label.setText(str(batch_filter_size))
-
-        gen_axis = 0.5 + np.arange(len(data.gen_data))
-
-        for i, k in enumerate(data.gen_keys):
-            self.gen_plots[k].setData(gen_axis, smooth_data(data.gen_data[:, i], gen_filter_size))
-
-        for i, k in enumerate(data.batch_keys):
-            self.batch_plots[k].setData(data.batch_axis, smooth_data(data.batch_data[:, i], batch_filter_size))
+    def update_data(self, data: LoggerData, window_size: int):
+        for (g, k), v in data.values.items():
+            x, y = clean_data(self.data.axis, v, window_size)
+            self.plot_items[(g, k)].setData(x, y)
 
 
-def smooth_data(x, filter_size: int):
-    window_length = min(len(x), filter_size) // 2 * 2 + 1
-    if window_length < 3 or len(x) < window_length:
-        return x
+def clean_data(axis, values, window_size: int):
+    mask = np.isnan(values)
+
+    axis = axis[~mask]
+    values = values[~mask]
+
+    if window_size == 1:
+        clean_values = values
     else:
-        return scipy.signal.savgol_filter(x, window_length, polyorder=2)
+        clean_values = scipy.signal.savgol_filter(values, window_size, polyorder=2, mode="nearest")
+
+    return axis, clean_values
 
 
-class PlotterThread(QThread):
-    def run(self):
-        self.app = QApplication([])
-        self.app.exec()
-
-
-def start_qt_app():
+def qt_app():
     app = QApplication([])
     return app
 

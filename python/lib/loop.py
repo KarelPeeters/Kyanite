@@ -12,7 +12,7 @@ from torch.optim import Optimizer
 
 from lib.games import Game
 from lib.logger import Logger, FinishedLogData
-from lib.plotter import LogPlotter, start_qt_app
+from lib.plotter import LogPlotter, qt_app
 from lib.save_onnx import save_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings, batch_loader
@@ -78,7 +78,7 @@ class LoopSettings:
         start_gen, buffer, logger, network, network_path_onnx = self.load_start_state()
         print_param_count(network)
 
-        app = start_qt_app()
+        app = qt_app()
         plotter = LogPlotter(logger)
         if start_gen.gi != 0:
             plotter.update()
