@@ -99,11 +99,11 @@ impl Graph {
         (0..self.values.len()).map(Value)
     }
 
-    pub fn inputs(&self) -> &Vec<Value> {
+    pub fn inputs(&self) -> &[Value] {
         &self.inputs
     }
 
-    pub fn outputs(&self) -> &Vec<Value> {
+    pub fn outputs(&self) -> &[Value] {
         &self.outputs
     }
 

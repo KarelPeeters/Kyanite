@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
+use std::time::Instant;
 
 use itertools::{Itertools, zip_eq};
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
@@ -8,20 +10,29 @@ use crate::graph::{ConvShape, Graph, Operation, Value, ValueInfo};
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
 
-pub fn execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> Vec<Tensor> {
-    let mut map: HashMap<Value, Tensor> = HashMap::default();
+pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> ExecutionInfo {
+    let mut map: HashMap<Value, CalculatedValue> = HashMap::default();
 
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
-    for (value, array) in zip_eq(graph.inputs(), inputs) {
-        let shape = graph[*value].shape.eval(batch_size);
-        assert_eq!(IxDyn(&shape.dims), array.dim(), "Wrong input shape");
-        map.insert(*value, array.to_shared());
+    for (&value, &tensor) in zip_eq(graph.inputs(), inputs) {
+        let shape = graph[value].shape.eval(batch_size);
+        assert_eq!(IxDyn(&shape.dims), tensor.dim(), "Wrong input shape");
+
+        let calc = CalculatedValue {
+            value,
+            tensor: tensor.to_shared(),
+            time_spent: 0.0,
+        };
+        map.insert(value, calc);
     }
 
     for output in graph.values() {
         let ValueInfo { shape, operation } = &graph[output];
         let output_shape = shape.eval(batch_size);
         let output_shape_dyn = IxDyn(&output_shape.dims);
+
+        println!("Calculating value {:?}", output);
+        let start_time = Instant::now();
 
         let result: Tensor = match operation {
             Operation::Input => continue,
@@ -30,66 +41,72 @@ pub fn execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> Ve
                 Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
             }
             &Operation::View { input } => {
-                let input = map.get(&input).unwrap();
+                let input = &map.get(&input).unwrap().tensor;
                 input.reshape(output_shape_dyn)
             }
             &Operation::Slice { input, axis, start, end, } => {
-                let input = map.get(&input).unwrap();
+                let input = &map.get(&input).unwrap().tensor;
                 let info = slice_info(input.ndim(), axis, start, end);
                 input.slice(info).to_shared()
             }
             &Operation::Conv { input, filter, conv_shape } => {
-                let input = map.get(&input).unwrap().view().into_dimensionality().unwrap();
-                let filter = map.get(&filter).unwrap().view().into_dimensionality().unwrap();
+                let input = map.get(&input).unwrap().tensor.view().into_dimensionality().unwrap();
+                let filter = map.get(&filter).unwrap().tensor.view().into_dimensionality().unwrap();
                 let result = convolution(conv_shape, input, filter);
                 result.into_dyn().into_shared()
             }
             &Operation::Add { left, right } => {
-                let left = map.get(&left).unwrap();
-                let right = map.get(&right).unwrap();
+                let left = &map.get(&left).unwrap().tensor;
+                let right = &map.get(&right).unwrap().tensor;
                 (left + right).into_shared()
             }
             &Operation::Mul { left, right } => {
-                let left = map.get(&left).unwrap();
-                let right = map.get(&right).unwrap();
+                let left = &map.get(&left).unwrap().tensor;
+                let right = &map.get(&right).unwrap().tensor;
                 (left * right).into_shared()
             }
             &Operation::Clamp { input, min, max } => {
-                let input = map.get(&input).unwrap();
+                let input = &map.get(&input).unwrap().tensor;
                 input.map(|&x| x.clamp(min, max)).into_shared()
             }
         };
 
-        let prev = map.insert(output, result);
+        let end_time = Instant::now();
+        let calc = CalculatedValue {
+            value: output,
+            tensor: result,
+            time_spent: (end_time - start_time).as_secs_f32(),
+        };
+        let prev = map.insert(output, calc);
         assert!(prev.is_none());
     }
 
-    graph.outputs().iter()
-        .map(|output| map.get(output).unwrap().to_shared())
-        .collect_vec()
+    ExecutionInfo {
+        map,
+        outputs: graph.outputs().to_owned(),
+    }
 }
 
 fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    let kernel_offset = shape.kernel_size / 2;
-    let input_range = 0..shape.input_size;
+    let kernel_offset = (shape.kernel_size / 2) as isize;
+    let input_range = 0..shape.input_size as isize;
 
     let output_shape = (input.dim().0, shape.output_channels, shape.output_size, shape.output_size);
     Array4::from_shape_fn(output_shape, |(n, co, ox, oy)| {
         let mut result: f32 = 0.0;
 
         for ci in 0..shape.input_channels {
-            for kx in 0..shape.kernel_size {
-                for ky in 0..shape.kernel_size {
-                    let ix = ox + kx - kernel_offset;
-                    let iy = oy + ky - kernel_offset;
+            for kx in 0..shape.kernel_size as isize {
+                for ky in 0..shape.kernel_size as isize {
+                    let ix = ox as isize + kx - kernel_offset;
+                    let iy = oy as isize + ky - kernel_offset;
 
-                    result += if input_range.contains(&ix) && input_range.contains(&iy) {
-                        let a = input[(n as usize, ci as usize, ix as usize, iy as usize)];
-                        let f = filter[(co as usize, ci as usize, kx as usize, ky as usize)];
-                        a * f
-                    } else {
-                        0.0
-                    };
+                    if input_range.contains(&ix) && input_range.contains(&iy) {
+                        let a = input[(n, ci, ix as usize, iy as usize)];
+                        let f = filter[(co, ci, kx as usize, ky as usize)];
+
+                        result += a * f
+                    }
                 }
             }
         }
@@ -113,4 +130,34 @@ fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<V
 
     // safety: we pass an owned Vec, whose .as_ref will always return the same reference
     unsafe { SliceInfo::new(vec).unwrap() }
+}
+
+#[derive(Debug)]
+pub struct ExecutionInfo {
+    map: HashMap<Value, CalculatedValue>,
+    outputs: Vec<Value>,
+}
+
+pub struct CalculatedValue {
+    value: Value,
+    tensor: Tensor,
+    time_spent: f32,
+}
+
+impl ExecutionInfo {
+    pub fn outputs(self) -> Vec<Tensor> {
+        self.outputs.iter()
+            .map(|v| self.map.get(v).unwrap().tensor.to_shared())
+            .collect_vec()
+    }
+}
+
+impl Debug for CalculatedValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CalculatedTensor")
+            .field("value", &self.value)
+            .field("shape", &self.tensor.dim())
+            .field("time_spent", &self.time_spent)
+            .finish()
+    }
 }
