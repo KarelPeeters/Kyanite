@@ -1,13 +1,14 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensor4dDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
+use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensorNdDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
 pub struct TensorDescriptor {
     inner: cudnnTensorDescriptor_t,
-    shape: [i32; 4],
+    shape: Vec<i32>,
+    strides: Vec<i32>,
 }
 
 impl Drop for TensorDescriptor {
@@ -17,18 +18,30 @@ impl Drop for TensorDescriptor {
 }
 
 impl TensorDescriptor {
-    pub fn new(n: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t) -> Self {
+    pub fn new(shape: Vec<i32>, strides: Vec<i32>) -> Self {
+        //TODO maybe re-enable this assert if we actually run into issues
+        assert!(shape.len() > 2, "Tensors must be at least 3d, got shape {:?} strides {:?}", shape, strides);
+
+        let rank = shape.len();
+        assert_eq!(rank, strides.len());
+
+        for i in 0..rank {
+            assert_ne!(shape[i], 0, "Zero-sized dimensions are not allowed");
+            assert!(strides[i] > 0);
+        }
+
         unsafe {
             let mut inner = null_mut();
             cudnnCreateTensorDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetTensor4dDescriptor(
+            cudnnSetTensorNdDescriptor(
                 inner,
-                format,
-                data_type,
-                n, c, h, w,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                rank as i32,
+                shape.as_ptr(),
+                strides.as_ptr(),
             ).unwrap();
 
-            TensorDescriptor { inner, shape: [n, c, h, w] }
+            TensorDescriptor { inner, shape, strides }
         }
     }
 
@@ -36,15 +49,10 @@ impl TensorDescriptor {
         self.inner
     }
 
-    pub fn shape(&self) -> [i32; 4] {
-        self.shape
-    }
-
-    pub fn size(&self) -> usize {
+    pub fn size_bytes(&self) -> usize {
         unsafe {
             let mut result = 0;
             cudnnGetTensorSizeInBytes(self.inner, &mut result as *mut _).unwrap();
-
             result
         }
     }
@@ -68,15 +76,17 @@ impl FilterDescriptor {
     /// * `k`: output channels
     /// * `c`: input channels
     /// * `(h, w)`: kernel size
-    pub fn new(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t) -> Self {
+    pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
         //TODO whats with (h, w) here? that's super inconsistent with everything else?
+        assert_eq!(h, w, "Only square kernels supported for now");
+
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
             cudnnSetFilter4dDescriptor(
                 inner,
-                data_type,
-                format,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
                 k, c, h, w,
             ).unwrap();
             FilterDescriptor { inner, shape: [k, c, h, w] }
@@ -91,7 +101,7 @@ impl FilterDescriptor {
         self.shape
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size_bytes(&self) -> usize {
         unsafe {
             let mut result = 0;
             cudnnGetFilterSizeInBytes(self.inner, &mut result as *mut _).unwrap();
@@ -117,7 +127,6 @@ impl ConvolutionDescriptor {
         stride_v: i32,
         dilation_h: i32,
         dilation_w: i32,
-        data_type: cudnnDataType_t,
     ) -> Self {
         let checked = [stride_h, stride_v, dilation_h, dilation_w];
         assert!(
@@ -132,7 +141,8 @@ impl ConvolutionDescriptor {
             cudnnSetConvolution2dDescriptor(
                 inner,
                 pad_h, pad_w, stride_h, stride_v, dilation_h, dilation_w,
-                cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION, data_type,
+                cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
             ).unwrap();
             ConvolutionDescriptor(inner)
         }
@@ -146,7 +156,11 @@ impl ConvolutionDescriptor {
         filter: &FilterDescriptor,
         output: &TensorDescriptor,
     ) -> usize {
-        assert_eq!(self.output_shape(input, filter), output.shape, "Output shape mismatch");
+        assert_eq!(
+            &self.output_shape(input, filter)[..],
+            &output.shape,
+            "Output shape mismatch"
+        );
 
         let mut workspace: usize = 0;
 
@@ -252,7 +266,9 @@ impl PoolingDescriptor {
                 inner,
                 mode,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-                h, w, pad_h, pad_w, stride_h, stride_v,
+                h, w,
+                pad_h, pad_w,
+                stride_h, stride_v,
             ).unwrap();
             PoolingDescriptor(inner)
         }
@@ -277,6 +293,38 @@ impl PoolingDescriptor {
     }
 
     pub unsafe fn inner(&self) -> cudnnPoolingDescriptor_t {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct TensorOpDescriptor(cudnnOpTensorDescriptor_t);
+
+impl Drop for TensorOpDescriptor {
+    fn drop(&mut self) {
+        unsafe {
+            cudnnDestroyOpTensorDescriptor(self.0).unwrap()
+        }
+    }
+}
+
+impl TensorOpDescriptor {
+    pub fn new(operation: cudnnOpTensorOp_t) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cudnnCreateOpTensorDescriptor(&mut inner as *mut _).unwrap();
+            cudnnSetOpTensorDescriptor(
+                inner,
+                operation,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+            ).unwrap();
+
+            TensorOpDescriptor(inner)
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cudnnOpTensorDescriptor_t {
         self.0
     }
 }

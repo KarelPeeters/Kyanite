@@ -1,10 +1,10 @@
-pub mod graph;
+pub use ndarray;
 
+pub mod graph;
 pub mod shape;
+pub mod onnx;
 
 pub mod cpu;
 
-pub mod onnx;
-// pub mod fuser;
-
 mod wrap_debug;
+

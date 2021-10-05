@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 
-use itertools::{Itertools, zip_eq};
+use itertools::Itertools;
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
 
 use crate::graph::{ConvShape, Graph, Operation, Value, ValueInfo};
@@ -11,20 +11,9 @@ use crate::graph::{ConvShape, Graph, Operation, Value, ValueInfo};
 pub type Tensor = ArcArray<f32, IxDyn>;
 
 pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> ExecutionInfo {
-    let mut map: HashMap<Value, CalculatedValue> = HashMap::default();
-
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
-    for (&value, &tensor) in zip_eq(graph.inputs(), inputs) {
-        let shape = graph[value].shape.eval(batch_size);
-        assert_eq!(IxDyn(&shape.dims), tensor.dim(), "Wrong input shape");
 
-        let calc = CalculatedValue {
-            value,
-            tensor: tensor.to_shared(),
-            time_spent: 0.0,
-        };
-        map.insert(value, calc);
-    }
+    let mut map: HashMap<Value, CalculatedValue> = HashMap::default();
 
     for output in graph.values() {
         let ValueInfo { shape, operation } = &graph[output];
@@ -35,7 +24,9 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
         let start_time = Instant::now();
 
         let result: Tensor = match operation {
-            Operation::Input => continue,
+            &Operation::Input { index } => {
+                inputs[index].to_shared()
+            }
             Operation::Constant { data } => {
                 let data = (&**data).clone();
                 Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
@@ -55,10 +46,12 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 let result = convolution(conv_shape, input, filter);
                 result.into_dyn().into_shared()
             }
-            &Operation::Add { left, right } => {
+            &Operation::Add { left, right, subtract } => {
                 let left = &map.get(&left).unwrap().tensor;
                 let right = &map.get(&right).unwrap().tensor;
-                (left + right).into_shared()
+
+                let result = if subtract { left - right } else { left + right };
+                result.into_shared()
             }
             &Operation::Mul { left, right } => {
                 let left = &map.get(&left).unwrap().tensor;
@@ -70,6 +63,8 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 input.map(|&x| x.clamp(min, max)).into_shared()
             }
         };
+
+        assert_eq!(&output_shape.dims, result.shape(), "Wrong output shape");
 
         let end_time = Instant::now();
         let calc = CalculatedValue {

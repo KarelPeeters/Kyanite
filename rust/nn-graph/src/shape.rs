@@ -98,8 +98,16 @@ impl Size {
 }
 
 impl ConcreteShape {
+    pub fn new(dims: Vec<usize>) -> Self {
+        ConcreteShape { dims }
+    }
+
+    pub fn rank(&self) -> usize {
+        self.dims.len()
+    }
+
     pub fn size(&self) -> usize {
-        return self.dims.iter().product();
+        self.dims.iter().product()
     }
 
     pub fn unwrap_2(&self) -> [usize; 2] {

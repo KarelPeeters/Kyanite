@@ -154,6 +154,8 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 graph.view(output, output_shape)
             }
             "BatchNormalization" => {
+                //TODO also try without merging anything here to see how much of a difference it makes
+
                 assert_eq!(5, inputs.len());
 
                 let input = inputs[0];

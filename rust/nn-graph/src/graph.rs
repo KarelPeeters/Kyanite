@@ -31,7 +31,7 @@ pub struct ValueInfo {
 #[derive(Debug)]
 pub enum Operation {
     /// A runtime-variable input.
-    Input,
+    Input { index: usize },
     /// A constant build into the network.
     Constant { data: WrapDebug<Vec<f32>> },
 
@@ -44,7 +44,7 @@ pub enum Operation {
     Conv { input: Value, filter: Value, conv_shape: ConvShape },
 
     /// Elementwise add two values, with broadcasting on the right.
-    Add { left: Value, right: Value },
+    Add { left: Value, right: Value, subtract: bool },
     /// Elementwise multiply two values, with broadcasting on the right value.
     Mul { left: Value, right: Value },
 
@@ -121,7 +121,8 @@ impl Graph {
     /// Declare a new input value.
     #[must_use]
     pub fn input(&mut self, shape: Shape) -> Value {
-        let value = self.push(shape, Operation::Input);
+        let index = self.inputs.len();
+        let value = self.push(shape, Operation::Input { index });
         self.inputs.push(value);
         value
     }
@@ -280,7 +281,15 @@ impl Graph {
     #[must_use]
     pub fn add(&mut self, left: Value, right: Value) -> Value {
         let output_shape = self.check_broadcast(left, right);
-        self.push(output_shape, Operation::Add { left, right })
+        self.push(output_shape, Operation::Add { left, right, subtract: false })
+    }
+
+    /// Subtract two values elementwise.
+    /// They must have the same rank, and the right shape is broadcasted to the left shape.
+    #[must_use]
+    pub fn sub(&mut self, left: Value, right: Value) -> Value {
+        let output_shape = self.check_broadcast(left, right);
+        self.push(output_shape, Operation::Add { left, right, subtract: true })
     }
 
     /// Multiple two values elementwise.

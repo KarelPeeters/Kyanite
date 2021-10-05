@@ -421,13 +421,9 @@ name = "cuda-nn-eval"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "byteorder",
- "cast_trait",
  "cuda-sys",
  "itertools",
- "ndarray",
- "rand 0.8.4",
- "unwrap-match",
+ "nn-graph",
 ]
 
 [[package]]
@@ -435,7 +431,7 @@ name = "cuda-sys"
 version = "0.1.0"
 dependencies = [
  "bindgen",
- "bytemuck",
+ "itertools",
 ]
 
 [[package]]
