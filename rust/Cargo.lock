@@ -426,8 +426,6 @@ dependencies = [
  "cuda-sys",
  "itertools",
  "ndarray",
- "prost",
- "prost-build",
  "rand 0.8.4",
  "unwrap-match",
 ]
@@ -817,6 +815,18 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rand 0.8.4",
+]
+
+[[package]]
+name = "nn-graph"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "itertools",
+ "ndarray",
+ "prost",
+ "prost-build",
+ "unwrap-match",
 ]
 
 [[package]]

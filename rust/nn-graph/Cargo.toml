@@ -1,0 +1,16 @@
+[package]
+name = "nn-graph"
+version = "0.1.0"
+edition = "2018"
+
+[build-dependencies]
+prost-build = "0.8.0"
+
+[dependencies]
+prost = "0.8.0"
+
+byteorder = "1.4.3"
+itertools = "0.10.1"
+unwrap-match = "0.1.0"
+
+ndarray = "0.15.1"

@@ -1,9 +1,10 @@
 [workspace]
 
 members = [
+    "alpha-zero",
+    "nn-graph",
     "cuda-sys",
     "cuda-nn-eval",
-    "alpha-zero",
 ]
 
 [profile.release]

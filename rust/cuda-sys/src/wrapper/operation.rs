@@ -87,7 +87,7 @@ pub fn run_conv(
     }
 }
 
-/// Run `output += input`. `output` can have dimensions of size 1 which are broadcasted to the shape of `output`.
+/// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
 pub fn run_add_tensor(
     handle: &mut CudnnHandle,
     input_desc: &TensorDescriptor,
