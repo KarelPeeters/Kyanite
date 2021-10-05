@@ -13,11 +13,10 @@ from lib.data.buffer import FileBuffer
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.lc0_old import LCZOldNetwork
 from lib.model.lc0_pre_act import LCZOldPreNetwork
 from lib.plotter import LogPlotter, qt_app
 from lib.save_onnx import save_onnx
-from lib.schedule import Schedule
+from lib.schedule import LinearSchedule
 from lib.train import TrainSettings
 from lib.util import DEVICE, print_param_count
 
@@ -25,7 +24,7 @@ from lib.util import DEVICE, print_param_count
 def thread_main(logger: Logger, plotter: LogPlotter):
     train_pattern = f"../../data/pgn-games/ccrl/train/*.json"
     test_pattern = f"../../data/pgn-games/ccrl/test/*.json"
-    output_folder = "../../data/supervised/repro/"
+    output_folder = "../../data/supervised/repro_momentum/"
 
     shutil.rmtree(output_folder, ignore_errors=True)
     # assert not os.path.exists(output_folder)
@@ -53,7 +52,8 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     print_param_count(network)
 
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0)
-    schedule = Schedule(40, [0.2, 0.02, 0.002, 0.0002], [4000, 8000, 12000])
+    # schedule = FixedSchedule(40, [0.01, 0.001, 0.0001, 0.00001], [4000, 8000, 12000])
+    schedule = LinearSchedule(1.0, 0.001, 1000)
 
     # optimizer = AdamW(network.parameters(), weight_decay=1e-5)
     # scheduler = None
@@ -118,7 +118,6 @@ def thread_main(logger: Logger, plotter: LogPlotter):
             # plot_grad_norms(settings, network, test_test_batch)
             save_onnx(game, os.path.join(output_folder, f"network_{bi}.onnx"), network)
             torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pb"))
-
 
 
 def main():

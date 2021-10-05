@@ -3,13 +3,13 @@ from lib.plotter import qt_app, LogPlotter
 
 
 def show_log(path: str):
-    logger = Logger.from_finished_data(FinishedLogData.load(path))
+    logger = Logger.load(path)
 
     app = qt_app()
-    plotter = LogPlotter(logger)
-    plotter.update()
+    plotter = LogPlotter()
+    plotter.update(logger)
     app.exec()
 
 
 if __name__ == '__main__':
-    show_log("../../data/supervised/256x4 pre.npz")
+    show_log("../../data/supervised/repro/log.npz")

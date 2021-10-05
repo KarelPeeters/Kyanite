@@ -61,10 +61,10 @@ class LogPlotter(QObject):
         autoRangeButton.pressed.connect(self.on_auto_range_pressed)
 
         self.smooth_slider = QSlider(Qt.Horizontal)
-        self.smooth_slider.setMinimum(1)
-        self.smooth_slider.setMaximum(101)
-        self.smooth_slider.setSingleStep(2)
-        self.smooth_slider.setValue(11)
+        self.smooth_slider.setMinimum(0)
+        self.smooth_slider.setMaximum(100)
+        self.smooth_slider.setSingleStep(1)
+        self.smooth_slider.setValue(5)
         self.smooth_slider.valueChanged.connect(self.update_control_slot)
         control_layout.addWidget(self.smooth_slider)
 
@@ -95,7 +95,7 @@ class LogPlotter(QObject):
         return widget
 
     def on_update_control(self):
-        window_size = self.smooth_slider.value()
+        window_size = self.smooth_slider.value() * 2 + 1
         self.batch_smooth_label.setText(str(window_size))
 
         if self.prev_data is not None:
@@ -107,7 +107,7 @@ class LogPlotter(QObject):
         if len(self.plot_items) != len(data.values):
             self.update_plot_items(data)
 
-        window_size = self.smooth_slider.value()
+        window_size = self.smooth_slider.value() * 2 + 1
         self.update_data(data, window_size)
 
     def update_plot_items(self, data: LoggerData):
