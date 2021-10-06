@@ -1,5 +1,6 @@
+use std::cmp::max;
+
 use bytemuck::{cast_slice, cast_slice_mut};
-use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::CudnnHandle;
 use nn_graph::graph::{Graph, ValueInfo};
@@ -10,6 +11,8 @@ use crate::planner::{Planner, Step};
 pub struct CudnnExecutor {
     handle: CudnnHandle,
     plan: Vec<Step>,
+
+    stage: Vec<f32>,
     outputs: Vec<Vec<f32>>,
 }
 
@@ -22,18 +25,23 @@ impl CudnnExecutor {
             planner.visit(value, &shape.eval(batch_size), operation);
         }
 
+        let mut outputs = vec![];
+        let mut stage_size = 0;
+
         for (index, &value) in graph.outputs().iter().enumerate() {
-            planner.visit_output(index, value);
+            let tensor = planner.visit_output(index, value);
+
+            if !tensor.has_basic_strides {
+                stage_size = max(stage_size, tensor.mem.len_bytes() / 4);
+            }
+
+            outputs.push(vec![f32::NAN; tensor.shape.size()])
         }
 
         let (handle, plan) = planner.finish();
 
-        let outputs = graph.outputs().iter().map(|&output| {
-            let size = graph[output].shape.size().eval(batch_size);
-            vec![f32::NAN; size]
-        }).collect_vec();
-
-        CudnnExecutor { handle, plan, outputs }
+        let stage = vec![f32::NAN; stage_size];
+        CudnnExecutor { handle, plan, stage, outputs }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -49,10 +57,22 @@ impl CudnnExecutor {
                     Step::TensorOp { args } => {
                         args.run(&mut self.handle);
                     }
-                    Step::CopyOutput { index, mem } => {
-                        //TODO properly handle strided outputs here
-                        if mem.len_bytes() == self.outputs[*index].len() * 4 {
-                            mem.copy_to_host(cast_slice_mut(&mut self.outputs[*index]))
+                    Step::CopyOutput { index, tensor } => {
+                        if tensor.has_basic_strides {
+                            // directly copy everything into the output
+                            tensor.mem.copy_to_host(cast_slice_mut(&mut self.outputs[*index]));
+                        } else {
+                            // copy the entire mem over
+                            let stage = &mut self.stage[0..tensor.mem.len_bytes() / 4];
+                            tensor.mem.copy_to_host(cast_slice_mut(stage));
+
+                            // selectively copy over the actual values we want
+                            let output = &mut self.outputs[*index];
+                            let mut output_i = 0;
+                            tensor.visit_strided_indices(|stage_i| {
+                                output[output_i] = stage[stage_i];
+                                output_i += 1;
+                            });
                         }
                     }
                 }

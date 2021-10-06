@@ -8,3 +8,4 @@ bindgen = { git = "https://github.com/rust-lang/rust-bindgen", rev = "0f641061a7
 
 [dependencies]
 itertools = "0.10.1"
+bytemuck = "1.7.2"

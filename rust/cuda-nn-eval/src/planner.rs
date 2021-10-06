@@ -133,10 +133,10 @@ impl Planner {
         assert!(prev.is_none());
     }
 
-    pub fn visit_output(&mut self, index: usize, value: Value) {
-        let value = self.get(value);
-        let mem = value.mem.view();
-        self.plan.push(Step::CopyOutput { index, mem })
+    pub fn visit_output(&mut self, index: usize, value: Value) -> Tensor {
+        let tensor = self.get(value).view();
+        self.plan.push(Step::CopyOutput { index, tensor: tensor.view() });
+        tensor
     }
 
     fn visit_conv(&mut self, output_shape: &ConcreteShape, input: Value, filter: Value, conv_shape: ConvShape) -> Tensor {
@@ -252,5 +252,5 @@ pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
     Conv { args: ConvolutionArgs },
     TensorOp { args: TensorOpArgs },
-    CopyOutput { index: usize, mem: DeviceMem },
+    CopyOutput { index: usize, tensor: Tensor },
 }

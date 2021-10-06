@@ -7,6 +7,8 @@ use nn_graph::shape::ConcreteShape;
 #[derive(Debug)]
 pub struct Tensor {
     pub mem: DeviceMem,
+
+    // TODO extract this (shape, stride) combo into a separate utility struct
     pub shape: ConcreteShape,
     pub strides: Vec<usize>,
     pub has_basic_strides: bool,
@@ -70,6 +72,27 @@ impl Tensor {
             shape: self.shape.clone(),
             strides: self.strides.clone(),
             has_basic_strides: self.has_basic_strides,
+        }
+    }
+
+    pub fn visit_strided_indices(&self, mut f: impl FnMut(usize) -> ()) {
+        visit_strided_indices(0, &self.shape.dims, &self.strides, &mut f)
+    }
+}
+
+fn visit_strided_indices(start: usize, shape: &[usize], strides: &[usize], f: &mut impl FnMut(usize) -> ()) {
+    assert_eq!(shape.len(), strides.len());
+
+    if shape.is_empty() {
+        f(start);
+    } else {
+        for i in 0..shape[0] {
+            visit_strided_indices(
+                start + i * strides[0],
+                &shape[1..],
+                &strides[1..],
+                f,
+            )
         }
     }
 }
