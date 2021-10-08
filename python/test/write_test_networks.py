@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 from torch import nn
 
 from lib.games import Game
+from lib.model.lc0_pre_act import LCZOldPreNetwork
 from lib.model.simple import SimpleNetwork
 from lib.save_onnx import save_onnx
 
@@ -14,6 +15,7 @@ def build_networks():
     sttt = Game.find("sttt")
     networks = {
         "simple-sttt-1x64": (sttt, SimpleNetwork(sttt, 1, 64)),
+        "pre-sttt-4x8": (sttt, LCZOldPreNetwork(sttt, 4, 8, 5, (6, 32))),
         # "lcz_old_pre_0x1": (chess, LCZOldPreNetwork(chess, 0, 1)),
         # "lcz_old_pre_4x8": (chess, LCZOldPreNetwork(chess, 4, 8)),
     }

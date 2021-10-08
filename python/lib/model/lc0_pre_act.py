@@ -3,6 +3,8 @@
 # https://github.com/LeelaChessZero/lczero-training/blob/3a6ed5e8cb140817cb0bd285f0f28b96988ef9e1/tf/tfprocess.py#L1185
 # version at the time of the common dataset:
 # https://github.com/LeelaChessZero/lczero-training/blob/77fbfba230e3f309d474fe60dd9d469a76fc28f2/tf/tfprocess.py#L397-L530
+from typing import Tuple
+
 import torch
 from torch import nn
 
@@ -10,10 +12,10 @@ from lib.games import Game
 
 
 class LCZOldPreNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int):
+    def __init__(self, game: Game, depth: int, channels: int, policy_channels: int, value_channels: Tuple[int, int]):
         super().__init__()
-        assert game.name == "chess"
         self.policy_channels = game.policy_channels
+        self.b = game.board_size
 
         self.tower = nn.Sequential(
             nn.Conv2d(game.full_input_channels, channels, kernel_size=(3, 3), padding=(1, 1)),
@@ -23,23 +25,23 @@ class LCZOldPreNetwork(nn.Module):
         )
 
         self.policy_head = nn.Sequential(
-            conv_block(1, channels, 32),
+            conv_block(1, channels, policy_channels),
             nn.Flatten(),
-            nn.Linear(32*8*8, game.policy_channels*8*8),
+            nn.Linear(policy_channels * self.b * self.b, game.policy_channels * self.b * self.b),
         )
 
         self.value_head = nn.Sequential(
-            conv_block(1, channels, 32),
+            conv_block(1, channels, value_channels[0]),
             nn.Flatten(),
-            nn.Linear(32 * 8 * 8, 128),
+            nn.Linear(value_channels[0] * self.b * self.b, value_channels[1]),
             nn.ReLU6(),
-            nn.Linear(128, 4),
+            nn.Linear(value_channels[1], 4),
         )
 
     def forward(self, input):
         common = self.tower(input)
         value_wdl = self.value_head(common)
-        policy = self.policy_head(common).view(-1, self.policy_channels, 8, 8)
+        policy = self.policy_head(common).view(-1, self.policy_channels, self.b, self.b)
 
         value = value_wdl[:, 0]
         wdl = value_wdl[:, 1:4]
