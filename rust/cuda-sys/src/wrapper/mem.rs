@@ -50,7 +50,7 @@ impl DeviceMem {
         }
     }
 
-    pub fn len_bytes(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.len
     }
 
@@ -68,8 +68,11 @@ impl DeviceMem {
     }
 
     pub fn slice(&self, start: usize, len: usize) -> DeviceMem {
-        assert!(start < self.len);
-        assert!(start + len < self.len);
+        assert!(
+            start < self.len && start + len <= self.len,
+            "Slice indices must be in bounds, got start {} len {} for mem of len {}",
+            start, len, self.len,
+        );
 
         DeviceMem {
             inner: Rc::clone(&self.inner),

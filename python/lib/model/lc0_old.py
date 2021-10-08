@@ -10,7 +10,7 @@ from lib.games import Game
 
 
 class LCZOldNetwork(nn.Module):
-    def __init__(self, game: Game, channels: int, depth: int):
+    def __init__(self, game: Game, depth: int, channels: int):
         super().__init__()
         assert game.name == "chess"
         self.policy_channels = game.policy_channels

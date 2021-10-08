@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::Itertools;
 use prost::Message;
@@ -13,9 +11,15 @@ use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::store::Store;
 use crate::shape::{Shape, Size};
 
-pub fn load_onnx_impl(path: &Path) -> Graph {
-    let model = load_model_proto(path);
-    let model_graph = model.graph.unwrap();
+pub fn load_model_proto(buf: &[u8]) -> ModelProto {
+    let mut buf: &[u8] = &buf;
+    let model = ModelProto::decode(&mut buf)
+        .unwrap();
+    model
+}
+
+pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
+    let model_graph = model.graph.as_ref().unwrap();
 
     for init in &model_graph.initializer {
         assert_eq!(DataType::Float as i32, init.data_type);
@@ -62,7 +66,7 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 let [dw, dh] = unwrap_2(attrs.take_ints("dilations"));
 
                 let [_, _, kernel_w, kernel_h] =
-                    graph[filter].shape.unwrap_fixed().unwrap_4();
+                    graph[filter].shape.unwrap_fixed("Convolution kernel shape must be fixed").unwrap_4();
 
                 assert_eq!(1, g);
                 assert!(ph0 == ph1 && pv0 == pv1 && ph0 == pv0);
@@ -88,10 +92,27 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 graph.relu(input)
             }
             "Clip" => {
-                assert_eq!(1, inputs.len());
+                assert!(inputs.len() >= 1);
                 let input = inputs[0];
-                let min = attrs.take_float("min");
-                let max = attrs.take_float("max");
+
+                let (min, max) = match inputs.len() {
+                    1 =>
+                        (attrs.take_float("min"), attrs.take_float("max")),
+                    3 => {
+                        let min = graph.unwrap_const(inputs[1]);
+                        let max = graph.unwrap_const(inputs[1]);
+
+                        assert!(
+                            min.len() == 1 && max.len() == 1,
+                            "Expected min and max to be a single element, got {} and {}",
+                            min.len(), max.len(),
+                        );
+
+                        (min[0], max[0])
+                    }
+                    len =>
+                        panic!("Expected either 1 or 3 inputs for Clip, got {}", len),
+                };
 
                 graph.clamp(input, min, max)
             }
@@ -125,33 +146,19 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 assert_eq!(1.0, beta);
                 assert!(trans_b);
 
-                let [co, ci] = graph[weight].shape.unwrap_fixed().unwrap_2();
-                let [n, ci_check] = graph[input].shape.unwrap_2();
-
-                assert_eq!(ci, ci_check.unwrap_fixed(), "Gemm input size and weight mismatch");
-
-                let input_view_shape = Shape::new(vec![n, Size::fixed(ci), Size::ONE, Size::ONE]);
-                let input_view = graph.view(input, input_view_shape);
-
-                let filter_view_shape = Shape::fixed(&[co, ci, 1, 1]);
-                let filter_view = graph.view(weight, filter_view_shape);
-
-                let conv = graph.conv(input_view, filter_view, 0);
+                let linear = graph.linear(input, weight);
 
                 let output = if let Some(bias) = bias {
-                    let co_check = graph[bias].shape.unwrap_1().unwrap_fixed();
-                    assert_eq!(co, co_check, "Gemm bias size mismatch");
-
-                    let bias_view_shape = Shape::fixed(&[1, co_check, 1, 1]);
+                    let bias_len = graph[bias].shape.unwrap_1();
+                    let bias_view_shape = Shape::new(vec![Size::ONE, bias_len]);
                     let bias_view = graph.view(bias, bias_view_shape);
 
-                    graph.add(conv, bias_view)
+                    graph.add(linear, bias_view)
                 } else {
-                    conv
+                    linear
                 };
 
-                let output_shape = Shape::new(vec![n, Size::fixed(co)]);
-                graph.view(output, output_shape)
+                output
             }
             "BatchNormalization" => {
                 //TODO also try without merging anything here to see how much of a difference it makes
@@ -174,7 +181,7 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 assert!(input_shape.rank() >= 2, "BN input must have at least rank 2");
                 let const_shape = input_shape.all_ones_except(1);
 
-                let channels = input_shape[1].unwrap_fixed();
+                let channels = input_shape[1].unwrap_fixed("BN channel count must be fixed");
                 assert!(
                     scale.len() == channels && bias.len() == channels &&
                         mean.len() == channels && variance.len() == channels
@@ -200,8 +207,6 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
 
                 let tensor = attrs.take_tensor("value");
                 let (shape, data) = load_tensor_float_data(tensor);
-
-                println!("Loaded constant with shape {:?} and data {:?}", shape, data);
 
                 graph.constant(shape, data)
             }
@@ -249,6 +254,7 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
             "Slice" => {
                 assert_eq!(1, inputs.len());
                 let input = inputs[0];
+                let input_shape = graph[input].shape.clone();
 
                 let axes = attrs.take_ints("axes");
                 let starts = attrs.take_ints("starts");
@@ -257,7 +263,15 @@ pub fn load_onnx_impl(path: &Path) -> Graph {
                 assert!(axes.len() == starts.len() && axes.len() == ends.len(), "Inconsistent axes count");
 
                 (0..axes.len()).fold(input, |curr, i| {
-                    graph.slice(curr, axes[i] as usize, starts[i] as usize, ends[i] as usize)
+                    let axis = index_to_abs(axes[i], input_shape.rank());
+                    let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
+
+                    graph.slice(
+                        curr,
+                        axis,
+                        index_to_abs(starts[i], axis_size),
+                        index_to_abs(ends[i], axis_size),
+                    )
                 })
             }
             _ => {
@@ -290,7 +304,7 @@ fn load_tensor_float_data(tensor: &TensorProto) -> (Shape, Vec<f32>) {
     // figure out the dimension
     let dims = tensor.dims.iter().map(|&d| Size::fixed(d as usize)).collect_vec();
     let shape = Shape::new(dims);
-    let size = shape.size().unwrap_fixed();
+    let size = shape.size().unwrap_fixed("Data tensor shape must be fixed");
 
     // load the data
     let data_type = DataType::from_i32(tensor.data_type).expect("Illegal data type");
@@ -351,7 +365,9 @@ fn resolve_tensor_dim(dim: &tensor_shape_proto::Dimension) -> Size {
 }
 
 fn index_to_abs(index: i64, size: usize) -> usize {
-    if index < 0 {
+    if index == i64::MAX {
+        size
+    } else if index < 0 {
         size - ((-index) as usize)
     } else {
         index as usize
@@ -370,26 +386,17 @@ fn unwrap_4(slice: &[i64]) -> [usize; 4] {
     [slice[0] as usize, slice[1] as usize, slice[2] as usize, slice[3] as usize]
 }
 
-fn load_model_proto(path: &Path) -> ModelProto {
-    let bytes = std::fs::read(path)
-        .unwrap();
-
-    let mut bytes: &[u8] = &bytes;
-    let model = ModelProto::decode(&mut bytes)
-        .unwrap();
-
-    model
-}
-
 fn calculate_reshape_output_shape(old_size: Size, new_shape_f: &[f32]) -> Shape {
+    let new_shape_int = new_shape_f.iter().map(|&f| {
+        assert_eq!(f as i64 as f32, f, "Reshape shape must only contain integers, got {}", f);
+        f as i64
+    }).collect_vec();
+
     let mut new_shape = vec![];
     let mut leftover_index = None;
     let mut leftover_size = old_size;
 
-    for (i, &size_f) in new_shape_f.iter().enumerate() {
-        let size = size_f as i64;
-        assert_eq!(size as f32, size_f, "Size must be an integer");
-
+    for (i, &size) in new_shape_int.iter().enumerate() {
         let size = if size == -1 {
             assert!(leftover_index.is_none(), "Reshape shape can only contain a single -1 value");
             leftover_index = Some(i);
@@ -397,7 +404,9 @@ fn calculate_reshape_output_shape(old_size: Size, new_shape_f: &[f32]) -> Shape 
         } else {
             assert!(size >= 0, "Size must be positive or -1");
             let size = Size::fixed(size as usize);
-            leftover_size = leftover_size / size;
+            leftover_size = (leftover_size / size).unwrap_or_else(|| {
+                panic!("Cannot reshape {} into {:?}", old_size, new_shape_int);
+            });
             size
         };
 

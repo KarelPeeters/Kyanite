@@ -12,7 +12,7 @@ from lib.games import Game
 
 
 class LC0Model(nn.Module):
-    def __init__(self, game: Game, channels: int, block_count: int, wdl: bool):
+    def __init__(self, game: Game, block_count: int, channels: int, wdl: bool):
         super().__init__()
         assert game.name == "chess"
 

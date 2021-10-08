@@ -3,3 +3,4 @@
 pub mod executor;
 mod tensor;
 mod planner;
+mod shape;

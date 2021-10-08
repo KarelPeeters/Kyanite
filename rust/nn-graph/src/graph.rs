@@ -84,7 +84,11 @@ impl Graph {
     fn check_broadcast(&self, left: Value, right: Value) -> Shape {
         let left_shape = &self[left].shape;
         let right_shape = &self[right].shape;
-        assert_eq!(left_shape.rank(), right_shape.rank(), "Both inputs must have the same rank");
+        assert_eq!(
+            left_shape.rank(), right_shape.rank(),
+            "Both inputs must have the same rank, got {:?} and {:?}",
+            left_shape, right_shape
+        );
 
         for (&l, &r) in zip_eq(&left_shape.dims, &right_shape.dims) {
             assert!(l == r || r == Size::ONE, "Cannot broadcast shape {:?} to {:?}", right_shape, left_shape);
@@ -130,7 +134,7 @@ impl Graph {
     /// Declare a new constant.
     #[must_use]
     pub fn constant(&mut self, shape: Shape, data: Vec<f32>) -> Value {
-        let expected_len = shape.unwrap_fixed().size();
+        let expected_len = shape.unwrap_fixed("Constant shape must be fixed").size();
         assert_eq!(expected_len, data.len() as usize, "Shape {:?} and data size {} mismatch", shape, data.len());
 
         self.push(shape, Operation::Constant { data: data.into() })
@@ -187,7 +191,7 @@ impl Graph {
         );
 
         let mut new_shape = old_shape.clone();
-        let dim = new_shape[axis].unwrap_fixed_mut();
+        let dim = new_shape[axis].unwrap_fixed_mut("Slice axis size");
 
         if start == 0 && end == *dim {
             return input;
@@ -224,13 +228,13 @@ impl Graph {
             .expect("Convolution filter must have rank 4");
 
         // almost everything must be fixed, except for the batch size n
-        let in_c = in_c.unwrap_fixed();
-        let in_w = in_w.unwrap_fixed();
-        let in_h = in_h.unwrap_fixed();
-        let out_c = out_c.unwrap_fixed();
-        let in_c_check = in_c_check.unwrap_fixed();
-        let k_w = k_w.unwrap_fixed();
-        let k_h = k_h.unwrap_fixed();
+        let in_c = in_c.unwrap_fixed("Conv input channels");
+        let in_w = in_w.unwrap_fixed("Conv input width");
+        let in_h = in_h.unwrap_fixed("Conv input height");
+        let out_c = out_c.unwrap_fixed("Conv output channels");
+        let in_c_check = in_c_check.unwrap_fixed("Filter input channels");
+        let k_w = k_w.unwrap_fixed("Conv kernel width");
+        let k_h = k_h.unwrap_fixed("Conv kernel height");
 
         assert_eq!(1, k_w % 2, "Kernel width must be odd, got {}", k_w);
         assert_eq!(1, k_h % 2, "Kernel height must be odd, got {}", k_h);
@@ -258,6 +262,29 @@ impl Graph {
             output_shape,
             Operation::Conv { input, conv_shape, filter },
         )
+    }
+
+    /// Apply a linear transformation.
+    /// Input shape `[N, Ci]` and weight shape `[Co, Ci]` result in an output with shape `[N, Co]`.
+    #[must_use]
+    pub fn linear(&mut self, input: Value, weight: Value) -> Value {
+        let input_shape = self[input].shape.unwrap_2();
+        let weight_shape = self[weight].shape.unwrap_2();
+
+        let n = input_shape[0];
+        let ci = input_shape[1];
+        let co = weight_shape[0];
+        assert_eq!(ci, weight_shape[1]);
+
+        // convert this linear operation into the equivalent convolution
+        let input_view_shape = Shape::new(vec![n, ci, Size::ONE, Size::ONE]);
+        let input_view = self.view(input, input_view_shape);
+        let weight_view_shape = Shape::new(vec![co, ci, Size::ONE, Size::ONE]);
+        let weight_view = self.view(weight, weight_view_shape);
+        let output_view_shape = Shape::new(vec![n, co]);
+
+        let output = self.conv(input_view, weight_view, 0);
+        self.view(output, output_view_shape)
     }
 
     /// Elementwise clamp.
@@ -304,6 +331,13 @@ impl Graph {
     pub fn output(&mut self, value: Value) {
         assert!(!self.outputs.contains(&value), "{:?} already registered as an output!", value);
         self.outputs.push(value);
+    }
+
+    /// Register multiple values as output at once, in order.
+    pub fn output_all(&mut self, values: &[Value]) {
+        for &value in values {
+            self.output(value)
+        }
     }
 }
 

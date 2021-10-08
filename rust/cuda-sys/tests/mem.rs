@@ -1,10 +1,5 @@
-use bytemuck::{cast_slice, cast_slice_mut};
-use itertools::Itertools;
-
-use cuda_sys::bindings::{cudaMemcpy2D, cudaMemcpyKind};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::DeviceMem;
-use cuda_sys::wrapper::status::Status;
 
 #[test]
 fn mem_slice() {

@@ -22,7 +22,7 @@ impl CudnnExecutor {
 
         for value in graph.values() {
             let ValueInfo { shape, operation } = &graph[value];
-            planner.visit(value, &shape.eval(batch_size), operation);
+            planner.visit(value, shape.eval(batch_size), operation);
         }
 
         let mut outputs = vec![];
@@ -31,8 +31,8 @@ impl CudnnExecutor {
         for (index, &value) in graph.outputs().iter().enumerate() {
             let tensor = planner.visit_output(index, value);
 
-            if !tensor.has_basic_strides {
-                stage_size = max(stage_size, tensor.mem.len_bytes() / 4);
+            if !tensor.shape.has_simple_strides() {
+                stage_size = max(stage_size, tensor.mem.len() / 4);
             }
 
             outputs.push(vec![f32::NAN; tensor.shape.size()])
@@ -58,18 +58,18 @@ impl CudnnExecutor {
                         args.run(&mut self.handle);
                     }
                     Step::CopyOutput { index, tensor } => {
-                        if tensor.has_basic_strides {
+                        if tensor.shape.has_simple_strides() {
                             // directly copy everything into the output
                             tensor.mem.copy_to_host(cast_slice_mut(&mut self.outputs[*index]));
                         } else {
                             // copy the entire mem over
-                            let stage = &mut self.stage[0..tensor.mem.len_bytes() / 4];
+                            let stage = &mut self.stage[0..tensor.mem.len() / 4];
                             tensor.mem.copy_to_host(cast_slice_mut(stage));
 
                             // selectively copy over the actual values we want
                             let output = &mut self.outputs[*index];
                             let mut output_i = 0;
-                            tensor.visit_strided_indices(|stage_i| {
+                            tensor.shape.visit_strided_indices(|stage_i| {
                                 output[output_i] = stage[stage_i];
                                 output_i += 1;
                             });

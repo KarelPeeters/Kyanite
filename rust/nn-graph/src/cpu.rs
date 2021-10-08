@@ -20,7 +20,6 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
         let output_shape = shape.eval(batch_size);
         let output_shape_dyn = IxDyn(&output_shape.dims);
 
-        println!("Calculating value {:?}", output);
         let start_time = Instant::now();
 
         let result: Tensor = match operation {

@@ -8,7 +8,7 @@ pub struct Shape {
     pub dims: Vec<Size>,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Size {
     batch_exp: u32,
     fixed_factor: usize,
@@ -33,8 +33,12 @@ impl Shape {
         self.dims.len()
     }
 
-    pub fn unwrap_fixed(&self) -> ConcreteShape {
-        let dims = self.dims.iter().map(|d| d.unwrap_fixed()).collect_vec();
+    pub fn unwrap_fixed(&self, what: &str) -> ConcreteShape {
+        let dims = self.dims.iter()
+            .map(|d| {
+                d.unwrap_fixed(what)
+            })
+            .collect_vec();
         ConcreteShape { dims }
     }
 
@@ -86,13 +90,13 @@ impl Size {
         batch_size.pow(self.batch_exp) * self.fixed_factor
     }
 
-    pub fn unwrap_fixed(self) -> usize {
-        assert_eq!(0, self.batch_exp, "Expected fixed size, got {:?}", self);
+    pub fn unwrap_fixed(self, what: &str) -> usize {
+        assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
         self.fixed_factor
     }
 
-    pub fn unwrap_fixed_mut(&mut self) -> &mut usize {
-        assert_eq!(0, self.batch_exp, "Expected fixed size, got {:?}", self);
+    pub fn unwrap_fixed_mut(&mut self, what: &str) -> &mut usize {
+        assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
         &mut self.fixed_factor
     }
 }
@@ -131,15 +135,16 @@ impl std::ops::Mul for Size {
 }
 
 impl std::ops::Div for Size {
-    type Output = Size;
+    type Output = Option<Size>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        assert!(self.batch_exp >= rhs.batch_exp, "Not enough batch_exp remaining");
-        assert_eq!(self.fixed_factor % rhs.fixed_factor, 0, "Fixed factor does not divide size");
-
-        Size {
-            batch_exp: self.batch_exp - rhs.batch_exp,
-            fixed_factor: self.fixed_factor / rhs.fixed_factor,
+        if self.batch_exp < rhs.batch_exp || self.fixed_factor % rhs.fixed_factor != 0 {
+            None
+        } else {
+            Some(Size {
+                batch_exp: self.batch_exp - rhs.batch_exp,
+                fixed_factor: self.fixed_factor / rhs.fixed_factor,
+            })
         }
     }
 }
@@ -166,7 +171,19 @@ impl std::ops::IndexMut<usize> for Shape {
 
 impl Debug for Shape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Shape(")?;
+        write!(f, "Shape{}", self)
+    }
+}
+
+impl Debug for Size {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Size({})", self)
+    }
+}
+
+impl Display for Shape {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
         for i in 0..self.rank() {
             if i != 0 {
                 write!(f, " x ")?;

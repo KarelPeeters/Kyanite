@@ -9,9 +9,9 @@ class ConstantNetwork(GameNetwork):
     def __init__(self, game: Game):
         super().__init__()
 
-        self.value = nn.Parameter(torch.zeros(1))
-        self.wdl = nn.Parameter(torch.zeros(1, 3))
-        self.policy = nn.Parameter(torch.zeros(1, *game.policy_shape))
+        self.value = nn.Parameter(torch.randn(1))
+        self.wdl = nn.Parameter(torch.randn(1, 3))
+        self.policy = nn.Parameter(torch.randn(1, *game.policy_shape))
 
     def forward(self, input):
         batch_size = input.shape[0]

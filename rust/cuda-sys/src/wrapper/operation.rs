@@ -58,9 +58,9 @@ pub unsafe fn run_conv(
     output_desc: &TensorDescriptor,
     output_mem: &DeviceMem,
 ) {
-    assert_eq!(input_desc.size_bytes(), input_mem.len_bytes());
-    assert_eq!(filter_desc.size_bytes(), filter_mem.len_bytes());
-    assert_eq!(output_desc.size_bytes(), output_mem.len_bytes());
+    assert_eq!(input_desc.size_bytes(), input_mem.len());
+    assert_eq!(filter_desc.size_bytes(), filter_mem.len());
+    assert_eq!(output_desc.size_bytes(), output_mem.len());
 
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -75,7 +75,7 @@ pub unsafe fn run_conv(
         conv_desc.inner(),
         algo,
         work_mem.ptr(),
-        work_mem.len_bytes(),
+        work_mem.len(),
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
@@ -202,7 +202,7 @@ pub unsafe fn run_conv_bias_res_activation(
         conv_desc.inner(),
         algo,
         work_mem.ptr(),
-        work_mem.len_bytes(),
+        work_mem.len(),
         &alpha2 as *const f32 as *const _,
         output_desc.inner(),
         res_mem,
