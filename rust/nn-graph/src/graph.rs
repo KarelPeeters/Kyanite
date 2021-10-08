@@ -1,8 +1,8 @@
 use std::convert::TryInto;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
-use itertools::zip_eq;
+use itertools::{Itertools, zip_eq};
 use unwrap_match::unwrap_match;
 
 use crate::shape::{Shape, Size};
@@ -342,6 +342,15 @@ impl Graph {
 }
 
 impl Debug for Graph {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("inputs", &self.inputs().iter().map(|&v| &self[v].shape).collect_vec())
+            .field("outputs", &self.outputs().iter().map(|&v| &self[v].shape).collect_vec())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Display for Graph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Graph { values, inputs, outputs } = self;
 

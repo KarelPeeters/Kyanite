@@ -6,7 +6,7 @@ use nn_graph::ndarray::{ArcArray, Dimension, IntoDimension};
 use nn_graph::ndarray::s;
 use nn_graph::shape::{Shape, Size};
 
-use crate::root::runner::test_all;
+use crate::root::utils::test_all;
 
 #[test]
 fn empty() {

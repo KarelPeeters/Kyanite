@@ -14,7 +14,7 @@ use self_cell::self_cell;
 
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
-use crate::network::decode_output::decode_output;
+use crate::network::common::decode_output;
 
 pub struct OnnxNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
@@ -93,10 +93,11 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for OnnxNetwork<B, M> {
             assert_eq!(IxDyn(&[batch_size, 3]), wdl.dim());
             assert_eq!(IxDyn(&policy_shape), policy.dim());
 
+            let value = value.as_slice().unwrap();
             let wdl = wdl.as_slice().unwrap();
             let policy = policy.as_slice().unwrap();
 
-            decode_output(mapper, &boards, wdl, policy)
+            decode_output(mapper, &boards, value, wdl, policy)
         })
     }
 }

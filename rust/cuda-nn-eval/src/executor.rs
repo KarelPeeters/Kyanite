@@ -58,6 +58,8 @@ impl CudnnExecutor {
                         args.run(&mut self.handle);
                     }
                     Step::CopyOutput { index, tensor } => {
+                        //TODO look into fusing the copy operation if multiple outputs are sliced views on the same value
+
                         if tensor.shape.has_simple_strides() {
                             // directly copy everything into the output
                             tensor.mem.copy_to_host(cast_slice_mut(&mut self.outputs[*index]));

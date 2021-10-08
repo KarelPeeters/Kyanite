@@ -4,11 +4,11 @@ use std::fmt::Debug;
 use board_game::board::Board;
 use board_game::wdl::WDL;
 
-pub mod decode_output;
+pub mod common;
 pub mod dummy;
 pub mod cpu;
 pub mod cudnn;
-pub mod onnx;
+pub mod onnx_runtime;
 
 /// A board evaluation, either as returned by the network or as the final output of a zero tree search.
 #[derive(Debug, Clone)]

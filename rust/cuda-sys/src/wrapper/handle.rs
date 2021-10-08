@@ -92,8 +92,8 @@ impl Drop for CudnnHandle {
 }
 
 impl CudnnHandle {
-    pub fn new(device: i32) -> Self {
-        CudnnHandle::new_with_stream(CudaStream::new(Device::new(device)))
+    pub fn new(device: Device) -> Self {
+        CudnnHandle::new_with_stream(CudaStream::new(device))
     }
 
     pub fn new_with_stream(stream: CudaStream) -> Self {

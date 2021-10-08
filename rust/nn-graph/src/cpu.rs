@@ -141,7 +141,11 @@ pub struct CalculatedValue {
 impl ExecutionInfo {
     pub fn outputs(self) -> Vec<Tensor> {
         self.outputs.iter()
-            .map(|v| self.map.get(v).unwrap().tensor.to_shared())
+            .map(|v| {
+                // convert to standard layout so users get easily get &[f32] slices
+                self.map.get(v).unwrap().tensor
+                    .as_standard_layout().to_shared()
+            })
             .collect_vec()
     }
 }

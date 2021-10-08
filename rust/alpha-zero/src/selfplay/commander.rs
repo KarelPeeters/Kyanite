@@ -1,9 +1,12 @@
 use std::io::{BufRead, BufReader, Read};
+use std::path::PathBuf;
 use std::str;
 
+use board_game::board::Board;
 use crossbeam::channel::Sender;
 
-use board_game::board::Board;
+use cuda_nn_eval::tester::check_cudnn;
+use nn_graph::onnx::load_graph_from_onnx_path;
 
 use crate::selfplay::protocol::{Command, GeneratorUpdate};
 
@@ -14,6 +17,18 @@ pub fn commander_main<B: Board>(
 ) {
     loop {
         let cmd = read_command(&mut reader);
+
+        if let Command::NewNetwork(path) = &cmd {
+            let path_bin = PathBuf::from(path).with_extension("bin");
+            if path_bin.exists() {
+                println!("Commander checking new network {}", path);
+
+                let graph = load_graph_from_onnx_path(path);
+                let check_data = std::fs::read(path_bin)
+                    .expect("Failed to read check data");
+                check_cudnn(&graph, &check_data);
+            }
+        }
 
         for s in &cmd_senders {
             s.send(cmd.clone()).unwrap();

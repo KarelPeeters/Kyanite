@@ -1,5 +1,6 @@
-mod runner;
+mod utils;
+
+mod elementwise;
 
 mod graphs;
-mod elementwise;
 mod onnx;

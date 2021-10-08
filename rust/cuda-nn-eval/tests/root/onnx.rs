@@ -1,23 +1,25 @@
-use align_data::include_aligned;
-
-use crate::root::runner::{OnnxPair, test_onnx_pair};
-
-static SIMPLE: OnnxPair = OnnxPair {
-    onnx: include_bytes!("../data/simple-sttt-1x64.onnx"),
-    bin: include_aligned!(f32, "../data/simple-sttt-1x64.bin"),
-};
-
-static PRE: OnnxPair = OnnxPair {
-    onnx: include_bytes!("../data/pre-sttt-4x8.onnx"),
-    bin: include_aligned!(f32, "../data/pre-sttt-4x8.bin"),
-};
+use crate::root::utils::test_onnx_bin;
 
 #[test]
 fn simple() {
-    test_onnx_pair(&SIMPLE)
+    test_onnx_bin(
+        include_bytes!("../data/simple-sttt-1x64.onnx"),
+        include_bytes!("../data/simple-sttt-1x64.bin"),
+    )
+}
+
+#[test]
+fn simple_bn() {
+    test_onnx_bin(
+        include_bytes!("../data/simple-bn-sttt-1x64.onnx"),
+        include_bytes!("../data/simple-bn-sttt-1x64.bin"),
+    )
 }
 
 #[test]
 fn pre() {
-    test_onnx_pair(&PRE)
+    test_onnx_bin(
+        include_bytes!("../data/pre-sttt-4x8.onnx"),
+        include_bytes!("../data/pre-sttt-4x8.bin"),
+    )
 }

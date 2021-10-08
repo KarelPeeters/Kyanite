@@ -44,12 +44,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "align-data"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1926655ba000b19e21f0402be09a1d52d318c8a8a68622870bfb7af2a71315cd"
-
-[[package]]
 name = "alpha-zero"
 version = "0.2.0"
 dependencies = [
@@ -68,6 +62,7 @@ dependencies = [
  "lru",
  "ndarray",
  "ndarray-stats",
+ "nn-graph",
  "onnxruntime",
  "pgn-reader",
  "rand 0.8.4",
@@ -426,7 +421,6 @@ dependencies = [
 name = "cuda-nn-eval"
 version = "0.1.0"
 dependencies = [
- "align-data",
  "bytemuck",
  "cuda-sys",
  "itertools",
