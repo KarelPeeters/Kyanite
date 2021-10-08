@@ -189,10 +189,10 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 // fuse everything into a single scale and bias
                 let total_scale = (0..channels)
-                    .map(|i| scale[i] / (variance[i] + epsilon))
+                    .map(|i| scale[i] / (variance[i] + epsilon).sqrt())
                     .collect_vec();
                 let total_bias = (0..channels)
-                    .map(|i| bias[i] - mean[i] / (variance[i] + epsilon))
+                    .map(|i| bias[i] - (mean[i] * scale[i] / (variance[i] + epsilon).sqrt()))
                     .collect_vec();
 
                 // put everything into the graph
