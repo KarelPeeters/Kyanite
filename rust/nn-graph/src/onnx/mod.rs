@@ -12,8 +12,9 @@ mod store;
 mod load;
 
 pub fn load_graph_from_onnx_path(path: impl AsRef<Path>) -> Graph {
+    let path = path.as_ref();
     let buf = std::fs::read(path)
-        .expect("Failed to read input file");
+        .unwrap_or_else(|e| panic!("Failed to read input file {:?}, error {:?}", path, e));
     load_graph_from_onnx_bytes(&buf)
 }
 
