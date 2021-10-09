@@ -146,7 +146,7 @@ class LoopSettings:
 
             torch.jit.save(network, gen.network_path_pt)
             save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
-            client.send_new_network(os.path.abspath(gen.network_path_onnx))
+            client.send_new_network(gen.network_path_onnx)
 
             logger.save(self.log_path)
             Path(gen.finished_path).touch()

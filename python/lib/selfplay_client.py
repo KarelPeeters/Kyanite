@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import os
 import socket
 from dataclasses import dataclass
 from typing import Union
@@ -65,6 +66,7 @@ class SelfplayClient:
         self.send({"NewSettings": settings.as_dict()})
 
     def send_new_network(self, path: str):
+        path = os.path.abspath(path)
         self.send({"NewNetwork": path})
 
     def send_wait_for_new_network(self):
