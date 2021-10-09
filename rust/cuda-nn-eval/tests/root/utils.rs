@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use cuda_nn_eval::tester::{assert_outputs_match, CHECK_BATCH_SIZE, eval_cudnn, load_check_data};
+use cuda_nn_eval::tester::{assert_outputs_match, eval_cudnn, load_check_data};
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
@@ -55,6 +55,7 @@ pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, V
 
 pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {
     let graph = load_graph_from_onnx_bytes(onnx);
-    let (inputs, expected_outputs) = load_check_data(&graph, bin);
-    test_all(&graph, CHECK_BATCH_SIZE, &inputs, &expected_outputs);
+    let (batch_size, inputs, expected_outputs) = load_check_data(&graph, bin);
+    println!("Loaded batch size {}", batch_size);
+    test_all(&graph, batch_size, &inputs, &expected_outputs);
 }

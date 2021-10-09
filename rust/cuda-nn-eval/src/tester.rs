@@ -8,13 +8,11 @@ use nn_graph::ndarray::{Dimension, IxDyn};
 
 use crate::executor::CudnnExecutor;
 
-pub const CHECK_BATCH_SIZE: usize = 2;
-
 /// Check that the given graph produces the correct outputs as described by `check_data`,
 /// which typically comes from a `.bin` file next to the `.onnx` file.
 pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
-    let (inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
-    let outputs = eval_cudnn(&graph, CHECK_BATCH_SIZE, &inputs);
+    let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
+    let outputs = eval_cudnn(&graph, batch_size, &inputs);
     assert_outputs_match(&expected_outputs, &outputs, false);
 }
 
@@ -65,32 +63,35 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Te
     outputs
 }
 
-/// Load the check data into `(inputs, expected_outputs)`.
-pub fn load_check_data(graph: &Graph, check_data_bytes: &[u8]) -> (Vec<Tensor>, Vec<Tensor>) {
+/// Load the check data into `(batch_size, inputs, expected_outputs)`.
+pub fn load_check_data(graph: &Graph, check_data_bytes: &[u8]) -> (usize, Vec<Tensor>, Vec<Tensor>) {
+    assert!(check_data_bytes.len() >= 1, "Check data must have at least one byte, the batch size");
+    let batch_size = check_data_bytes[0] as usize;
+
     assert_eq!(
-        check_data_bytes.len() % 4, 0,
-        "Data byte count must be multiple of 4 to be able to cast to float, got {}",
+        (check_data_bytes.len() - 1) % 4, 0,
+        "Data byte count must be multiple of 4 + 1 to be able to cast to float, got {}",
         check_data_bytes.len()
     );
 
     // copy the data into a float array instead of just casting it to ensure it's properly aligned
-    let mut check_data = vec![0.0; check_data_bytes.len() / 4];
-    cast_slice_mut(&mut check_data).copy_from_slice(check_data_bytes);
+    let mut check_data = vec![0.0; (check_data_bytes.len() - 1) / 4];
+    cast_slice_mut(&mut check_data).copy_from_slice(&check_data_bytes[1..]);
 
     let mut buf = &*check_data;
-    let inputs = load_check_values(graph, &mut buf, graph.inputs());
-    let expected_outputs = load_check_values(graph, &mut buf, graph.outputs());
+    let inputs = load_check_values(graph, batch_size, &mut buf, graph.inputs());
+    let expected_outputs = load_check_values(graph, batch_size, &mut buf, graph.outputs());
 
     assert!(buf.is_empty(), "Leftover elements in check data buffer: {}", buf.len());
 
-    (inputs, expected_outputs)
+    (batch_size, inputs, expected_outputs)
 }
 
 /// Load the given values from the buffer while advancing it.
-fn load_check_values(graph: &Graph, buf: &mut &[f32], values: &[Value]) -> Vec<Tensor> {
+fn load_check_values(graph: &Graph, batch_size: usize, buf: &mut &[f32], values: &[Value]) -> Vec<Tensor> {
     values.iter()
         .map(|&value| {
-            let shape = graph[value].shape.eval(CHECK_BATCH_SIZE);
+            let shape = graph[value].shape.eval(batch_size);
             let tensor = Tensor::from_shape_vec(
                 IxDyn(&shape.dims),
                 buf[0..shape.size()].to_vec(),

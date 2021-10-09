@@ -50,13 +50,15 @@ def prepare_output_folder(output_folder):
         os.remove(file)
 
 
+CHECK_BATCH_SIZE = 2
+
+
 def main():
     output_folder = "../../rust/cuda-nn-eval/tests/data/"
-    check_batch_size = 2
 
     prepare_output_folder(output_folder)
     networks = build_networks()
-    save_networks(output_folder, check_batch_size, networks)
+    save_networks(output_folder, CHECK_BATCH_SIZE, networks)
 
 
 if __name__ == '__main__':
