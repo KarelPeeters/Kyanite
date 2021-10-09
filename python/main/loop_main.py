@@ -1,14 +1,13 @@
-from torch.optim import AdamW, SGD
+from torch.optim import AdamW
 
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model_blocks import TowerModel, ResBlock
+from lib.model.lc0_pre_act import LCZOldPreNetwork
 from lib.selfplay_client import SelfplaySettings
-from lib.train import TrainSettings, ValueTarget, ValueLoss
-
-
 # TODO fix startup behaviour, only release games in the order they were started to ensure a constant
 #  distribution of game lengths
+from lib.train import TrainSettings
+
 
 def main():
     game = Game.find("chess")
@@ -40,22 +39,23 @@ def main():
 
     train_settings = TrainSettings(
         game=game,
-        wdl_target=ValueTarget.Final,
-        wdl_loss=ValueLoss.MSE,
-        policy_weight=4,
+        value_weight=0.5,
+        wdl_weight=0.5,
+        policy_weight=1.0,
         batch_size=256,
-        batches=4,
+        clip_norm=20.0,
     )
 
     def initial_network():
-        return TowerModel(game, 32, 8, 16, True, True, True, lambda: ResBlock(32, 32, True, False, False, None))
+        return LCZOldPreNetwork(game, 8, 64, 64, (8, 128))
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
-        root_path="data/new_loop/full_pov",
+        root_path="data/newer_loop/test",
         initial_network=initial_network,
+
         target_buffer_size=100_000,
-        test_fraction=1 / fixed_settings.games_per_gen,
+        train_steps_per_gen=100,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-5),
 
@@ -72,7 +72,7 @@ def print_expected_buffer_behaviour(settings: LoopSettings, average_game_length:
     games_in_buffer = settings.target_buffer_size / average_game_length
     gens_in_buffer = games_in_buffer / settings.fixed_settings.games_per_gen
 
-    positions_per_gen = settings.train_settings.batches * settings.train_settings.batch_size
+    positions_per_gen = settings.train_steps_per_gen * settings.train_settings.batch_size
     visits_per_position = gens_in_buffer * positions_per_gen / settings.target_buffer_size
     visits_per_game = visits_per_position * average_game_length
 

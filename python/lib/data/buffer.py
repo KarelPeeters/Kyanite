@@ -9,7 +9,7 @@ from lib.games import Game
 from lib.util import PIN_MEMORY
 
 
-class FileBuffer:
+class FileList:
     def __init__(self, game: Game, files: List[DataFile], pool: ThreadPool):
         self.game = game
         self.pool = pool
@@ -37,4 +37,3 @@ class FileBuffer:
     # TODO caching? maybe return a new class here?
     def sample_batch(self, size: int) -> PositionBatch:
         return self[np.random.randint(len(self), size=size)]
-

@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as nnf
 from torch.optim import SGD
 
-from lib.data.buffer import FileBuffer
+from lib.data.buffer import FileList
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
@@ -46,7 +46,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
         clip_norm=100,
     )
 
-    network = LCZOldPreNetwork(game, 8, 256)
+    network = LCZOldPreNetwork(game, 8, 256, 32, (8, 128))
     network.to(DEVICE)
 
     print_param_count(network)
@@ -61,10 +61,10 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     pool = ThreadPool(4)
 
     train_files = [DataFile(game, path) for path in glob.glob(train_pattern)]
-    train_buffer = FileBuffer(game, train_files, pool)
+    train_buffer = FileList(game, train_files, pool)
 
     test_files = [DataFile(game, path) for path in glob.glob(test_pattern)]
-    test_buffer = FileBuffer(game, test_files, pool)
+    test_buffer = FileList(game, test_files, pool)
 
     print(f"Train file count: {len(train_files)}")
     print(f"Train position count: {len(train_buffer)}")
@@ -108,15 +108,12 @@ def thread_main(logger: Logger, plotter: LogPlotter):
             plotter.update(logger)
 
             print("Saving log")
-            tmp_log_path = os.path.join(output_folder, "log.tmp.npz")
-            log_path = os.path.join(output_folder, "log.npz")
-            logger.save(tmp_log_path)
-            os.replace(tmp_log_path, log_path)
+            logger.save(os.path.join(output_folder, "log.npz"))
 
         if bi % save_steps == 0:
             print("Saving network")
             # plot_grad_norms(settings, network, test_test_batch)
-            save_onnx(game, os.path.join(output_folder, f"network_{bi}.onnx"), network)
+            save_onnx(game, os.path.join(output_folder, f"network_{bi}.onnx"), network, None)
             torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pb"))
 
 

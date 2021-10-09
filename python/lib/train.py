@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 
-from lib.data.buffer import FileBuffer
+from lib.data.buffer import FileList
 from lib.data.position import PositionBatch
 from lib.games import Game
 from lib.logger import Logger
@@ -26,7 +26,7 @@ class TrainSettings:
 
     clip_norm: float
 
-    def train_step(self, buffer: FileBuffer, network: nn.Module, optimizer: Optimizer, logger: Logger):
+    def train_step(self, buffer: FileList, network: nn.Module, optimizer: Optimizer, logger: Logger):
         batch = buffer.sample_batch(self.batch_size)
 
         optimizer.zero_grad(set_to_none=True)

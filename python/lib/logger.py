@@ -1,4 +1,6 @@
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple, Dict
 
 import numpy as np
@@ -43,14 +45,19 @@ class Logger:
             values={k: v.values[:self.curr_batch] for k, v in self.data.items()}
         )
 
-    def save(self, path):
+    def save(self, path: str):
+        path = Path(path)
+        assert path.suffix == ".npz", f"Log save path should have extension .npz, got {path}"
+
         data = {
             "curr_batch": self.curr_batch,
             "keys": list(self.data.keys()),
             "values": [v.values for v in self.data.values()],
         }
 
-        np.savez(path, **data)
+        tmp_path = path.with_suffix(".tmp.npz")
+        np.savez(tmp_path, **data)
+        os.replace(tmp_path, path)
 
     @staticmethod
     def load(path) -> 'Logger':

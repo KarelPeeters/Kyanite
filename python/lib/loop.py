@@ -2,21 +2,25 @@ import itertools
 import os
 import time
 from dataclasses import dataclass
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Thread
-from typing import Callable, Optional, Tuple, Iterator, List
+from typing import Callable, Optional, Tuple, Iterator
 
 import torch
 from torch import nn
 from torch.optim import Optimizer
 
+from lib.data.buffer import FileList
+from lib.data.file import DataFile
 from lib.games import Game
-from lib.logger import Logger, FinishedLogData
+from lib.logger import Logger
 from lib.plotter import LogPlotter, qt_app
 from lib.save_onnx import save_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
-from lib.train import TrainSettings, batch_loader
+from lib.train import TrainSettings
 from lib.util import DEVICE, print_param_count
+from main.write_test_networks import CHECK_BATCH_SIZE
 
 
 @dataclass
@@ -43,7 +47,12 @@ class LoopSettings:
     initial_network: Callable[[], nn.Module]
 
     target_buffer_size: int
-    test_fraction: float
+    train_steps_per_gen: int
+
+    # TODO re-implement testing
+    # test_fraction: float
+    # eval_steps_per_gen: int
+
     optimizer: Callable[[Iterator[nn.Parameter]], Optimizer]
 
     fixed_settings: FixedSelfplaySettings
@@ -74,15 +83,13 @@ class LoopSettings:
         os.makedirs(self.selfplay_path, exist_ok=True)
         os.makedirs(self.training_path, exist_ok=True)
 
-        # TODO this is a large a amount of tricky parameters, find a better way to pass them to the thread
         start_gen, buffer, logger, network, network_path_onnx = self.load_start_state()
         print_param_count(network)
 
         app = qt_app()
-        plotter = LogPlotter(logger)
-        if start_gen.gi != 0:
-            plotter.update()
+        plotter = LogPlotter()
 
+        # TODO this is a large a amount of tricky parameters, find a better way to pass them to the thread
         thread = Thread(target=self.run_loop_thread,
                         args=(start_gen, buffer, logger, plotter, network, network_path_onnx))
         thread.start()
@@ -91,10 +98,11 @@ class LoopSettings:
 
     def run_loop_thread(
             self,
-            start_gen: 'Generation', buffer: 'Buffer',
+            start_gen: 'Generation', buffer: 'LoopBuffer',
             logger: Logger, plotter: Optional[LogPlotter],
             network: nn.Module, network_path_onnx: str
     ):
+        game = self.fixed_settings.game
         optimizer = self.optimizer(network.parameters())
 
         startup_settings = self.fixed_settings.to_startup(
@@ -108,42 +116,47 @@ class LoopSettings:
         client.send_new_network(network_path_onnx)
 
         for gi in itertools.count(start_gen.gi):
-            logger.start_gen()
+            logger.start_batch()
+            logger.log("info", "gen", gi)
 
             print(f"Waiting for gen {gi} games")
-            start = time.perf_counter()
+            gen_start = time.perf_counter()
             actual_gi = client.wait_for_file()
             client.send_wait_for_new_network()
-            logger.log_gen("time", "selfplay", time.perf_counter() - start)
+            logger.log("time", "selfplay", time.perf_counter() - gen_start)
             assert gi == actual_gi, f"Unexpected finished generation, expected {gi} got {actual_gi}"
 
             gen = Generation.from_gi(self, gi)
             os.makedirs(gen.train_path, exist_ok=True)
 
-            buffer.append(logger, gen.games_path)
+            buffer.append(logger, DataFile(game, gen.games_path))
             self.evaluate_network(buffer, logger, network)
 
-            train_dataset = buffer.full_train_dataset()
+            train_dataset = buffer.full_file_list()
             print(f"Training network on buffer with size {len(train_dataset)}")
-            start = time.perf_counter()
-            self.train_settings.run_train(train_dataset, optimizer, network, logger)
-            logger.log_gen("time", "train", time.perf_counter() - start)
+            train_start = time.perf_counter()
+
+            for bi in range(self.train_steps_per_gen):
+                if bi != 0:
+                    logger.start_batch()
+
+                self.train_settings.train_step(train_dataset, network, optimizer, logger)
+
+            logger.log("time", "train", time.perf_counter() - train_start)
 
             torch.jit.save(network, gen.network_path_pt)
-            save_onnx(self.fixed_settings.game, gen.network_path_onnx, network)
+            save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
             client.send_new_network(os.path.abspath(gen.network_path_onnx))
 
-            logger.finish_gen()
-            logger.get_finished_data().save(self.log_path)
-
+            logger.save(self.log_path)
             Path(gen.finished_path).touch()
 
             if plotter is not None:
-                plotter.update()
+                plotter.update(logger)
 
-    def load_start_state(self) -> Tuple['Generation', 'Buffer', Logger, nn.Module, str]:
+    def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module, str]:
         game = self.fixed_settings.game
-        buffer = Buffer(game, self.target_buffer_size, self.test_fraction)
+        buffer = LoopBuffer(game, self.target_buffer_size)
 
         for gi in itertools.count():
             gen = Generation.from_gi(self, gi)
@@ -158,10 +171,10 @@ class LoopSettings:
                     network.to(DEVICE)
 
                     prev_network_path_onnx = self.initial_network_path_onnx
-                    save_onnx(game, prev_network_path_onnx, network)
+                    save_onnx(game, prev_network_path_onnx, network, CHECK_BATCH_SIZE)
                 else:
                     print(f"Continuing run, first gen {gi}")
-                    logger = Logger.from_finished_data(FinishedLogData.load(self.log_path))
+                    logger = Logger.load(self.log_path)
 
                     network = torch.jit.load(prev.network_path_pt)
                     network.to(DEVICE)
@@ -171,23 +184,19 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
-            # TODO this splits train/test differently than the original one so plots may look strange
-            buffer.append(None, gen.games_path)
+            buffer.append(None, DataFile(game, gen.games_path))
 
-    def evaluate_network(self, buffer: 'Buffer', logger: Logger, network: nn.Module):
+    def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
         setups = [
-            ("eval-test-buffer", buffer.full_test_dataset()),
-            ("eval-test-last", buffer.last_test_dataset()),
-            ("eval-train-buffer", buffer.full_train_dataset()),
-            ("eval-train-last", buffer.last_train_dataset()),
+            ("eval-test-buffer", buffer.full_file_list()),
+            ("eval-test-last", buffer.last_file_list()),
         ]
 
         network.eval()
-        for prefix, dataset in setups:
-            # noinspection PyTypeChecker
-            batch_size = min(len(dataset), self.train_settings.batch_size)
-            batch = next(iter(batch_loader(dataset, batch_size))).to(DEVICE)
-            self.train_settings.evaluate_batch(network, prefix, logger.log_gen, batch)
+        for prefix, file_list in setups:
+            batch_size = min(len(file_list), self.train_settings.batch_size)
+            batch = file_list.sample_batch(batch_size)
+            self.train_settings.evaluate_batch(network, prefix, logger, batch)
 
 
 @dataclass
@@ -220,3 +229,30 @@ class Generation:
         if self.gi == 0:
             return None
         return Generation.from_gi(self.settings, self.gi - 1)
+
+
+class LoopBuffer:
+    def __init__(self, game: Game, target_positions: int):
+        self.game = game
+        self.pool = ThreadPool(2)
+        self.target_positions = target_positions
+
+        self.current_positions = 0
+        self.files = []
+
+    def append(self, logger: Optional[Logger], file: DataFile):
+        self.files.append(file)
+        self.current_positions += len(file)
+
+        while self.current_positions - self.files[0] > self.target_positions:
+            del self.files[0]
+
+        if logger:
+            logger.log("buffer", "positions", self.current_positions)
+            logger.log("buffer", "gens", len(self.files))
+
+    def full_file_list(self):
+        return FileList(self.game, self.files, self.pool)
+
+    def last_file_list(self):
+        return FileList(self.game, self.files[-1], self.pool)
