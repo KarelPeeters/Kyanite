@@ -11,6 +11,8 @@ class Game:
     input_scalar_channels: int
     policy_channels: int
 
+    estimate_moves_per_game: float
+
     input_bool_shape: Tuple[int, int, int] = field(init=False)
     input_scalar_shape: Tuple[int, int, int] = field(init=False)
 
@@ -34,8 +36,6 @@ class Game:
         raise KeyError("Game '{}' not found", name)
 
 
-SCALAR_COUNT = 5 + 2 + 3 * 3
-
 # TODO add repetition and n-move rule counters to board inputs?
 GAMES = [
     Game(
@@ -44,6 +44,7 @@ GAMES = [
         input_bool_channels=3,
         input_scalar_channels=0,
         policy_channels=17,
+        estimate_moves_per_game=150,
     ),
     Game(
         name="chess",
@@ -51,12 +52,22 @@ GAMES = [
         input_bool_channels=13,
         input_scalar_channels=8,
         policy_channels=73,
+        estimate_moves_per_game=150,
     ),
     Game(
         name="sttt",
         board_size=9,
+        input_bool_channels=3,
+        input_scalar_channels=0,
+        policy_channels=1,
+        estimate_moves_per_game=40,
+    ),
+    Game(
+        name="ttt",
+        board_size=3,
         input_bool_channels=2,
         input_scalar_channels=0,
         policy_channels=1,
+        estimate_moves_per_game=5,
     )
 ]

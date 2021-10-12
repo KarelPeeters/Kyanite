@@ -8,15 +8,15 @@ from torch.optim import Adam
 
 from lib.games import Game
 from lib.model.lc0_pre_act import LCZOldPreNetwork
-from lib.model.simple import SimpleNetwork
+from lib.model.simple import DenseNetwork
 from lib.save_onnx import save_onnx
 
 
 def build_networks():
     sttt = Game.find("sttt")
     networks = {
-        "simple-sttt-1x64": (sttt, SimpleNetwork(sttt, 1, 64, False)),
-        "simple-bn-sttt-1x64": (sttt, SimpleNetwork(sttt, 1, 64, True)),
+        "simple-sttt-1x64": (sttt, DenseNetwork(sttt, 1, 64, False)),
+        "simple-bn-sttt-1x64": (sttt, DenseNetwork(sttt, 1, 64, True)),
         "pre-sttt-4x8": (sttt, LCZOldPreNetwork(sttt, 4, 8, 5, (6, 32))),
     }
     return networks

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Thread
-from typing import Callable, Optional, Tuple, Iterator
+from typing import Callable, Optional, Tuple, Iterator, List
 
 import torch
 from torch import nn
@@ -88,6 +88,7 @@ class LoopSettings:
 
         app = qt_app()
         plotter = LogPlotter()
+        plotter.update(logger)
 
         # TODO this is a large a amount of tricky parameters, find a better way to pass them to the thread
         thread = Thread(target=self.run_loop_thread,
@@ -211,7 +212,7 @@ class Generation:
 
     @classmethod
     def from_gi(cls, settings: 'LoopSettings', gi: int):
-        games_path = os.path.join(settings.selfplay_path, f"games_{gi}.bin.gz")
+        games_path = os.path.join(settings.selfplay_path, f"games_{gi}")
         train_path = os.path.join(settings.training_path, f"gen_{gi}")
 
         return Generation(
@@ -238,21 +239,32 @@ class LoopBuffer:
         self.target_positions = target_positions
 
         self.current_positions = 0
-        self.files = []
+        self.files: List[DataFile] = []
 
     def append(self, logger: Optional[Logger], file: DataFile):
         self.files.append(file)
         self.current_positions += len(file)
 
-        while self.current_positions - self.files[0] > self.target_positions:
+        while self.current_positions - len(self.files[0]) > self.target_positions:
+            self.current_positions -= len(self.files[0])
             del self.files[0]
 
         if logger:
-            logger.log("buffer", "positions", self.current_positions)
+            total_games = sum(f.game_count for f in self.files)
+
             logger.log("buffer", "gens", len(self.files))
+            logger.log("buffer", "games", total_games)
+            logger.log("buffer", "positions", self.current_positions)
+
+            logger.log("gen", "games", file.game_count)
+            logger.log("gen", "positions", file.position_count)
+            logger.log("gen", "game length min", file.min_game_length)
+            logger.log("gen", "game length mean", file.position_count / file.game_count)
+            logger.log("gen", "game length max", file.max_game_length)
+
 
     def full_file_list(self):
         return FileList(self.game, self.files, self.pool)
 
     def last_file_list(self):
-        return FileList(self.game, self.files[-1], self.pool)
+        return FileList(self.game, [self.files[-1]], self.pool)

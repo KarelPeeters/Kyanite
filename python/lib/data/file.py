@@ -27,6 +27,11 @@ class DataFile:
         assert self.meta["board_scalar_count"] == game.input_scalar_channels
         assert self.meta["policy_planes"] == game.policy_channels
 
+        self.position_count = self.meta["position_count"]
+        self.game_count = self.meta["game_count"]
+        self.min_game_length = self.meta["min_game_length"]
+        self.max_game_length = self.meta["max_game_length"]
+
         self.f = open(bin_path, "rb", buffering=0)
 
         self.lock = Lock()

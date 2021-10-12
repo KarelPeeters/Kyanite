@@ -44,6 +44,9 @@ class TrainSettings:
         logger.log("grad_norm", "max", np.max(grad_norms))
         logger.log("grad_norm", "torch", grad_norm)
 
+        param_norm = sum(param.detach().norm(p=2) for param in network.parameters()).item()
+        logger.log("param_norm", "param_norm", param_norm)
+
     def evaluate_batch(self, network: nn.Module, log_prefix: str, logger: Logger, batch: PositionBatch):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 

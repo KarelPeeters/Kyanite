@@ -4,15 +4,17 @@ from typing import List
 import numpy as np
 import torch
 
-from lib.games import Game, SCALAR_COUNT
+from lib.games import Game
 from lib.util import DEVICE
+
+POSITION_INFO_SCALAR_COUNT = 5 + 2 + 3 * 3
 
 
 class Position:
     def __init__(self, game: Game, data: bytes):
         data = Taker(data)
 
-        scalars = Taker(np.frombuffer(data.take(SCALAR_COUNT * 4), dtype=np.float32))
+        scalars = Taker(np.frombuffer(data.take(POSITION_INFO_SCALAR_COUNT * 4), dtype=np.float32))
 
         [self.game_id, self.pos_index, self.game_length, self.zero_visits, self.available_moves] = \
             scalars.take(5).astype(int)
@@ -20,8 +22,10 @@ class Position:
         self.wdls = scalars.take(3 * 3)
         scalars.finish()
 
-        self.input_bools = np.unpackbits(
-            np.frombuffer(data.take((prod(game.input_bool_shape) + 7) // 8), dtype=np.uint8))
+        bool_count = prod(game.input_bool_shape)
+        bit_buffer = np.frombuffer(data.take((bool_count + 7) // 8), dtype=np.uint8)
+        bool_buffer = np.unpackbits(bit_buffer, bitorder="little")
+        self.input_bools = bool_buffer[:bool_count]
         self.input_scalars = np.frombuffer(data.take(game.input_scalar_channels * 4), dtype=np.float32)
 
         self.policy_indices = np.frombuffer(data.take(self.available_moves * 4), dtype=np.int32)

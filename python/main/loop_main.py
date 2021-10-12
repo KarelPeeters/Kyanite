@@ -3,6 +3,7 @@ from torch.optim import AdamW
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.lc0_pre_act import LCZOldPreNetwork
+from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings
 # TODO fix startup behaviour, only release games in the order they were started to ensure a constant
 #  distribution of game lengths
@@ -10,19 +11,19 @@ from lib.train import TrainSettings
 
 
 def main():
-    game = Game.find("chess")
+    game = Game.find("ttt")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
         batch_size=256,
-        games_per_gen=64,
+        games_per_gen=100,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
         # TODO alphazero uses value 30 (plies, 15 moves)
-        zero_temp_move_count=30,
+        zero_temp_move_count=20,
         # TODO give this information to zero tree search too! now it might be stalling without a good reason
         max_game_length=300,
         keep_tree=False,
@@ -39,23 +40,23 @@ def main():
 
     train_settings = TrainSettings(
         game=game,
-        value_weight=0.5,
-        wdl_weight=0.5,
+        value_weight=0.1,
+        wdl_weight=0.2,
         policy_weight=1.0,
         batch_size=256,
         clip_norm=20.0,
     )
 
     def initial_network():
-        return LCZOldPreNetwork(game, 8, 64, 64, (8, 128))
+        return DenseNetwork(game, 8, 128, True)
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
-        root_path="data/newer_loop/test",
+        root_path=f"data/newer_loop/test/{game.name}/",
         initial_network=initial_network,
 
         target_buffer_size=100_000,
-        train_steps_per_gen=100,
+        train_steps_per_gen=2,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-5),
 
@@ -64,7 +65,8 @@ def main():
         train_settings=train_settings,
     )
 
-    print_expected_buffer_behaviour(settings, 100)
+    print_expected_buffer_behaviour(settings, game.estimate_moves_per_game)
+
     settings.run_loop()
 
 
