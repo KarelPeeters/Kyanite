@@ -1,10 +1,10 @@
 use board_game::board::Board;
 use decorum::N32;
 use internal_iterator::InternalIterator;
-use itertools::{Itertools, zip_eq};
+use itertools::Itertools;
 
 use crate::network::{Network, ZeroEvaluation};
-use crate::util::kdl_divergence;
+use crate::util::{kdl_divergence, zip_eq_exact};
 
 #[derive(Debug)]
 pub struct Challenge<B> {
@@ -47,7 +47,7 @@ pub fn network_accuracy<B: Board>(network: &mut impl Network<B>, challenges: &[C
         println!("  stats: {:?}", policy_stats);
 
         if let Some(optimal_moves) = is_optimal {
-            let optimal_p = zip_eq(eval.policy, optimal_moves)
+            let optimal_p = zip_eq_exact(eval.policy, optimal_moves)
                 .map(|(p, &w)| if w { p } else { 0.0 })
                 .sum::<f32>();
             println!("  optimal_p: {:?}", optimal_p);

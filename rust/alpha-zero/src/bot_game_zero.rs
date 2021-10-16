@@ -1,7 +1,7 @@
 use board_game::ai::Bot;
 use board_game::board::{Board, Outcome, Player};
 use board_game::wdl::WDL;
-use itertools::{Itertools, zip_eq};
+use itertools::Itertools;
 use rand::{Rng, thread_rng};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator};
 use rayon::iter::ParallelIterator;
@@ -10,6 +10,7 @@ use unwrap_match::unwrap_match;
 use crate::network::Network;
 use crate::old_zero::{Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
 use crate::selfplay::move_selector::MoveSelector;
+use crate::util::zip_eq_exact;
 
 pub type OpponentConstructor<B> = Box<dyn Fn() -> Box<dyn Bot<B>> + Sync>;
 
@@ -83,7 +84,7 @@ pub fn run<B: Board>(
         //evaluate requests
         let boards = requests.iter().map(|req| req.board()).collect_vec();
         let evals = network.evaluate_batch(&boards);
-        let responses = zip_eq(requests, evals)
+        let responses = zip_eq_exact(requests, evals)
             .map(|(req, eval)| Response { request: req, evaluation: eval })
             .collect_vec();
 

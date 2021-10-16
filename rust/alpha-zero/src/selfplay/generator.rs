@@ -1,7 +1,7 @@
 use board_game::board::{Board, Outcome};
 use board_game::wdl::WDL;
 use crossbeam::channel::{Receiver, Sender, SendError, TryRecvError};
-use itertools::{Itertools, zip_eq};
+use itertools::Itertools;
 use lru::LruCache;
 use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
@@ -16,6 +16,7 @@ use crate::old_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettin
 use crate::selfplay::move_selector::MoveSelector;
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::selfplay::simulation::{Position, Simulation};
+use crate::util::zip_eq_exact;
 
 pub fn generator_main<B: Board>(
     mapper: impl BoardMapper<B>,
@@ -110,7 +111,7 @@ impl<B: Board> GeneratorState<B> {
         assert!(requests.is_empty());
         let mut kept_games = vec![];
 
-        for (mut game, response) in zip_eq(self.games.drain(..), self.responses.drain(..)) {
+        for (mut game, response) in zip_eq_exact(self.games.drain(..), self.responses.drain(..)) {
             let (request, cached_eval_count, move_count) =
                 game.run_until_request(rng, &mut self.cache, settings, Some(response), &update_sender);
 
@@ -150,7 +151,7 @@ impl<B: Board> GeneratorState<B> {
 
         let boards = requests.iter().map(|req| req.board()).collect_vec();
         let evals = network.evaluate_batch(&boards);
-        self.responses = zip_eq(requests, evals)
+        self.responses = zip_eq_exact(requests, evals)
             .map(|(req, eval)| Response { request: req, evaluation: eval })
             .collect_vec();
 
@@ -287,7 +288,7 @@ fn add_dirichlet_noise<B: Board>(settings: &Settings, tree: &mut Tree<B>, rng: &
         let distr = Dirichlet::new_with_size(a, children.length as usize).unwrap();
         let noise = rng.sample(distr);
 
-        for (child, n) in zip_eq(children, noise) {
+        for (child, n) in zip_eq_exact(children, noise) {
             let p = &mut tree[child].net_policy;
             *p = (1.0 - e) * (*p) + e * n;
         }

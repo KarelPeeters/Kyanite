@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::iter::Zip;
 
 use itertools::zip;
 use rand::{Error, Rng, RngCore};
@@ -94,4 +95,14 @@ pub fn kdl_divergence(p: &[f32], q: &[f32]) -> f32 {
     zip(p, q)
         .map(|(&p, &q)| p * (p / q).ln())
         .sum()
+}
+
+pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI> where
+    L: IntoIterator<IntoIter=LI>, R: IntoIterator<IntoIter=RI>,
+    LI: ExactSizeIterator, RI: ExactSizeIterator,
+{
+    let left = left.into_iter();
+    let right = right.into_iter();
+    assert_eq!(left.len(), right.len(), "Both iterators must have the same length");
+    left.zip(right)
 }
