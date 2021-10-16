@@ -4,13 +4,17 @@ use std::net::{TcpListener, TcpStream};
 use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
+use board_game::games::sttt::STTTBoard;
+use board_game::games::ttt::TTTBoard;
 use crossbeam::channel;
 
-use cuda_sys::wrapper::handle::Device;
+use cuda_nn_eval::Device;
 
 use crate::mapping::ataxx::AtaxxStdMapper;
 use crate::mapping::BoardMapper;
 use crate::mapping::chess::ChessStdMapper;
+use crate::mapping::sttt::STTTStdMapper;
+use crate::mapping::ttt::TTTStdMapper;
 use crate::selfplay::collector::collector_main;
 use crate::selfplay::commander::{commander_main, read_command};
 use crate::selfplay::generator::generator_main;
@@ -28,6 +32,22 @@ pub fn selfplay_server_main() {
     println!("Received startup settings:\n{:#?}", startup_settings);
 
     match &*startup_settings.game {
+        "ttt" => {
+            selfplay_start(
+                startup_settings,
+                TTTBoard::default,
+                TTTStdMapper,
+                reader, writer,
+            )
+        }
+        "sttt" => {
+            selfplay_start(
+                startup_settings,
+                STTTBoard::default,
+                STTTStdMapper,
+                reader, writer,
+            )
+        }
         "ataxx" => {
             selfplay_start(
                 startup_settings,

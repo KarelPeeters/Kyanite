@@ -1,7 +1,7 @@
 use bytemuck::cast_slice_mut;
 use itertools::{Itertools, zip_eq};
 
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use cuda_sys::wrapper::handle::Device;
 use nn_graph::cpu::Tensor;
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::{Dimension, IxDyn};
@@ -47,8 +47,7 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Te
         .map(|x| x.as_slice().expect("Only sliceable inputs supported in test framework"))
         .collect_vec();
 
-    let handle = CudnnHandle::new(Device::new(0));
-    let mut executor = CudnnExecutor::new(handle, graph, batch_size);
+    let mut executor = CudnnExecutor::new(Device::new(0), graph, batch_size);
     let gpu_outputs = executor.evaluate(&inputs);
 
     // turn into Tensors, using the cpu shapes

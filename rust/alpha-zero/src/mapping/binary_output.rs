@@ -7,13 +7,13 @@ use std::path::{Path, PathBuf};
 use board_game::board::Board;
 use board_game::wdl::POV;
 use internal_iterator::InternalIterator;
-use itertools::zip;
 use safe_transmute::transmute_to_bytes;
 use serde::Serialize;
 
 use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::BoardMapper;
 use crate::selfplay::simulation::Simulation;
+use crate::util::kdl_divergence;
 
 #[derive(Serialize)]
 struct MetaData<'a> {
@@ -80,11 +80,11 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
     const SCALAR_COUNT: usize = 5 + 2 + 3 * 3;
 
-    pub fn append(&mut self, sim: Simulation<B>) -> Result<()> {
+    pub fn append(&mut self, simulation: Simulation<B>) -> Result<()> {
         let game_id = self.game_count;
         self.game_count += 1;
 
-        let game_length = sim.positions.len();
+        let game_length = simulation.positions.len();
 
         self.max_game_length = Some(max(game_length as i32, self.max_game_length.unwrap_or(-1)));
         self.min_game_length = Some(min(game_length as i32, self.min_game_length.unwrap_or(i32::MAX)));
@@ -94,7 +94,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         let mut board_scalars: Vec<f32> = vec![];
         let mut policy_indices: Vec<u32> = vec![];
 
-        for (pos_index, pos) in sim.positions.iter().enumerate() {
+        for (pos_index, pos) in simulation.positions.iter().enumerate() {
             let board = &pos.board;
             let player = board.next_player();
 
@@ -133,7 +133,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             scalars.push(kdl_divergence(&pos.zero_evaluation.wdl.to_slice(), &pos.net_evaluation.wdl.to_slice()));
             scalars.push(kdl_divergence(&pos.zero_evaluation.policy, &pos.net_evaluation.policy));
 
-            scalars.extend_from_slice(&sim.outcome.pov(player).to_wdl().to_slice());
+            scalars.extend_from_slice(&simulation.outcome.pov(player).to_wdl().to_slice());
             scalars.extend_from_slice(&pos.zero_evaluation.wdl.to_slice());
             scalars.extend_from_slice(&pos.net_evaluation.wdl.to_slice());
             assert_eq!(Self::SCALAR_COUNT, scalars.len());
@@ -197,17 +197,6 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn game_count(&self) -> usize {
         self.game_count
     }
-}
-
-/// Calculates `D_KDL(P || Q)`, read as _the divergence of P from Q_,
-/// a measure of how different two probability distributions are.
-/// See https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence.
-fn kdl_divergence(p: &[f32], q: &[f32]) -> f32 {
-    assert_eq!(p.len(), q.len());
-
-    zip(p, q)
-        .map(|(&p, &q)| p * (p / q).ln())
-        .sum()
 }
 
 #[cfg(test)]

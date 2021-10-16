@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use cuda_sys::wrapper::handle::CudnnHandle;
+use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use nn_graph::graph::{Graph, ValueInfo};
 
 use crate::planner::{Planner, Step};
@@ -17,7 +17,8 @@ pub struct CudnnExecutor {
 }
 
 impl CudnnExecutor {
-    pub fn new(handle: CudnnHandle, graph: &Graph, batch_size: usize) -> Self {
+    pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
+        let handle = CudnnHandle::new(device);
         let mut planner = Planner::new(handle);
 
         for value in graph.values() {

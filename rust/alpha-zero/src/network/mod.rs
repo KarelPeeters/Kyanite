@@ -17,6 +17,7 @@ pub struct ZeroEvaluation {
     pub wdl: WDL<f32>,
 
     /// The policy "vector", only containing the available moves in the order they are yielded by `available_moves`.
+    /// Contains probabilities after normalization.
     pub policy: Vec<f32>,
 }
 

@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use board_game::board::Board;
 
+use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use nn_graph::graph::Graph;
 
 use crate::mapping::BoardMapper;
@@ -27,8 +27,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
     pub fn new(mapper: M, graph: Graph, max_batch_size: usize, device: Device) -> Self {
         check_graph_shapes(mapper, &graph);
 
-        let handle = CudnnHandle::new(device);
-        let executor = CudnnExecutor::new(handle, &graph, max_batch_size);
+        let executor = CudnnExecutor::new(device, &graph, max_batch_size);
 
         let input = vec![0.0; max_batch_size * M::INPUT_FULL_SIZE];
 

@@ -8,6 +8,7 @@ use unwrap_match::unwrap_match;
 use crate::shape::{Shape, Size};
 use crate::wrap_debug::WrapDebug;
 
+#[derive(Clone)]
 pub struct Graph {
     values: Vec<ValueInfo>,
     inputs: Vec<Value>,
@@ -17,7 +18,7 @@ pub struct Graph {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Value(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
@@ -28,7 +29,7 @@ pub struct ValueInfo {
 /// * `ReLU` -> `Clip`
 /// * `BatchNorm` -> `Bias,Conv,Bias,Conv` (can be fused into adjacent conv too)
 /// * `Gemm` -> `Conv,Bias`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operation {
     /// A runtime-variable input.
     Input { index: usize },

@@ -6,6 +6,8 @@ use board_game::board::Board;
 
 use crate::mapping::bit_buffer::BitBuffer;
 
+pub mod ttt;
+pub mod sttt;
 pub mod ataxx;
 pub mod chess;
 pub mod bit_buffer;

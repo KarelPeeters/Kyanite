@@ -6,7 +6,7 @@ use lru::LruCache;
 use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
 
-use cuda_sys::wrapper::handle::Device;
+use cuda_nn_eval::Device;
 use nn_graph::onnx::load_graph_from_onnx_path;
 
 use crate::mapping::BoardMapper;
