@@ -7,6 +7,7 @@ use rand::{Rng, thread_rng};
 use rand_distr::Dirichlet;
 
 use cuda_sys::wrapper::handle::Device;
+use nn_graph::onnx::load_graph_from_onnx_path;
 
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
@@ -53,7 +54,8 @@ pub fn generator_main<B: Board>(
             }
             Ok(Command::NewNetwork(path)) => {
                 println!("Generator thread loading new network {:?}", path);
-                network = Some(CudnnNetwork::load(mapper, path, batch_size, device));
+                let graph = load_graph_from_onnx_path(path);
+                network = Some(CudnnNetwork::new(mapper, graph, batch_size, device));
             }
         }
 

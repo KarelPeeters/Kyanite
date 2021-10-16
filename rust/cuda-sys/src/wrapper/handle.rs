@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudnnCreate, cudnnDestroy, cudnnSetStream, cudaStreamSynchronize};
+use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::status::Status;
 
@@ -92,7 +92,11 @@ impl Drop for CudnnHandle {
 }
 
 impl CudnnHandle {
-    pub fn new(stream: CudaStream) -> Self {
+    pub fn new(device: Device) -> Self {
+        CudnnHandle::new_with_stream(CudaStream::new(device))
+    }
+
+    pub fn new_with_stream(stream: CudaStream) -> Self {
         unsafe {
             let mut inner = null_mut();
             stream.device.switch_to();

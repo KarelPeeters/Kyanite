@@ -10,8 +10,11 @@ cuda = ["cuda-nn-eval", "cuda-sys"]
 
 [dependencies]
 board-game = { version = "0.3.6", path = "../../../board-game-rs" }
-cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
+
+nn-graph = { path = "../nn-graph" }
+
 cuda-sys = { path = "../cuda-sys", optional = true }
+cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
 
 # TODO re-enable and implement these networks
 #  (update their versions too)

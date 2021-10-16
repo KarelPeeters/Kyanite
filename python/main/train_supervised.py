@@ -46,7 +46,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
         clip_norm=100,
     )
 
-    network = LCZOldPreNetwork(game, 256, 8)
+    network = LCZOldPreNetwork(game, 8, 256)
     network.to(DEVICE)
 
     print_param_count(network)

@@ -1,6 +1,6 @@
 pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
-use crate::bindings::cudnnPoolingForward;
-use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor};
+use crate::bindings::{cudnnOpTensor, cudnnPoolingForward};
+use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor, TensorOpDescriptor};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::DeviceMem;
 use crate::wrapper::status::Status;
@@ -45,50 +45,45 @@ pub fn find_conv_algorithms(
     }
 }
 
-// TODO the &mut stuff for all of these functions is kind of sketchy, since they don't really modify the mem yet.
-//   They just schedule the memory to be modified by the stream inside the handle.
-
 /// Run `output = conv(input, filter)`
-pub fn run_conv(
+pub unsafe fn run_conv(
     handle: &mut CudnnHandle,
     conv_desc: &ConvolutionDescriptor,
     algo: cudnnConvolutionFwdAlgo_t,
-    work_mem: &mut DeviceMem,
+    work_mem: &DeviceMem,
     filter_desc: &FilterDescriptor,
     filter_mem: &DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    output_mem: &DeviceMem,
 ) {
-    assert_eq!(input_desc.size(), input_mem.size());
-    assert_eq!(filter_desc.size(), filter_mem.size());
-    assert_eq!(output_desc.size(), output_mem.size());
+    assert_eq!(input_desc.size_bytes(), input_mem.len());
+    assert_eq!(filter_desc.size_bytes(), filter_mem.len());
+    assert_eq!(output_desc.size_bytes(), output_mem.len());
 
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
 
-    unsafe {
-        cudnnConvolutionForward(
-            handle.inner(),
-            &alpha as *const _ as *const _,
-            input_desc.inner(),
-            input_mem.inner(),
-            filter_desc.inner(),
-            filter_mem.inner(),
-            conv_desc.inner(),
-            algo,
-            work_mem.inner(),
-            work_mem.size(),
-            &beta as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
-        ).unwrap();
-    }
+    cudnnConvolutionForward(
+        handle.inner(),
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_mem.ptr(),
+        filter_desc.inner(),
+        filter_mem.ptr(),
+        conv_desc.inner(),
+        algo,
+        work_mem.ptr(),
+        work_mem.len(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
 }
 
-/// Run `output += input`. `output` can have dimensions of size 1 which are broadcasted to the shape of `output`.
-pub fn run_add_tensor(
+/// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
+pub unsafe fn run_add_tensor(
     handle: &mut CudnnHandle,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
@@ -98,21 +93,19 @@ pub fn run_add_tensor(
     let alpha: f32 = 1.0;
     let beta: f32 = 1.0;
 
-    unsafe {
-        cudnnAddTensor(
-            handle.inner(),
-            &alpha as *const _ as *const _,
-            input_desc.inner(),
-            input_mem.inner(),
-            &beta as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
-        ).unwrap();
-    }
+    cudnnAddTensor(
+        handle.inner(),
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_mem.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
 }
 
 /// Run `output = act(input)`.
-pub fn run_activation(
+pub unsafe fn run_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
     input_desc: &TensorDescriptor,
@@ -123,22 +116,20 @@ pub fn run_activation(
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
 
-    unsafe {
-        cudnnActivationForward(
-            handle.inner(),
-            activation_desc.inner(),
-            &alpha as *const _ as *const _,
-            input_desc.inner(),
-            input_mem.inner(),
-            &beta as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
-        ).unwrap();
-    }
+    cudnnActivationForward(
+        handle.inner(),
+        activation_desc.inner(),
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_mem.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
 }
 
 /// Runs `output = act(output)`.
-pub fn run_activation_in_place(
+pub unsafe fn run_activation_in_place(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
     data_desc: &TensorDescriptor,
@@ -147,18 +138,16 @@ pub fn run_activation_in_place(
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
 
-    unsafe {
-        cudnnActivationForward(
-            handle.inner(),
-            activation_desc.inner(),
-            &alpha as *const _ as *const _,
-            data_desc.inner(),
-            data_mem.inner(),
-            &beta as *const _ as *const _,
-            data_desc.inner(),
-            data_mem.inner(),
-        ).unwrap();
-    }
+    cudnnActivationForward(
+        handle.inner(),
+        activation_desc.inner(),
+        &alpha as *const _ as *const _,
+        data_desc.inner(),
+        data_mem.ptr(),
+        &beta as *const _ as *const _,
+        data_desc.inner(),
+        data_mem.ptr(),
+    ).unwrap();
 }
 
 /// Represents the residual input of a fused operation.
@@ -175,7 +164,7 @@ pub enum ResInput<'a> {
 /// * `res` can be 0, equal to the output or a separate tensor.
 /// * `input` must be different from both `output` and `res`.
 /// * `res` is assumed to have the same descriptor as `output`.
-pub fn run_conv_bias_res_activation(
+pub unsafe fn run_conv_bias_res_activation(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
     conv_desc: &ConvolutionDescriptor,
@@ -193,42 +182,40 @@ pub fn run_conv_bias_res_activation(
 ) {
     let alpha1: f32 = 1.0;
 
-    unsafe {
-        assert_ne!(input_mem.inner(), output_mem.inner(), "input and output must be distinct");
-        assert_ne!(input_mem.inner(), bias_mem.inner(), "input and bias must be distinct");
+    assert_ne!(input_mem.ptr(), output_mem.ptr(), "input and output must be distinct");
+    assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
 
-        // map res to actual arguments
-        let (alpha2,  res_mem) = match res {
-            ResInput::Zero => (0f32, output_mem.inner()),
-            ResInput::Output => (1f32, output_mem.inner()),
-            ResInput::Other(mem) => (1f32, mem.inner())
-        };
+    // map res to actual arguments
+    let (alpha2, res_mem) = match res {
+        ResInput::Zero => (0f32, output_mem.ptr()),
+        ResInput::Output => (1f32, output_mem.ptr()),
+        ResInput::Other(mem) => (1f32, mem.ptr())
+    };
 
-        cudnnConvolutionBiasActivationForward(
-            handle.inner(),
-            &alpha1 as *const f32 as *const _,
-            input_desc.inner(),
-            input_mem.inner(),
-            filter_desc.inner(),
-            filter_mem.inner(),
-            conv_desc.inner(),
-            algo,
-            work_mem.inner(),
-            work_mem.size(),
-            &alpha2 as *const f32 as *const _,
-            output_desc.inner(),
-            res_mem,
-            bias_desc.inner(),
-            bias_mem.inner(),
-            activation_desc.inner(),
-            output_desc.inner(),
-            output_mem.inner(),
-        ).unwrap();
-    }
+    cudnnConvolutionBiasActivationForward(
+        handle.inner(),
+        &alpha1 as *const f32 as *const _,
+        input_desc.inner(),
+        input_mem.ptr(),
+        filter_desc.inner(),
+        filter_mem.ptr(),
+        conv_desc.inner(),
+        algo,
+        work_mem.ptr(),
+        work_mem.len(),
+        &alpha2 as *const f32 as *const _,
+        output_desc.inner(),
+        res_mem,
+        bias_desc.inner(),
+        bias_mem.ptr(),
+        activation_desc.inner(),
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
 }
 
 /// Runs `output = pool(input)`.
-pub fn run_pooling(
+pub unsafe fn run_pooling(
     handle: &mut CudnnHandle,
     pool_desc: &PoolingDescriptor,
     input_desc: &TensorDescriptor,
@@ -239,16 +226,43 @@ pub fn run_pooling(
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
 
-    unsafe {
-        cudnnPoolingForward(
-            handle.inner(),
-            pool_desc.inner(),
-            &alpha as *const _ as *const _,
-            input_desc.inner(),
-            input_mem.inner(),
-            &beta as *const _ as *const _,
-            output_desc.inner(),
-            output_mem.inner(),
-        ).unwrap();
-    }
+    cudnnPoolingForward(
+        handle.inner(),
+        pool_desc.inner(),
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_mem.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
+}
+
+/// Runs `output = op(alpha_1 * input_1, alpha_2 * input_2) + b * output`
+pub unsafe fn run_tensor_op(
+    handle: &mut CudnnHandle,
+    op_desc: &TensorOpDescriptor,
+    alpha_1: f32,
+    input_1_desc: &TensorDescriptor,
+    input_1_mem: &DeviceMem,
+    alpha_2: f32,
+    input_2_desc: &TensorDescriptor,
+    input_2_mem: &DeviceMem,
+    beta: f32,
+    output_desc: &TensorDescriptor,
+    output_mem: &DeviceMem,
+) {
+    cudnnOpTensor(
+        handle.inner(),
+        op_desc.inner(),
+        &alpha_1 as *const _ as *const _,
+        input_1_desc.inner(),
+        input_1_mem.ptr(),
+        &alpha_2 as *const _ as *const _,
+        input_2_desc.inner(),
+        input_2_mem.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_mem.ptr(),
+    ).unwrap();
 }

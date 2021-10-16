@@ -25,3 +25,9 @@ def calc_gradient_norms(module: nn.Module):
             norms.append((param.grad.detach() ** 2).mean().item())
 
     return np.array(norms)
+
+
+def guess_module_device(model: nn.Module) -> str:
+    for p in model.parameters():
+        return p.device
+    return "cpu"
