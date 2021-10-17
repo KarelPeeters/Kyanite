@@ -5,9 +5,19 @@ use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
+use nn_graph::optimizer::optimize_graph;
 use nn_graph::shape::Shape;
 
 pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: &[Tensor]) {
+    println!("Unoptimized");
+    test_all_graph(graph, batch_size, inputs, expected_outputs);
+
+    println!("Optimized");
+    let optimized = optimize_graph(graph);
+    test_all_graph(&optimized, batch_size, inputs, expected_outputs);
+}
+
+fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: &[Tensor]) {
     println!("Testing:\n{}", graph);
 
     println!("Testing with CPU");

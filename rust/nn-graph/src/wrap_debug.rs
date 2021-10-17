@@ -5,6 +5,12 @@ use std::ops::{Deref, DerefMut};
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct WrapDebug<T>(T);
 
+impl<T> WrapDebug<T> {
+    pub fn inner(&self) -> &T {
+        &self.0
+    }
+}
+
 impl<T> Debug for WrapDebug<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", std::any::type_name::<T>())

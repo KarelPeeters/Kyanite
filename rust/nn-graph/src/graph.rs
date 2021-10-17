@@ -53,6 +53,42 @@ pub enum Operation {
     Clamp { input: Value, min: f32, max: f32 },
 }
 
+impl Operation {
+    pub fn inputs(&self) -> Vec<Value> {
+        match self {
+            Operation::Input { .. } => vec![],
+            Operation::Constant { .. } => vec![],
+            &Operation::View { input } => vec![input],
+            &Operation::Slice { input, .. } => vec![input],
+            &Operation::Conv { input, filter, .. } => vec![input, filter],
+            &Operation::Add { left, right, .. } => vec![left, right],
+            &Operation::Mul { left, right } => vec![left, right],
+            &Operation::Clamp { input, .. } => vec![input],
+        }
+    }
+
+    pub(crate) fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
+        match self {
+            &Operation::Input { index } =>
+                Operation::Input { index },
+            Operation::Constant { data } =>
+                Operation::Constant { data: data.clone() },
+            &Operation::View { input } =>
+                Operation::View { input: f(input) },
+            &Operation::Slice { input, axis, start, end } =>
+                Operation::Slice { input: f(input), axis, start, end },
+            &Operation::Conv { input, filter, conv_shape } =>
+                Operation::Conv { input: f(input), filter: f(filter), conv_shape },
+            &Operation::Add { left, right, subtract } =>
+                Operation::Add { left: f(left), right: f(right), subtract },
+            &Operation::Mul { left, right } =>
+                Operation::Mul { left: f(left), right: f(right) },
+            &Operation::Clamp { input, min, max } =>
+                Operation::Clamp { input: f(input), min, max },
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct ConvShape {
     pub input_channels: usize,
@@ -117,7 +153,7 @@ impl Graph {
     }
 
     #[must_use]
-    fn push(&mut self, shape: Shape, operation: Operation) -> Value {
+    pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
         let index = self.values.len();
         self.values.push(ValueInfo { shape, operation });
         Value(index)

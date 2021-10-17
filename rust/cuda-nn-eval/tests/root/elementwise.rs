@@ -1,4 +1,4 @@
-use crate::root::utils::{test_elementwise, test_elementwise_pair};
+use crate::root::runner::{test_elementwise, test_elementwise_pair};
 
 #[test]
 fn add() {

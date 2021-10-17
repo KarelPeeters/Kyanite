@@ -1,12 +1,9 @@
-use itertools::Itertools;
-
-use nn_graph::cpu::Tensor;
 use nn_graph::graph::Graph;
-use nn_graph::ndarray::{ArcArray, Dimension, IntoDimension};
 use nn_graph::ndarray::s;
 use nn_graph::shape::{Shape, Size};
 
-use crate::root::utils::test_all;
+use crate::root::runner::test_all;
+use crate::root::tensor_utils::{linspace_tensor, manual_tensor, range_vec};
 
 #[test]
 fn empty() {
@@ -83,18 +80,23 @@ fn linear() {
     )
 }
 
-fn manual_tensor<I: IntoDimension>(shape: I, data: Vec<f32>) -> Tensor {
-    ArcArray::from_shape_vec(shape, data)
-        .expect("Shape and data length mismatch")
-        .into_dyn()
-}
+#[test]
+fn fuse_clamp() {
+    let mut graph = Graph::new();
 
-fn linspace_tensor<I: IntoDimension + Copy>(shape: I) -> ArcArray<f32, I::Dim> {
-    let size = shape.into_dimension().size();
-    ArcArray::linspace(-5.0, 5.0, size)
-        .reshape(shape)
-}
+    let mut curr = graph.input(Shape::new(vec![Size::BATCH]));
 
-fn range_vec(len: usize) -> Vec<f32> {
-    (0..len).map(|x| x as f32).collect_vec()
+    curr = graph.clamp(curr, -5.0, f32::INFINITY);
+    curr = graph.clamp(curr, f32::NEG_INFINITY, 2.0);
+    curr = graph.clamp(curr, 0.0, 1.0);
+    curr = graph.clamp(curr, -1.0, 2.0);
+
+    graph.output(curr);
+
+    test_all(
+        &graph,
+        5,
+        &[manual_tensor(5, vec![-2.0, 0.0, 0.5, 1.0, 2.0])],
+        &[manual_tensor(5, vec![0.0, 0.0, 0.5, 1.0, 1.0])],
+    )
 }

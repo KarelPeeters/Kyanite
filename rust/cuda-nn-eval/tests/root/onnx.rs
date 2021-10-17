@@ -1,4 +1,4 @@
-use crate::root::utils::test_onnx_bin;
+use crate::root::runner::test_onnx_bin;
 
 #[test]
 fn simple() {
