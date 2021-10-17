@@ -6,6 +6,8 @@ use board_game::wdl::WDL;
 
 pub mod common;
 pub mod dummy;
+pub mod symmetry;
+
 pub mod cpu;
 pub mod cudnn;
 pub mod onnx_runtime;
@@ -28,5 +30,11 @@ pub trait Network<B: Board>: Debug {
         let mut result = self.evaluate_batch(&[board]);
         assert_eq!(result.len(), 1);
         result.pop().unwrap()
+    }
+}
+
+impl<B: Board, N: Network<B>> Network<B> for &mut N {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+        (*self).evaluate_batch(boards)
     }
 }

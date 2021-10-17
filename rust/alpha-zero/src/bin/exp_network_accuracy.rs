@@ -1,13 +1,10 @@
-use board_game::ai::minimax::minimax;
-use board_game::ai::solver::{is_double_forced_draw, solve_all_moves, SolverHeuristic};
-use board_game::board::{Board, BoardAvailableMoves, Outcome};
+use board_game::ai::solver::{is_double_forced_draw, solve_all_moves};
+use board_game::board::{Board, BoardAvailableMoves};
 use board_game::games::ttt::TTTBoard;
 use board_game::util::game_stats::all_possible_boards;
 use board_game::wdl::POV;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
 
 use alpha_zero::mapping::ttt::TTTStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
@@ -28,7 +25,6 @@ fn main() {
 
         let eval = solve_all_moves(&board, depth);
 
-        let available_move_count = board.available_moves().count();
         let best_moves = eval.best_move.unwrap();
         let is_optimal = board.available_moves().map(|mv| best_moves.contains(&mv)).collect();
 
@@ -50,7 +46,7 @@ fn main() {
     }).collect_vec();
 
     let device = Device::new(0);
-    let graph = load_graph_from_onnx_path("../data/supervised/all-ttt/network_3328.onnx");
+    let graph = load_graph_from_onnx_path("../data/newer_loop/test-diri2/ttt/training/gen_130/network.onnx");
     let mut network = CudnnNetwork::new(TTTStdMapper, graph, 1, device);
 
     network_accuracy(&mut network, &challenges[0..100])

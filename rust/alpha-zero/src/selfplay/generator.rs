@@ -1,9 +1,8 @@
 use board_game::board::{Board, Outcome};
-use board_game::wdl::WDL;
-use crossbeam::channel::{Receiver, Sender, SendError, TryRecvError};
+use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use itertools::Itertools;
-use lru::LruCache;
-use rand::{Rng, thread_rng};
+use rand::Rng;
+use rand::rngs::ThreadRng;
 use rand_distr::Dirichlet;
 
 use cuda_nn_eval::Device;
@@ -12,11 +11,13 @@ use nn_graph::onnx::load_graph_from_onnx_path;
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
 use crate::network::cudnn::CudnnNetwork;
-use crate::old_zero::{KeepResult, Request, Response, RunResult, Tree, ZeroSettings, ZeroState};
+use crate::network::symmetry::RandomSymmetryNetwork;
 use crate::selfplay::move_selector::MoveSelector;
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::zip_eq_exact;
+use crate::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest, ZeroResponse};
+use crate::zero::tree::{KeepResult, Tree};
 
 pub fn generator_main<B: Board>(
     mapper: impl BoardMapper<B>,
@@ -24,10 +25,12 @@ pub fn generator_main<B: Board>(
     device: Device,
     batch_size: usize,
     cmd_receiver: Receiver<Command>,
-    update_sender: Sender<GeneratorUpdate<B>>,
+    sender: UpdateSender<B>,
 ) -> Result<(), SendError<GeneratorUpdate<B>>> {
-    let mut state = GeneratorState::new();
-    let mut rng = thread_rng();
+    let mut state = GeneratorState::new(batch_size);
+
+    //TODO try with a different(faster) rng
+    let mut rng = RngType::default();
 
     let mut settings = None;
     let mut network = None;
@@ -62,9 +65,10 @@ pub fn generator_main<B: Board>(
 
         // advance generator
         if let Some(settings) = &settings {
+            let mut ctx = Context { settings: &settings, rng: &mut rng };
+
             if let Some(network) = &mut network {
-                state.cache.resize(settings.cache_size);
-                state.step(&start_pos, &update_sender, settings, network, batch_size, &mut rng)?;
+                state.step(&mut ctx, &start_pos, network, &sender)?;
             }
         }
     }
@@ -72,236 +76,276 @@ pub fn generator_main<B: Board>(
     Ok(())
 }
 
+type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
+type RngType = ThreadRng;
+
+#[derive(Debug)]
+struct Context<'a> {
+    settings: &'a Settings,
+    rng: &'a mut RngType,
+}
+
 #[derive(Debug)]
 struct GeneratorState<B: Board> {
     games: Vec<GameState<B>>,
-    responses: Vec<Response<B>>,
-    cache: LruCache<B, ZeroEvaluation>,
+    responses: Vec<ZeroResponse>,
+    batch_size: usize,
 }
 
-/// The state kept while generating a new game.
 #[derive(Debug)]
 struct GameState<B: Board> {
-    zero: ZeroState<B>,
-    needs_dirichlet: bool,
+    search: SearchState<B>,
     positions: Vec<Position<B>>,
 }
 
+#[derive(Debug)]
+struct SearchState<B: Board> {
+    tree: Tree<B>,
+    needs_dirichlet: bool,
+    is_full_search: bool,
+    root_net_eval: Option<ZeroEvaluation>,
+}
+
+#[derive(Debug)]
+enum StepResult<B> {
+    Done,
+    Request(ZeroRequest<B>),
+}
+
+#[derive(Debug, Default)]
+struct Counter {
+    move_count: u64,
+    cache_hits: u64,
+}
+
 impl<B: Board> GeneratorState<B> {
-    fn new() -> Self {
-        GeneratorState { games: Default::default(), responses: Default::default(), cache: LruCache::new(0) }
+    fn new(batch_size: usize) -> Self {
+        GeneratorState {
+            games: vec![],
+            responses: vec![],
+            batch_size,
+        }
     }
 
     fn step(
         &mut self,
+        ctx: &mut Context,
         start_pos: impl Fn() -> B,
-        update_sender: &Sender<GeneratorUpdate<B>>,
-        settings: &Settings,
         network: &mut impl Network<B>,
-        batch_size: usize,
-        rng: &mut impl Rng,
+        sender: &UpdateSender<B>,
     ) -> Result<(), SendError<GeneratorUpdate<B>>> {
-        let mut requests: Vec<Request<B>> = vec![];
+        let mut counter = Counter::default();
+        let requests = self.collect_requests(ctx, &mut counter, sender, start_pos);
+        assert_eq!(requests.len(), self.batch_size);
 
-        let mut total_cached_eval_count = 0;
-        let mut total_move_count = 0;
+        // evaluate the requests
+        let boards = requests.iter().map(|r| &r.board).collect_vec();
+        let evals = RandomSymmetryNetwork::new(network, &mut ctx.rng, ctx.settings.random_symmetries)
+            .evaluate_batch(&boards);
 
-        // run all existing games and collect the requests
-        assert_eq!(self.games.len(), self.responses.len());
-        assert!(requests.is_empty());
-        let mut kept_games = vec![];
-
-        for (mut game, response) in zip_eq_exact(self.games.drain(..), self.responses.drain(..)) {
-            let (request, cached_eval_count, move_count) =
-                game.run_until_request(rng, &mut self.cache, settings, Some(response), &update_sender);
-
-            total_cached_eval_count += cached_eval_count;
-            total_move_count += move_count;
-
-            if let Some(request) = request {
-                // this game is not done, keep it and its request
-                kept_games.push(game);
-                requests.push(request);
-            }
-        }
-
-        self.games = kept_games;
-
-        // create new games until we have enough and run them once
-        let new_game_count = batch_size.saturating_sub(self.games.len());
-        for _ in 0..new_game_count {
-            let zero = new_zero(settings, Tree::new(start_pos()), rng);
-            let mut game = GameState::new(zero);
-            let (request, cached_eval_count, move_count) =
-                game.run_until_request(rng, &mut self.cache, settings, None, &update_sender);
-
-            total_cached_eval_count += cached_eval_count;
-            total_move_count += move_count;
-
-            let request = request.expect("The first run of a gamestate should always returns a request");
-
-            self.games.push(game);
-            requests.push(request);
-        }
-
-        let request_count = requests.len();
-
-        //pass requests to network
+        // store the responses for next step
         assert!(self.responses.is_empty());
+        self.responses.extend(
+            zip_eq_exact(requests, evals)
+                .map(|(req, eval)| req.respond(eval))
+        );
 
-        let boards = requests.iter().map(|req| req.board()).collect_vec();
-        let evals = network.evaluate_batch(&boards);
-        self.responses = zip_eq_exact(requests, evals)
-            .map(|(req, eval)| Response { request: req, evaluation: eval })
-            .collect_vec();
-
-        //insert responses into the cache
-        for response in &self.responses {
-            self.cache.put(response.request.board(), response.evaluation.clone());
-        }
-
-        //send the number of evaluations that happened
-        update_sender.send(GeneratorUpdate::Progress {
-            real_evals: request_count as u64,
-            cached_evals: total_cached_eval_count,
-            moves: total_move_count,
+        // report progress
+        sender.send(GeneratorUpdate::Progress {
+            cached_evals: counter.cache_hits,
+            real_evals: self.batch_size as u64,
+            moves: counter.move_count,
         })?;
 
         Ok(())
     }
-}
 
-impl<B: Board> GameState<B> {
-    fn new(zero: ZeroState<B>) -> Self {
-        GameState { zero, needs_dirichlet: true, positions: vec![] }
-    }
-
-    /// Run this game until either:
-    /// * a request is made, in which case that request is returned
-    /// * the game is done, in which case `None` is returned
-    fn run_until_request(
+    fn collect_requests(
         &mut self,
-        rng: &mut impl Rng,
-        cache: &mut LruCache<B, ZeroEvaluation>,
-        settings: &Settings,
-        response: Option<Response<B>>,
-        sender: &Sender<GeneratorUpdate<B>>,
-    ) -> (Option<Request<B>>, u64, u64) {
-        let move_selector = MoveSelector::new(settings.temperature, settings.zero_temp_move_count);
+        ctx: &mut Context,
+        counter: &mut Counter,
+        sender: &UpdateSender<B>,
+        start_pos: impl Fn() -> B,
+    ) -> Vec<ZeroRequest<B>> {
+        let mut requests = vec![];
+        let existing_games = std::mem::take(&mut self.games);
 
-        let mut response = response;
-        let mut move_count = 0;
-        let mut cached_eval_count = 0;
-
-        let request = loop {
-            let had_response = response.is_some();
-            let result = self.zero.run_until_result(response.take(), rng);
-
-            if had_response && self.needs_dirichlet {
-                // at this point we're sure that the tree has at least one visit, se we can add the noise
-                add_dirichlet_noise(settings, &mut self.zero.tree, rng);
-                self.needs_dirichlet = false;
-            }
+        let mut step_and_append = |ctx: &mut Context, games: &mut Vec<GameState<B>>, mut game: GameState<B>, response: Option<ZeroResponse>| {
+            let result = game.step(ctx, response, sender, counter);
 
             match result {
-                RunResult::Request(request) => {
-                    if let Some(evaluation) = cache.get(&request.board()) {
-                        response = Some(Response { request, evaluation: evaluation.clone() });
-                        cached_eval_count += 1;
-                    } else {
-                        break Some(request);
-                    }
-                }
-                RunResult::Done => {
-                    let tree = &self.zero.tree;
-                    let policy = tree.policy().collect_vec();
-
-                    //pick a move to play
-                    let picked_index = move_selector.select(self.positions.len() as u32, policy.iter().copied(), rng);
-                    let picked_child = tree[0].children.unwrap().get(picked_index);
-                    let picked_move = tree[picked_child].last_move.unwrap();
-
-                    //store this position
-                    let iterations = self.zero.target_iterations;
-                    assert!(iterations == settings.full_iterations || iterations == settings.part_iterations);
-                    let should_store = iterations == settings.full_iterations;
-
-                    let net_evaluation = ZeroEvaluation {
-                        wdl: WDL::nan(),
-                        policy: vec![f32::NAN; policy.len()],
-                    };
-                    let zero_evaluation = ZeroEvaluation {
-                        wdl: tree.wdl(),
-                        policy,
-                    };
-
-                    self.positions.push(Position {
-                        board: tree.root_board().clone(),
-                        should_store,
-                        zero_visits: tree.root_visits(),
-                        net_evaluation,
-                        zero_evaluation,
-                    });
-                    move_count += 1;
-
-                    // decide whether to continue this game
-                    let result = if self.positions.len() as u64 >= settings.max_game_length {
-                        KeepResult::Done(Outcome::Draw)
-                    } else {
-                        tree.keep_move(picked_move)
-                    };
-
-                    match result {
-                        KeepResult::Tree(next_tree) => {
-                            //continue playing this game, either by keeping part of the tree or starting a new one on the next board
-                            if settings.keep_tree {
-                                self.zero = new_zero(settings, next_tree, rng)
-                            } else {
-                                self.zero = new_zero(settings, Tree::new(next_tree.root_board().clone()), rng)
-                            }
-                        }
-                        KeepResult::Done(outcome) => {
-                            //record this game
-                            let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
-                            sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
-
-                            //report that this game is done
-                            break None;
-                        }
-                    }
+                StepResult::Done => {}
+                StepResult::Request(request) => {
+                    games.push(game);
+                    requests.push(request);
                 }
             }
         };
 
-        (request, cached_eval_count, move_count)
+        // step all existing games
+        for (game, response) in zip_eq_exact(existing_games, self.responses.drain(..)) {
+            step_and_append(ctx, &mut self.games, game, Some(response))
+        }
+
+        // start new games until we have enough of them
+        while self.games.len() < self.batch_size {
+            let game = GameState::new(ctx, start_pos());
+            step_and_append(ctx, &mut self.games, game, None);
+        }
+
+        assert_eq!(requests.len(), self.games.len());
+        requests
     }
 }
 
-fn add_dirichlet_noise<B: Board>(settings: &Settings, tree: &mut Tree<B>, rng: &mut impl Rng) {
-    let a = settings.dirichlet_alpha;
-    let e = settings.dirichlet_eps;
+impl<B: Board> GameState<B> {
+    fn new(ctx: &mut Context, start_pos: B) -> Self {
+        let tree = Tree::new(start_pos);
+        GameState {
+            search: SearchState::new(ctx, tree),
+            positions: vec![],
+        }
+    }
+
+    fn step(
+        &mut self,
+        ctx: &mut Context,
+        initial_response: Option<ZeroResponse>,
+        sender: &UpdateSender<B>,
+        counter: &mut Counter,
+    ) -> StepResult<B> {
+        let mut response = initial_response;
+
+        loop {
+            let result = self.search.step(ctx, response.take());
+
+            match result {
+                StepResult::Request(request) => {
+                    return StepResult::Request(request);
+                }
+                StepResult::Done => {
+                    counter.move_count += 1;
+                    if self.search_done_step(ctx, sender) {
+                        return StepResult::Done;
+                    }
+                }
+            }
+        }
+    }
+
+    fn search_done_step(&mut self, ctx: &mut Context, sender: &UpdateSender<B>) -> bool {
+        let settings = ctx.settings;
+
+        let tree = &self.search.tree;
+        let policy = tree.policy().collect_vec();
+
+        //pick a move to play
+        let move_selector = MoveSelector::new(settings.temperature, settings.zero_temp_move_count);
+        let picked_index = move_selector.select(self.positions.len() as u32, policy.iter().copied(), ctx.rng);
+        let picked_child = tree[0].children.unwrap().get(picked_index);
+        let picked_move = tree[picked_child].last_move.unwrap();
+
+        //store this position
+        let net_evaluation = self.search.root_net_eval.take().unwrap();
+        let zero_evaluation = ZeroEvaluation { wdl: tree.wdl(), policy };
+
+        self.positions.push(Position {
+            board: tree.root_board().clone(),
+            should_store: self.search.is_full_search,
+            zero_visits: tree[0].visits,
+            net_evaluation,
+            zero_evaluation,
+        });
+
+        // decide whether to continue this game
+        let result = if self.positions.len() as u64 >= settings.max_game_length {
+            KeepResult::Done(Outcome::Draw)
+        } else {
+            tree.keep_move(picked_move)
+        };
+
+        match result {
+            KeepResult::Tree(kept_tree) => {
+                //continue playing this game, either by keeping part of the tree or starting a new one on the next board
+                let next_tree = if settings.keep_tree {
+                    kept_tree
+                } else {
+                    Tree::new(kept_tree.root_board().clone())
+                };
+                self.search = SearchState::new(ctx, next_tree);
+
+                false
+            }
+            KeepResult::Done(outcome) => {
+                //record this game
+                let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
+                sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
+
+                //report that this game is done
+                true
+            }
+        }
+    }
+}
+
+impl<B: Board> SearchState<B> {
+    fn new(ctx: &mut Context, tree: Tree<B>) -> Self {
+        SearchState {
+            tree,
+            needs_dirichlet: true,
+            is_full_search: ctx.rng.gen_bool(ctx.settings.full_search_prob),
+            root_net_eval: None,
+        }
+    }
+
+    fn step(&mut self, ctx: &mut Context, response: Option<ZeroResponse>) -> StepResult<B> {
+        let settings = ctx.settings;
+
+        if let Some(response) = response {
+            zero_step_apply(&mut self.tree, response);
+        }
+
+        loop {
+            if self.tree[0].visits > 0 && self.needs_dirichlet {
+                self.root_net_eval = Some(extract_root_net_eval(&self.tree));
+                add_dirichlet_noise(ctx, &mut self.tree);
+                self.needs_dirichlet = false;
+            }
+
+            let target_iterations = if self.is_full_search { settings.full_iterations } else { settings.part_iterations };
+            if self.tree[0].visits >= target_iterations {
+                return StepResult::Done;
+            }
+
+            if let Some(request) = zero_step_gather(&mut self.tree, settings.exploration_weight) {
+                return StepResult::Request(request);
+            }
+        }
+    }
+}
+
+fn extract_root_net_eval<B: Board>(tree: &Tree<B>) -> ZeroEvaluation {
+    let wdl = tree[0].net_wdl.unwrap();
+    let policy = tree[0].children.unwrap().iter()
+        .map(|c| tree[c].net_policy)
+        .collect();
+    ZeroEvaluation { wdl, policy }
+}
+
+fn add_dirichlet_noise<B: Board>(ctx: &mut Context, tree: &mut Tree<B>) {
+    let alpha = ctx.settings.dirichlet_alpha;
+    let eps = ctx.settings.dirichlet_eps;
 
     let children = tree[0].children
         .expect("root node has no children yet, it must have been visited at least once");
 
     if children.length > 1 {
-        let distr = Dirichlet::new_with_size(a, children.length as usize).unwrap();
-        let noise = rng.sample(distr);
+        let distr = Dirichlet::new_with_size(alpha, children.length as usize).unwrap();
+        let noise = ctx.rng.sample(distr);
 
         for (child, n) in zip_eq_exact(children, noise) {
             let p = &mut tree[child].net_policy;
-            *p = (1.0 - e) * (*p) + e * n;
+            *p = (1.0 - eps) * (*p) + eps * n;
         }
     }
-}
-
-fn new_zero<B: Board>(settings: &Settings, tree: Tree<B>, rng: &mut impl Rng) -> ZeroState<B> {
-    let iterations = if rng.gen_bool(settings.full_search_prob) {
-        settings.full_iterations
-    } else {
-        settings.part_iterations
-    };
-
-    let zero_settings = ZeroSettings::new(settings.exploration_weight, settings.random_symmetries);
-    ZeroState::new(tree, iterations, zero_settings)
 }
