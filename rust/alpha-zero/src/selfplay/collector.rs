@@ -76,6 +76,7 @@ struct ThroughputEstimator {
     cached_evals: u64,
     moves: u64,
     games: u64,
+    total_moves: u64,
     total_games: u64,
 }
 
@@ -87,6 +88,7 @@ impl ThroughputEstimator {
             cached_evals: 0,
             moves: 0,
             games: 0,
+            total_moves: 0,
             total_games: 0,
         }
     }
@@ -100,6 +102,7 @@ impl ThroughputEstimator {
         self.real_evals += real_evals;
         self.cached_evals += cached_evals;
         self.moves += moves;
+        self.total_moves += moves;
 
         let now = Instant::now();
         let delta = (now - self.last_print_time).as_secs_f32();
@@ -108,12 +111,12 @@ impl ThroughputEstimator {
             self.last_print_time = now;
             let real_eval_throughput = self.real_evals as f32 / delta;
             let cached_eval_throughput = self.cached_evals as f32 / delta;
-            let moves_throughput = self.moves as f32 / delta;
+            let move_throughput = self.moves as f32 / delta;
             let game_throughput = self.games as f32 / delta;
 
             println!(
-                "Thoughput: {} evals/s, {} cached evals/s, {} moves/s, {} games/s, {} games",
-                real_eval_throughput, cached_eval_throughput, moves_throughput, game_throughput, self.total_games
+                "Thoughput: {} evals/s, {} cached evals/s, {} moves/s => {} moves {} games/s => {} games",
+                real_eval_throughput, cached_eval_throughput, move_throughput, self.total_moves, game_throughput, self.total_games
             );
             println!("   cache hit rate: {}", cached_eval_throughput / (cached_eval_throughput + real_eval_throughput));
 
