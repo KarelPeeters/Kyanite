@@ -28,18 +28,21 @@ fn main() -> std::io::Result<()> {
             }
         }).collect();
 
+        let zero_evaluation = ZeroEvaluation {
+            wdl: WDL::nan(),
+            policy,
+        };
+        let net_evaluation = ZeroEvaluation {
+            wdl: WDL::nan(),
+            policy: vec![f32::NAN; board.available_moves().count()],
+        };
+
         let position = Position {
             board,
             should_store: true,
             zero_visits: 0,
-            zero_evaluation: ZeroEvaluation {
-                wdl: WDL::nan(),
-                policy,
-            },
-            net_evaluation: ZeroEvaluation {
-                wdl: WDL::nan(),
-                policy: vec![f32::NAN; board.available_moves().count()],
-            },
+            zero_evaluation,
+            net_evaluation,
         };
 
         let simulation = Simulation {
