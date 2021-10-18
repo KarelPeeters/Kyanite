@@ -85,6 +85,10 @@ impl<B: Board> Tree<B> {
         self[0].wdl().flip()
     }
 
+    pub fn root_visits(&self) -> u64 {
+        self[0].visits
+    }
+
     /// Return the policy vector for the root node.
     pub fn policy(&self) -> impl Iterator<Item=f32> + '_ {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
@@ -162,6 +166,19 @@ impl<N> Node<N> {
         self.total_wdl / self.total_wdl.sum()
     }
 
+    /// Whether the board corresponding to this node is done. `None` means unknown.
+    pub fn terminal(&self) -> Option<bool> {
+        if self.children.is_none() {
+            if self.visits_with_virtual() > 0 {
+                Some(true)
+            } else {
+                None
+            }
+        } else {
+            Some(false)
+        }
+    }
+
     pub(super) fn visits_with_virtual(&self) -> u64 {
         self.visits + self.virtual_visits
     }
@@ -232,7 +249,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         if self.curr_depth == 0 {
             let wdl = self.tree.wdl();
             writeln!(f, "wdl: ({:.3}/{:.3}/{:.3}), best move: {:?}", wdl.win, wdl.draw, wdl.loss, self.tree.best_move())?;
-            writeln!(f, "move: visits zero(w/d/l, policy) net(w/d/l, policy)")?;
+            writeln!(f, "[move: terminal visits zero(w/d/l, policy) net(w/d/l, policy)]")?;
         }
 
         let node = &self.tree[self.node];
@@ -242,10 +259,15 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let node_wdl = node.wdl();
         let net_wdl = node.net_wdl.unwrap_or(WDL::nan()).flip();
 
+        let terminal = match node.terminal() {
+            None => "?",
+            Some(terminal) => if terminal { "T" } else { "N" },
+        };
+
         writeln!(
             f,
-            "{:?}: {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
-            node.last_move, node.visits,
+            "{:?}: {} {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
+            node.last_move, terminal, node.visits,
             node_wdl.win, node_wdl.draw, node_wdl.loss,
             (node.visits as f32) / (self.parent_visits as f32),
             net_wdl.win, net_wdl.draw, net_wdl.loss,

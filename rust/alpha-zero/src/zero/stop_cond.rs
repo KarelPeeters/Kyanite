@@ -28,7 +28,7 @@ impl<B: Board> StopCondition<B> for u64 {
     type D = u64;
 
     fn should_stop(&self, tree: &Tree<B>) -> bool {
-        tree.nodes[0].visits >= *self
+        tree.root_visits() >= *self
     }
 
     fn debug(&self) -> &u64 {

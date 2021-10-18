@@ -252,7 +252,7 @@ impl<B: Board> GameState<B> {
         self.positions.push(Position {
             board: tree.root_board().clone(),
             should_store: self.search.is_full_search,
-            zero_visits: tree[0].visits,
+            zero_visits: tree.root_visits(),
             net_evaluation,
             zero_evaluation,
         });
@@ -306,14 +306,14 @@ impl<B: Board> SearchState<B> {
         }
 
         loop {
-            if self.tree[0].visits > 0 && self.needs_dirichlet {
+            if self.tree.root_visits() > 0 && self.needs_dirichlet {
                 self.root_net_eval = Some(extract_root_net_eval(&self.tree));
                 add_dirichlet_noise(ctx, &mut self.tree);
                 self.needs_dirichlet = false;
             }
 
             let target_iterations = if self.is_full_search { settings.full_iterations } else { settings.part_iterations };
-            if self.tree[0].visits >= target_iterations {
+            if self.tree.root_visits() >= target_iterations {
                 return StepResult::Done;
             }
 
