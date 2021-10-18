@@ -298,12 +298,15 @@ impl PoolingDescriptor {
 }
 
 #[derive(Debug)]
-pub struct TensorOpDescriptor(cudnnOpTensorDescriptor_t);
+pub struct TensorOpDescriptor {
+    inner: cudnnOpTensorDescriptor_t,
+    operation: cudnnOpTensorOp_t,
+}
 
 impl Drop for TensorOpDescriptor {
     fn drop(&mut self) {
         unsafe {
-            cudnnDestroyOpTensorDescriptor(self.0).unwrap()
+            cudnnDestroyOpTensorDescriptor(self.inner).unwrap()
         }
     }
 }
@@ -320,11 +323,11 @@ impl TensorOpDescriptor {
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
             ).unwrap();
 
-            TensorOpDescriptor(inner)
+            TensorOpDescriptor { inner, operation }
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnOpTensorDescriptor_t {
-        self.0
+        self.inner
     }
 }

@@ -152,7 +152,7 @@ impl Planner {
             output_mem: output.mem.view(),
         };
 
-        self.plan.push(Step::Conv { args });
+        self.plan.push(Step::Conv { shape: conv_shape, args });
         output
     }
 
@@ -228,7 +228,7 @@ impl Planner {
 #[derive(Debug)]
 pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
-    Conv { args: ConvolutionArgs },
+    Conv { shape: ConvShape, args: ConvolutionArgs },
     TensorOp { args: TensorOpArgs },
     CopyOutput { index: usize, tensor: Tensor },
 }

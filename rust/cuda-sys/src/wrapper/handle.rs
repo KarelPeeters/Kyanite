@@ -1,7 +1,8 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
+use crate::bindings::{cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
+use crate::wrapper::event::CudaEvent;
 use crate::wrapper::status::Status;
 
 pub fn cuda_device_count() -> i32 {
@@ -73,6 +74,10 @@ impl CudaStream {
 
     pub unsafe fn inner(&self) -> cudaStream_t {
         self.inner
+    }
+
+    pub unsafe fn record_event(&mut self, event: &CudaEvent) {
+        cudaEventRecord(event.inner(), self.inner()).unwrap()
     }
 }
 
