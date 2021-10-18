@@ -821,6 +821,7 @@ dependencies = [
  "byteorder",
  "itertools",
  "ndarray",
+ "num-traits",
  "prost",
  "prost-build",
  "unwrap-match",

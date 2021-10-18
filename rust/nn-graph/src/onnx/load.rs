@@ -1,5 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::Itertools;
+use num_traits::cast;
 use prost::Message;
 
 use crate::graph::{Graph, Value};
@@ -21,12 +22,7 @@ pub fn load_model_proto(buf: &[u8]) -> ModelProto {
 pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
     let model_graph = model.graph.as_ref().unwrap();
 
-    for init in &model_graph.initializer {
-        assert_eq!(DataType::Float as i32, init.data_type);
-    }
-
     let mut graph = Graph::new();
-
     let mut nodes = Store::default();
 
     load_initializers(&mut graph, &mut nodes, &model_graph.initializer);
@@ -323,9 +319,19 @@ fn load_tensor_float_data(tensor: &TensorProto) -> (Shape, Vec<f32>) {
             if !tensor.double_data.is_empty() {
                 tensor.double_data.iter().map(|&f| f as f32).collect_vec()
             } else {
-                let mut double_data = vec![0.0; size];
-                LittleEndian::read_f64_into(&tensor.raw_data, &mut double_data);
-                double_data.iter().map(|&f| f as f32).collect_vec()
+                let mut data = vec![0.0; size];
+                LittleEndian::read_f64_into(&tensor.raw_data, &mut data);
+                data.iter().map(|&d| cast(d).unwrap()).collect_vec()
+            }
+        }
+        //TODO it's really starting to become easier to just implement types in the graph
+        DataType::Int64 => {
+            if !tensor.int64_data.is_empty() {
+                tensor.int64_data.iter().map(|&i| cast(i).unwrap()).collect_vec()
+            } else {
+                let mut data = vec![0; size];
+                LittleEndian::read_i64_into(&tensor.raw_data, &mut data);
+                data.iter().map(|&i| cast(i).unwrap()).collect_vec()
             }
         }
         _ => panic!("Unexpected data type {:?} {}", data_type, tensor.data_type),
