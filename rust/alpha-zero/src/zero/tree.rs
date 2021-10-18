@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
@@ -7,6 +8,8 @@ use board_game::board::{Board, Outcome};
 use board_game::wdl::{Flip, WDL};
 use decorum::N32;
 use itertools::Itertools;
+
+use crate::util::display_option;
 
 /// The result of a zero search.
 #[derive(Debug, Clone)]
@@ -87,6 +90,30 @@ impl<B: Board> Tree<B> {
 
     pub fn root_visits(&self) -> u64 {
         self[0].visits
+    }
+
+    /// Return `(min, max)` where `min` is the depth of the shallowest un-evaluated node
+    /// and `max` is the depth of the deepest evaluated node.
+    pub fn depth_range(&self) -> (usize, usize) {
+        self.depth_range_impl(0)
+    }
+
+    fn depth_range_impl(&self, start: usize) -> (usize, usize) {
+        match self[start].children {
+            None => (0, 0),
+            Some(children) => {
+                let mut total_min = usize::MAX;
+                let mut total_max = usize::MIN;
+
+                for child in children {
+                    let (c_min, c_max) = self.depth_range_impl(child);
+                    total_min = min(total_min, c_min);
+                    total_max = max(total_max, c_max);
+                }
+
+                (total_min + 1, total_max + 1)
+            }
+        }
     }
 
     /// Return the policy vector for the root node.
@@ -246,16 +273,21 @@ impl Display for PolicyDisplay {
 
 impl<B: Board> Display for TreeDisplay<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let tree = self.tree;
+
         if self.curr_depth == 0 {
-            let wdl = self.tree.wdl();
-            writeln!(f, "wdl: ({:.3}/{:.3}/{:.3}), best move: {:?}", wdl.win, wdl.draw, wdl.loss, self.tree.best_move())?;
+            let wdl = tree.wdl();
+            writeln!(
+                f,
+                "wdl: ({:.3}/{:.3}/{:.3}), best move: {}, depth: {:?}",
+                wdl.win, wdl.draw, wdl.loss, tree.best_move(), tree.depth_range()
+            )?;
             writeln!(f, "[move: terminal visits zero(w/d/l, policy) net(w/d/l, policy)]")?;
         }
 
-        let node = &self.tree[self.node];
-
         for _ in 0..self.curr_depth { write!(f, "  ")? }
 
+        let node = &self.tree[self.node];
         let node_wdl = node.wdl();
         let net_wdl = node.net_wdl.unwrap_or(WDL::nan()).flip();
 
@@ -266,8 +298,8 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
 
         writeln!(
             f,
-            "{:?}: {} {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
-            node.last_move, terminal, node.visits,
+            "{}: {} {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
+            display_option(node.last_move), terminal, node.visits,
             node_wdl.win, node_wdl.draw, node_wdl.loss,
             (node.visits as f32) / (self.parent_visits as f32),
             net_wdl.win, net_wdl.draw, net_wdl.loss,

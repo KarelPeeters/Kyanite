@@ -32,16 +32,26 @@ impl ZeroSettings {
         stop: &impl StopCondition<B>,
     ) -> Tree<B> {
         let mut tree = Tree::new(root_board.clone());
+        self.expand_tree(&mut tree, network, stop);
+        tree
+    }
 
+    // Continue expanding an existing tree.
+    pub fn expand_tree<B: Board>(
+        self,
+        tree: &mut Tree<B>,
+        network: &mut impl Network<B>,
+        stop: &impl StopCondition<B>,
+    ) {
         'outer: loop {
             let mut requests = vec![];
 
             // collect enough requests to fill the batch
             // TODO what about when we have explored the entire tree and are left with a half-filled batch?
             while requests.len() < self.batch_size {
-                if stop.should_stop(&tree) { break 'outer; }
+                if stop.should_stop(tree) { break 'outer; }
 
-                let request = zero_step_gather(&mut tree, self.exploration_weight);
+                let request = zero_step_gather(tree, self.exploration_weight);
                 if let Some(request) = request {
                     requests.push(request);
                 }
@@ -52,15 +62,13 @@ impl ZeroSettings {
             let evals = network.evaluate_batch(&boards);
 
             // either add all evaluations or none
-            if stop.should_stop(&tree) { break 'outer; }
+            if stop.should_stop(tree) { break 'outer; }
 
             // add all evaluations back to the tree
             for (req, eval) in zip_eq_exact(requests, evals) {
-                zero_step_apply(&mut tree, req.respond(eval));
+                zero_step_apply(tree, req.respond(eval));
             }
         }
-
-        tree
     }
 }
 
