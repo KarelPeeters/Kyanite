@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::ops::{Index, IndexMut};
 
 use board_game::board::{Board, Outcome};
-use board_game::wdl::{Flip, WDL};
+use board_game::wdl::{Flip, OutcomeWDL, WDL};
 use decorum::N32;
 use itertools::Itertools;
 
@@ -47,12 +47,6 @@ pub struct Node<M> {
 pub struct IdxRange {
     pub start: NonZeroUsize,
     pub length: u8,
-}
-
-#[derive(Debug)]
-pub enum KeepResult<B: Board> {
-    Done(Outcome),
-    Tree(Tree<B>),
 }
 
 impl<B: Board> Tree<B> {
@@ -127,14 +121,14 @@ impl<B: Board> Tree<B> {
 
     /// Return a new tree containing the nodes that are still relevant after playing the given move.
     /// Effectively this copies the part of the tree starting from the selected child.
-    pub fn keep_move(&self, mv: B::Move) -> KeepResult<B> {
+    pub fn keep_move(&self, mv: B::Move) -> Result<Tree<B>, Outcome> {
         //TODO test this function
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         let mut new_root_board = self.root_board.clone();
         new_root_board.play(mv);
         if let Some(outcome) = new_root_board.outcome() {
-            return KeepResult::Done(outcome);
+            return Err(outcome);
         }
 
         let picked_child = self[0].children.unwrap().iter()
@@ -161,7 +155,7 @@ impl<B: Board> Tree<B> {
         }
 
         let tree = Tree { root_board: new_root_board, nodes: new_nodes };
-        KeepResult::Tree(tree)
+        Ok(tree)
     }
 
     #[must_use]
@@ -193,16 +187,22 @@ impl<N> Node<N> {
         self.total_wdl / self.total_wdl.sum()
     }
 
-    /// Whether the board corresponding to this node is done. `None` means unknown.
-    pub fn terminal(&self) -> Option<bool> {
+    /// Get the outcome of this node if it's terminal.
+    /// * `Err` means we don't know yet because this node has not been visited yet,
+    /// * `Ok(None)` means this node is not terminal.
+    /// * `Some(outcome) ` is the outcome of this node
+    pub fn terminal(&self) -> Result<Option<OutcomeWDL>, ()> {
         if self.children.is_none() {
             if self.visits_with_virtual() > 0 {
-                Some(true)
+                assert!(self.visits == 1 && self.virtual_visits == 0);
+                let outcome = self.total_wdl.try_to_outcome_wdl()
+                    .unwrap_or_else(|()| panic!("Unexpected wdl {:?} for terminal node", self.total_wdl));
+                Ok(Some(outcome))
             } else {
-                None
+                Err(())
             }
         } else {
-            Some(false)
+            Ok(None)
         }
     }
 
@@ -292,8 +292,11 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let net_wdl = node.net_wdl.unwrap_or(WDL::nan()).flip();
 
         let terminal = match node.terminal() {
-            None => "?",
-            Some(terminal) => if terminal { "T" } else { "N" },
+            Ok(None) => "N",
+            Ok(Some(OutcomeWDL::Win)) => "W",
+            Ok(Some(OutcomeWDL::Draw)) => "D",
+            Ok(Some(OutcomeWDL::Loss)) => "L",
+            Err(()) => "?",
         };
 
         let virtual_visits = if node.virtual_visits != 0 {
