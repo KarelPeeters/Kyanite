@@ -41,6 +41,8 @@ pub fn commander_main<B: Board>(
     }
 }
 
+//TODO some proper error handling so we don't have to constantly restart the server
+// and it's unclear whether it really crashed
 pub fn read_command(reader: &mut BufReader<impl Read>) -> Command {
     let mut buffer = vec![];
     reader.read_until(b'\n', &mut buffer).unwrap();

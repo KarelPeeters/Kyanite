@@ -2,9 +2,10 @@ use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use board_game::board::Board;
+use board_game::games::max_length::MaxMovesBoard;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
-use itertools::zip;
+use itertools::{Itertools, zip};
 
 use crate::network::{Network, ZeroEvaluation};
 
@@ -76,4 +77,22 @@ fn uniform_wdl() -> WDL<f32> {
 fn uniform_policy<B: Board>(board: &B) -> Vec<f32> {
     let move_count = board.available_moves().count();
     vec![1.0 / move_count as f32; move_count]
+}
+
+/// A `Network` wrapper that accepts `MaxMovesBoard<B>` instead of `B`, and just passes the inner board along.
+///
+/// **Warning:** This means the network doesn't get full game state information, which may be undesirable.
+#[derive(Debug)]
+pub struct MaxMovesNetwork<N>(pub N);
+
+impl<N: Network<B>, B: Board> Network<MaxMovesBoard<B>> for MaxMovesNetwork<N> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<MaxMovesBoard<B>>]) -> Vec<ZeroEvaluation> {
+        // TODO memory allocation, look into changing network so it accepts an iterator
+        //   maybe instead of that (since it generates a lot of extra code), accept already-encoded boards as an input?
+        let inner_boards = boards.iter()
+            .map(|b| b.borrow().inner())
+            .collect_vec();
+
+        self.0.evaluate_batch(&inner_boards)
+    }
 }

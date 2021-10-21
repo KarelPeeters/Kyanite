@@ -23,6 +23,7 @@ pub struct ZeroEvaluation {
     pub policy: Vec<f32>,
 }
 
+//TODO maybe remove the debug bound on networks? are we using it anywhere?
 pub trait Network<B: Board>: Debug {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation>;
 

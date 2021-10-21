@@ -50,7 +50,7 @@ pub enum ServerUpdate {
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     // self-play game affecting settings
-    pub max_game_length: u64,
+    pub max_game_length: i64,
     pub exploration_weight: f32,
 
     pub random_symmetries: bool,

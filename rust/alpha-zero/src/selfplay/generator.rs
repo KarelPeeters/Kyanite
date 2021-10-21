@@ -1,4 +1,5 @@
-use board_game::board::{Board, Outcome};
+use board_game::board::Board;
+use board_game::games::max_length::MaxMovesBoard;
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use itertools::Itertools;
 use rand::Rng;
@@ -17,7 +18,7 @@ use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::zip_eq_exact;
 use crate::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest, ZeroResponse};
-use crate::zero::tree::{KeepResult, Tree};
+use crate::zero::tree::Tree;
 
 pub fn generator_main<B: Board>(
     mapper: impl BoardMapper<B>,
@@ -65,9 +66,8 @@ pub fn generator_main<B: Board>(
 
         // advance generator
         if let Some(settings) = &settings {
-            let mut ctx = Context { settings: &settings, rng: &mut rng };
-
             if let Some(network) = &mut network {
+                let mut ctx = Context { settings: &settings, rng: &mut rng };
                 state.step(&mut ctx, &start_pos, network, &sender)?;
             }
         }
@@ -100,16 +100,16 @@ struct GameState<B: Board> {
 
 #[derive(Debug)]
 struct SearchState<B: Board> {
-    tree: Tree<B>,
+    tree: Tree<MaxMovesBoard<B>>,
     needs_dirichlet: bool,
     is_full_search: bool,
     root_net_eval: Option<ZeroEvaluation>,
 }
 
 #[derive(Debug)]
-enum StepResult<B> {
+enum StepResult<B: Board> {
     Done,
-    Request(ZeroRequest<B>),
+    Request(ZeroRequest<MaxMovesBoard<B>>),
 }
 
 #[derive(Debug, Default)]
@@ -131,7 +131,7 @@ impl<B: Board> GeneratorState<B> {
         &mut self,
         ctx: &mut Context,
         start_pos: impl Fn() -> B,
-        network: &mut impl Network<B>,
+        network: impl Network<B>,
         sender: &UpdateSender<B>,
     ) -> Result<(), SendError<GeneratorUpdate<B>>> {
         let mut counter = Counter::default();
@@ -139,7 +139,8 @@ impl<B: Board> GeneratorState<B> {
         assert_eq!(requests.len(), self.batch_size);
 
         // evaluate the requests
-        let boards = requests.iter().map(|r| &r.board).collect_vec();
+        //TODO kind of sketchy that the network doesn't get to see the move counter, is that okay?
+        let boards = requests.iter().map(|r| r.board.inner()).collect_vec();
         let evals = RandomSymmetryNetwork::new(network, &mut ctx.rng, ctx.settings.random_symmetries)
             .evaluate_batch(&boards);
 
@@ -166,7 +167,7 @@ impl<B: Board> GeneratorState<B> {
         counter: &mut Counter,
         sender: &UpdateSender<B>,
         start_pos: impl Fn() -> B,
-    ) -> Vec<ZeroRequest<B>> {
+    ) -> Vec<ZeroRequest<MaxMovesBoard<B>>> {
         let mut requests = vec![];
         let existing_games = std::mem::take(&mut self.games);
 
@@ -200,7 +201,7 @@ impl<B: Board> GeneratorState<B> {
 
 impl<B: Board> GameState<B> {
     fn new(ctx: &mut Context, start_pos: B) -> Self {
-        let tree = Tree::new(start_pos);
+        let tree = Tree::new(MaxMovesBoard::new(start_pos, ctx.max_moves()));
         GameState {
             search: SearchState::new(ctx, tree),
             positions: vec![],
@@ -250,46 +251,41 @@ impl<B: Board> GameState<B> {
         let zero_evaluation = ZeroEvaluation { wdl: tree.wdl(), policy };
 
         self.positions.push(Position {
-            board: tree.root_board().clone(),
+            board: tree.root_board().inner().clone(),
             should_store: self.search.is_full_search,
             zero_visits: tree.root_visits(),
             net_evaluation,
             zero_evaluation,
         });
 
-        // decide whether to continue this game
-        let result = if self.positions.len() as u64 >= settings.max_game_length {
-            KeepResult::Done(Outcome::Draw)
+        let mut next_board = tree.root_board().clone();
+        next_board.play(picked_move);
+
+        if let Some(outcome) = next_board.outcome() {
+            //record this game
+            let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
+            sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
+
+            //report that this game is done
+            true
         } else {
-            tree.keep_move(picked_move)
-        };
+            //continue playing this game, either by keeping part of the tree or starting a new one on the next board
+            let next_tree = if settings.keep_tree {
+                // we already know the next board is not done
+                tree.keep_move(picked_move).unwrap()
+            } else {
+                Tree::new(next_board)
+            };
+            self.search = SearchState::new(ctx, next_tree);
 
-        match result {
-            KeepResult::Tree(kept_tree) => {
-                //continue playing this game, either by keeping part of the tree or starting a new one on the next board
-                let next_tree = if settings.keep_tree {
-                    kept_tree
-                } else {
-                    Tree::new(kept_tree.root_board().clone())
-                };
-                self.search = SearchState::new(ctx, next_tree);
-
-                false
-            }
-            KeepResult::Done(outcome) => {
-                //record this game
-                let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
-                sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
-
-                //report that this game is done
-                true
-            }
+            // report that this game is not done
+            false
         }
     }
 }
 
 impl<B: Board> SearchState<B> {
-    fn new(ctx: &mut Context, tree: Tree<B>) -> Self {
+    fn new(ctx: &mut Context, tree: Tree<MaxMovesBoard<B>>) -> Self {
         SearchState {
             tree,
             needs_dirichlet: true,
@@ -346,6 +342,16 @@ fn add_dirichlet_noise<B: Board>(ctx: &mut Context, tree: &mut Tree<B>) {
         for (child, n) in zip_eq_exact(children, noise) {
             let p = &mut tree[child].net_policy;
             *p = (1.0 - eps) * (*p) + eps * n;
+        }
+    }
+}
+
+impl<'a> Context<'a> {
+    fn max_moves(&self) -> u64 {
+        if self.settings.max_game_length > 0 {
+            self.settings.max_game_length as u64
+        } else {
+            u64::MAX
         }
     }
 }
