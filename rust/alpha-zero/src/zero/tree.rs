@@ -159,9 +159,9 @@ impl<B: Board> Tree<B> {
     }
 
     #[must_use]
-    pub fn display(&self, max_depth: usize) -> TreeDisplay<B> {
+    pub fn display(&self, max_depth: usize, sort: bool) -> TreeDisplay<B> {
         let parent_visits = self[0].visits;
-        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, parent_visits }
+        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, sort, parent_visits }
     }
 }
 
@@ -194,7 +194,6 @@ impl<N> Node<N> {
     pub fn terminal(&self) -> Result<Option<OutcomeWDL>, ()> {
         if self.children.is_none() {
             if self.visits_with_virtual() > 0 {
-                assert!(self.visits == 1 && self.virtual_visits == 0);
                 let outcome = self.total_wdl.try_to_outcome_wdl()
                     .unwrap_or_else(|()| panic!("Unexpected wdl {:?} for terminal node", self.total_wdl));
                 Ok(Some(outcome))
@@ -256,6 +255,7 @@ pub struct TreeDisplay<'a, B: Board> {
     node: usize,
     curr_depth: usize,
     max_depth: usize,
+    sort: bool,
     parent_visits: u64,
 }
 
@@ -318,10 +318,14 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         if self.curr_depth == self.max_depth { return Ok(()); }
 
         if let Some(children) = node.children {
-            let best_child_index = children.iter()
-                .position_max_by_key(|&c| self.tree[c].visits)
-                .unwrap();
-            let best_child = children.get(best_child_index);
+            let mut children = children.iter().collect_vec();
+            let best_child = if self.sort {
+                children.sort_by_key(|&c| self.tree[c].visits);
+                children.reverse();
+                children[0]
+            } else {
+                children.iter().copied().max_by_key(|&c| self.tree[c].visits).unwrap()
+            };
 
             for child in children {
                 let next_max_depth = if child == best_child {
@@ -335,6 +339,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     node: child,
                     curr_depth: self.curr_depth + 1,
                     max_depth: next_max_depth,
+                    sort: self.sort,
                     parent_visits: node.visits,
                 };
                 write!(f, "{}", child_display)?;
