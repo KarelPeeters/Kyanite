@@ -115,7 +115,7 @@ impl ThroughputEstimator {
             let game_throughput = self.games as f32 / delta;
 
             println!(
-                "Thoughput: {} evals/s, {} cached evals/s, {} moves/s => {} moves {} games/s => {} games",
+                "Thoughput: {:.2} evals/s, {:.2} cached evals/s, {:.2} moves/s => {} moves {:.2} games/s => {} games",
                 real_eval_throughput, cached_eval_throughput, move_throughput, self.total_moves, game_throughput, self.total_games
             );
             println!("   cache hit rate: {}", cached_eval_throughput / (cached_eval_throughput + real_eval_throughput));

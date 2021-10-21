@@ -256,11 +256,17 @@ class LoopBuffer:
             logger.log("buffer", "games", total_games)
             logger.log("buffer", "positions", self.current_positions)
 
-            logger.log("gen", "games", file.game_count)
-            logger.log("gen", "positions", file.position_count)
-            logger.log("gen", "game length min", file.min_game_length)
-            logger.log("gen", "game length mean", file.position_count / file.game_count)
-            logger.log("gen", "game length max", file.max_game_length)
+            logger.log("gen-size", "games", file.game_count)
+            logger.log("gen-size", "positions", file.position_count)
+            logger.log("gen-game-len", "game length min", file.min_game_length)
+            logger.log("gen-game-len", "game length mean", file.position_count / file.game_count)
+            logger.log("gen-game-len", "game length max", file.max_game_length)
+            logger.log("gen-game-len", "game length max", file.max_game_length)
+
+            if file.root_wdl is not None:
+                logger.log("gen-root-wdl", "w", file.root_wdl[0])
+                logger.log("gen-root-wdl", "d", file.root_wdl[1])
+                logger.log("gen-root-wdl", "l", file.root_wdl[2])
 
 
     def full_file_list(self):

@@ -31,6 +31,7 @@ class DataFile:
         self.game_count = self.meta["game_count"]
         self.min_game_length = self.meta["min_game_length"]
         self.max_game_length = self.meta["max_game_length"]
+        self.root_wdl = self.meta.get("root_wdl")
 
         self.f = open(bin_path, "rb", buffering=0)
 

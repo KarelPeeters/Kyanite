@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use board_game::board::Board;
-use board_game::wdl::POV;
+use board_game::wdl::{POV, WDL};
 use internal_iterator::InternalIterator;
 use safe_transmute::transmute_to_bytes;
 use serde::Serialize;
@@ -29,6 +29,7 @@ struct MetaData<'a> {
 
     max_game_length: i32,
     min_game_length: i32,
+    root_wdl: [f32; 3],
 
     position_offsets_offset: u64,
 }
@@ -43,6 +44,7 @@ pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     game_count: usize,
     max_game_length: Option<i32>,
     min_game_length: Option<i32>,
+    total_root_wdl: WDL<f32>,
 
     position_offsets: Vec<u64>,
     finished: bool,
@@ -69,6 +71,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             game_count: 0,
             max_game_length: None,
             min_game_length: None,
+            total_root_wdl: WDL::default(),
 
             position_offsets: vec![],
 
@@ -86,8 +89,10 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
         let game_length = simulation.positions.len();
 
+        // collect metadata statistics
         self.max_game_length = Some(max(game_length as i32, self.max_game_length.unwrap_or(-1)));
         self.min_game_length = Some(min(game_length as i32, self.min_game_length.unwrap_or(i32::MAX)));
+        self.total_root_wdl += simulation.outcome.pov(simulation.positions[0].board.next_player()).to_wdl();
 
         let mut scalars: Vec<f32> = vec![];
         let mut board_bools = BitBuffer::new(M::INPUT_BOOL_COUNT);
@@ -178,6 +183,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             position_count: self.position_offsets.len(),
             max_game_length: self.max_game_length.unwrap_or(-1),
             min_game_length: self.min_game_length.unwrap_or(-1),
+            root_wdl: (self.total_root_wdl / self.game_count as f32).to_slice(),
             position_offsets_offset,
         };
 
