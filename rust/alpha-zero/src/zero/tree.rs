@@ -296,10 +296,16 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             Some(terminal) => if terminal { "T" } else { "N" },
         };
 
+        let virtual_visits = if node.virtual_visits != 0 {
+            format!("+{}", node.virtual_visits)
+        } else {
+            String::default()
+        };
+
         writeln!(
             f,
-            "{}: {} {} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
-            display_option(node.last_move), terminal, node.visits,
+            "{}: {} {}{} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
+            display_option(node.last_move), terminal, node.visits, virtual_visits,
             node_wdl.win, node_wdl.draw, node_wdl.loss,
             (node.visits as f32) / (self.parent_visits as f32),
             net_wdl.win, net_wdl.draw, net_wdl.loss,
