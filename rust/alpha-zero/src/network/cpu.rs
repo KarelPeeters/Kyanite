@@ -49,8 +49,8 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
         cpu_execute_graph(&self.graph, batch_size, &[&input])
     }
 
-    pub fn mapper(&self) -> &M {
-        &self.mapper
+    pub fn mapper(&self) -> M {
+        self.mapper
     }
 
     pub fn graph(&self) -> &Graph {
@@ -60,7 +60,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
-        let outputs = self.evaluate_batch_exec(boards).outputs();
+        let outputs = self.evaluate_batch_exec(boards).output_tensors();
 
         // decode the output
         assert_eq!(outputs.len(), 3);

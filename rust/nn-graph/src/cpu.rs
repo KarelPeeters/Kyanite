@@ -76,7 +76,8 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
     }
 
     ExecutionInfo {
-        map,
+        batch_size,
+        values: map,
         outputs: graph.outputs().to_owned(),
     }
 }
@@ -128,8 +129,9 @@ pub fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceIn
 
 #[derive(Debug)]
 pub struct ExecutionInfo {
-    map: IndexMap<Value, CalculatedValue>,
-    outputs: Vec<Value>,
+    pub batch_size: usize,
+    pub values: IndexMap<Value, CalculatedValue>,
+    pub outputs: Vec<Value>,
 }
 
 pub struct CalculatedValue {
@@ -139,15 +141,11 @@ pub struct CalculatedValue {
 }
 
 impl ExecutionInfo {
-    pub fn values(&self) -> &IndexMap<Value, CalculatedValue> {
-        &self.map
-    }
-
-    pub fn outputs(self) -> Vec<Tensor> {
+    pub fn output_tensors(self) -> Vec<Tensor> {
         self.outputs.iter()
             .map(|v| {
                 // convert to standard layout so users get easily get &[f32] slices
-                self.map.get(v).unwrap().tensor
+                self.values.get(v).unwrap().tensor
                     .as_standard_layout().to_shared()
             })
             .collect_vec()

@@ -23,7 +23,7 @@ fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_
     println!("Testing with CPU");
 
     let cpu_inputs = inputs.iter().collect_vec();
-    let cpu_outputs = cpu_execute_graph(graph, batch_size, &cpu_inputs).outputs();
+    let cpu_outputs = cpu_execute_graph(graph, batch_size, &cpu_inputs).output_tensors();
     assert_outputs_match(expected_outputs, &cpu_outputs, true);
 
     println!("Testing with Cudnn");
