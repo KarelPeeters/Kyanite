@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 
+use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
 
@@ -13,7 +13,7 @@ pub type Tensor = ArcArray<f32, IxDyn>;
 pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> ExecutionInfo {
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
 
-    let mut map: HashMap<Value, CalculatedValue> = HashMap::default();
+    let mut map: IndexMap<Value, CalculatedValue> = IndexMap::default();
 
     for output in graph.values() {
         let ValueInfo { shape, operation } = &graph[output];
@@ -109,7 +109,7 @@ fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>
     })
 }
 
-fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn> {
+pub fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn> {
     let vec = (0..rank)
         .map(|r| {
             if r == axis {
@@ -128,17 +128,21 @@ fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<V
 
 #[derive(Debug)]
 pub struct ExecutionInfo {
-    map: HashMap<Value, CalculatedValue>,
+    map: IndexMap<Value, CalculatedValue>,
     outputs: Vec<Value>,
 }
 
 pub struct CalculatedValue {
-    value: Value,
-    tensor: Tensor,
-    time_spent: f32,
+    pub value: Value,
+    pub tensor: Tensor,
+    pub time_spent: f32,
 }
 
 impl ExecutionInfo {
+    pub fn values(&self) -> &IndexMap<Value, CalculatedValue> {
+        &self.map
+    }
+
     pub fn outputs(self) -> Vec<Tensor> {
         self.outputs.iter()
             .map(|v| {

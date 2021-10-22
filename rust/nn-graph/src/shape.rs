@@ -90,6 +90,14 @@ impl Size {
         batch_size.pow(self.batch_exp) * self.fixed_factor
     }
 
+    pub fn try_fixed(self) -> Option<usize> {
+        if self.batch_exp == 0 {
+            Some(self.fixed_factor)
+        } else {
+            None
+        }
+    }
+
     pub fn unwrap_fixed(self, what: &str) -> usize {
         assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
         self.fixed_factor

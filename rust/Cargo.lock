@@ -819,6 +819,8 @@ name = "nn-graph"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "image",
+ "indexmap",
  "itertools",
  "ndarray",
  "num-traits",

@@ -7,5 +7,6 @@ pub mod optimizer;
 
 pub mod cpu;
 
-mod wrap_debug;
+pub mod wrap_debug;
+pub mod visualize;
 

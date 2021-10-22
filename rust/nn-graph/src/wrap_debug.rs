@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 /// A newtype that implements debug by only printing the name of the contained type.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct WrapDebug<T>(T);
+pub struct WrapDebug<T>(pub T);
 
 impl<T> WrapDebug<T> {
     pub fn inner(&self) -> &T {

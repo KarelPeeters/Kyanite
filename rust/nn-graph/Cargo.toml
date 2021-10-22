@@ -15,3 +15,6 @@ unwrap-match = "0.1.0"
 num-traits = "0.2.14"
 
 ndarray = "0.15.1"
+indexmap = "1.7.0"
+
+image = { version = "0.23.14", default-features = false, features = ["png"] }
