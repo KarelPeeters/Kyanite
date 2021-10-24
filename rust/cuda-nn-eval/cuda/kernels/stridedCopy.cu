@@ -1,23 +1,5 @@
-#include <stdio.h>
 #include <cuda_runtime.h>
-#include <array>
-
-template<typename T, int R>
-class Array {
-public:
-    Array() = default;
-
-    Array(T *data) {
-        memcpy(this->data, data, R * sizeof(T));
-    }
-
-    __host__ __device__ T &operator[](int index) {
-        return this->data[index];
-    }
-
-private:
-    T data[R];
-};
+#include "array.h"
 
 template<typename T, int R>
 __global__ void stridedCopyKernel(
@@ -28,10 +10,7 @@ __global__ void stridedCopyKernel(
         const T *input, T *output
 ) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
-
-    if (i >= size) {
-        return;
-    }
+    if (i > size) { return; }
 
     int input_offset = 0;
     int output_offset = 0;
@@ -57,13 +36,13 @@ __global__ void stridedCopyKernel(
 }
 
 extern "C" {
-cudaError stridedFloatCopy(
+cudaError stridedCopyFloat(
         cudaStream_t stream,
         int rank, int size,
         int *input_strides, int *output_strides, int *dense_strides,
         const float *input, float *output
 ) {
-    const int blockSize = 256;
+    const int blockSize = 32;
     int blocks = (size + blockSize - 1) / blockSize;
 
     switch (rank) {

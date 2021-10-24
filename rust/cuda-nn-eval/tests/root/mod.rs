@@ -5,3 +5,4 @@ mod elementwise;
 
 mod graphs;
 mod onnx;
+mod kernels;
