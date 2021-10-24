@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::fmt::{Debug, Formatter};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
@@ -8,7 +9,6 @@ use nn_graph::graph::{Graph, ValueInfo};
 
 use crate::planner::{Planner, Step};
 
-#[derive(Debug)]
 pub struct CudnnExecutor {
     handle: CudnnHandle,
     plan: Vec<Step>,
@@ -131,5 +131,15 @@ impl Step {
                 }
             }
         }
+    }
+}
+
+impl Debug for CudnnExecutor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CudnnExecutor")
+            .field("plan", &self.plan)
+            .field("profile", &self.profile)
+            .field("handle", &self.handle)
+            .finish()
     }
 }

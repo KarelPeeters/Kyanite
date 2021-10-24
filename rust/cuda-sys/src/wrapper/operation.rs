@@ -2,7 +2,7 @@ pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvoluti
 use crate::bindings::{cudnnOpTensor, cudnnPoolingForward};
 use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor, TensorOpDescriptor};
 use crate::wrapper::handle::CudnnHandle;
-use crate::wrapper::mem::DeviceMem;
+use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::status::Status;
 
 pub fn find_conv_algorithms(

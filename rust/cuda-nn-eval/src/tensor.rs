@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
-use cuda_sys::wrapper::mem::DeviceMem;
+use cuda_sys::wrapper::mem::device::DeviceMem;
 
 use crate::shape::StridedShape;
 

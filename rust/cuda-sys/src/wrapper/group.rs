@@ -1,7 +1,7 @@
 use crate::bindings::cudnnConvolutionFwdAlgo_t;
 use crate::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor};
 use crate::wrapper::handle::CudnnHandle;
-use crate::wrapper::mem::DeviceMem;
+use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::operation::{run_conv, run_tensor_op};
 
 #[derive(Debug)]

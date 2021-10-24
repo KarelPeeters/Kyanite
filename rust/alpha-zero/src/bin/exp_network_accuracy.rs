@@ -16,7 +16,7 @@ use nn_graph::onnx::load_graph_from_onnx_path;
 fn main() {
     let depth = 15;
     let start = TTTBoard::default();
-    let boards = all_possible_boards(&start, false);
+    let boards = all_possible_boards(&start, 20, false);
 
     let challenges = boards.into_iter().map(|board| {
         assert!(!board.is_done());

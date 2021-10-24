@@ -13,7 +13,7 @@ use alpha_zero::selfplay::simulation::{Position, Simulation};
 fn main() -> std::io::Result<()> {
     let mut output = BinaryOutput::new("all_ttt", "ttt", TTTStdMapper)?;
 
-    let positions = all_possible_boards(&TTTBoard::default(), false);
+    let positions = all_possible_boards(&TTTBoard::default(), 20, false);
 
     for board in positions {
         let eval = solve_all_moves(&board, 20);

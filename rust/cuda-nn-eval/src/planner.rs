@@ -6,7 +6,7 @@ use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, TensorOpDescriptor};
 use cuda_sys::wrapper::group::{ConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::mem::DeviceMem;
+use cuda_sys::wrapper::mem::device::DeviceMem;
 use nn_graph::graph::{ConvShape, Operation, Value};
 use nn_graph::shape::ConcreteShape;
 

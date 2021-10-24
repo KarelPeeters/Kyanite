@@ -42,6 +42,7 @@ fn main() {
 
         // settings
         .size_t_is_usize(true)
+        //TODO correctly handle this non-exhaustiveness in FFI
         .default_enum_style(EnumVariation::Rust { non_exhaustive: true })
         .must_use_type("cudaError")
         .must_use_type("cudnnStatus_t")
