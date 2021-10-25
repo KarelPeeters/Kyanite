@@ -10,7 +10,7 @@ use cuda_sys::wrapper::status::Status;
 #[test]
 fn strided_copy() {
     let device = Device::new(0);
-    let stream = CudaStream::new(device);
+    let mut stream = CudaStream::new(device);
 
     let input_data = (0..128).map(|x| x as f32).collect_vec();
     let mut output_data = vec![0f32; 128];
