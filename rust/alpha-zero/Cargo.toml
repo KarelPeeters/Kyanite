@@ -25,7 +25,7 @@ rayon = "1.5.1"
 itertools = "0.10.1"
 rand = "0.8.4"
 ta = "0.5.0"
-self_cell = "0.9.2"
+self_cell = "0.10.0"
 rand_distr = "0.4.1"
 serde = { version = "1.0.126", features = ["derive"] }
 serde_json = "1.0.64"

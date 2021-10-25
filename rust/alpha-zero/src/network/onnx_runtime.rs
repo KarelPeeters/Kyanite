@@ -28,6 +28,7 @@ impl<B: Board, M: BoardMapper<B>> Debug for OnnxNetwork<B, M> {
         f.debug_struct("OnnxNetwork")
             .field("mapper", &self.mapper)
             .field("path", &self.path)
+            .field("inner", &self.inner)
             .finish()
     }
 }
@@ -38,6 +39,8 @@ self_cell!(
         #[covariant]
         dependent: Session,
     }
+
+    impl {Debug}
 );
 
 impl<B: Board, M: BoardMapper<B>> OnnxNetwork<B, M> {
