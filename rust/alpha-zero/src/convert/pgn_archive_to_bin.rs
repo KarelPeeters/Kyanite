@@ -1,23 +1,21 @@
 use std::io::Read;
 use std::path::Path;
 
-use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::chess::ChessBoard;
 use crossbeam::channel::{Receiver, Sender};
 use tar::Archive;
 
-use crate::convert::pgn_to_bin::append_pgn_to_bin;
+use crate::convert::pgn_to_bin::{append_pgn_to_bin, Filter};
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
 
 pub fn pgn_archive_to_bin(
-    rules: Rules,
     mapper: impl BoardMapper<ChessBoard>,
     input: impl Read + Send,
     output_folder: impl AsRef<Path>,
     thread_count: usize,
     skip_existing: bool,
-    min_elo: Option<u32>,
-    max_elo: Option<u32>,
+    filter: &Filter,
     max_entries: Option<usize>,
     max_games_per_entry: Option<u32>,
 ) {
@@ -31,7 +29,7 @@ pub fn pgn_archive_to_bin(
         s.spawn(|_| loader_main(input, sender, max_entries));
 
         for _ in 0..thread_count {
-            s.spawn(|_| mapper_main(output_folder, &receiver, rules, mapper, min_elo, max_elo, skip_existing, max_games_per_entry));
+            s.spawn(|_| mapper_main(output_folder, &receiver, mapper, filter, skip_existing, max_games_per_entry));
         }
     }).unwrap();
 }
@@ -58,10 +56,8 @@ fn loader_main(input: impl Read, sender: Sender<(String, Vec<u8>)>, max_entries:
 fn mapper_main(
     output_folder: impl AsRef<Path>,
     receiver: &Receiver<(String, Vec<u8>)>,
-    rules: Rules,
     mapper: impl BoardMapper<ChessBoard>,
-    min_elo: Option<u32>,
-    max_elo: Option<u32>,
+    filter: &Filter,
     skip_existing: bool,
     max_games_per_entry: Option<u32>,
 ) {
@@ -92,8 +88,8 @@ fn mapper_main(
 
         let mut binary_output = BinaryOutput::new(&output_path, "chess", mapper)
             .expect("Error white opening output files");
-        append_pgn_to_bin(rules, &*data, &mut binary_output, min_elo, max_elo, max_games_per_entry, false)
-            .expect("Error while writing to binary");
+        append_pgn_to_bin(&*data, &mut binary_output, filter, max_games_per_entry, false)
+            .expect("Error while writing to bin");
         binary_output.finish()
             .expect("Error while finishing output");
 
