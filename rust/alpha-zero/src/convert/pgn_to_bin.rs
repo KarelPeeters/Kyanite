@@ -3,12 +3,11 @@ use std::io;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
-use board_game::games::chess::{ChessBoard, moves_to_pgn, Rules};
+use board_game::games::chess::{ChessBoard, Rules};
 use board_game::wdl::WDL;
-use chess::{ChessMove, File, Piece, Rank, Square};
+use chess::ChessMove;
 use internal_iterator::InternalIterator;
 use pgn_lexer::parser::Token;
-use shakmaty::{Chess, Move, Position as OtherPosition, Role};
 
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
@@ -230,23 +229,4 @@ fn subslice_start<T>(slice: &[T], sub_slice: &[T]) -> Option<usize> {
     } else {
         None
     }
-}
-
-struct ToBinVisitor<'a, M: BoardMapper<ChessBoard>> {
-    log: bool,
-    rules: Rules,
-    binary_output: &'a mut BinaryOutput<ChessBoard, M>,
-
-    min_elo: Option<u32>,
-    max_elo: Option<u32>,
-    max_games: Option<u32>,
-
-    elo: Option<u32>,
-    skip_next: bool,
-
-    curr_board: ChessBoard,
-    curr_board_other: Chess,
-    positions: Option<Vec<Position<ChessBoard>>>,
-    moves: Vec<ChessMove>,
-    skipped_games: u32,
 }
