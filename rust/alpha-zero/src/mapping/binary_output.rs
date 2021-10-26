@@ -58,10 +58,10 @@ type Result<T> = std::io::Result<T>;
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn new(path: impl AsRef<Path>, game: &str, mapper: M) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        assert!(path.extension().is_none());
+        assert!(path.extension().is_none(), "Binary output path should not have an extension, .bin and .json are added automatically");
 
         let path_bin = path.with_extension("bin");
-        let bin_write = BufWriter::new(File::create(path_bin)?);
+        let bin_write = BufWriter::with_capacity(64 * 1024, File::create(path_bin)?);
 
         Ok(BinaryOutput {
             game: game.to_string(),
@@ -84,6 +84,8 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     const SCALAR_COUNT: usize = 5 + 2 + 3 * 3;
 
     pub fn append(&mut self, simulation: Simulation<B>) -> Result<()> {
+        assert!(!simulation.positions.is_empty(), "Simulation cannot be empty");
+
         let game_id = self.game_count;
         self.game_count += 1;
 
@@ -144,7 +146,8 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             assert_eq!(Self::SCALAR_COUNT, scalars.len());
 
             // save current offset
-            let curr_offset = self.bin_write.seek(SeekFrom::Current(0))?;
+            // could also be computed by stream_position directory but that flushes the buffer to disk
+            let curr_offset = self.bin_write.get_mut().stream_position()? + self.bin_write.buffer().len() as u64;
             self.position_offsets.push(curr_offset);
 
             // actually write stuff to the bin file

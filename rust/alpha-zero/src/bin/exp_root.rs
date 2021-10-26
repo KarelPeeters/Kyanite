@@ -22,5 +22,5 @@ fn main() {
     let mut network = CudnnNetwork::new(mapper, graph, batch_size, Device::new(0));
 
     let tree = settings.build_tree(&board, &mut network, &iterations);
-    println!("{}", tree.display(1));
+    println!("{}", tree.display(1, true));
 }

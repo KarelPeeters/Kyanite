@@ -13,7 +13,6 @@ pub mod chess;
 pub mod bit_buffer;
 
 pub mod binary_output;
-pub mod pgn_to_bin;
 
 /// A way to encode a board as a tensor.
 pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {

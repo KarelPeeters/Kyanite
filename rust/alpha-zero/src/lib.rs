@@ -3,6 +3,7 @@
 pub mod zero;
 pub mod network;
 
+pub mod convert;
 pub mod selfplay;
 
 pub mod stats;
