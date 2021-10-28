@@ -3,7 +3,6 @@
 # https://github.com/LeelaChessZero/lczero-training/blob/3a6ed5e8cb140817cb0bd285f0f28b96988ef9e1/tf/tfprocess.py#L1185
 # version at the time of the common dataset:
 # https://github.com/LeelaChessZero/lczero-training/blob/77fbfba230e3f309d474fe60dd9d469a76fc28f2/tf/tfprocess.py#L397-L530
-from typing import Tuple
 
 import torch
 from torch import nn
@@ -12,14 +11,14 @@ from lib.games import Game
 
 
 class LCZOldPreNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int, value_channels: int, value_hidden: int):
+    def __init__(self, game: Game, max_channels: int, depth: int, channels: int, value_channels: int, value_hidden: int):
         super().__init__()
         self.policy_channels = game.policy_channels
         self.b = game.board_size
 
         self.tower = nn.Sequential(
             nn.Conv2d(game.full_input_channels, channels, kernel_size=(3, 3), padding=(1, 1)),
-            *[PreResBlock(channels) for _ in range(depth)],
+            *[PreResBlock(max_channels, channels) for _ in range(depth)],
             batch_norm(channels, scale=True),
             nn.ReLU()
         )
@@ -53,7 +52,7 @@ class LCZOldPreNetwork(nn.Module):
 
 
 class PreResBlock(nn.Module):
-    def __init__(self, channels: int):
+    def __init__(self, max_channels: int, channels: int):
         super().__init__()
         self.seq = nn.Sequential(
             batch_norm(channels, scale=True),
@@ -61,7 +60,8 @@ class PreResBlock(nn.Module):
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
             batch_norm(channels, scale=True),
             nn.ReLU(),
-            nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
+            DirMax(max_channels),
+            nn.Conv2d(channels + 4 * max_channels, channels, kernel_size=(3, 3), padding=(1, 1)),
         )
 
     def forward(self, x):
@@ -90,3 +90,22 @@ class BatchNormNoScale(nn.Module):
 
     def forward(self, x):
         return self.bn(x) + self.bias
+
+
+class DirMax(nn.Module):
+    def __init__(self, pick_channels: int):
+        super().__init__()
+        self.pick_channels = pick_channels
+
+    def forward(self, x):
+        if self.pick_channels == 0:
+            return x
+
+        x_picked = x[:, :self.pick_channels, :, :]
+        return torch.cat([
+            x,
+            torch.cummax(x_picked, dim=2).values,
+            torch.cummax(x_picked.flip(2), dim=2).values.flip(2),
+            torch.cummax(x_picked, dim=3).values,
+            torch.cummax(x_picked.flip(3), dim=3).values.flip(3),
+        ], dim=1)

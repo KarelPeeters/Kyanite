@@ -8,7 +8,7 @@ import torch
 import torchvision.utils
 from torchvision.utils import save_image
 
-from lib.data.buffer import FileList
+from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.data.position import PositionBatch
 from lib.games import Game
@@ -25,7 +25,7 @@ def main():
     pool = ThreadPool(2)
     files = [DataFile(game, path) for path in glob.glob(pattern)]
 
-    buffer = FileList(game, files, pool)
+    buffer = FileListSampler(game, files, pool)
     print(f"File count: {len(files)}")
     print(f"Position count: {len(buffer)}")
 

@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch.optim import Optimizer
 
-from lib.data.buffer import FileList
+from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
@@ -54,6 +54,7 @@ class LoopSettings:
     # eval_steps_per_gen: int
 
     optimizer: Callable[[Iterator[nn.Parameter]], Optimizer]
+    train_batch_size: int
 
     fixed_settings: FixedSelfplaySettings
     selfplay_settings: Optional[SelfplaySettings]
@@ -130,18 +131,19 @@ class LoopSettings:
             gen = Generation.from_gi(self, gi)
             os.makedirs(gen.train_path, exist_ok=True)
 
-            buffer.append(logger, DataFile(game, gen.games_path))
+            buffer.append(logger, DataFile.open(game, gen.games_path))
             self.evaluate_network(buffer, logger, network)
 
-            train_dataset = buffer.full_file_list()
-            print(f"Training network on buffer with size {len(train_dataset)}")
+            train_sampler = buffer.sampler_full(self.train_batch_size)
+            print(f"Training network on buffer with size {len(train_sampler)}")
             train_start = time.perf_counter()
 
             for bi in range(self.train_steps_per_gen):
                 if bi != 0:
                     logger.start_batch()
 
-                self.train_settings.train_step(train_dataset, network, optimizer, logger)
+                self.train_settings.train_step(train_sampler, network, optimizer, logger)
+            train_sampler.close()
 
             logger.log("time", "train", time.perf_counter() - train_start)
 
@@ -185,19 +187,19 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
-            buffer.append(None, DataFile(game, gen.games_path))
+            buffer.append(None, DataFile.open(game, gen.games_path))
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
         setups = [
-            ("eval-test-buffer", buffer.full_file_list()),
-            ("eval-test-last", buffer.last_file_list()),
+            ("eval-test-buffer", buffer.sampler_full(self.train_batch_size)),
+            ("eval-test-last", buffer.sampler_last(self.train_batch_size)),
         ]
 
         network.eval()
-        for prefix, file_list in setups:
-            batch_size = min(len(file_list), self.train_settings.batch_size)
-            batch = file_list.sample_batch(batch_size)
+        for prefix, sampler in setups:
+            batch = sampler.next_batch()
             self.train_settings.evaluate_batch(network, prefix, logger, batch)
+            sampler.close()
 
 
 @dataclass
@@ -268,9 +270,8 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", file.root_wdl[1])
                 logger.log("gen-root-wdl", "l", file.root_wdl[2])
 
+    def sampler_full(self, batch_size: int):
+        return FileListSampler(self.game, self.files, batch_size)
 
-    def full_file_list(self):
-        return FileList(self.game, self.files, self.pool)
-
-    def last_file_list(self):
-        return FileList(self.game, [self.files[-1]], self.pool)
+    def sampler_last(self, batch_size: int):
+        return FileListSampler(self.game, [self.files[-1]], batch_size)
