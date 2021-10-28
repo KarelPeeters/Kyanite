@@ -79,16 +79,21 @@ pub struct ZeroBot<B: Board, N: Network<B>> {
 
 impl<B: Board, N: Network<B>> ZeroBot<B, N> {
     pub fn new(network: N, settings: ZeroSettings, visits: u64) -> Self {
+        assert!(visits > 0, "Need at least one visit to pick the best move");
         ZeroBot { network, settings, visits, ph: PhantomData }
+    }
+
+    pub fn build_tree(&mut self, board: &B) -> Tree<B> {
+        let visits = self.visits;
+        let stop = |tree: &Tree<B>| tree.root_visits() >= visits;
+        let tree = self.settings.build_tree(board, &mut self.network, stop);
+        tree
     }
 }
 
 impl<B: Board, N: Network<B>> Bot<B> for ZeroBot<B, N> {
     fn select_move(&mut self, board: &B) -> B::Move {
-        let visits = self.visits;
-        let stop = |tree: &Tree<B>| tree.root_visits() >= visits;
-        let tree = self.settings.build_tree(board, &mut self.network, stop);
-        tree.best_move()
+        self.build_tree(board).best_move()
     }
 }
 
