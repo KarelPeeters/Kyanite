@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io;
 use std::time::Instant;
 
@@ -130,7 +129,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
             Token::Move(mv) => {
                 let mv = std::str::from_utf8(mv).unwrap();
 
-                let mv = parse_mv(curr_board.inner(), mv).unwrap_or_else(|e| {
+                let mv = curr_board.parse_move(mv).unwrap_or_else(|e| {
                     eprintln!("Failed to parse move '{}' with error {:?} on board\n{}", mv, e, curr_board);
                     panic!();
                 });
@@ -185,25 +184,6 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
     }
 
     Ok(())
-}
-
-fn parse_mv(board: &chess::Board, mv: &str) -> Result<ChessMove, chess::Error> {
-    // the chess crate move parsing is kind of strange we need to help it a bit
-    let removed_chars: &[char] = &['=', '+', '#'];
-    let mv = if mv.contains(removed_chars) {
-        Cow::from(mv.replace(removed_chars, ""))
-    } else {
-        Cow::from(mv)
-    };
-
-    match ChessMove::from_san(&board, &mv) {
-        Ok(mv) => Ok(mv),
-        Err(original_err) => {
-            // try appending e.p. to get it to parse an en passant move
-            let mv_ep = mv.into_owned() + " e.p.";
-            ChessMove::from_san(&board, &mv_ep).map_err(|_| original_err)
-        }
-    }
 }
 
 fn build_position(board: &ChessBoard, mv: ChessMove) -> Position<ChessBoard> {
