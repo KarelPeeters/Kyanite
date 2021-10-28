@@ -88,11 +88,7 @@ impl<B: Board> Tree<B> {
 
     /// Return `(min, max)` where `min` is the depth of the shallowest un-evaluated node
     /// and `max` is the depth of the deepest evaluated node.
-    pub fn depth_range(&self) -> (usize, usize) {
-        self.depth_range_impl(0)
-    }
-
-    fn depth_range_impl(&self, start: usize) -> (usize, usize) {
+    pub fn depth_range(&self, start: usize) -> (usize, usize) {
         match self[start].children {
             None => (0, 0),
             Some(children) => {
@@ -100,7 +96,7 @@ impl<B: Board> Tree<B> {
                 let mut total_max = usize::MIN;
 
                 for child in children {
-                    let (c_min, c_max) = self.depth_range_impl(child);
+                    let (c_min, c_max) = self.depth_range(child);
                     total_min = min(total_min, c_min);
                     total_max = max(total_max, c_max);
                 }
@@ -280,7 +276,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             writeln!(
                 f,
                 "wdl: ({:.3}/{:.3}/{:.3}), best move: {}, depth: {:?}",
-                wdl.win, wdl.draw, wdl.loss, tree.best_move(), tree.depth_range()
+                wdl.win, wdl.draw, wdl.loss, tree.best_move(), tree.depth_range(0)
             )?;
             writeln!(f, "[move: terminal visits zero(w/d/l, policy) net(w/d/l, policy)]")?;
         }

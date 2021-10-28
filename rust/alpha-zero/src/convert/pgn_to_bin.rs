@@ -215,8 +215,8 @@ fn build_position(board: &ChessBoard, mv: ChessMove) -> Position<ChessBoard> {
         board: board.clone(),
         should_store: true,
         zero_visits: 0,
-        zero_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy: vec![f32::NAN; policy.len()] },
-        net_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy },
+        net_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy: vec![f32::NAN; policy.len()] },
+        zero_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy },
     }
 }
 

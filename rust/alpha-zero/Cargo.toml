@@ -18,6 +18,7 @@ cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
 # games
 chess = "3.2.0"
 pgn-lexer = "0.2.0-alpha"
+vampirc-uci = { version = "0.11.0", features = ["chess"] }
 
 # data processing
 onnxruntime = { version = "0.0.14", optional = true }
