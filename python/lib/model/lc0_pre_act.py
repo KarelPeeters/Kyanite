@@ -12,7 +12,7 @@ from lib.games import Game
 
 
 class LCZOldPreNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int, policy_channels: int, value_channels: Tuple[int, int]):
+    def __init__(self, game: Game, depth: int, channels: int, value_channels: int, value_hidden: int):
         super().__init__()
         self.policy_channels = game.policy_channels
         self.b = game.board_size
@@ -21,21 +21,25 @@ class LCZOldPreNetwork(nn.Module):
             nn.Conv2d(game.full_input_channels, channels, kernel_size=(3, 3), padding=(1, 1)),
             *[PreResBlock(channels) for _ in range(depth)],
             batch_norm(channels, scale=True),
-            nn.ReLU6()
+            nn.ReLU()
         )
 
         self.policy_head = nn.Sequential(
-            conv_block(1, channels, policy_channels),
-            nn.Flatten(),
-            nn.Linear(policy_channels * self.b * self.b, game.policy_channels * self.b * self.b),
+            conv_2d(1, channels, channels),
+            nn.BatchNorm2d(channels),
+            nn.ReLU(),
+            conv_2d(1, channels, self.policy_channels),
         )
 
         self.value_head = nn.Sequential(
-            conv_block(1, channels, value_channels[0]),
+            conv_2d(1, channels, value_channels),
+            nn.BatchNorm2d(value_channels),
             nn.Flatten(),
-            nn.Linear(value_channels[0] * self.b * self.b, value_channels[1]),
-            nn.ReLU6(),
-            nn.Linear(value_channels[1], 4),
+            nn.ReLU(),
+            nn.Linear(value_channels * self.b * self.b, value_hidden),
+            nn.BatchNorm1d(value_hidden),
+            nn.ReLU(),
+            nn.Linear(value_hidden, 4),
         )
 
     def forward(self, input):
@@ -53,10 +57,10 @@ class PreResBlock(nn.Module):
         super().__init__()
         self.seq = nn.Sequential(
             batch_norm(channels, scale=True),
-            nn.ReLU6(),
+            nn.ReLU(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
             batch_norm(channels, scale=True),
-            nn.ReLU6(),
+            nn.ReLU(),
             nn.Conv2d(channels, channels, kernel_size=(3, 3), padding=(1, 1)),
         )
 
@@ -64,15 +68,11 @@ class PreResBlock(nn.Module):
         return x + self.seq(x)
 
 
-def conv_block(kernel_size: int, in_channels: int, out_channels: int) -> nn.Module:
+def conv_2d(kernel_size: int, in_channels: int, out_channels: int) -> nn.Module:
     assert kernel_size % 2 == 1
     padding = (kernel_size - 1) // 2
 
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=(kernel_size, kernel_size), padding=(padding, padding)),
-        batch_norm(out_channels, scale=False),
-        nn.ReLU6(),
-    )
+    return nn.Conv2d(in_channels, out_channels, kernel_size=(kernel_size, kernel_size), padding=(padding, padding))
 
 
 def batch_norm(channels: int, scale: bool) -> nn.Module:
