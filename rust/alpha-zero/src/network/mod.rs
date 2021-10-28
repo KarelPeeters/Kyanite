@@ -10,6 +10,8 @@ pub mod symmetry;
 
 pub mod cpu;
 pub mod cudnn;
+
+#[cfg(feature = "onnxruntime")]
 pub mod onnx_runtime;
 
 /// A board evaluation, either as returned by the network or as the final output of a zero tree search.

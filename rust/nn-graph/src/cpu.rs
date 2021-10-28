@@ -6,6 +6,7 @@ use itertools::Itertools;
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
 
 use crate::graph::{ConvShape, Graph, Operation, Value, ValueInfo};
+use crate::ndarray::{Array, ArrayBase, Axis};
 
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
@@ -82,7 +83,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
     }
 }
 
-fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
+pub fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
     let kernel_offset = (shape.kernel_size / 2) as isize;
     let input_range = 0..shape.input_size as isize;
 
@@ -108,6 +109,21 @@ fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>
 
         result
     })
+}
+
+/// Softmax along the given axis of the tensor.
+/// Implementation (and more importantly, the generic bounds) based on softmax within the onnxruntime crate
+pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
+    where
+        D: ndarray::RemoveAxis,
+        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
+{
+    let mut result = array.to_owned();
+    result.map_inplace(|x| *x = x.exp());
+    let sum = result.sum_axis(axis).insert_axis(axis);
+    result /= &sum;
+
+    result
 }
 
 pub fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn> {

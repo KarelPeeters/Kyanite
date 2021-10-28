@@ -2,9 +2,8 @@ use std::borrow::Borrow;
 
 use board_game::board::{Board, Player};
 use itertools::Itertools;
-use onnxruntime::tensor::ndarray_tensor::NdArrayTensor;
 
-use nn_graph::cpu::Tensor;
+use nn_graph::cpu::{softmax, Tensor};
 use nn_graph::graph::Value;
 use nn_graph::ndarray::{Array2, Axis};
 use nn_graph::visualize::{Image, visualize_graph_activations};
@@ -37,7 +36,7 @@ pub fn visualize_network_activations<'a, B: Board, M: BoardMapper<B>>(
         match graph.outputs().iter().index_of(&value) {
             None => None,
             Some(0) => Some(tensor.mapv(f32::tanh).to_shared()),
-            Some(1) => Some(tensor.softmax(Axis(1)).to_shared()),
+            Some(1) => Some(softmax(tensor, Axis(1)).to_shared()),
             Some(2) => {
                 let mut result_logit: Array2<f32> = tensor.reshape((boards.len(), M::POLICY_SIZE)).to_owned();
                 for (bi, &board) in boards.iter().enumerate() {
@@ -50,7 +49,7 @@ pub fn visualize_network_activations<'a, B: Board, M: BoardMapper<B>>(
                         }
                     }
                 }
-                let result = result_logit.softmax(Axis(1))
+                let result = softmax(result_logit, Axis(1))
                     .into_shape([&[boards.len()][..], &M::POLICY_SHAPE].concat())
                     .unwrap().to_shared();
                 Some(result)
