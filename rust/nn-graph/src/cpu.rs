@@ -1,6 +1,8 @@
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 
+use convolutions_rs::convolutions::*;
+use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
@@ -84,31 +86,18 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
 }
 
 pub fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    let kernel_offset = (shape.kernel_size / 2) as isize;
-    let input_range = 0..shape.input_size as isize;
+    assert_eq!(shape.output_size, shape.input_size, "Different in/out shape not supported yet");
 
-    let output_shape = (input.dim().0, shape.output_channels, shape.output_size, shape.output_size);
-    Array4::from_shape_fn(output_shape, |(n, co, ox, oy)| {
-        let mut result: f32 = 0.0;
+    let batch_size = input.shape()[0];
+    let output_shape = (batch_size, shape.output_channels, shape.output_size, shape.output_size);
 
-        for ci in 0..shape.input_channels {
-            for kx in 0..shape.kernel_size as isize {
-                for ky in 0..shape.kernel_size as isize {
-                    let ix = ox as isize + kx - kernel_offset;
-                    let iy = oy as isize + ky - kernel_offset;
+    let mut result = Array4::zeros(output_shape);
+    for b in 0..batch_size {
+        let result_b = conv2d(&filter, input.index_axis(Axis(0), b), Padding::Same, 1);
+        result.index_axis_mut(Axis(0), b).assign(&result_b);
+    }
 
-                    if input_range.contains(&ix) && input_range.contains(&iy) {
-                        let a = input[(n, ci, ix as usize, iy as usize)];
-                        let f = filter[(co, ci, kx as usize, ky as usize)];
-
-                        result += a * f
-                    }
-                }
-            }
-        }
-
-        result
-    })
+    result
 }
 
 /// Softmax along the given axis of the tensor.
