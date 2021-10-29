@@ -12,8 +12,8 @@ use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
-    batch_size: usize,
-    exploration_weight: f32,
+    pub batch_size: usize,
+    pub exploration_weight: f32,
 }
 
 impl ZeroSettings {

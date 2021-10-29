@@ -19,9 +19,10 @@ cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
 chess = "3.2.0"
 pgn-lexer = "0.2.0-alpha"
 vampirc-uci = { version = "0.11.0", features = ["chess"] }
+licoricedev = { path = "../licorice" }
 
 # data processing
-onnxruntime = { version = "0.0.14", optional = true }
+# onnxruntime = { version = "0.0.14", optional = true }
 ndarray = "0.15.1"
 
 # concurrency
@@ -31,6 +32,9 @@ rayon = "1.5.1"
 # util
 itertools = "0.10.1"
 internal-iterator = "0.1.2"
+tokio = { version = "1.1.0", features = ["macros"] }
+tokio-stream = { version = "0.1.2" }
+tokio-util = { version = "0.6.2" }
 
 rand = "0.8.4"
 rand_distr = "0.4.1"
