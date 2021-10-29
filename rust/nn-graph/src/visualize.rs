@@ -19,8 +19,10 @@ pub fn visualize_graph_activations(
     graph: &Graph,
     execution: &ExecutionInfo,
     post_process_value: impl Fn(Value, Tensor) -> Option<Tensor>,
+    max_images: Option<usize>,
 ) -> Vec<Image> {
     let batch_size = execution.batch_size;
+    let image_count = max_images.map_or(batch_size, |max_images| max(max_images, batch_size));
 
     let mut total_width = HORIZONTAL_PADDING;
     let mut total_height = VERTICAL_PADDING;
@@ -95,7 +97,7 @@ pub fn visualize_graph_activations(
 
     let background = Rgb([60, 60, 60]);
 
-    let mut images = (0..batch_size)
+    let mut images = (0..image_count)
         .map(|_| ImageBuffer::from_pixel(total_width as u32, total_height as u32, background))
         .collect_vec();
 
@@ -115,7 +117,7 @@ pub fn visualize_graph_activations(
         let std_ele_mean = std_ele.mean().unwrap();
         let std_ele_std = std_ele.std(1.0);
 
-        for b in 0..batch_size {
+        for (image_i, image) in images.iter_mut().enumerate() {
             for c in 0..channels {
                 for w in 0..width {
                     let x = HORIZONTAL_PADDING + c * (HORIZONTAL_PADDING + width) + w;
@@ -125,11 +127,12 @@ pub fn visualize_graph_activations(
                         let s = (std_ele[(c, w, h)] - std_ele_mean) / std_ele_std;
                         let s_norm = ((s + 1.0) / 2.0).clamp(0.0, 1.0);
 
-                        let f = data_norm[(b, c, w, h)];
+                        let f = data_norm[(image_i, c, w, h)];
                         let f_norm = ((f + 1.0) / 2.0).clamp(0.0, 1.0);
 
+                        // TODO bring stddev back in some form
                         let p = Rgb([(s_norm * 255.0) as u8, (f_norm * 255.0) as u8, (f_norm * 255.0) as u8]);
-                        images[b].put_pixel(x as u32, y as u32, p);
+                        image.put_pixel(x as u32, y as u32, p);
                     }
                 }
             }
