@@ -34,7 +34,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     batch_size = 1024
 
     test_steps = 16
-    save_steps = 1028
+    save_steps = 1024
 
     settings = TrainSettings(
         game=game,
@@ -50,7 +50,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     print_param_count(network)
 
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0)
-    schedule = WarmupSchedule(100, FixedSchedule([0.03, 0.01, 0.001], [10_000, 1_000, 1_000]))
+    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 16_000, 1_000]))
 
     train_files = [DataFile.open(game, path) for path in glob.glob(train_pattern)]
     train_sampler = FileListSampler(game, train_files, batch_size)
