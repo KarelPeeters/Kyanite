@@ -216,7 +216,7 @@ fn castles() {
 }
 
 fn board(fen: &str) -> ChessBoard {
-    ChessBoard::new(chess::Board::from_str(fen).unwrap(), Rules::default())
+    ChessBoard::new_without_history_fen(fen, Rules::default())
 }
 
 pub fn test_policy_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {

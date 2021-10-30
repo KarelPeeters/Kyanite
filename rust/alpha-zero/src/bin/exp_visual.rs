@@ -32,7 +32,7 @@ fn main() {
         "k7/ppp5/P7/8/8/4R3/3q1PPP/7K b - - 0 1",
     ];
     let mut extra_boards = pgns.iter()
-        .map(|pgn| ChessBoard::new(chess::Board::from_str(pgn).unwrap(), Rules::default()))
+        .map(|pgn| ChessBoard::new_without_history(chess::Board::from_str(pgn).unwrap(), Rules::default()))
         .collect_vec();
 
     extra_boards.append(&mut boards);

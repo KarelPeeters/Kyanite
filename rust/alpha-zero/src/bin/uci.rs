@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::io::Write;
-use std::str::FromStr;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardAvailableMoves};
@@ -95,8 +94,7 @@ fn main() -> std::io::Result<()> {
                     let mut board = match (startpos, fen) {
                         (true, None) => ChessBoard::default(),
                         (false, Some(fen)) => {
-                            let inner = chess::Board::from_str(fen.as_str()).unwrap();
-                            ChessBoard::new(inner, Rules::default())
+                            ChessBoard::new_without_history_fen(fen.as_str(), Rules::default())
                         }
                         _ => panic!("Invalid position command")
                     };
