@@ -59,8 +59,8 @@ pub fn visualize_graph_activations(
         let size = data.len();
 
         let data: Tensor4 = match data.ndim() {
-            1 => data.reshape((data.len(), 1, 1, 1)),
-            2 => data.reshape((batch_size, 1, size / batch_size, 1)),
+            1 => data.reshape((batch_size, 1, 1, 1)),
+            2 => data.reshape((batch_size, 1, 1, size / batch_size)),
             3 => data.insert_axis(Axis(1)).into_dimensionality().unwrap(),
             4 => data.into_dimensionality().unwrap(),
             _ => {
@@ -70,12 +70,12 @@ pub fn visualize_graph_activations(
         };
 
         let data = if matches!(data.dim(), (_, _, 1, 1)) {
-            data.reshape((batch_size, 1, data.dim().1, 1))
+            data.reshape((batch_size, 1, 1, data.dim().1))
         } else {
             data
         };
 
-        let (_, channels, width, height) = data.dim();
+        let (_, channels, height, width) = data.dim();
 
         let view_width = channels * width + (channels - 1) * HORIZONTAL_PADDING;
         let view_height = height;
@@ -101,11 +101,9 @@ pub fn visualize_graph_activations(
         .map(|_| ImageBuffer::from_pixel(total_width as u32, total_height as u32, background))
         .collect_vec();
 
-    for details in all_details {
-        println!("{:?}", details);
-
+    for details in all_details.iter() {
         let data = &details.data;
-        let (_, channels, width, height) = data.dim();
+        let (_, channels, height, width) = data.dim();
 
         //TODO scale what by what exactly?
 
@@ -122,12 +120,12 @@ pub fn visualize_graph_activations(
                 for w in 0..width {
                     let x = HORIZONTAL_PADDING + c * (HORIZONTAL_PADDING + width) + w;
                     for h in 0..height {
-                        let y = details.start_y + h;
+                        let y = details.start_y + (height - 1 - h);
 
-                        let s = (std_ele[(c, w, h)] - std_ele_mean) / std_ele_std;
+                        let s = (std_ele[(c, h, w)] - std_ele_mean) / std_ele_std;
                         let s_norm = ((s + 1.0) / 2.0).clamp(0.0, 1.0);
 
-                        let f = data_norm[(image_i, c, w, h)];
+                        let f = data_norm[(image_i, c, h, w)];
                         let f_norm = ((f + 1.0) / 2.0).clamp(0.0, 1.0);
 
                         // TODO bring stddev back in some form
@@ -146,7 +144,8 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
     if graph.inputs().contains(&value) || graph.outputs().contains(&value) {
         return true;
     }
-    if matches!(&graph[value].operation, Operation::Constant {..}) {
+
+    if is_effectively_constant(graph, value) {
         return false;
     }
 
@@ -173,6 +172,17 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
     });
 
     return !has_dummy_user;
+}
+
+fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
+    match &graph[value].operation {
+        Operation::Constant { .. } =>
+            true,
+        &Operation::View { input } | &Operation::Slice { input, .. } =>
+            is_effectively_constant(graph, input),
+        Operation::Input { .. } | Operation::Conv { .. } | Operation::Add { .. } | Operation::Mul { .. } | Operation::Clamp { .. } =>
+            false,
+    }
 }
 
 struct Details {
