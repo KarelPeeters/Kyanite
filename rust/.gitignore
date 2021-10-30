@@ -1,1 +1,3 @@
-licorice/
+/licorice/
+
+/*/src/bin/exp_*.rs
