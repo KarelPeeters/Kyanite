@@ -4,7 +4,9 @@ use internal_iterator::InternalIterator;
 
 use crate::network::ZeroEvaluation;
 use crate::util::zip_eq_exact;
-use crate::zero::tree::{IdxRange, Node, Tree};
+use crate::zero::node::Node;
+use crate::zero::range::IdxRange;
+use crate::zero::tree::Tree;
 
 #[derive(Debug)]
 pub struct ZeroRequest<B> {
