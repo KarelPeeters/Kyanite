@@ -12,6 +12,7 @@ use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
 use crate::network::ZeroEvaluation;
 use crate::selfplay::simulation::{Position, Simulation};
+use crate::util::subslice_start;
 
 #[derive(Debug)]
 pub struct Filter {
@@ -79,7 +80,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
 
         match token {
             Token::TagString(value) => {
-                read_index = subslice_start(input_pgn, value).unwrap();
+                read_index = unsafe { subslice_start(input_pgn, value).unwrap() };
 
                 let symbol = tag_symbol.take().expect("Got tag string without symbol");
                 let value = std::str::from_utf8(value).unwrap();
@@ -197,16 +198,5 @@ fn build_position(board: &ChessBoard, mv: ChessMove) -> Position<ChessBoard> {
         zero_visits: 0,
         net_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy: vec![f32::NAN; policy.len()] },
         zero_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy },
-    }
-}
-
-fn subslice_start<T>(slice: &[T], sub_slice: &[T]) -> Option<usize> {
-    if slice.as_ptr_range().contains(&sub_slice.as_ptr()) {
-        // safety: we just asserted that the subslice starts within the main slice
-        unsafe {
-            Some(sub_slice.as_ptr().offset_from(slice.as_ptr()) as usize)
-        }
-    } else {
-        None
     }
 }
