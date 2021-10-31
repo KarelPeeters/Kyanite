@@ -33,6 +33,10 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
 
         CudnnNetwork { max_batch_size, mapper, graph, executor, input, ph: PhantomData }
     }
+
+    pub fn executor(&mut self) -> &mut CudnnExecutor {
+        &mut self.executor
+    }
 }
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
