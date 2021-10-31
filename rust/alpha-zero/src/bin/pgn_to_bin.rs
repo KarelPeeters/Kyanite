@@ -29,7 +29,6 @@ struct Opts {
     max_games: Option<u32>,
 
     input: PathBuf,
-    output: Option<PathBuf>,
 }
 
 fn main() {
