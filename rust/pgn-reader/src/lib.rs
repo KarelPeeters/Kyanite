@@ -3,7 +3,7 @@ use std::io::Read;
 
 pub use buffered_reader;
 use buffered_reader::{BufferedReader, Generic};
-use memchr::memchr;
+use memchr::{memchr, memchr2_iter};
 
 //TODO support escape codes (mostly in headers and values)
 
@@ -71,7 +71,7 @@ impl<'a> PgnGame<'a> {
     pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnOutcome {
         let mut left = self.moves;
 
-        //TODO speed this thing up, maybe write out the full state machine?
+        //TODO try to optimize this loop some more
         loop {
             left = left.trim_start();
 
@@ -126,17 +126,23 @@ const OUTCOME_STR: &[(PgnOutcome, &'static str)] = &[
 ];
 
 fn variation_length(left: &str) -> usize {
+    let left_bytes = left.as_bytes();
+
     let mut depth = 0;
+    let mut count = 0;
 
-    let count = left.chars().take_while(|&c| {
-        match c {
-            '{' => { depth += 1; }
-            '}' => { depth -= 1; }
+    for i in memchr2_iter(b'{', b'}', left_bytes) {
+        match left_bytes[i] {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
             _ => (),
-        };
+        }
 
-        depth != 0
-    }).count() + 1;
+        count = i + 1;
+        if depth == 0 {
+            break
+        }
+    }
 
     assert_eq!(depth, 0, "Non-matching {{}} found in '{}'", left);
     count

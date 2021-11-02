@@ -47,11 +47,11 @@ fn multiple_moves_per_turn() {
 
 #[test]
 fn variation() {
-    let mut reader = read("[Test \"test\"]\n1. e4 { d5 6d d8 } 1... d5 { [%clk 0:02:55] } 1-0\n");
+    let mut reader = read("[Test \"test\"]\n1. e4 { d5 6d d8 } 1... d5 { [%clk 0:02:55] } { fsdf {  dsf  } { 0-1 } } a6 1-0\n");
 
     let game = reader.next().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
-    assert_eq!(game.parse_moves(), (vec!["e4", "d5"], PgnOutcome::WinWhite));
+    assert_eq!(game.parse_moves(), (vec!["e4", "d5", "a6"], PgnOutcome::WinWhite));
 
     assert_eq!(reader.next().unwrap(), None);
 }
