@@ -9,6 +9,7 @@ use nn_graph::shape::{Shape, Size};
 
 use crate::mapping::{BoardMapper, PolicyMapper};
 use crate::network::ZeroEvaluation;
+use crate::zero::node::ZeroValues;
 
 pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     policy_mapper: P,
@@ -25,13 +26,16 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     boards.iter().enumerate().map(|(bi, board)| {
         let board = board.borrow();
 
-        //wdl
+        // value
+        let value = batch_value_logit[bi].tanh();
+
+        // wdl
         let wdl_left = &batch_wdl_logit[3 * bi..];
         let mut wdl = [wdl_left[0], wdl_left[1], wdl_left[2]];
         softmax_in_place(&mut wdl);
         let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
 
-        //policy
+        // policy
         let policy_logit = &batch_policy_logit[P::POLICY_SIZE * bi..(P::POLICY_SIZE * bi) + P::POLICY_SIZE];
         let mut policy: Vec<f32> = board.available_moves().map(|mv| {
             policy_mapper.move_to_index(board, mv)
@@ -39,7 +43,9 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
         }).collect();
         softmax_in_place(&mut policy);
 
-        ZeroEvaluation { wdl, policy }
+        // combine everything
+        let values = ZeroValues { value, wdl };
+        ZeroEvaluation { values, policy }
     }).collect()
 }
 

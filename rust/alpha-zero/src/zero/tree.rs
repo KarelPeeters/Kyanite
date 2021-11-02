@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Index, IndexMut};
 
 use board_game::board::{Board, Outcome};
-use board_game::wdl::{Flip, OutcomeWDL, WDL};
+use board_game::wdl::OutcomeWDL;
 use itertools::Itertools;
 
 use crate::util::display_option;
-use crate::zero::node::Node;
+use crate::zero::node::{Node, ZeroValues};
 use crate::zero::range::IdxRange;
 
 /// The result of a zero search.
@@ -39,19 +39,19 @@ impl<B: Board> Tree<B> {
         let children = self[0].children.unwrap();
 
         let best_child = children.iter().rev().max_by_key(|&child| {
-            self[child].visits
+            self[child].complete_visits
         }).expect("Root node must have non-empty children");
 
         self[best_child].last_move.unwrap()
     }
 
-    /// The WDL of `root_board` from the POV of `root_board.next_player`.
-    pub fn wdl(&self) -> WDL<f32> {
-        self[0].wdl().flip()
+    /// The values corresponding to `root_board` from the POV of `root_board.next_player`.
+    pub fn values(&self) -> ZeroValues {
+        self[0].values().parent()
     }
 
     pub fn root_visits(&self) -> u64 {
-        self[0].visits
+        self[0].complete_visits
     }
 
     /// Return `(min, max)` where `min` is the depth of the shallowest un-evaluated node
@@ -79,7 +79,7 @@ impl<B: Board> Tree<B> {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         self[0].children.unwrap().iter().map(move |c| {
-            (self[c].visits as f32) / ((self[0].visits - 1) as f32)
+            (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32)
         })
     }
 
@@ -124,8 +124,8 @@ impl<B: Board> Tree<B> {
 
     #[must_use]
     pub fn display(&self, max_depth: usize, sort: bool) -> TreeDisplay<B> {
-        let parent_visits = self[0].visits;
-        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, sort, parent_visits }
+        let parent_visits = self[0].complete_visits;
+        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, sort, parent_complete_visits: parent_visits }
     }
 }
 
@@ -136,7 +136,7 @@ pub struct TreeDisplay<'a, B: Board> {
     curr_depth: usize,
     max_depth: usize,
     sort: bool,
-    parent_visits: u64,
+    parent_complete_visits: u64,
 }
 
 struct PolicyDisplay(f32);
@@ -156,22 +156,20 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let tree = self.tree;
 
         if self.curr_depth == 0 {
-            let wdl = tree.wdl();
+            let data = tree.values();
             writeln!(
                 f,
-                "wdl: ({:.3}/{:.3}/{:.3}), best move: {}, depth: {:?}",
-                wdl.win, wdl.draw, wdl.loss, tree.best_move(), tree.depth_range(0)
+                "values: {}, best_move: {}, depth: {:?}",
+                data, tree.best_move(), tree.depth_range(0)
             )?;
-            writeln!(f, "[move: terminal visits zero(w/d/l, policy) net(w/d/l, policy)]")?;
+            writeln!(f, "[move: terminal visits zero(v, w/d/l, policy) net(v, w/d/l, policy)]")?;
         }
 
         for _ in 0..self.curr_depth { write!(f, "  ")? }
 
         let node = &self.tree[self.node];
-        let node_wdl = node.wdl();
-        let net_wdl = node.net_wdl.unwrap_or(WDL::nan()).flip();
 
-        let terminal = match node.terminal() {
+        let terminal = match node.outcome() {
             Ok(None) => "N",
             Ok(Some(OutcomeWDL::Win)) => "W",
             Ok(Some(OutcomeWDL::Draw)) => "D",
@@ -185,14 +183,21 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             String::default()
         };
 
+        let node_values = node.values();
+        let net_values = node.net_values.unwrap_or(ZeroValues::nan()).parent();
+        let zero_policy = (node.complete_visits as f32) / ((self.parent_complete_visits - 1) as f32);
+
+        let player = if self.curr_depth % 2 == 0 {
+            tree.root_board.next_player().other()
+        } else {
+            tree.root_board.next_player()
+        };
+
         writeln!(
             f,
-            "{}: {} {}{} zero({:.3}/{:.3}/{:.3}, {:.4}) net({:.3}/{:.3}/{:.3}, {:.4})",
-            display_option(node.last_move), terminal, node.visits, virtual_visits,
-            node_wdl.win, node_wdl.draw, node_wdl.loss,
-            (node.visits as f32) / (self.parent_visits as f32),
-            net_wdl.win, net_wdl.draw, net_wdl.loss,
-            node.net_policy,
+            "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4})",
+            player.to_char(), display_option(node.last_move), terminal, node.complete_visits, virtual_visits,
+            node_values, zero_policy, net_values, node.net_policy,
         )?;
 
         if self.curr_depth == self.max_depth { return Ok(()); }
@@ -200,11 +205,11 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         if let Some(children) = node.children {
             let mut children = children.iter().collect_vec();
             let best_child = if self.sort {
-                children.sort_by_key(|&c| self.tree[c].visits);
+                children.sort_by_key(|&c| self.tree[c].complete_visits);
                 children.reverse();
                 children[0]
             } else {
-                children.iter().copied().max_by_key(|&c| self.tree[c].visits).unwrap()
+                children.iter().copied().max_by_key(|&c| self.tree[c].complete_visits).unwrap()
             };
 
             for child in children {
@@ -220,7 +225,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     curr_depth: self.curr_depth + 1,
                     max_depth: next_max_depth,
                     sort: self.sort,
-                    parent_visits: node.visits,
+                    parent_complete_visits: node.complete_visits,
                 };
                 write!(f, "{}", child_display)?;
             }

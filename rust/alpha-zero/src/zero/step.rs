@@ -1,10 +1,10 @@
 use board_game::board::Board;
-use board_game::wdl::{Flip, POV, WDL};
+use board_game::wdl::POV;
 use internal_iterator::InternalIterator;
 
 use crate::network::ZeroEvaluation;
 use crate::util::zip_eq_exact;
-use crate::zero::node::Node;
+use crate::zero::node::{Node, ZeroValues};
 use crate::zero::range::IdxRange;
 use crate::zero::tree::Tree;
 
@@ -36,10 +36,10 @@ pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32) -
         // count each node as visited
         tree[curr_node].virtual_visits += 1;
 
-        // if the board is done backpropagation the real value
+        // if the board is done backpropagate the real value
         if let Some(outcome) = curr_board.outcome() {
-            let wdl = outcome.pov(curr_board.next_player()).to_wdl();
-            tree_propagate_wdl(tree, curr_node, wdl);
+            let outcome = outcome.pov(curr_board.next_player());
+            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome));
             return None;
         }
 
@@ -53,7 +53,7 @@ pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32) -
                 let end = tree.len();
 
                 tree[curr_node].children = Some(IdxRange::new(start, end));
-                tree[curr_node].net_wdl = None;
+                tree[curr_node].net_values = None;
 
                 // return the request
                 return Some(ZeroRequest { board: curr_board, node: curr_node });
@@ -62,9 +62,9 @@ pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32) -
         };
 
         // continue selecting, pick the best child
-        let parent_visits_with_virtual = tree[curr_node].visits_with_virtual();
+        let parent_total_visits = tree[curr_node].total_visits();
         let selected = children.iter().max_by_key(|&child| {
-            tree[child].uct(exploration_weight, parent_visits_with_virtual)
+            tree[child].uct(exploration_weight, parent_total_visits)
         }).expect("Board is not done, this node should have a child");
 
         curr_node = selected;
@@ -80,9 +80,9 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse) {
     let ZeroResponse { node: curr_node, eval } = response;
 
     // wdl
-    assert!(tree[curr_node].net_wdl.is_none(), "Node {} already has WDL set", curr_node);
-    tree[curr_node].net_wdl = Some(eval.wdl);
-    tree_propagate_wdl(tree, curr_node, eval.wdl);
+    assert!(tree[curr_node].net_values.is_none(), "Node {} was already evaluated by the network", curr_node);
+    tree[curr_node].net_values = Some(eval.values);
+    tree_propagate_values(tree, curr_node, eval.values);
 
     // policy
     let children = tree[curr_node].children.expect("Applied node should have initialized children");
@@ -93,18 +93,18 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse) {
 }
 
 /// Propagate the given `wdl` up to the root.
-fn tree_propagate_wdl<B: Board>(tree: &mut Tree<B>, node: usize, mut wdl: WDL<f32>) {
+fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: ZeroValues) {
     let mut curr_index = node;
 
     loop {
-        wdl = wdl.flip();
+        values = values.parent();
 
         let curr_node = &mut tree[curr_index];
         assert!(curr_node.virtual_visits > 0);
 
-        curr_node.visits += 1;
+        curr_node.complete_visits += 1;
         curr_node.virtual_visits -= 1;
-        curr_node.total_wdl += wdl;
+        curr_node.sum_values += values;
 
         curr_index = match curr_node.parent {
             Some(parent) => parent,

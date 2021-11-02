@@ -1,7 +1,16 @@
-use board_game::wdl::{OutcomeWDL, WDL};
+use std::fmt::{Display, Formatter};
+
+use board_game::wdl::{Flip, OutcomeWDL, WDL};
 use decorum::N32;
 
 use crate::zero::range::IdxRange;
+
+/// The data that is accumulated in a node.
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ZeroValues {
+    pub value: f32,
+    pub wdl: WDL<f32>,
+}
 
 #[derive(Debug, Clone)]
 // TODO look at the size of this struct and think about making it smaller
@@ -15,15 +24,16 @@ pub struct Node<M> {
     pub children: Option<IdxRange>,
 
     /// The number of non-virtual visits for this node and its children.
-    pub visits: u64,
+    pub complete_visits: u64,
     /// The number of virtual visits for this node and its children.
     pub virtual_visits: u64,
     /// The sum of final values found in children of this node. Should be divided by `visits` to get the expected value.
-    pub total_wdl: WDL<f32>,
+    /// Does not include virtual visits.
+    pub sum_values: ZeroValues,
 
-    /// The evaluation returned by the network for this position.
-    /// If `None` and the node has children this means this node currently has virtual WDL applied to it.
-    pub net_wdl: Option<WDL<f32>>,
+    /// The data returned by the network for this position.
+    /// If `None` and the node has children this means this is a virtual node with data to be filled in later.
+    pub net_values: Option<ZeroValues>,
     /// The policy/prior probability as evaluated by the network when the parent node was expanded.
     pub net_policy: f32,
 }
@@ -35,30 +45,39 @@ impl<N> Node<N> {
             last_move,
             children: None,
 
-            visits: 0,
+            complete_visits: 0,
             virtual_visits: 0,
-            total_wdl: WDL::default(),
+            sum_values: ZeroValues::default(),
 
-            net_wdl: None,
+            net_values: None,
             net_policy: p.into(),
         }
     }
 
-    /// The (normalized) WDL of this node from the POV of the player that could play this move.
-    /// Does not include virtual loss.
-    pub fn wdl(&self) -> WDL<f32> {
-        self.total_wdl / self.total_wdl.sum()
+    pub fn total_visits(&self) -> u64 {
+        self.complete_visits + self.virtual_visits
+    }
+
+    /// The (normalized) data of this node from the POV of the player that could play this move.
+    /// Does not include virtual visits.
+    pub fn values(&self) -> ZeroValues {
+        self.sum_values / self.complete_visits as f32
+    }
+
+    /// The same as [Self::value] except that virtual visits are included.
+    pub fn total_data(&self) -> ZeroValues {
+        self.sum_values.add_virtual(self.virtual_visits) / self.total_visits() as f32
     }
 
     /// Get the outcome of this node if it's terminal.
-    /// * `Err` means we don't know yet because this node has not been visited yet,
+    /// * `Err(())` means we don't know yet because this node has not been visited yet,
     /// * `Ok(None)` means this node is not terminal.
-    /// * `Some(outcome) ` is the outcome of this node
-    pub fn terminal(&self) -> Result<Option<OutcomeWDL>, ()> {
+    /// * `Ok(Some(outcome))` is the outcome of this node
+    pub fn outcome(&self) -> Result<Option<OutcomeWDL>, ()> {
         if self.children.is_none() {
-            if self.visits_with_virtual() > 0 {
-                let outcome = self.total_wdl.try_to_outcome_wdl()
-                    .unwrap_or_else(|()| panic!("Unexpected wdl {:?} for terminal node", self.total_wdl));
+            if self.total_visits() > 0 {
+                let outcome = self.total_data().wdl.try_to_outcome_wdl()
+                    .unwrap_or_else(|()| panic!("Unexpected wdl {:?} for terminal node", self.total_data().wdl));
                 Ok(Some(outcome))
             } else {
                 Err(())
@@ -68,27 +87,74 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn visits_with_virtual(&self) -> u64 {
-        self.visits + self.virtual_visits
-    }
+    pub(super) fn uct(&self, exploration_weight: f32, parent_total_visits: u64) -> N32 {
+        let total_visits = self.total_visits();
 
-    pub(super) fn total_wdl_with_virtual(&self) -> WDL<f32> {
-        self.total_wdl + WDL::new(0.0, 0.0, self.virtual_visits as f32)
-    }
-
-    pub(super) fn uct(&self, exploration_weight: f32, parent_visits_with_virtual: u64) -> N32 {
-        let visits_with_virtual = self.visits_with_virtual();
-        let total_wdl_with_virtual = self.total_wdl_with_virtual();
-
-        let v = if visits_with_virtual == 0 {
+        let v = if total_visits == 0 {
             0.0
         } else {
-            total_wdl_with_virtual.value() / visits_with_virtual as f32
+            //TODO add option to use value instead
+            self.total_data().wdl.value()
         };
 
         let q = (v + 1.0) / 2.0;
-        let u = self.net_policy * ((parent_visits_with_virtual - 1) as f32).sqrt() / (1 + visits_with_virtual) as f32;
+        let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
 
         N32::from(q + exploration_weight * u)
+    }
+}
+
+impl ZeroValues {
+    pub fn from_outcome(outcome: OutcomeWDL) -> Self {
+        ZeroValues {
+            value: outcome.sign(),
+            wdl: outcome.to_wdl(),
+        }
+    }
+
+    pub fn nan() -> Self {
+        ZeroValues { value: f32::NAN, wdl: WDL::nan() }
+    }
+
+    /// The value that should be accumulated in the parent node of this value.
+    /// This is similar to [WDL::flip] but in the future will also do things like increment the _moves left counter_.
+    pub fn parent(&self) -> Self {
+        ZeroValues { value: -self.value, wdl: self.wdl.flip() }
+    }
+
+    pub fn add_virtual(&self, virtual_visits: u64) -> Self {
+        let virtual_visits = virtual_visits as f32;
+        ZeroValues {
+            value: self.value + virtual_visits,
+            wdl: self.wdl + WDL::new(0.0, 0.0, virtual_visits),
+        }
+    }
+}
+
+impl std::ops::Add<Self> for ZeroValues {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ZeroValues { value: self.value + rhs.value, wdl: self.wdl + rhs.wdl }
+    }
+}
+
+impl std::ops::AddAssign<Self> for ZeroValues {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl std::ops::Div<f32> for ZeroValues {
+    type Output = ZeroValues;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        ZeroValues { value: self.value / rhs, wdl: self.wdl / rhs }
+    }
+}
+
+impl Display for ZeroValues {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.3}, {:.3}/{:.3}/{:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss)
     }
 }

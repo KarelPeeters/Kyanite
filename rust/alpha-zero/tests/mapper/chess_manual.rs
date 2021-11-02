@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 use chess::{ChessMove, Piece, Square};

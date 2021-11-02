@@ -51,7 +51,7 @@ async fn main_impl() -> LichessResult<()> {
 
                 let start = Instant::now();
                 let tree = settings.build_tree(&board, &mut network, |tree| {
-                    println!("{}, {:.2?}", tree.root_visits(), tree.wdl());
+                    println!("{}, {:.2?}", tree.root_visits(), tree.values().wdl);
                     let fraction_time_used = (Instant::now() - start).as_secs_f32() / game.seconds_left as f32;
                     let visits = tree.root_visits();
                     visits > 0 && (visits >= max_visits || fraction_time_used >= max_fraction_time_used)
@@ -67,7 +67,7 @@ async fn main_impl() -> LichessResult<()> {
 
                 let message = format!(
                     "visits: {}, zero {:.2?} net {:.2?}",
-                    tree.root_visits(), tree.wdl().to_slice(), tree[0].net_wdl.unwrap().to_slice(),
+                    tree.root_visits(), tree.values().wdl.to_slice(), tree[0].net_values.unwrap().wdl.to_slice(),
                 );
                 lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
             }

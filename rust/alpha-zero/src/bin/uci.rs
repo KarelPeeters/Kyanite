@@ -53,12 +53,12 @@ fn main() -> std::io::Result<()> {
                         let root = &tree[0];
 
                         let mut children: Vec<_> = root.children.unwrap().iter().collect();
-                        children.sort_by_key(|&c| tree[c].visits);
+                        children.sort_by_key(|&c| tree[c].complete_visits);
                         children.reverse();
 
                         for (i, &child_index) in children.iter().enumerate() {
                             let child = &tree[child_index];
-                            let wdl: WDL<u32> = (child.wdl() * 1000.0).cast();
+                            let wdl: WDL<u32> = (child.values().wdl * 1000.0).cast();
                             let (min_depth, max_depth) = tree.depth_range(child_index);
 
                             println!(

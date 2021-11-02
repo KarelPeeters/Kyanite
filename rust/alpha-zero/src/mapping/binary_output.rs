@@ -19,7 +19,7 @@ use crate::util::kdl_divergence;
 struct MetaData<'a> {
     game: &'a str,
 
-    scalar_count: usize,
+    scalar_names: &'static [&'static str],
     board_bool_planes: usize,
     board_scalar_count: usize,
     policy_planes: usize,
@@ -55,6 +55,13 @@ pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
 
 type Result<T> = std::io::Result<T>;
 
+const SCALAR_NAMES: &[&str] = &[
+    "game_id", "pos_index", "game_length", "zero_visits", "available_mv_count", "kdl_policy",
+    "final_v", "final_wdl_w", "final_wdl_d", "final_wdl_l",
+    "zero_v", "zero_wdl_w", "zero_wdl_d", "zero_wdl_l",
+    "net_v", "net_wdl_w", "net_wdl_d", "net_wdl_l",
+];
+
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn new(path: impl AsRef<Path>, game: &str, mapper: M) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
@@ -80,8 +87,6 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             ph: PhantomData,
         })
     }
-
-    const SCALAR_COUNT: usize = 5 + 2 + 3 * 3;
 
     pub fn append(&mut self, simulation: Simulation<B>) -> Result<()> {
         assert!(!simulation.positions.is_empty(), "Simulation cannot be empty");
@@ -137,13 +142,16 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             scalars.push(pos.zero_visits as f32);
             scalars.push(available_mv_count as f32);
 
-            scalars.push(kdl_divergence(&pos.zero_evaluation.wdl.to_slice(), &pos.net_evaluation.wdl.to_slice()));
             scalars.push(kdl_divergence(&pos.zero_evaluation.policy, &pos.net_evaluation.policy));
 
+            scalars.push(simulation.outcome.pov(player).sign::<f32>());
             scalars.extend_from_slice(&simulation.outcome.pov(player).to_wdl().to_slice());
-            scalars.extend_from_slice(&pos.zero_evaluation.wdl.to_slice());
-            scalars.extend_from_slice(&pos.net_evaluation.wdl.to_slice());
-            assert_eq!(Self::SCALAR_COUNT, scalars.len());
+            scalars.push(pos.zero_evaluation.values.value);
+            scalars.extend_from_slice(&pos.zero_evaluation.values.wdl.to_slice());
+            scalars.push(pos.net_evaluation.values.value);
+            scalars.extend_from_slice(&pos.net_evaluation.values.wdl.to_slice());
+
+            assert_eq!(SCALAR_NAMES.len(), scalars.len());
 
             // save current offset
             // could also be computed by stream_position directory but that flushes the buffer to disk
@@ -178,7 +186,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
         let meta = MetaData {
             game: &self.game,
-            scalar_count: Self::SCALAR_COUNT,
+            scalar_names: SCALAR_NAMES,
             board_bool_planes: M::INPUT_BOOL_PLANES,
             board_scalar_count: M::INPUT_SCALAR_COUNT,
             policy_planes: M::POLICY_PLANES,

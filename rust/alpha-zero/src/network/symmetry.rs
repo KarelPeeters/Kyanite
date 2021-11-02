@@ -66,7 +66,7 @@ fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eva
     }).collect();
 
     ZeroEvaluation {
-        wdl: mapped_eval.wdl,
+        values: mapped_eval.values,
         policy,
     }
 }

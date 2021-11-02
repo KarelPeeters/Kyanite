@@ -35,9 +35,9 @@ pub fn network_accuracy<B: Board>(network: &mut impl Network<B>, challenges: &[C
         let eval = network.evaluate(board);
 
         println!("WDL:");
-        println!("  solution: {:?}", solution.wdl);
-        println!("  actual: {:?}", eval.wdl);
-        let wdl_stats = prob_distr_stats(&eval.wdl.to_slice(), &solution.wdl.to_slice());
+        println!("  solution: {:?}", solution.values.wdl);
+        println!("  actual: {:?}", eval.values.wdl);
+        let wdl_stats = prob_distr_stats(&eval.values.wdl.to_slice(), &solution.values.wdl.to_slice());
         println!("  stats: {:?}", wdl_stats);
 
         println!("Policy:");

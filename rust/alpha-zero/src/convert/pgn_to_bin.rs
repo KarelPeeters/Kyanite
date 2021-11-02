@@ -3,7 +3,6 @@ use std::time::Instant;
 
 use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
 use board_game::games::chess::{ChessBoard, Rules};
-use board_game::wdl::WDL;
 use chess::ChessMove;
 use internal_iterator::InternalIterator;
 use pgn_lexer::parser::Token;
@@ -13,6 +12,7 @@ use crate::mapping::BoardMapper;
 use crate::network::ZeroEvaluation;
 use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::subslice_start;
+use crate::zero::node::ZeroValues;
 
 #[derive(Debug)]
 pub struct Filter {
@@ -196,7 +196,7 @@ fn build_position(board: &ChessBoard, mv: ChessMove) -> Position<ChessBoard> {
         board: board.clone(),
         should_store: true,
         zero_visits: 0,
-        net_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy: vec![f32::NAN; policy.len()] },
-        zero_evaluation: ZeroEvaluation { wdl: WDL::nan(), policy },
+        net_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy: vec![f32::NAN; policy.len()] },
+        zero_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy },
     }
 }

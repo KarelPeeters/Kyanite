@@ -5,9 +5,10 @@ use board_game::board::Board;
 use board_game::games::max_length::MaxMovesBoard;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
-use itertools::{Itertools, zip};
+use itertools::Itertools;
 
 use crate::network::{Network, ZeroEvaluation};
+use crate::zero::node::ZeroValues;
 
 /// A `Network` that always returns uniform wdl and policy..
 #[derive(Debug)]
@@ -43,8 +44,8 @@ impl<B: Board> Network<B> for DummyNetwork {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
         boards.iter()
             .map(|board| ZeroEvaluation {
-                wdl: uniform_wdl(),
-                policy: uniform_policy(board.borrow()),
+                values: uniform_values(),
+                policy: uniform_policy(board.borrow().available_moves().count()),
             })
             .collect()
     }
@@ -52,31 +53,35 @@ impl<B: Board> Network<B> for DummyNetwork {
 
 impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
-        let mut result = self.inner.evaluate_batch(boards);
-        for eval in &mut result {
-            eval.wdl = uniform_wdl();
-        }
-        result
+        self.inner.evaluate_batch(boards).into_iter()
+            .map(|orig| ZeroEvaluation {
+                values: uniform_values(),
+                policy: orig.policy,
+            })
+            .collect()
     }
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
-        let mut result = self.inner.evaluate_batch(boards);
-        for (board, eval) in zip(boards, &mut result) {
-            eval.policy = uniform_policy(board.borrow());
-        }
-        result
+        self.inner.evaluate_batch(boards).into_iter()
+            .map(|orig| ZeroEvaluation {
+                values: orig.values,
+                policy: uniform_policy(orig.policy.len()),
+            })
+            .collect()
     }
 }
 
-fn uniform_wdl() -> WDL<f32> {
-    WDL { win: 1.0 / 3.0, draw: 1.0 / 3.0, loss: 1.0 / 3.0 }
+fn uniform_values() -> ZeroValues {
+    ZeroValues {
+        value: 0.0,
+        wdl: WDL { win: 1.0 / 3.0, draw: 1.0 / 3.0, loss: 1.0 / 3.0 },
+    }
 }
 
-fn uniform_policy<B: Board>(board: &B) -> Vec<f32> {
-    let move_count = board.available_moves().count();
-    vec![1.0 / move_count as f32; move_count]
+fn uniform_policy(available_moves: usize) -> Vec<f32> {
+    vec![1.0 / available_moves as f32; available_moves]
 }
 
 /// A `Network` wrapper that accepts `MaxMovesBoard<B>` instead of `B`, and just passes the inner board along.

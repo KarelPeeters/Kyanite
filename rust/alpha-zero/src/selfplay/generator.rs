@@ -248,7 +248,7 @@ impl<B: Board> GameState<B> {
 
         //store this position
         let net_evaluation = self.search.root_net_eval.take().unwrap();
-        let zero_evaluation = ZeroEvaluation { wdl: tree.wdl(), policy };
+        let zero_evaluation = ZeroEvaluation { values: tree.values(), policy };
 
         self.positions.push(Position {
             board: tree.root_board().inner().clone(),
@@ -321,11 +321,11 @@ impl<B: Board> SearchState<B> {
 }
 
 fn extract_root_net_eval<B: Board>(tree: &Tree<B>) -> ZeroEvaluation {
-    let wdl = tree[0].net_wdl.unwrap();
+    let values = tree[0].net_values.unwrap();
     let policy = tree[0].children.unwrap().iter()
         .map(|c| tree[c].net_policy)
         .collect();
-    ZeroEvaluation { wdl, policy }
+    ZeroEvaluation { values, policy }
 }
 
 fn add_dirichlet_noise<B: Board>(ctx: &mut Context, tree: &mut Tree<B>) {
