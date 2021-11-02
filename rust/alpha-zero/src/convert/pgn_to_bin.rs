@@ -5,7 +5,7 @@ use board_game::games::chess::{ChessBoard, Rules};
 use chess::ChessMove;
 use internal_iterator::InternalIterator;
 
-use pgn_reader::{PgnGame, PgnOutcome, PgnReader};
+use pgn_reader::{PgnGame, PgnReader, PgnResult};
 use pgn_reader::buffered_reader::BufferedReader;
 
 use crate::mapping::binary_output::BinaryOutput;
@@ -32,9 +32,9 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
 
     let mut input = PgnReader::new(input_pgn);
     while let Some(game) = input.next()? {
-        let skip_reasons = filter.decide_game(&game);
+        let mut skip_reasons = filter.decide_game(&game);
 
-        if skip_reasons.none() {
+        if !skip_reasons.any() {
             let mut positions = vec![];
             let mut board = ChessBoard::default_with_rules(Rules::unlimited());
 
@@ -45,13 +45,17 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
             });
 
             let outcome = match outcome {
-                PgnOutcome::WinWhite => Outcome::WonBy(Player::A),
-                PgnOutcome::WinBlack => Outcome::WonBy(Player::B),
-                PgnOutcome::Draw => Outcome::Draw,
-                PgnOutcome::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
+                PgnResult::WinWhite => Outcome::WonBy(Player::A),
+                PgnResult::WinBlack => Outcome::WonBy(Player::B),
+                PgnResult::Draw => Outcome::Draw,
+                PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
             };
 
-            binary_output.append(Simulation { outcome, positions })?;
+            skip_reasons.no_positions = positions.is_empty();
+
+            if !positions.is_empty() {
+                binary_output.append(Simulation { outcome, positions })?;
+            }
         }
 
         logger.update(skip_reasons);
@@ -84,23 +88,31 @@ impl Filter {
                 })
             }
             None => {
-                return self.allowed_time_controls.is_none()
+                return self.allowed_time_controls.is_none();
             }
         }
     }
 
     fn decide_game(&self, game: &PgnGame) -> SkipReasons {
+        //TODO all of this is growing into a (slow) disaster, ideally skipping games is really fast
+        //  also the star thing is super annoying, also breaking because there are no moves is annoying
+        //  rewriting the filtering system
+
         let while_elo = game.header("WhiteElo").map(|x| x.parse::<u32>().unwrap());
         let black_elo = game.header("BlackElo").map(|x| x.parse::<u32>().unwrap());
 
         let skip_elo = !self.accept_elo(while_elo) || !self.accept_elo(black_elo);
         let skip_time_control = !self.accept_time_control(game.header("TimeControl"));
         let skip_termination = !accept_termination(game.header("Termination"));
+        let result = game.header("Result").unwrap().parse::<PgnResult>().unwrap();
+        let skip_result = PgnResult::Star == result;
 
         SkipReasons {
             elo: skip_elo,
             time_control: skip_time_control,
             termination: skip_termination,
+            result: skip_result,
+            no_positions: false,
         }
     }
 }
@@ -121,11 +133,13 @@ struct SkipReasons {
     elo: bool,
     time_control: bool,
     termination: bool,
+    no_positions: bool,
+    result: bool,
 }
 
 impl SkipReasons {
-    fn none(&self) -> bool {
-        self.elo || self.time_control || self.termination
+    fn any(&self) -> bool {
+        self.elo || self.time_control || self.termination || self.result || self.no_positions
     }
 }
 
@@ -141,6 +155,8 @@ struct Logger {
     skipped_elo: u32,
     skipped_time_control: u32,
     skipped_termination: u32,
+    skipped_result: u32,
+    skipped_no_positions: u32,
 }
 
 impl Logger {
@@ -154,24 +170,28 @@ impl Logger {
             skipped_elo: 0,
             skipped_time_control: 0,
             skipped_termination: 0,
+            skipped_result: 0,
+            skipped_no_positions: 0,
         }
     }
 
     fn update(&mut self, skip_reasons: SkipReasons) {
         self.visited_games += 1;
-        self.accepted_games += skip_reasons.none() as u32;
+        self.accepted_games += (!skip_reasons.any()) as u32;
 
         self.skipped_elo += skip_reasons.elo as u32;
         self.skipped_time_control += skip_reasons.time_control as u32;
         self.skipped_termination += skip_reasons.termination as u32;
+        self.skipped_result += skip_reasons.result as u32;
+        self.skipped_no_positions += skip_reasons.no_positions as u32;
 
         // log progress
         let now = Instant::now();
         if self.print && (now - self.prev_update).as_secs_f32() > 1.0 {
             println!(
-                "Accepted {}/{:?}, visited {}, skipped {} (elo: {}, tc {}, term {})",
+                "Accepted {}/{:?}, visited {}, skipped {} (result {}, elo: {}, tc {}, term {}, pos {})",
                 self.accepted_games, self.max_games, self.visited_games, self.visited_games - self.accepted_games,
-                self.skipped_elo, self.skipped_time_control, self.skipped_termination,
+                self.skipped_result, self.skipped_elo, self.skipped_time_control, self.skipped_termination, self.skipped_no_positions,
             );
             self.prev_update = now;
         }

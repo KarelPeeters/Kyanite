@@ -1,6 +1,6 @@
 use buffered_reader::Memory;
 
-use pgn_reader::{PgnOutcome, PgnReader};
+use pgn_reader::{PgnReader, PgnResult};
 
 fn read(input: &str) -> PgnReader<Memory<()>> {
     let read = Memory::new(input.as_bytes());
@@ -18,7 +18,7 @@ fn short() {
 
     let game = reader.next().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
-    assert_eq!(game.parse_moves(), (vec!["e4"], PgnOutcome::Draw));
+    assert_eq!(game.parse_moves(), (vec!["e4"], PgnResult::Draw));
 
     assert_eq!(reader.next().unwrap(), None);
 }
@@ -29,7 +29,7 @@ fn multi_digit() {
 
     let game = reader.next().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
-    assert_eq!(game.parse_moves(), (vec!["e4"], PgnOutcome::Draw));
+    assert_eq!(game.parse_moves(), (vec!["e4"], PgnResult::Draw));
 
     assert_eq!(reader.next().unwrap(), None);
 }
@@ -40,7 +40,7 @@ fn multiple_moves_per_turn() {
 
     let game = reader.next().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
-    assert_eq!(game.parse_moves(), (vec!["e4", "e5", "d4", "d5"], PgnOutcome::WinWhite));
+    assert_eq!(game.parse_moves(), (vec!["e4", "e5", "d4", "d5"], PgnResult::WinWhite));
 
     assert_eq!(reader.next().unwrap(), None);
 }
@@ -51,7 +51,7 @@ fn variation() {
 
     let game = reader.next().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
-    assert_eq!(game.parse_moves(), (vec!["e4", "d5", "a6"], PgnOutcome::WinWhite));
+    assert_eq!(game.parse_moves(), (vec!["e4", "d5", "a6"], PgnResult::WinWhite));
 
     assert_eq!(reader.next().unwrap(), None);
 }

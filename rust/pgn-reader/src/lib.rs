@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::io::Read;
+use std::str::FromStr;
 
 pub use buffered_reader;
 use buffered_reader::{BufferedReader, Generic};
@@ -68,7 +69,7 @@ impl<'a> PgnGame<'a> {
     }
 
     /// Call `f` for each actually played (ie. non-variation) move. Also returns the final outcome of the game.
-    pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnOutcome {
+    pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnResult {
         let mut left = self.moves;
 
         //TODO try to optimize this loop some more
@@ -81,11 +82,11 @@ impl<'a> PgnGame<'a> {
                 // variation
                 let skip = variation_length(left);
                 left = &left[skip..];
-                continue
+                continue;
             }
 
             // outcome?
-            for &(outcome, outcome_str) in OUTCOME_STR {
+            for &(outcome, outcome_str) in RESULT_STR {
                 if left.starts_with(outcome_str) {
                     let rest = &left[outcome_str.len()..];
                     assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
@@ -97,13 +98,15 @@ impl<'a> PgnGame<'a> {
             let start = left.find(|c: char| !c.is_ascii_digit() && c != '.' && c != ' ').unwrap();
             let len = left[start..].find(' ').unwrap();
 
-            f(left[start..start + len].trim());
+            const MOVE_SUFFIX_CHARS: &[char] = &['?', '!'];
+            let mv = &left[start..start + len].trim_end_matches(MOVE_SUFFIX_CHARS);
 
+            f(mv);
             left = &left[start + len..];
         }
     }
 
-    pub fn parse_moves(&self) -> (Vec<&'a str>, PgnOutcome) {
+    pub fn parse_moves(&self) -> (Vec<&'a str>, PgnResult) {
         let mut moves = vec![];
         let outcome = self.for_each_move(|mv| moves.push(mv));
         (moves, outcome)
@@ -111,18 +114,30 @@ impl<'a> PgnGame<'a> {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PgnOutcome {
+pub enum PgnResult {
     WinWhite,
     WinBlack,
     Draw,
     Star,
 }
 
-const OUTCOME_STR: &[(PgnOutcome, &'static str)] = &[
-    (PgnOutcome::WinWhite, "1-0"),
-    (PgnOutcome::WinBlack, "0-1"),
-    (PgnOutcome::Draw, "1/2-1/2"),
-    (PgnOutcome::Star, "*"),
+impl FromStr for PgnResult {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        for &(cand, cand_str) in RESULT_STR {
+            if cand_str == s { return Ok(cand); }
+        }
+
+        return Err(());
+    }
+}
+
+const RESULT_STR: &[(PgnResult, &'static str)] = &[
+    (PgnResult::WinWhite, "1-0"),
+    (PgnResult::WinBlack, "0-1"),
+    (PgnResult::Draw, "1/2-1/2"),
+    (PgnResult::Star, "*"),
 ];
 
 fn variation_length(left: &str) -> usize {
@@ -140,7 +155,7 @@ fn variation_length(left: &str) -> usize {
 
         count = i + 1;
         if depth == 0 {
-            break
+            break;
         }
     }
 
