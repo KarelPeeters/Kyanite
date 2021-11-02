@@ -38,7 +38,7 @@ impl<R: BufferedReader<()>> PgnReader<R> {
 }
 
 impl<'a> Game<'a> {
-    pub fn header(&self, key: &str) -> Option<&str> {
+    pub fn header(&self, key: &str) -> Option<&'a str> {
         let mut left = self.header;
         while let Some(start) = left.find(key) {
             assert_ne!(start, 0, "Invalid pgn header");
@@ -58,6 +58,78 @@ impl<'a> Game<'a> {
         }
         None
     }
+
+    /// Call `f` for each actually played (ie. non-variation) move. Also returns the final outcome of the game.
+    pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnOutcome {
+        let mut left = self.moves;
+
+        loop {
+            left = left.trim_start();
+
+            let left_bytes = left.as_bytes();
+
+            if left_bytes[0].is_ascii_digit() && left_bytes[1] == b'.' {
+                //actual move
+                let start = left.find(' ').unwrap() + 1;
+                let len = left[start..].find(' ').unwrap();
+
+                f(&left[start..start + len]);
+
+                left = &left[start + len..];
+            } else if left_bytes[0] == b'{' {
+                // variation
+                let skip = variation_length(left);
+                left = &left[skip..];
+            } else {
+                // outcome?
+                for &(outcome, outcome_str) in OUTCOME_STR {
+                    if left.starts_with(outcome_str) {
+                        let rest = &left[outcome_str.len()..];
+                        assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
+                        return outcome;
+                    }
+                }
+
+                panic!("Cannot continue parsing moves, left: '{}'", left);
+            }
+        }
+    }
+
+    pub fn parse_moves(&self) -> (Vec<&'a str>, PgnOutcome) {
+        let mut moves = vec![];
+        let outcome = self.for_each_move(|mv| moves.push(mv));
+        (moves, outcome)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PgnOutcome {
+    WinWhite,
+    WinBlack,
+    Draw,
+}
+
+const OUTCOME_STR: &[(PgnOutcome, &'static str)] = &[
+    (PgnOutcome::WinWhite, "1-0"),
+    (PgnOutcome::WinBlack, "0-1"),
+    (PgnOutcome::Draw, "1/2-1/2"),
+];
+
+fn variation_length(left: &str) -> usize {
+    let mut depth = 0;
+
+    let count = left.chars().take_while(|&c| {
+        match c {
+            '{' => { depth += 1; }
+            '}' => { depth -= 1; }
+            _ => (),
+        };
+
+        depth != 0
+    }).count() + 1;
+
+    assert_eq!(depth, 0, "Non-matching {{}} found in '{}'", left);
+    count
 }
 
 impl<R: BufferedReader<()>> PgnReader<R> {
@@ -106,8 +178,8 @@ impl<R: BufferedReader<()>> PgnReader<R> {
                 let total_length = header_length + moves_length;
                 assert!(data.len() >= total_length);
 
-                let header = std::str::from_utf8(&data[0..header_length])?;
-                let moves = std::str::from_utf8(&data[header_length..total_length])?;
+                let header = std::str::from_utf8(&data[0..header_length])?.trim();
+                let moves = std::str::from_utf8(&data[header_length..total_length])?.trim();
 
                 let game = Game { start_index: self.start_index, header, moves };
                 self.start_index += total_length;

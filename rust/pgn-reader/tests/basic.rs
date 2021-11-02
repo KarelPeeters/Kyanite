@@ -1,6 +1,6 @@
 use buffered_reader::Memory;
 
-use pgn_reader::PgnReader;
+use pgn_reader::{PgnOutcome, PgnReader};
 
 fn read(input: &str) -> PgnReader<Memory<()>> {
     let read = Memory::new(input.as_bytes());
@@ -14,12 +14,22 @@ fn empty() {
 
 #[test]
 fn single() {
-    let mut reader = read("[Test \"test\"]\n1. e4\n");
+    let mut reader = read("[Test \"test\"]\n1. e4 1/2-1/2\n");
 
     let game = reader.next().unwrap().unwrap();
-    assert_eq!(game.header, "[Test \"test\"]\n");
-    assert_eq!(game.moves, "1. e4\n");
     assert_eq!(game.header("Test"), Some("test"));
+    assert_eq!(game.parse_moves(), (vec!["e4"], PgnOutcome::Draw));
+
+    assert_eq!(reader.next().unwrap(), None);
+}
+
+#[test]
+fn variation() {
+    let mut reader = read("[Test \"test\"]\n1. e4 { d5 6d d8 } 1... d5 { [%clk 0:02:55] } 1-0\n");
+
+    let game = reader.next().unwrap().unwrap();
+    assert_eq!(game.header("Test"), Some("test"));
+    assert_eq!(game.parse_moves(), (vec!["e4", "d5"], PgnOutcome::WinWhite));
 
     assert_eq!(reader.next().unwrap(), None);
 }
