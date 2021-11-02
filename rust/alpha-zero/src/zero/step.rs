@@ -28,7 +28,7 @@ pub struct ZeroResponse {
 /// The reached node and its board is returned in a [ZeroRequest],
 /// and all involved nodes end up with their `virtual_visits` counter incremented.
 ///
-pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32) -> Option<ZeroRequest<B>> {
+pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32, use_value: bool) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
 
@@ -64,7 +64,7 @@ pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32) -
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].total_visits();
         let selected = children.iter().max_by_key(|&child| {
-            tree[child].uct(exploration_weight, parent_total_visits)
+            tree[child].uct(parent_total_visits, exploration_weight, use_value)
         }).expect("Board is not done, this node should have a child");
 
         curr_node = selected;

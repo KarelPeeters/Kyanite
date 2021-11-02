@@ -313,7 +313,7 @@ impl<B: Board> SearchState<B> {
                 return StepResult::Done;
             }
 
-            if let Some(request) = zero_step_gather(&mut self.tree, settings.exploration_weight) {
+            if let Some(request) = zero_step_gather(&mut self.tree, settings.exploration_weight, settings.use_value) {
                 return StepResult::Request(request);
             }
         }

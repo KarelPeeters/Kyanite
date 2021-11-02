@@ -27,7 +27,7 @@ async fn main_impl() -> LichessResult<()> {
 
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = load_graph_from_onnx_path(path);
-    let settings = ZeroSettings::new(100, 4.0);
+    let settings = ZeroSettings::new(100, 4.0, false);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;

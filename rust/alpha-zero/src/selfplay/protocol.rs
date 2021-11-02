@@ -52,6 +52,7 @@ pub struct Settings {
     // self-play game affecting settings
     pub max_game_length: i64,
     pub exploration_weight: f32,
+    pub use_value: bool,
 
     pub random_symmetries: bool,
     pub keep_tree: bool,

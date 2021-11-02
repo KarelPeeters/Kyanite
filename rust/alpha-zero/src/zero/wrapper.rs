@@ -14,11 +14,12 @@ use crate::zero::tree::Tree;
 pub struct ZeroSettings {
     pub batch_size: usize,
     pub exploration_weight: f32,
+    pub use_value: bool,
 }
 
 impl ZeroSettings {
-    pub fn new(batch_size: usize, exploration_weight: f32) -> Self {
-        ZeroSettings { batch_size, exploration_weight }
+    pub fn new(batch_size: usize, exploration_weight: f32, use_value: bool) -> Self {
+        ZeroSettings { batch_size, exploration_weight, use_value }
     }
 }
 
@@ -52,7 +53,7 @@ impl ZeroSettings {
             // collect enough requests to fill the batch
             // TODO what about when we have explored the entire tree and are left with a half-filled batch?
             while requests.len() < self.batch_size {
-                let request = zero_step_gather(tree, self.exploration_weight);
+                let request = zero_step_gather(tree, self.exploration_weight, self.use_value);
                 if let Some(request) = request {
                     requests.push(request);
                 }

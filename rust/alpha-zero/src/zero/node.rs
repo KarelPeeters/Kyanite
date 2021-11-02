@@ -87,14 +87,17 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn uct(&self, exploration_weight: f32, parent_total_visits: u64) -> N32 {
+    pub(super) fn uct(&self, parent_total_visits: u64, exploration_weight: f32, use_value: bool) -> N32 {
         let total_visits = self.total_visits();
 
         let v = if total_visits == 0 {
             0.0
         } else {
-            //TODO add option to use value instead
-            self.total_data().wdl.value()
+            if use_value {
+                self.total_data().value
+            } else {
+                self.total_data().wdl.value()
+            }
         };
 
         let q = (v + 1.0) / 2.0;

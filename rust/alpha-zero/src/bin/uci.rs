@@ -32,7 +32,7 @@ fn main() -> std::io::Result<()> {
     // search settings
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/supervised/lichess_huge/network_5140.onnx";
     let batch_size = 100;
-    let settings = ZeroSettings::new(batch_size, 2.0);
+    let settings = ZeroSettings::new(batch_size, 2.0, false);
 
     let graph = load_graph_from_onnx_path(path);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, batch_size, Device::new(0));
