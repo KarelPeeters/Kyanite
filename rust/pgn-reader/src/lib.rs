@@ -3,6 +3,8 @@ use std::cmp::max;
 use buffered_reader::BufferedReader;
 use memchr::memchr;
 
+//TODO support escape codes (mostly in headers and values)
+
 #[derive(Debug)]
 pub struct PgnReader<R> {
     start_index: usize,
@@ -13,8 +15,8 @@ pub struct PgnReader<R> {
 #[derive(Debug)]
 pub struct Game<'a> {
     start_index: usize,
-    header: &'a str,
-    moves: &'a str,
+    pub header: &'a str,
+    pub moves: &'a str,
 }
 
 #[derive(Debug)]
@@ -32,6 +34,29 @@ impl<R> PgnReader<R> {
             prev_game_length: 0,
             input,
         }
+    }
+}
+
+impl<'a> Game<'a> {
+    pub fn header(&self, key: &str) -> Option<&str> {
+        let mut left = self.header;
+        while let Some(start) = left.find(key) {
+            assert_ne!(start, 0, "Invalid pgn header");
+
+            let left_bytes = left.as_bytes();
+            if left_bytes[start - 1] == b'[' && left_bytes[start + key.len()] == b' ' {
+                let block = &left[start + key.len() + 1..];
+
+                // we've found the right key
+                let value_start = block.find('"').unwrap() + 1;
+                let value_len = block[value_start..].find('"').unwrap();
+
+                return Some(&block[value_start..value_start + value_len]);
+            }
+
+            left = &left[start + key.len()..];
+        }
+        None
     }
 }
 
