@@ -12,7 +12,7 @@ pub struct PgnReader<R> {
     input: R,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Game<'a> {
     start_index: usize,
     pub header: &'a str,
@@ -27,7 +27,7 @@ pub enum Error {
     Utf8(std::str::Utf8Error),
 }
 
-impl<R> PgnReader<R> {
+impl<R: BufferedReader<()>> PgnReader<R> {
     pub fn new(input: R) -> Self {
         Self {
             start_index: 0,
