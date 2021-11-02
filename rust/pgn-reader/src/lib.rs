@@ -1,6 +1,8 @@
 use std::cmp::max;
+use std::io::Read;
 
-use buffered_reader::BufferedReader;
+pub use buffered_reader;
+use buffered_reader::{BufferedReader, Generic};
 use memchr::memchr;
 
 //TODO support escape codes (mostly in headers and values)
@@ -13,8 +15,8 @@ pub struct PgnReader<R> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Game<'a> {
-    start_index: usize,
+pub struct PgnGame<'a> {
+    pub start_index: usize,
     pub header: &'a str,
     pub moves: &'a str,
 }
@@ -37,7 +39,13 @@ impl<R: BufferedReader<()>> PgnReader<R> {
     }
 }
 
-impl<'a> Game<'a> {
+impl<R: Read + Send + Sync> PgnReader<Generic<R, ()>> {
+    pub fn new_generic(input: R) -> Self {
+        PgnReader::new(Generic::new(input, None))
+    }
+}
+
+impl<'a> PgnGame<'a> {
     pub fn header(&self, key: &str) -> Option<&'a str> {
         let mut left = self.header;
         while let Some(start) = left.find(key) {
@@ -63,35 +71,35 @@ impl<'a> Game<'a> {
     pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnOutcome {
         let mut left = self.moves;
 
+        //TODO speed this thing up, maybe write out the full state machine?
         loop {
             left = left.trim_start();
 
             let left_bytes = left.as_bytes();
 
-            if left_bytes[0].is_ascii_digit() && left_bytes[1] == b'.' {
-                //actual move
-                let start = left.find(' ').unwrap() + 1;
-                let len = left[start..].find(' ').unwrap();
-
-                f(&left[start..start + len]);
-
-                left = &left[start + len..];
-            } else if left_bytes[0] == b'{' {
+            if left_bytes[0] == b'{' {
                 // variation
                 let skip = variation_length(left);
                 left = &left[skip..];
-            } else {
-                // outcome?
-                for &(outcome, outcome_str) in OUTCOME_STR {
-                    if left.starts_with(outcome_str) {
-                        let rest = &left[outcome_str.len()..];
-                        assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
-                        return outcome;
-                    }
-                }
-
-                panic!("Cannot continue parsing moves, left: '{}'", left);
+                continue
             }
+
+            // outcome?
+            for &(outcome, outcome_str) in OUTCOME_STR {
+                if left.starts_with(outcome_str) {
+                    let rest = &left[outcome_str.len()..];
+                    assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
+                    return outcome;
+                }
+            }
+
+            // move
+            let start = left.find(|c: char| !c.is_ascii_digit() && c != '.' && c != ' ').unwrap();
+            let len = left[start..].find(' ').unwrap();
+
+            f(left[start..start + len].trim());
+
+            left = &left[start + len..];
         }
     }
 
@@ -107,12 +115,14 @@ pub enum PgnOutcome {
     WinWhite,
     WinBlack,
     Draw,
+    Star,
 }
 
 const OUTCOME_STR: &[(PgnOutcome, &'static str)] = &[
     (PgnOutcome::WinWhite, "1-0"),
     (PgnOutcome::WinBlack, "0-1"),
     (PgnOutcome::Draw, "1/2-1/2"),
+    (PgnOutcome::Star, "*"),
 ];
 
 fn variation_length(left: &str) -> usize {
@@ -133,7 +143,7 @@ fn variation_length(left: &str) -> usize {
 }
 
 impl<R: BufferedReader<()>> PgnReader<R> {
-    pub fn next(&mut self) -> Result<Option<Game>, Error> {
+    pub fn next(&mut self) -> Result<Option<PgnGame>, Error> {
         self.input.consume(self.prev_game_length);
         if self.input.eof() { return Ok(None); }
 
@@ -181,7 +191,7 @@ impl<R: BufferedReader<()>> PgnReader<R> {
                 let header = std::str::from_utf8(&data[0..header_length])?.trim();
                 let moves = std::str::from_utf8(&data[header_length..total_length])?.trim();
 
-                let game = Game { start_index: self.start_index, header, moves };
+                let game = PgnGame { start_index: self.start_index, header, moves };
                 self.start_index += total_length;
                 self.prev_game_length = total_length;
 

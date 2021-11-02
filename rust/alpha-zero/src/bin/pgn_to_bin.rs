@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 
 use bzip2::read::BzDecoder;
 use clap::Parser;
-use memmap::Mmap;
 
 use alpha_zero::convert::pgn_archive_to_bin::pgn_archive_to_bin;
 use alpha_zero::convert::pgn_to_bin::{append_pgn_to_bin, Filter};
 use alpha_zero::mapping::binary_output::BinaryOutput;
 use alpha_zero::mapping::chess::ChessStdMapper;
+use pgn_reader::buffered_reader;
 
 #[derive(Debug, clap::Parser)]
 struct Opts {
@@ -71,10 +71,10 @@ fn main_dispatch(opts: &Opts, path: &Path, input: impl Read + Send) {
         }
         Some("pgn") => {
             let input_file = File::open(path).expect("Failed to open input file");
-            let input = unsafe { Mmap::map(&input_file) }.expect("Failed to memmap input file");
+            let input = buffered_reader::Generic::new(input_file, None);
 
             let mut binary_output = BinaryOutput::new(path.with_extension(""), "chess", mapper).unwrap();
-            append_pgn_to_bin(&input, &mut binary_output, &filter, opts.max_games, true).unwrap();
+            append_pgn_to_bin(input, &mut binary_output, &filter, opts.max_games, true).unwrap();
             binary_output.finish().unwrap();
         }
         _ => panic!("Unexpected extension in (sub) path  {:?}", path),

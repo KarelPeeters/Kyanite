@@ -5,6 +5,8 @@ use board_game::games::chess::ChessBoard;
 use crossbeam::channel::{Receiver, Sender};
 use tar::Archive;
 
+use pgn_reader::buffered_reader::Memory;
+
 use crate::convert::pgn_to_bin::{append_pgn_to_bin, Filter};
 use crate::mapping::binary_output::BinaryOutput;
 use crate::mapping::BoardMapper;
@@ -86,9 +88,11 @@ fn mapper_main(
 
         println!("Mapping {:?} to {:?}", path, output_path);
 
+        let input = Memory::new(&*data);
         let mut binary_output = BinaryOutput::new(&output_path, "chess", mapper)
             .expect("Error white opening output files");
-        append_pgn_to_bin(&*data, &mut binary_output, filter, max_games_per_entry, false)
+
+        append_pgn_to_bin(input, &mut binary_output, filter, max_games_per_entry, false)
             .expect("Error while writing to bin");
         binary_output.finish()
             .expect("Error while finishing output");
