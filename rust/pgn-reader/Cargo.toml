@@ -1,0 +1,8 @@
+[package]
+name = "pgn-reader"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+buffered-reader = "1.1.0"
+memchr = "2.4.1"

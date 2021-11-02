@@ -5,6 +5,7 @@ members = [
     "nn-graph",
     "cuda-sys",
     "cuda-nn-eval",
+    "pgn-reader",
 ]
 
 [profile.release]
