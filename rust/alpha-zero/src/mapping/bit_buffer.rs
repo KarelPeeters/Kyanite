@@ -17,7 +17,7 @@ impl BitBuffer {
     }
 
     pub fn push(&mut self, b: bool) {
-        assert!(self.len < self.capacity);
+        assert!(self.len < self.capacity, "Not enough space left");
 
         let (index, bit) = split(self.len);
         self.len += 1;
@@ -28,6 +28,16 @@ impl BitBuffer {
         } else {
             *block &= !(1 << bit);
         }
+    }
+
+    pub fn push_block(&mut self, i: u64) {
+        assert!(self.len + 64 <= self.capacity, "Not enough space left");
+        assert_eq!(self.len % 8, 0, "Can only push aligned blocks of bits");
+
+        let index = self.len / 8;
+        self.storage[index..index + 8].copy_from_slice(&i.to_le_bytes());
+
+        self.len += 64;
     }
 
     pub fn clear(&mut self) {
@@ -122,5 +132,15 @@ mod test {
     fn overflow() {
         let mut buf = BitBuffer::new(32);
         for _ in 0..33 { buf.push(false); }
+    }
+
+    #[test]
+    fn block() {
+        let mut buf = BitBuffer::new(64);
+        buf.push_block(0b1_0000_0001);
+
+        assert_eq!(&[0b1, 0b1], &buf.storage[0..2]);
+        assert_eq!(&vec![0; 6], &buf.storage[2..]);
+        assert_eq!(64, buf.len());
     }
 }

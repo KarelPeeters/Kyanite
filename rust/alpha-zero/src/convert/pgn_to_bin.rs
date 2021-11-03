@@ -18,7 +18,7 @@ use crate::zero::node::ZeroValues;
 pub struct Filter {
     pub min_elo: Option<u32>,
     pub max_elo: Option<u32>,
-    pub allowed_time_controls: Option<Vec<String>>,
+    pub min_start_time: Option<u32>,
 }
 
 pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
@@ -30,11 +30,19 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
 ) -> Result<(), pgn_reader::Error> {
     let mut logger = Logger::new(max_games, print);
 
+    let mut time_input = 0.0;
+    let mut time_moves = 0.0;
+    let mut time_output = 0.0;
+
+    let mut prev = Instant::now();
+
     let mut input = PgnReader::new(input_pgn);
     while let Some(game) = input.next()? {
-        let mut skip_reasons = filter.decide_game(&game);
+        let mut skip = filter.should_skip(&game);
 
-        if !skip_reasons.any() {
+        time_input += time_since(&mut prev);
+
+        if !skip {
             let mut positions = vec![];
             let mut board = ChessBoard::default_with_rules(Rules::unlimited());
 
@@ -51,20 +59,31 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
             };
 
-            skip_reasons.no_positions = positions.is_empty();
+            time_moves += time_since(&mut prev);
 
-            if !positions.is_empty() {
+            if positions.is_empty() {
+                skip = true;
+            } else {
                 binary_output.append(Simulation { outcome, positions })?;
             }
+
+            time_output += time_since(&mut prev);
         }
 
-        logger.update(skip_reasons);
+        logger.update(skip, time_input, time_moves, time_output);
         if max_games.map_or(false, |max_games| logger.accepted_games >= max_games) {
             break;
         }
     }
 
     Ok(())
+}
+
+fn time_since(prev: &mut Instant) -> f32 {
+    let now = Instant::now();
+    let delta = (now - *prev).as_secs_f32();
+    *prev = now;
+    delta
 }
 
 impl Filter {
@@ -81,39 +100,35 @@ impl Filter {
     }
 
     pub fn accept_time_control(&self, time_control: Option<&str>) -> bool {
-        match time_control {
-            Some(time_control) => {
-                self.allowed_time_controls.as_ref().map_or(true, |allowed| {
-                    allowed.iter().any(|cand| cand == time_control)
+        match (self.min_start_time, time_control) {
+            (None, _) => true,
+            (Some(_), None) => false,
+            (Some(min_start_time), Some(time_control)) => {
+                time_control.find('+').map_or(false, |i| {
+                    time_control[..i].parse::<u32>().unwrap() >= min_start_time
                 })
-            }
-            None => {
-                return self.allowed_time_controls.is_none();
             }
         }
     }
 
-    fn decide_game(&self, game: &PgnGame) -> SkipReasons {
-        //TODO all of this is growing into a (slow) disaster, ideally skipping games is really fast
-        //  also the star thing is super annoying, also breaking because there are no moves is annoying
-        //  rewriting the filtering system
+    fn should_skip(&self, game: &PgnGame) -> bool {
+        // checks are ordered from likely to unlike skip reasons, and with short-circuiting
 
-        let while_elo = game.header("WhiteElo").map(|x| x.parse::<u32>().unwrap());
-        let black_elo = game.header("BlackElo").map(|x| x.parse::<u32>().unwrap());
-
-        let skip_elo = !self.accept_elo(while_elo) || !self.accept_elo(black_elo);
-        let skip_time_control = !self.accept_time_control(game.header("TimeControl"));
-        let skip_termination = !accept_termination(game.header("Termination"));
-        let result = game.header("Result").unwrap().parse::<PgnResult>().unwrap();
-        let skip_result = PgnResult::Star == result;
-
-        SkipReasons {
-            elo: skip_elo,
-            time_control: skip_time_control,
-            termination: skip_termination,
-            result: skip_result,
-            no_positions: false,
+        // time control
+        if self.min_start_time.is_some() && !self.accept_time_control(game.header("TimeControl")) {
+            return true;
         }
+
+        // elo
+        if self.min_elo.is_some() || self.max_elo.is_some() {
+            let while_elo = game.header("WhiteElo").map(|x| x.parse::<u32>().unwrap());
+
+            if !self.accept_elo(while_elo) { return true; }
+        }
+
+        // termination & result
+        !accept_termination(game.header("Termination")) ||
+            game.header("Result").unwrap().parse::<PgnResult>().unwrap() == PgnResult::Star
     }
 }
 
@@ -128,35 +143,14 @@ fn accept_termination(termination: Option<&str>) -> bool {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
-struct SkipReasons {
-    elo: bool,
-    time_control: bool,
-    termination: bool,
-    no_positions: bool,
-    result: bool,
-}
-
-impl SkipReasons {
-    fn any(&self) -> bool {
-        self.elo || self.time_control || self.termination || self.result || self.no_positions
-    }
-}
-
 #[derive(Debug)]
 struct Logger {
     print: bool,
     max_games: Option<u32>,
     prev_update: Instant,
 
-    visited_games: u32,
     accepted_games: u32,
-
-    skipped_elo: u32,
-    skipped_time_control: u32,
-    skipped_termination: u32,
-    skipped_result: u32,
-    skipped_no_positions: u32,
+    skipped_games: u32,
 }
 
 impl Logger {
@@ -165,33 +159,25 @@ impl Logger {
             print,
             max_games,
             prev_update: Instant::now(),
-            visited_games: 0,
+
             accepted_games: 0,
-            skipped_elo: 0,
-            skipped_time_control: 0,
-            skipped_termination: 0,
-            skipped_result: 0,
-            skipped_no_positions: 0,
+            skipped_games: 0,
         }
     }
 
-    fn update(&mut self, skip_reasons: SkipReasons) {
-        self.visited_games += 1;
-        self.accepted_games += (!skip_reasons.any()) as u32;
-
-        self.skipped_elo += skip_reasons.elo as u32;
-        self.skipped_time_control += skip_reasons.time_control as u32;
-        self.skipped_termination += skip_reasons.termination as u32;
-        self.skipped_result += skip_reasons.result as u32;
-        self.skipped_no_positions += skip_reasons.no_positions as u32;
+    fn update(&mut self, skip: bool, time_input: f32, time_moves: f32, time_output: f32) {
+        self.accepted_games += (!skip) as u32;
+        self.skipped_games += skip as u32;
 
         // log progress
         let now = Instant::now();
         if self.print && (now - self.prev_update).as_secs_f32() > 1.0 {
+            let total_games = self.accepted_games + self.skipped_games;
             println!(
-                "Accepted {}/{:?}, visited {}, skipped {} (result {}, elo: {}, tc {}, term {}, pos {})",
-                self.accepted_games, self.max_games, self.visited_games, self.visited_games - self.accepted_games,
-                self.skipped_result, self.skipped_elo, self.skipped_time_control, self.skipped_termination, self.skipped_no_positions,
+                "Visited {}, converted {}/{:?}, skipped {} = {:.02}, time: (in {:.2} mv {:.2} out {:.2})",
+                total_games, self.accepted_games, self.max_games,
+                self.skipped_games, self.skipped_games as f32 / total_games as f32,
+                time_input, time_moves, time_output
             );
             self.prev_update = now;
         }

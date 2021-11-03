@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use std::fs::File;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Seek, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,6 @@ use crate::util::kdl_divergence;
 struct MetaData<'a> {
     game: &'a str,
 
-    scalar_names: &'static [&'static str],
     board_bool_planes: usize,
     board_scalar_count: usize,
     policy_planes: usize,
@@ -31,22 +30,26 @@ struct MetaData<'a> {
     min_game_length: i32,
     root_wdl: [f32; 3],
 
-    position_offsets_offset: u64,
+    scalar_names: &'static [&'static str],
 }
 
 #[derive(Debug)]
 pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     game: String,
-
-    bin_write: BufWriter<File>,
     path: PathBuf,
 
+    bin_write: BufWriter<File>,
+    off_write: BufWriter<File>,
+    json_tmp_write: BufWriter<File>,
+
     game_count: usize,
+    position_count: usize,
+
     max_game_length: Option<i32>,
     min_game_length: Option<i32>,
     total_root_wdl: WDL<f32>,
 
-    position_offsets: Vec<u64>,
+    next_offset: u64,
     finished: bool,
 
     mapper: M,
@@ -67,20 +70,28 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         let path = path.as_ref().to_path_buf();
         assert!(path.extension().is_none(), "Binary output path should not have an extension, .bin and .json are added automatically");
 
-        let path_bin = path.with_extension("bin");
-        let bin_write = BufWriter::with_capacity(64 * 1024, File::create(path_bin)?);
+        //TODO try buffer sizes again
+        let bin_write = BufWriter::new(File::create(path.with_extension("bin"))?);
+        let off_write = BufWriter::new(File::create(path.with_extension("off"))?);
+        let json_tmp_write = BufWriter::new(File::create(path.with_extension("json.tmp"))?);
 
         Ok(BinaryOutput {
             game: game.to_string(),
+
             bin_write,
+            off_write,
+            json_tmp_write,
+
             path,
 
             game_count: 0,
+            position_count: 0,
+
             max_game_length: None,
             min_game_length: None,
             total_root_wdl: WDL::default(),
 
-            position_offsets: vec![],
+            next_offset: 0,
 
             finished: false,
             mapper,
@@ -91,12 +102,13 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn append(&mut self, simulation: Simulation<B>) -> Result<()> {
         assert!(!simulation.positions.is_empty(), "Simulation cannot be empty");
 
+        // collect metadata statistics
         let game_id = self.game_count;
-        self.game_count += 1;
-
         let game_length = simulation.positions.len();
 
-        // collect metadata statistics
+        self.game_count += 1;
+        self.position_count += game_length;
+
         self.max_game_length = Some(max(game_length as i32, self.max_game_length.unwrap_or(-1)));
         self.min_game_length = Some(min(game_length as i32, self.min_game_length.unwrap_or(i32::MAX)));
         self.total_root_wdl += simulation.outcome.pov(simulation.positions[0].board.next_player()).to_wdl();
@@ -154,16 +166,22 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             assert_eq!(SCALAR_NAMES.len(), scalars.len());
 
             // save current offset
-            // could also be computed by stream_position directory but that flushes the buffer to disk
-            let curr_offset = self.bin_write.get_mut().stream_position()? + self.bin_write.buffer().len() as u64;
-            self.position_offsets.push(curr_offset);
+            // we keep track of the offset ourselves because seeking/stream_position flushes the buffer and is slow
+            debug_assert_eq!(self.next_offset, self.bin_write.stream_position()?);
+            self.off_write.write_all(&self.next_offset.to_le_bytes())?;
 
             // actually write stuff to the bin file
-            self.bin_write.write_all(transmute_to_bytes(&scalars))?;
-            self.bin_write.write_all(transmute_to_bytes(board_bools.storage()))?;
-            self.bin_write.write_all(transmute_to_bytes(&board_scalars))?;
-            self.bin_write.write_all(transmute_to_bytes(&policy_indices))?;
-            self.bin_write.write_all(transmute_to_bytes(&pos.zero_evaluation.policy))?;
+            let data_to_write = [
+                transmute_to_bytes(&scalars),
+                transmute_to_bytes(board_bools.storage()),
+                transmute_to_bytes(&board_scalars),
+                transmute_to_bytes(&policy_indices),
+                transmute_to_bytes(&pos.zero_evaluation.policy),
+            ];
+            for data in data_to_write {
+                self.bin_write.write_all(data)?;
+                self.next_offset += data.len() as u64;
+            }
 
             scalars.clear();
             board_bools.clear();
@@ -180,10 +198,6 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         }
         self.finished = true;
 
-        let position_offsets_offset = self.bin_write.seek(SeekFrom::Current(0))?;
-        self.bin_write.write_all(transmute_to_bytes(&self.position_offsets))?;
-        self.bin_write.flush()?;
-
         let meta = MetaData {
             game: &self.game,
             scalar_names: SCALAR_NAMES,
@@ -191,21 +205,19 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             board_scalar_count: M::INPUT_SCALAR_COUNT,
             policy_planes: M::POLICY_PLANES,
             game_count: self.game_count,
-            position_count: self.position_offsets.len(),
+            position_count: self.position_count,
             max_game_length: self.max_game_length.unwrap_or(-1),
             min_game_length: self.min_game_length.unwrap_or(-1),
             root_wdl: (self.total_root_wdl / self.game_count as f32).to_slice(),
-            position_offsets_offset,
         };
+
+        serde_json::to_writer_pretty(&mut self.json_tmp_write, &meta)?;
+        self.json_tmp_write.flush()?;
+        self.bin_write.flush()?;
+        self.off_write.flush()?;
 
         let path_json_tmp = self.path.with_extension("json.tmp");
         let path_json = self.path.with_extension("json");
-
-        let mut json_writer = BufWriter::new(File::create(&path_json_tmp)?);
-        serde_json::to_writer_pretty(&mut json_writer, &meta)?;
-        json_writer.flush()?;
-        drop(json_writer);
-
         std::fs::rename(path_json_tmp, path_json)?;
 
         Ok(())

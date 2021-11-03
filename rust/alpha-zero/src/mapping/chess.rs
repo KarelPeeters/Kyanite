@@ -45,15 +45,8 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         //pieces
         for &color in &pov_colors {
             for piece in chess::ALL_PIECES {
-                for &rank in pov_ranks {
-                    for file in ALL_FILES {
-                        let square = Square::make_square(rank, file);
-                        bools.push(
-                            inner.color_on(square) == Some(color) &&
-                                inner.piece_on(square) == Some(piece)
-                        );
-                    }
-                }
+                let color_piece = inner.color_combined(color) & inner.pieces(piece);
+                bools.push_block(color_piece.0);
             }
         }
 

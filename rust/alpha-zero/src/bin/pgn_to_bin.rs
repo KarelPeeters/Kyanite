@@ -14,12 +14,11 @@ use pgn_reader::buffered_reader;
 #[derive(Debug, clap::Parser)]
 struct Opts {
     #[clap(long)]
-    tc: Vec<String>,
-
-    #[clap(long)]
     min_elo: Option<u32>,
     #[clap(long)]
     max_elo: Option<u32>,
+    #[clap(long)]
+    min_start_time: Option<u32>,
 
     #[clap(long)]
     skip_existing: bool,
@@ -55,7 +54,7 @@ fn main_dispatch(opts: &Opts, path: &Path, input: impl Read + Send) {
     let filter = Filter {
         min_elo: opts.max_elo,
         max_elo: opts.min_elo,
-        allowed_time_controls: (!opts.tc.is_empty()).then(|| opts.tc.clone()),
+        min_start_time: opts.min_start_time,
     };
 
     let ext = path.extension().and_then(|e| e.to_str());
