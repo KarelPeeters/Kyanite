@@ -52,8 +52,8 @@ fn main_dispatch(opts: &Opts, path: &Path, input: impl Read + Send) {
     let mapper = ChessStdMapper;
 
     let filter = Filter {
-        min_elo: opts.max_elo,
-        max_elo: opts.min_elo,
+        min_elo: opts.min_elo,
+        max_elo: opts.max_elo,
         min_start_time: opts.min_start_time,
     };
 
