@@ -12,4 +12,4 @@ def show_log(path: str):
 
 
 if __name__ == '__main__':
-    show_log("../../data/supervised/lichess_huge/log.npz")
+    show_log("../../data/supervised/lichess_09_2000_no_pov/log.npz")

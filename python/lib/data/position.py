@@ -7,7 +7,7 @@ import torch
 from lib.games import Game
 from lib.util import DEVICE
 
-POSITION_INFO_SCALAR_COUNT = 5 + 2 + 3 * 3
+POSITION_INFO_SCALAR_COUNT = 6 + 4 * 3
 
 
 class Position:
@@ -18,8 +18,15 @@ class Position:
 
         [self.game_id, self.pos_index, self.game_length, self.zero_visits, self.available_moves] = \
             scalars.take(5).astype(int)
-        [self.kdl_wdl, self.kdl_policy] = scalars.take(2)
-        self.wdls = scalars.take(3 * 3)
+        self.kdl_policy = scalars.take(1)
+
+        self.final_v = scalars.take(1)
+        self.final_wdl = scalars.take(3)
+        self.zero_v = scalars.take(1)
+        self.zero_wdl = scalars.take(3)
+        self.net_v = scalars.take(1)
+        self.net_wdl = scalars.take(3)
+
         scalars.finish()
 
         bool_count = prod(game.input_bool_shape)
@@ -51,7 +58,9 @@ class PositionBatch:
             input_full[i, game.input_scalar_channels:, :, :] = torch.from_numpy(p.input_bools) \
                 .view(*game.input_bool_shape)
 
-            all_wdls[i, :] = torch.from_numpy(p.wdls.copy())
+            all_wdls[i, 0:3] = torch.from_numpy(p.final_wdl)
+            all_wdls[i, 3:6] = torch.from_numpy(p.zero_wdl)
+            all_wdls[i, 6:9] = torch.from_numpy(p.net_wdl)
             policy_indices[i, :p.available_moves] = torch.from_numpy(p.policy_indices.copy())
             policy_values[i, :p.available_moves] = torch.from_numpy(p.policy_values.copy())
 

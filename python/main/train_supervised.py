@@ -23,7 +23,7 @@ from lib.util import DEVICE, print_param_count
 def thread_main(logger: Logger, plotter: LogPlotter):
     train_pattern = f"../../data/pgn/*.json"
     test_pattern = f"../../data/pgn/*.json"
-    output_folder = "../../data/supervised/lichess_huge_lr/"
+    output_folder = "../../data/supervised/lichess_09_2000/"
 
     shutil.rmtree(output_folder, ignore_errors=True)
     # assert not os.path.exists(output_folder)
@@ -34,7 +34,7 @@ def thread_main(logger: Logger, plotter: LogPlotter):
     batch_size = 1024
 
     test_steps = 16
-    save_steps = 1024
+    save_steps = 512
 
     settings = TrainSettings(
         game=game,
@@ -44,18 +44,21 @@ def thread_main(logger: Logger, plotter: LogPlotter):
         clip_norm=100,
     )
 
+    # 200MB RAM for offsets
+    max_positions = 200 * 1024 * 1024 // 8
+
     network = LCZOldPreNetwork(game, 0, 16, 128, 8, 128)
     network.to(DEVICE)
 
     print_param_count(network)
 
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0)
-    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 16_000, 1_000]))
+    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 16_000, 4_000]))
 
-    train_files = [DataFile.open(game, path) for path in glob.glob(train_pattern)]
+    train_files = [DataFile.open(game, path, max_positions) for path in glob.glob(train_pattern)]
     train_sampler = FileListSampler(game, train_files, batch_size)
 
-    test_files = [DataFile.open(game, path) for path in glob.glob(test_pattern)]
+    test_files = [DataFile.open(game, path, max_positions) for path in glob.glob(test_pattern)]
     test_sampler = FileListSampler(game, test_files, batch_size)
 
     print(f"Train file count: {len(train_files)}")

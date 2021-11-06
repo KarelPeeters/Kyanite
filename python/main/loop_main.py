@@ -43,7 +43,6 @@ def main():
         value_weight=0.1,
         wdl_weight=0.2,
         policy_weight=1.0,
-        batch_size=256,
         clip_norm=20.0,
     )
 
@@ -57,6 +56,7 @@ def main():
 
         target_buffer_size=100_000,
         train_steps_per_gen=2,
+        train_batch_size=256,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-5),
 
@@ -74,7 +74,7 @@ def print_expected_buffer_behaviour(settings: LoopSettings, average_game_length:
     games_in_buffer = settings.target_buffer_size / average_game_length
     gens_in_buffer = games_in_buffer / settings.fixed_settings.games_per_gen
 
-    positions_per_gen = settings.train_steps_per_gen * settings.train_settings.batch_size
+    positions_per_gen = settings.train_steps_per_gen * settings.train_batch_size
     visits_per_position = gens_in_buffer * positions_per_gen / settings.target_buffer_size
     visits_per_game = visits_per_position * average_game_length
 
