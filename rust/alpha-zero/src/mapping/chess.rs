@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::Debug;
 
 use board_game::games::chess::ChessBoard;
-use chess::{ALL_FILES, ALL_RANKS, ChessMove, Color, File, Piece, Rank, Square};
+use chess::{BitBoard, ChessMove, Color, File, Piece, Rank, Square};
 
 use crate::mapping::{InputMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
@@ -21,14 +21,14 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
 
     fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
-        let pov_colors = [inner.side_to_move(), !inner.side_to_move()];
-        let pov_ranks = if inner.side_to_move() == Color::White { &ALL_RANKS } else { &ALL_RANKS_REV };
+        let pov_color = inner.side_to_move();
+        let pov_colors = [pov_color, !pov_color];
 
         //TODO maybe remove this? is the game indeed fully symmetric after the pov stuff below?
         //  leave for now but remove once we can reproduce LC0
         //absolute reference for the current player, everything else is from POV
         for color in chess::ALL_COLORS {
-            scalars.push((inner.side_to_move() == color) as u8 as f32);
+            scalars.push((pov_color == color) as u8 as f32);
         }
 
         //castling rights
@@ -46,17 +46,20 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         for &color in &pov_colors {
             for piece in chess::ALL_PIECES {
                 let color_piece = inner.color_combined(color) & inner.pieces(piece);
-                bools.push_block(color_piece.0);
+                bools.push_block(pov_ranks(color_piece, pov_color));
             }
         }
 
         //en passant
-        for &rank in pov_ranks {
-            for file in ALL_FILES {
-                let square = Square::make_square(rank, file);
-                bools.push(inner.en_passant() == Some(square));
-            }
-        }
+        let en_passant = BitBoard::from_maybe_square(inner.en_passant()).unwrap_or_default();
+        bools.push_block(pov_ranks(en_passant, pov_color));
+    }
+}
+
+fn pov_ranks(board: BitBoard, pov: Color) -> u64 {
+    match pov {
+        Color::White => board.0,
+        Color::Black => board.reverse_colors().0
     }
 }
 
@@ -272,14 +275,3 @@ const QUEEN_DIRECTIONS: [(isize, isize); QUEEN_DIRECTION_COUNT] =
 
 const UNDERPROMOTION_PIECES: [Piece; 3] =
     [Piece::Rook, Piece::Bishop, Piece::Knight];
-
-const ALL_RANKS_REV: [Rank; 8] = [
-    Rank::Eighth,
-    Rank::Seventh,
-    Rank::Sixth,
-    Rank::Fifth,
-    Rank::Fourth,
-    Rank::Third,
-    Rank::Second,
-    Rank::First,
-];
