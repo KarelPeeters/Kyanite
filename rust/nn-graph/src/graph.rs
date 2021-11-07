@@ -1,12 +1,11 @@
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::Index;
+use std::ops::{Deref, Index};
 
 use itertools::{Itertools, zip_eq};
 use unwrap_match::unwrap_match;
 
 use crate::shape::{Shape, Size};
-use crate::wrap_debug::WrapDebug;
 
 #[derive(Clone)]
 pub struct Graph {
@@ -24,6 +23,10 @@ pub struct ValueInfo {
     pub operation: Operation,
 }
 
+/// Wrapper type that prevents the Debug output from getting too large.
+#[derive(Clone)]
+pub struct ConstantData(Vec<f32>);
+
 /// The core set of operations.
 /// Many other operations can be implemented as combinations of these operators, a few examples:
 /// * `ReLU` -> `Clip`
@@ -34,7 +37,7 @@ pub enum Operation {
     /// A runtime-variable input.
     Input { index: usize },
     /// A constant build into the network.
-    Constant { data: WrapDebug<Vec<f32>> },
+    Constant { data: ConstantData },
 
     /// View a value as a different shape.
     View { input: Value },
@@ -42,7 +45,7 @@ pub enum Operation {
     Slice { input: Value, axis: usize, start: usize, end: usize },
 
     /// The standard convolution operator.
-    Conv { input: Value, filter: Value, conv_shape: ConvShape },
+    Conv { input: Value, filter: Value, details: ConvDetails },
 
     /// Elementwise add two values, with broadcasting on the right.
     Add { left: Value, right: Value, subtract: bool },
@@ -77,8 +80,8 @@ impl Operation {
                 Operation::View { input: f(input) },
             &Operation::Slice { input, axis, start, end } =>
                 Operation::Slice { input: f(input), axis, start, end },
-            &Operation::Conv { input, filter, conv_shape } =>
-                Operation::Conv { input: f(input), filter: f(filter), conv_shape },
+            &Operation::Conv { input, filter, details: conv_shape } =>
+                Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
             &Operation::Add { left, right, subtract } =>
                 Operation::Add { left: f(left), right: f(right), subtract },
             &Operation::Mul { left, right } =>
@@ -90,7 +93,7 @@ impl Operation {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ConvShape {
+pub struct ConvDetails {
     pub input_channels: usize,
     pub output_channels: usize,
     pub input_size: usize,
@@ -98,6 +101,12 @@ pub struct ConvShape {
     pub padding: usize,
     pub output_size: usize,
     pub batch_size: Size,
+}
+
+impl ConvDetails {
+    pub fn kernel_shape(&self) -> [usize; 4] {
+        [self.output_channels, self.input_channels, self.kernel_size, self.kernel_size]
+    }
 }
 
 impl Index<Value> for Graph {
@@ -148,6 +157,10 @@ impl Graph {
         &self.outputs
     }
 
+    pub fn outputs_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.outputs
+    }
+
     pub fn unwrap_const(&self, value: Value) -> &[f32] {
         unwrap_match!(&self[value].operation, Operation::Constant { data } => data)
     }
@@ -174,7 +187,7 @@ impl Graph {
         let expected_len = shape.unwrap_fixed("Constant shape must be fixed").size();
         assert_eq!(expected_len, data.len() as usize, "Shape {:?} and data size {} mismatch", shape, data.len());
 
-        self.push(shape, Operation::Constant { data: data.into() })
+        self.push(shape, Operation::Constant { data: ConstantData(data) })
     }
 
     /// View an existing value as a new shape.
@@ -286,7 +299,7 @@ impl Graph {
         let output_shape = vec![n, Size::fixed(out_c), Size::fixed(out_w), Size::fixed(out_h)];
         let output_shape = Shape::new(output_shape);
 
-        let conv_shape = ConvShape {
+        let details = ConvDetails {
             batch_size: n,
             input_channels: in_c,
             output_channels: out_c,
@@ -297,7 +310,7 @@ impl Graph {
         };
         self.push(
             output_shape,
-            Operation::Conv { input, conv_shape, filter },
+            Operation::Conv { input, details, filter },
         )
     }
 
@@ -366,7 +379,6 @@ impl Graph {
 
     /// Register an existing value as an output
     pub fn output(&mut self, value: Value) {
-        assert!(!self.outputs.contains(&value), "{:?} already registered as an output!", value);
         self.outputs.push(value);
     }
 
@@ -395,7 +407,7 @@ impl Display for Graph {
 
         writeln!(f, "  values: [")?;
         for (i, info) in values.iter().enumerate() {
-            writeln!(f, "    {:?} -> {:?},", Value(i), info)?;
+            writeln!(f, "    {:?} = {:?},", Value(i), info)?;
         }
         writeln!(f, "  ],")?;
 
@@ -405,5 +417,23 @@ impl Display for Graph {
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+impl Debug for ConstantData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.0.len() <= 16 {
+            write!(f, "{:?}", self.0)
+        } else {
+            write!(f, "[..; {}]", self.0.len())
+        }
+    }
+}
+
+impl Deref for ConstantData {
+    type Target = Vec<f32>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

@@ -60,6 +60,10 @@ impl Shape {
         self.dims.as_slice().try_into().expect("Expected rank 2 shape")
     }
 
+    pub fn unwrap_4(&self) -> [Size; 4] {
+        self.dims.as_slice().try_into().expect("Expected rank 4 shape")
+    }
+
     /// Returns a new shape with the same rank with all sizes set to 1, except the size at `index` is kept.
     pub fn all_ones_except(&self, index: usize) -> Shape {
         assert!(index < self.rank());
@@ -90,7 +94,7 @@ impl Size {
         batch_size.pow(self.batch_exp) * self.fixed_factor
     }
 
-    pub fn try_fixed(self) -> Option<usize> {
+    pub fn try_unwrap_fixed(self) -> Option<usize> {
         if self.batch_exp == 0 {
             Some(self.fixed_factor)
         } else {

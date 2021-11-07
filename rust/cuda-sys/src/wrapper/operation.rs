@@ -5,6 +5,10 @@ use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::status::Status;
 
+//TODO try automatic conv benchmarking thing again
+pub const STANDARD_CONV_ALGO: cudnnConvolutionFwdAlgo_t =
+    cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+
 pub fn find_conv_algorithms(
     handle: &mut CudnnHandle,
     conv: &ConvolutionDescriptor,

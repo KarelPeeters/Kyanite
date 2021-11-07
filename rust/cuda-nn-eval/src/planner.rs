@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use bytemuck::cast_slice;
 
-use cuda_sys::bindings::{cudnnConvolutionFwdAlgo_t, cudnnOpTensorOp_t};
+use cuda_sys::bindings::cudnnOpTensorOp_t;
 use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, TensorOpDescriptor};
 use cuda_sys::wrapper::group::{ConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
-use nn_graph::graph::{ConvShape, Operation, Value};
+use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use nn_graph::graph::{ConvDetails, Operation, Value};
 use nn_graph::shape::ConcreteShape;
 
 use crate::shape::StridedShape;
@@ -19,9 +20,6 @@ pub struct Planner {
     map: HashMap<Value, Tensor>,
     plan: Vec<Step>,
 }
-
-//TODO switch back to automatic profiling, even though this algo seems to always be (close to) the best one
-const CONV_ALGO: cudnnConvolutionFwdAlgo_t = cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
 impl Planner {
     pub fn new(handle: CudnnHandle) -> Self {
@@ -86,7 +84,7 @@ impl Planner {
                 let mem = input_tensor.mem.slice(start_bytes, len_bytes);
                 Tensor::new(mem, result_shape)
             }
-            &Operation::Conv { input, filter, conv_shape } => {
+            &Operation::Conv { input, filter, details: conv_shape } => {
                 self.visit_conv(output_shape, input, filter, conv_shape)
             }
             &Operation::Add { left, right, subtract } => {
@@ -117,9 +115,9 @@ impl Planner {
         tensor
     }
 
-    fn visit_conv(&mut self, output_shape: ConcreteShape, input: Value, filter: Value, conv_shape: ConvShape) -> Tensor {
+    fn visit_conv(&mut self, output_shape: ConcreteShape, input: Value, filter: Value, details: ConvDetails) -> Tensor {
         let conv_desc = ConvolutionDescriptor::new(
-            conv_shape.padding as i32, conv_shape.padding as i32,
+            details.padding as i32, details.padding as i32,
             1, 1,
             1, 1,
         );
@@ -133,7 +131,7 @@ impl Planner {
         let output_desc = output.descriptor();
         let filter_desc = self.get(filter).filter_descriptor();
 
-        let algo = CONV_ALGO;
+        let algo = STANDARD_CONV_ALGO;
         let work_size_bytes = conv_desc.workspace_size(&mut self.handle, algo, &input_desc, &filter_desc, &output_desc);
         let work_mem = DeviceMem::alloc(work_size_bytes, self.device);
 
@@ -152,7 +150,7 @@ impl Planner {
             output_mem: output.mem.view(),
         };
 
-        self.plan.push(Step::Conv { shape: conv_shape, args });
+        self.plan.push(Step::Conv { details, args });
         output
     }
 
@@ -228,7 +226,7 @@ impl Planner {
 #[derive(Debug)]
 pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
-    Conv { shape: ConvShape, args: ConvolutionArgs },
+    Conv { details: ConvDetails, args: ConvolutionArgs },
     TensorOp { args: TensorOpArgs },
     CopyOutput { index: usize, tensor: Tensor },
 }

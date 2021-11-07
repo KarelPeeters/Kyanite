@@ -13,12 +13,12 @@ use crate::executor::CudnnExecutor;
 pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
     let outputs = eval_cudnn(&graph, batch_size, &inputs);
-    assert_outputs_match(&expected_outputs, &outputs, false);
+    assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
 const ERROR_TOLERANCE: f32 = 0.0001;
 
-pub fn assert_outputs_match(expected_outputs: &[Tensor], outputs: &[Tensor], print: bool) {
+pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor], outputs: &[Tensor], print: bool) {
     assert_eq!(expected_outputs.len(), outputs.len(), "Wrong number of outputs");
 
     let mut max_error = 0.0;
@@ -31,8 +31,8 @@ pub fn assert_outputs_match(expected_outputs: &[Tensor], outputs: &[Tensor], pri
             max_error = f32::max(max_error, error);
             assert!(
                 error < ERROR_TOLERANCE,
-                "Wrong output value {}, expected {} at indices {:?} in output {}",
-                value, expected_value, indices.slice(), i,
+                "Wrong output value {}, expected {} at indices {:?} in output {} (value {:?})",
+                value, expected_value, indices.slice(), i, output_values[i],
             )
         }
 

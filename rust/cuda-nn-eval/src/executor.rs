@@ -103,7 +103,7 @@ impl Step {
             Step::CopyInput { index, mem } => {
                 mem.copy_from_host(cast_slice(inputs[*index]))
             }
-            Step::Conv { shape: _, args } => {
+            Step::Conv { details: _, args } => {
                 args.run(handle);
             }
             Step::TensorOp { args } => {

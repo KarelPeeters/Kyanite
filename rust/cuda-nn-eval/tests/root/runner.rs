@@ -8,27 +8,44 @@ use nn_graph::onnx::load_graph_from_onnx_bytes;
 use nn_graph::optimizer::optimize_graph;
 use nn_graph::shape::Shape;
 
-pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: &[Tensor]) {
-    println!("Unoptimized");
-    test_all_graph(graph, batch_size, inputs, expected_outputs);
+pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
+    if expected_outputs.is_none() {
+        println!("No expected outputs provided, using unoptimized cpu outputs instead");
+    }
 
-    println!("Optimized");
-    let optimized = optimize_graph(graph);
-    test_all_graph(&optimized, batch_size, inputs, expected_outputs);
+    println!("Running unoptimized CPU");
+
+    println!("Testing unoptimized");
+    let cpu_outputs = test_all_graph(&graph, batch_size, inputs, expected_outputs);
+    let expected_outputs = expected_outputs.unwrap_or(&cpu_outputs);
+
+    println!("Optimizing graph");
+    let optimized = optimize_graph(&graph);
+
+    println!("Testing optimized");
+    test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
 }
 
-fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: &[Tensor]) {
+fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) -> Vec<Tensor> {
     println!("Testing:\n{}", graph);
 
     println!("Testing with CPU");
 
     let cpu_inputs = inputs.iter().collect_vec();
     let cpu_outputs = cpu_execute_graph(graph, batch_size, &cpu_inputs).output_tensors();
-    assert_outputs_match(expected_outputs, &cpu_outputs, true);
+
+    let expected_outputs = if let Some(expected_outputs) = expected_outputs {
+        assert_outputs_match(graph.outputs(), expected_outputs, &cpu_outputs, true);
+        expected_outputs
+    } else {
+        &cpu_outputs
+    };
 
     println!("Testing with Cudnn");
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs);
-    assert_outputs_match(expected_outputs, &gpu_outputs, true)
+    assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
+
+    cpu_outputs
 }
 
 pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mut Graph, Value, Value) -> Value) {
@@ -53,7 +70,7 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
         op(values[i / values.len()], values[i % values.len()])
     }).into_dyn();
 
-    test_all(&graph, 0, &[left_tensor, right_tensor], &[expected_output]);
+    test_all(&graph, 0, &[left_tensor, right_tensor], Some(&[expected_output]));
 }
 
 pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, Value) -> Value) {
@@ -67,5 +84,5 @@ pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {
     let graph = load_graph_from_onnx_bytes(onnx);
     let (batch_size, inputs, expected_outputs) = load_check_data(&graph, bin);
     println!("Loaded batch size {}", batch_size);
-    test_all(&graph, batch_size, &inputs, &expected_outputs);
+    test_all(&graph, batch_size, &inputs, Some(&expected_outputs));
 }

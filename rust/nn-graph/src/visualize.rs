@@ -40,7 +40,7 @@ pub fn visualize_graph_activations(
         let is_intermediate_shape =
             info.shape.rank() > 0 &&
                 info.shape[0] == Size::BATCH &&
-                info.shape.dims[1..].iter().all(|d| d.try_fixed().is_some());
+                info.shape.dims[1..].iter().all(|d| d.try_unwrap_fixed().is_some());
         if !is_intermediate_shape {
             println!("Skipping value with shape {:?}", info.shape);
             continue;

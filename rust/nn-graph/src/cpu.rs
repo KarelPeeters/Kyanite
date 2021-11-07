@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
 
-use crate::graph::{ConvShape, Graph, Operation, Value, ValueInfo};
+use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 
 /// We're using an ArcArray so reshaping is free.
@@ -42,7 +42,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 let info = slice_info(input.ndim(), axis, start, end);
                 input.slice(info).to_shared()
             }
-            &Operation::Conv { input, filter, conv_shape } => {
+            &Operation::Conv { input, filter, details: conv_shape } => {
                 let input = map.get(&input).unwrap().tensor.view().into_dimensionality().unwrap();
                 let filter = map.get(&filter).unwrap().tensor.view().into_dimensionality().unwrap();
                 let result = convolution(conv_shape, input, filter);
@@ -85,11 +85,11 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
     }
 }
 
-pub fn convolution(shape: ConvShape, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    assert_eq!(shape.output_size, shape.input_size, "Different in/out shape not supported yet");
+pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
+    assert_eq!(details.output_size, details.input_size, "Different in/out shape not supported yet");
 
     let batch_size = input.shape()[0];
-    let output_shape = (batch_size, shape.output_channels, shape.output_size, shape.output_size);
+    let output_shape = (batch_size, details.output_channels, details.output_size, details.output_size);
 
     let mut result = Array4::zeros(output_shape);
     for b in 0..batch_size {
