@@ -1,70 +1,85 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bytemuck::cast_slice;
 
 use cuda_sys::bindings::cudnnOpTensorOp_t;
 use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, TensorOpDescriptor};
 use cuda_sys::wrapper::group::{ConvolutionArgs, TensorOpArgs};
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{ConvDetails, Operation, Value};
+use nn_graph::graph::{ConvDetails, Graph, Operation, Value};
+use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::ConcreteShape;
 
+use crate::executor::Step;
 use crate::shape::StridedShape;
 use crate::tensor::Tensor;
 
-pub struct Planner {
-    handle: CudnnHandle,
-    device: Device,
+pub struct Planner<'a> {
+    handle: &'a mut CudnnHandle,
+    graph: &'a Graph,
+    batch_size: usize,
+
+    single_use: HashSet<Value>,
+
     map: HashMap<Value, Tensor>,
     plan: Vec<Step>,
 }
 
-impl Planner {
-    pub fn new(handle: CudnnHandle) -> Self {
+impl<'a> Planner<'a> {
+    pub fn new(handle: &'a mut CudnnHandle, graph: &'a Graph, batch_size: usize) -> Self {
+        let single_use = find_single_use_values(graph);
+
         Planner {
-            device: handle.device(),
             handle,
-            plan: vec![],
+            graph,
+            batch_size,
+            single_use,
             map: Default::default(),
+            plan: vec![],
         }
     }
 
-    pub fn finish(self) -> (CudnnHandle, Vec<Step>) {
-        (self.handle, self.plan)
+    pub fn copy_output(&mut self, index: usize, value: Value) -> Tensor {
+        let tensor = self.map.get(&value).unwrap();
+        self.plan.push(Step::CopyOutput { index, tensor: tensor.view() });
+        tensor.view()
     }
 
-    fn alloc_buffer(&mut self, size: usize) -> DeviceMem {
-        DeviceMem::alloc(size * 4, self.device)
+    pub fn finish(self) -> Vec<Step> {
+        self.plan
     }
 
-    fn get(&self, value: Value) -> &Tensor {
-        self.map.get(&value).unwrap()
-    }
+    pub fn visit(&mut self, value: Value) -> Tensor {
+        if let Some(result) = self.map.get(&value) {
+            return result.view();
+        }
 
-    pub fn visit(&mut self, value: Value, output_shape: ConcreteShape, operation: &Operation) {
-        let result_buffer: Tensor = match operation {
+        let result_info = &self.graph[value];
+        let result_shape = result_info.shape.eval(self.batch_size);
+
+        let result: Tensor = match &result_info.operation {
             &Operation::Input { index } => {
-                let buffer = self.alloc_buffer(output_shape.size());
+                let buffer = self.alloc_buffer(result_shape.size());
                 self.plan.push(Step::CopyInput { index, mem: buffer.view() });
-                Tensor::new(buffer, StridedShape::new_simple(output_shape.dims))
+                Tensor::new(buffer, StridedShape::new_simple(result_shape.dims))
             }
             Operation::Constant { data } => {
-                let buffer = self.alloc_buffer(output_shape.size());
+                let buffer = self.alloc_buffer(result_shape.size());
 
                 // safety: we just allocated the buffer so we're the only one that can mutate it
                 unsafe {
                     buffer.copy_from_host(cast_slice(&**data));
                 }
 
-                Tensor::new(buffer, StridedShape::new_simple(output_shape.dims))
+                Tensor::new(buffer, StridedShape::new_simple(result_shape.dims))
             }
             &Operation::View { input } => {
-                let input_tensor = self.get(input);
+                let input_tensor = self.visit(input);
 
-                let new_shape = input_tensor.shape.view(output_shape.dims.clone())
-                    .unwrap_or_else(|| panic!("Cannot view shape {:?} as {:?}", input_tensor.shape, output_shape));
+                let new_shape = input_tensor.shape.view(result_shape.dims.clone())
+                    .unwrap_or_else(|| panic!("Cannot view shape {:?} as {:?}", input_tensor.shape, result_shape));
 
                 Tensor::new(input_tensor.mem.view(), new_shape)
             }
@@ -75,47 +90,43 @@ impl Planner {
                 //  * offset initial pointer to account for `start`
                 //  * limit the buffer length based on the new size
 
-                let input_tensor = self.get(input);
+                let input_tensor = self.visit(input);
                 let result_shape = input_tensor.shape.slice(axis, start, end);
 
                 let start_bytes = result_shape.strides()[axis] * start * 4;
                 let len_bytes = result_shape.strided_size() * 4;
 
-                let mem = input_tensor.mem.slice(start_bytes, len_bytes);
+                let mem = input_tensor.mem.slice_bytes(start_bytes, len_bytes);
                 Tensor::new(mem, result_shape)
             }
-            &Operation::Conv { input, filter, details: conv_shape } => {
-                self.visit_conv(output_shape, input, filter, conv_shape)
+            &Operation::Conv { input, filter, details } => {
+                self.visit_conv(result_shape, input, filter, details)
             }
             &Operation::Add { left, right, subtract } => {
-                self.visit_op(output_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, subtract)
+                self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, subtract)
             }
             &Operation::Mul { left, right } => {
-                self.visit_op(output_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false)
+                self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false)
             }
             &Operation::Clamp { input, min, max } => {
-                let mut curr = self.get(input).view();
+                let mut curr = self.visit(input).view();
                 if min != f32::NEG_INFINITY {
-                    curr = self.visit_clamp(output_shape.clone(), &curr, min, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX);
+                    curr = self.visit_clamp(result_shape.clone(), &curr, min, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX);
                 }
                 if max != f32::INFINITY {
-                    curr = self.visit_clamp(output_shape, &curr, max, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN);
+                    curr = self.visit_clamp(result_shape, &curr, max, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN);
                 }
                 curr
             }
         };
 
-        let prev = self.map.insert(value, result_buffer);
+        let prev = self.map.insert(value, result.view());
         assert!(prev.is_none());
+
+        result
     }
 
-    pub fn visit_output(&mut self, index: usize, value: Value) -> Tensor {
-        let tensor = self.get(value).view();
-        self.plan.push(Step::CopyOutput { index, tensor: tensor.view() });
-        tensor
-    }
-
-    fn visit_conv(&mut self, output_shape: ConcreteShape, input: Value, filter: Value, details: ConvDetails) -> Tensor {
+    fn visit_conv(&mut self, result_shape: ConcreteShape, input: Value, filter: Value, details: ConvDetails) -> Tensor {
         let conv_desc = ConvolutionDescriptor::new(
             details.padding as i32, details.padding as i32,
             1, 1,
@@ -123,20 +134,20 @@ impl Planner {
         );
 
         let output = Tensor::new(
-            self.alloc_buffer(output_shape.size()),
-            StridedShape::new_simple(output_shape.dims),
+            self.alloc_buffer(result_shape.size()),
+            StridedShape::new_simple(result_shape.dims),
         );
 
-        let input_desc = self.get(input).descriptor();
+        let input_desc = self.visit(input).descriptor();
         let output_desc = output.descriptor();
-        let filter_desc = self.get(filter).filter_descriptor();
+        let filter_desc = self.visit(filter).filter_descriptor();
 
         let algo = STANDARD_CONV_ALGO;
         let work_size_bytes = conv_desc.workspace_size(&mut self.handle, algo, &input_desc, &filter_desc, &output_desc);
-        let work_mem = DeviceMem::alloc(work_size_bytes, self.device);
+        let work_mem = DeviceMem::alloc(work_size_bytes, self.handle.device());
 
-        let input = self.get(input);
-        let filter = self.get(filter);
+        let input = self.visit(input);
+        let filter = self.visit(filter);
 
         let args = ConvolutionArgs {
             conv_desc,
@@ -154,17 +165,17 @@ impl Planner {
         output
     }
 
-    fn visit_op(&mut self, output_shape: ConcreteShape, left: Value, right: Value, op: cudnnOpTensorOp_t, negate_right: bool) -> Tensor {
+    fn visit_op(&mut self, result_shape: ConcreteShape, left: Value, right: Value, op: cudnnOpTensorOp_t, negate_right: bool) -> Tensor {
         let op_desc = TensorOpDescriptor::new(op);
         let alpha_2 = if negate_right { -1.0 } else { 1.0 };
 
         let output = Tensor::new(
-            self.alloc_buffer(output_shape.size()),
-            StridedShape::new_simple(output_shape.dims),
+            self.alloc_buffer(result_shape.size()),
+            StridedShape::new_simple(result_shape.dims),
         );
 
-        let left = self.get(left);
-        let right = self.get(right);
+        let left = self.visit(left);
+        let right = self.visit(right);
 
         // TODO they're not 4d per se, but we need to create 4D descriptors for them anyway
 
@@ -185,14 +196,14 @@ impl Planner {
         output
     }
 
-    fn visit_clamp(&mut self, output_shape: ConcreteShape, input: &Tensor, limit: f32, op: cudnnOpTensorOp_t) -> Tensor {
+    fn visit_clamp(&mut self, result_shape: ConcreteShape, input: &Tensor, limit: f32, op: cudnnOpTensorOp_t) -> Tensor {
         assert!(op == cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN || op == cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX);
         let op_desc = TensorOpDescriptor::new(op);
 
         // create a one-element tensor with the same rank as `left` to hold the limit value
         let right = Tensor::new(
             self.alloc_buffer(1),
-            StridedShape::new_simple(vec![1; output_shape.rank()]),
+            StridedShape::new_simple(vec![1; result_shape.rank()]),
         );
 
         // safety: we just allocated this memory so no one else can modify it
@@ -201,8 +212,8 @@ impl Planner {
         }
 
         let output = Tensor::new(
-            self.alloc_buffer(output_shape.size()),
-            StridedShape::new_simple(output_shape.dims).clone(),
+            self.alloc_buffer(result_shape.size()),
+            StridedShape::new_simple(result_shape.dims).clone(),
         );
 
         let args = TensorOpArgs {
@@ -221,12 +232,8 @@ impl Planner {
         self.plan.push(Step::TensorOp { args });
         output
     }
-}
 
-#[derive(Debug)]
-pub enum Step {
-    CopyInput { index: usize, mem: DeviceMem },
-    Conv { details: ConvDetails, args: ConvolutionArgs },
-    TensorOp { args: TensorOpArgs },
-    CopyOutput { index: usize, tensor: Tensor },
+    fn alloc_buffer(&mut self, size: usize) -> DeviceMem {
+        DeviceMem::alloc(size * 4, self.handle.device())
+    }
 }

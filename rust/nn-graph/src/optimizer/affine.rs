@@ -187,9 +187,6 @@ fn apply_fused_conv(graph: &mut Graph, input: Value, before: ScaleBias, conv: Co
     let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
     curr = graph.conv(curr, value_filter, details.padding);
 
-    println!("{:?}", details);
-    println!("{:?}", total_bias_after.shape());
-
     if !is_entirely(&total_bias_after, 0.0) {
         let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
         curr = graph.add(curr, value_bias);

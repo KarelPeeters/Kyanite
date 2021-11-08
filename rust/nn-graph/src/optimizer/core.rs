@@ -14,7 +14,7 @@ pub struct Optimizer<'a> {
 impl<'a> Optimizer<'a> {
     pub fn new(old_graph: &'a Graph) -> Self {
         Optimizer {
-            hidden_values: find_hidden_values(old_graph),
+            hidden_values: find_single_use_values(old_graph),
             new_graph: Graph::new(),
             old_graph,
             mapping: HashMap::default(),
@@ -127,8 +127,7 @@ impl<'a> Optimizer<'a> {
     }
 }
 
-//TODO extract this is to a more general graph visitor structure
-fn find_hidden_values(graph: &Graph) -> HashSet<Value> {
+pub fn find_single_use_values(graph: &Graph) -> HashSet<Value> {
     let all_inputs = graph.values()
         .flat_map(|v| graph[v].operation.inputs())
         .collect_vec();

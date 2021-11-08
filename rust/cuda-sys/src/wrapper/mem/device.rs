@@ -50,7 +50,7 @@ impl DeviceMem {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn len_bytes(&self) -> usize {
         self.len
     }
 
@@ -67,7 +67,7 @@ impl DeviceMem {
         }
     }
 
-    pub fn slice(&self, start: usize, len: usize) -> DeviceMem {
+    pub fn slice_bytes(&self, start: usize, len: usize) -> DeviceMem {
         assert!(
             start < self.len && start + len <= self.len,
             "Slice indices must be in bounds, got start {} len {} for mem of len {}",

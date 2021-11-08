@@ -1,4 +1,5 @@
 use crate::graph::Graph;
+pub use crate::optimizer::core::find_single_use_values;
 use crate::optimizer::core::Optimizer;
 
 mod core;
