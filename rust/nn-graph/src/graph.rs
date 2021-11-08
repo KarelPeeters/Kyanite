@@ -3,7 +3,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
 use itertools::{Itertools, zip_eq};
-use unwrap_match::unwrap_match;
 
 use crate::shape::{Shape, Size};
 
@@ -161,8 +160,20 @@ impl Graph {
         &mut self.outputs
     }
 
-    pub fn unwrap_const(&self, value: Value) -> &[f32] {
-        unwrap_match!(&self[value].operation, Operation::Constant { data } => data)
+    pub fn as_const(&self, value: Value) -> Option<&[f32]> {
+        if let Operation::Constant { data } = &self[value].operation {
+            Some(data)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_all_zero(&self, value: Value) -> bool {
+        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == 0.0))
+    }
+
+    pub fn is_all_one(&self, value: Value) -> bool {
+        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == 1.0))
     }
 
     #[must_use]
@@ -358,6 +369,11 @@ impl Graph {
     #[must_use]
     pub fn add(&mut self, left: Value, right: Value) -> Value {
         let output_shape = self.check_broadcast(left, right);
+
+        if self.is_all_zero(right) {
+            return left;
+        }
+
         self.push(output_shape, Operation::Add { left, right, subtract: false })
     }
 
@@ -366,6 +382,11 @@ impl Graph {
     #[must_use]
     pub fn sub(&mut self, left: Value, right: Value) -> Value {
         let output_shape = self.check_broadcast(left, right);
+
+        if self.is_all_zero(right) {
+            return left;
+        }
+
         self.push(output_shape, Operation::Add { left, right, subtract: true })
     }
 
@@ -374,6 +395,11 @@ impl Graph {
     #[must_use]
     pub fn mul(&mut self, left: Value, right: Value) -> Value {
         let output_shape = self.check_broadcast(left, right);
+
+        if self.is_all_one(right) {
+            return left;
+        }
+
         self.push(output_shape, Operation::Mul { left, right })
     }
 

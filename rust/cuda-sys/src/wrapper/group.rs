@@ -1,26 +1,36 @@
 use crate::bindings::cudnnConvolutionFwdAlgo_t;
-use crate::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor};
+use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::device::DeviceMem;
-use crate::wrapper::operation::{run_conv, run_tensor_op};
+use crate::wrapper::operation::{run_conv_bias_res_activation, run_tensor_op};
 
+/// The arguments necessary for a fused convolution call.
 #[derive(Debug)]
-pub struct ConvolutionArgs {
+pub struct FusedConvolutionArgs {
     pub conv_desc: ConvolutionDescriptor,
     pub algo: cudnnConvolutionFwdAlgo_t,
     pub work_mem: DeviceMem,
+
     pub filter_desc: FilterDescriptor,
     pub filter_mem: DeviceMem,
     pub input_desc: TensorDescriptor,
     pub input_mem: DeviceMem,
+
+    pub res_mem: Option<DeviceMem>,
+    pub bias_desc: TensorDescriptor,
+    pub bias_mem: DeviceMem,
+
+    pub act_desc: ActivationDescriptor,
+
     pub output_desc: TensorDescriptor,
     pub output_mem: DeviceMem,
 }
 
-impl ConvolutionArgs {
+impl FusedConvolutionArgs {
     pub unsafe fn run(&self, handle: &mut CudnnHandle) {
-        run_conv(
+        run_conv_bias_res_activation(
             handle,
+            &self.act_desc,
             &self.conv_desc,
             self.algo,
             &self.work_mem,
@@ -28,6 +38,9 @@ impl ConvolutionArgs {
             &self.filter_mem,
             &self.input_desc,
             &self.input_mem,
+            self.res_mem.as_ref(),
+            &self.bias_desc,
+            &self.bias_mem,
             &self.output_desc,
             &self.output_mem,
         )

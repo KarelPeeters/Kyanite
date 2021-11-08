@@ -8,9 +8,9 @@ fn mem_slice() {
     let device = Device::new(0);
 
     let mem = DeviceMem::alloc(512, device);
-    let a = mem.slice(0, 128);
-    let b = mem.slice(128, 128);
-    let c = mem.slice(256, 128);
+    let a = mem.slice_bytes(0, 128);
+    let b = mem.slice_bytes(128, 128);
+    let c = mem.slice_bytes(256, 128);
 
     unsafe {
         a.fill_with_byte(1);

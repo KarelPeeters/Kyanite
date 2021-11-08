@@ -13,7 +13,7 @@ pub struct Tensor {
 
 impl Tensor {
     pub fn new(mem: DeviceMem, shape: StridedShape) -> Self {
-        assert_eq!(shape.strided_size() * 4, mem.len(), "Buffer has wrong len for shape {:?}", shape);
+        assert_eq!(shape.strided_size() * 4, mem.len_bytes(), "Buffer has wrong len for shape {:?}", shape);
         Tensor { mem, shape }
     }
 

@@ -19,16 +19,16 @@ impl Drop for TensorDescriptor {
 
 impl TensorDescriptor {
     pub fn new(shape: Vec<i32>, strides: Vec<i32>) -> Self {
-        //TODO maybe re-enable this assert if we actually run into issues
-        assert!(shape.len() > 2, "Tensors must be at least 3d, got shape {:?} strides {:?}", shape, strides);
+        assert!(shape.len() >= 4, "Tensors must be at least 4d, got shape {:?} strides {:?}", shape, strides);
 
         let rank = shape.len();
         assert_eq!(rank, strides.len());
 
-        for i in 0..rank {
-            assert_ne!(shape[i], 0, "Zero-sized dimensions are not allowed");
-            assert!(strides[i] > 0);
-        }
+        assert!(
+            (0..rank).all(|i| shape[i] > 0 && strides[i] > 0),
+            "Shape and strides must must be strictly positive, got shape {:?} with strides {:?}",
+            shape, strides,
+        );
 
         unsafe {
             let mut inner = null_mut();
@@ -43,6 +43,14 @@ impl TensorDescriptor {
 
             TensorDescriptor { inner, shape, strides }
         }
+    }
+
+    pub fn shape(&self) -> &[i32] {
+        &self.shape
+    }
+
+    pub fn strides(&self) -> &[i32] {
+        &self.strides
     }
 
     pub unsafe fn inner(&self) -> cudnnTensorDescriptor_t {
@@ -229,7 +237,7 @@ impl ActivationDescriptor {
             cudnnSetActivationDescriptor(
                 inner,
                 mode,
-                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+                cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
                 coef as f64,
             ).unwrap();
             ActivationDescriptor(inner)

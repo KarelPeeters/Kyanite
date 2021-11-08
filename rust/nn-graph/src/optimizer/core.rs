@@ -3,18 +3,23 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 
 use crate::graph::{Graph, Operation, Value};
+use crate::optimizer::OptimizerSettings;
 
 pub struct Optimizer<'a> {
-    pub hidden_values: HashSet<Value>,
+    settings: OptimizerSettings,
+
     pub old_graph: &'a Graph,
     pub new_graph: Graph,
+
+    hidden_values: HashSet<Value>,
     mapping: HashMap<Value, Value>,
 }
 
 impl<'a> Optimizer<'a> {
-    pub fn new(old_graph: &'a Graph) -> Self {
+    pub fn new(settings: OptimizerSettings, old_graph: &'a Graph) -> Self {
         Optimizer {
-            hidden_values: find_hidden_values(old_graph),
+            settings,
+            hidden_values: find_single_use_values(old_graph),
             new_graph: Graph::new(),
             old_graph,
             mapping: HashMap::default(),
@@ -79,7 +84,7 @@ impl<'a> Optimizer<'a> {
         let group = self.try_build_affine_group(old_start)?;
 
         let new_input = self.map(group.old_input());
-        let new_start = group.apply_fused(&mut self.new_graph, new_input);
+        let new_start = group.apply_fused(self.settings, &mut self.new_graph, new_input);
 
         Some(new_start)
     }
@@ -127,8 +132,7 @@ impl<'a> Optimizer<'a> {
     }
 }
 
-//TODO extract this is to a more general graph visitor structure
-fn find_hidden_values(graph: &Graph) -> HashSet<Value> {
+pub fn find_single_use_values(graph: &Graph) -> HashSet<Value> {
     let all_inputs = graph.values()
         .flat_map(|v| graph[v].operation.inputs())
         .collect_vec();

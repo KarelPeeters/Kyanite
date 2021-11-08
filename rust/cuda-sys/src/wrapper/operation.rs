@@ -6,6 +6,7 @@ use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::status::Status;
 
 //TODO try automatic conv benchmarking thing again
+//  careful, cudnnConvolutionBiasActivationForward may require this algorithm
 pub const STANDARD_CONV_ALGO: cudnnConvolutionFwdAlgo_t =
     cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
@@ -62,9 +63,9 @@ pub unsafe fn run_conv(
     output_desc: &TensorDescriptor,
     output_mem: &DeviceMem,
 ) {
-    assert_eq!(input_desc.size_bytes(), input_mem.len());
-    assert_eq!(filter_desc.size_bytes(), filter_mem.len());
-    assert_eq!(output_desc.size_bytes(), output_mem.len());
+    assert_eq!(input_desc.size_bytes(), input_mem.len_bytes());
+    assert_eq!(filter_desc.size_bytes(), filter_mem.len_bytes());
+    assert_eq!(output_desc.size_bytes(), output_mem.len_bytes());
 
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -79,7 +80,7 @@ pub unsafe fn run_conv(
         conv_desc.inner(),
         algo,
         work_mem.ptr(),
-        work_mem.len(),
+        work_mem.len_bytes(),
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
@@ -92,7 +93,7 @@ pub unsafe fn run_add_tensor(
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    output_mem: &DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 1.0;
@@ -115,7 +116,7 @@ pub unsafe fn run_activation(
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    output_mem: &DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -137,7 +138,7 @@ pub unsafe fn run_activation_in_place(
     handle: &mut CudnnHandle,
     activation_desc: &ActivationDescriptor,
     data_desc: &TensorDescriptor,
-    data_mem: &mut DeviceMem,
+    data_mem: &DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;
@@ -154,15 +155,6 @@ pub unsafe fn run_activation_in_place(
     ).unwrap();
 }
 
-/// Represents the residual input of a fused operation.
-/// This allows reusing the (mutable) output as input, which would normally not be allowed by Rust.    
-#[derive(Debug)]
-pub enum ResInput<'a> {
-    Zero,
-    Output,
-    Other(&'a DeviceMem),
-}
-
 /// Runs `output = act(conv(input, filter) + res + bias)`.
 ///
 /// * `res` can be 0, equal to the output or a separate tensor.
@@ -173,28 +165,30 @@ pub unsafe fn run_conv_bias_res_activation(
     activation_desc: &ActivationDescriptor,
     conv_desc: &ConvolutionDescriptor,
     algo: cudnnConvolutionFwdAlgo_t,
-    work_mem: &mut DeviceMem,
+    work_mem: &DeviceMem,
     filter_desc: &FilterDescriptor,
     filter_mem: &DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
-    res: ResInput,
+    res_mem: Option<&DeviceMem>,
     bias_desc: &TensorDescriptor,
     bias_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    output_mem: &DeviceMem,
 ) {
     let alpha1: f32 = 1.0;
 
+    // map res to actual arguments
+    let (alpha2, res_ptr) = match res_mem {
+        None => (0f32, output_mem.ptr()),
+        Some(res_mem) => (1f32, res_mem.ptr()),
+    };
+
     assert_ne!(input_mem.ptr(), output_mem.ptr(), "input and output must be distinct");
     assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
-
-    // map res to actual arguments
-    let (alpha2, res_mem) = match res {
-        ResInput::Zero => (0f32, output_mem.ptr()),
-        ResInput::Output => (1f32, output_mem.ptr()),
-        ResInput::Other(mem) => (1f32, mem.ptr())
-    };
+    assert_ne!(input_mem.ptr(), res_ptr, "input and res must be distinct");
+    assert_eq!(output_desc.shape()[1], bias_desc.shape()[1], "bias must have full output channels");
+    assert_eq!(bias_desc.strides()[1], 1, "bias second stride must be one");
 
     cudnnConvolutionBiasActivationForward(
         handle.inner(),
@@ -206,10 +200,10 @@ pub unsafe fn run_conv_bias_res_activation(
         conv_desc.inner(),
         algo,
         work_mem.ptr(),
-        work_mem.len(),
+        work_mem.len_bytes(),
         &alpha2 as *const f32 as *const _,
         output_desc.inner(),
-        res_mem,
+        res_ptr,
         bias_desc.inner(),
         bias_mem.ptr(),
         activation_desc.inner(),
@@ -225,7 +219,7 @@ pub unsafe fn run_pooling(
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
-    output_mem: &mut DeviceMem,
+    output_mem: &DeviceMem,
 ) {
     let alpha: f32 = 1.0;
     let beta: f32 = 0.0;

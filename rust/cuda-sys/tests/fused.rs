@@ -4,13 +4,13 @@ use cuda_sys::bindings::cudnnActivationMode_t;
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
-use cuda_sys::wrapper::operation::{ResInput, run_conv_bias_res_activation, STANDARD_CONV_ALGO};
+use cuda_sys::wrapper::operation::{run_conv_bias_res_activation, STANDARD_CONV_ALGO};
 
 #[test]
 fn fused_all() {
     let device = Device::new(0);
     let mut handle = CudnnHandle::new(device);
-    let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 6.0);
+    let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
     let conv_desc = ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1);
 
     let algo = STANDARD_CONV_ALGO;
@@ -24,6 +24,7 @@ fn fused_all() {
     let mut output_mem = DeviceMem::alloc(io_desc.size_bytes(), device);
 
     let work_size = conv_desc.workspace_size(&mut handle, algo, &io_desc, &filter_desc, &io_desc);
+    println!("work size: {}", work_size);
     let mut work_mem = DeviceMem::alloc(work_size, device);
 
     unsafe {
@@ -42,7 +43,7 @@ fn fused_all() {
             &filter_mem,
             &io_desc,
             &input_mem,
-            ResInput::Other(&res_mem),
+            Some(&res_mem),
             &bias_desc,
             &bias_mem,
             &io_desc,

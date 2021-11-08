@@ -4,10 +4,13 @@ use std::fmt::{Debug, Formatter};
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use cuda_sys::wrapper::event::CudaEvent;
+use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use nn_graph::graph::{Graph, ValueInfo};
+use cuda_sys::wrapper::mem::device::DeviceMem;
+use nn_graph::graph::{ConvDetails, Graph};
 
-use crate::planner::{Planner, Step};
+use crate::planner::Planner;
+use crate::tensor::Tensor;
 
 pub struct CudnnExecutor {
     handle: CudnnHandle,
@@ -19,32 +22,41 @@ pub struct CudnnExecutor {
     profile: bool,
 }
 
+#[derive(Debug)]
+pub enum Step {
+    CopyInput { index: usize, mem: DeviceMem },
+    Conv { details: ConvDetails, args: FusedConvolutionArgs },
+    TensorOp { args: TensorOpArgs },
+    CopyOutput { index: usize, tensor: Tensor },
+}
+
 impl CudnnExecutor {
     pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
-        let handle = CudnnHandle::new(device);
-        let mut planner = Planner::new(handle);
+        let mut handle = CudnnHandle::new(device);
+        let mut planner = Planner::new(&mut handle, graph, batch_size);
 
-        for value in graph.values() {
-            let ValueInfo { shape, operation } = &graph[value];
-            planner.visit(value, shape.eval(batch_size), operation);
+        // do all necessary calculations
+        for &output in graph.outputs() {
+            planner.visit(output);
         }
 
+        // schedule copy operations
         let mut outputs = vec![];
         let mut stage_size = 0;
 
         for (index, &value) in graph.outputs().iter().enumerate() {
-            let tensor = planner.visit_output(index, value);
+            let tensor = planner.copy_output(index, value);
 
             if !tensor.shape.has_simple_strides() {
-                stage_size = max(stage_size, tensor.mem.len() / 4);
+                stage_size = max(stage_size, tensor.mem.len_bytes() / 4);
             }
 
             outputs.push(vec![f32::NAN; tensor.shape.size()])
         }
 
-        let (handle, plan) = planner.finish();
-
         let stage = vec![f32::NAN; stage_size];
+        let plan = planner.finish();
+
         CudnnExecutor { handle, plan, stage, outputs, profile: false }
     }
 
@@ -118,7 +130,7 @@ impl Step {
                     tensor.mem.copy_to_host(cast_slice_mut(&mut outputs[index]));
                 } else {
                     // copy the entire mem over
-                    let used_stage = &mut stage[0..tensor.mem.len() / 4];
+                    let used_stage = &mut stage[0..tensor.mem.len_bytes() / 4];
                     tensor.mem.copy_to_host(cast_slice_mut(used_stage));
 
                     // selectively copy over the actual values we want
@@ -136,10 +148,13 @@ impl Step {
 
 impl Debug for CudnnExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CudnnExecutor")
-            .field("plan", &self.plan)
-            .field("profile", &self.profile)
-            .field("handle", &self.handle)
-            .finish()
+        write!(f, "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n", self.profile, self.handle)?;
+
+        for step in &self.plan {
+            writeln!(f, "        {:?},", step)?;
+        }
+
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }

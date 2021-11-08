@@ -72,8 +72,9 @@ impl<B: Board, M: BoardMapper<B>> Debug for CudnnNetwork<B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CudnnNetwork")
             .field("mapper", &self.mapper)
-            .field("graph", &self.graph)
             .field("max_batch_size", &self.max_batch_size)
+            .field("graph", &self.graph)
+            .field("executor", &self.executor)
             .finish()
     }
 }
