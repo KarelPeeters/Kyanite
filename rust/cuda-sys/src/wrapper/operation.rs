@@ -188,6 +188,7 @@ pub unsafe fn run_conv_bias_res_activation(
     assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
     assert_ne!(input_mem.ptr(), res_ptr, "input and res must be distinct");
     assert_eq!(output_desc.shape()[1], bias_desc.shape()[1], "bias must have full output channels");
+    assert_eq!(bias_desc.strides()[1], 1, "bias second stride must be one");
 
     cudnnConvolutionBiasActivationForward(
         handle.inner(),

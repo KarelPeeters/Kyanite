@@ -56,6 +56,12 @@ impl<'a> Planner<'a> {
             return result.view();
         }
 
+        if let Some(result) = self.visit_fused_conv(value) {
+            let prev = self.map.insert(value, result.view());
+            assert!(prev.is_none());
+            return result;
+        }
+
         let result_info = &self.graph[value];
         let result_shape = result_info.shape.eval(self.batch_size);
 
@@ -99,9 +105,8 @@ impl<'a> Planner<'a> {
                 let mem = input_tensor.mem.slice_bytes(start_bytes, len_bytes);
                 Tensor::new(mem, result_shape)
             }
-            &Operation::Conv { input, filter, details } => {
-                self.visit_conv(result_shape, input, filter, details)
-            }
+            &Operation::Conv { .. } =>
+                unreachable!("conv should have been handled earlier by the fuser"),
             &Operation::Add { left, right, subtract } => {
                 self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, subtract)
             }
@@ -126,58 +131,118 @@ impl<'a> Planner<'a> {
         result
     }
 
-    fn visit_conv(&mut self, result_shape: ConcreteShape, input: Value, filter: Value, details: ConvDetails) -> Tensor {
-        let input = self.visit(input);
-        let filter = self.visit(filter);
+    fn visit_fused_conv(&mut self, value: Value) -> Option<Tensor> {
+        let mut curr = value;
+        let graph = self.graph;
 
-        let bias_shape = StridedShape::new(vec![1, details.output_channels, 1, 1], vec![1, 1, 1, 1]);
-        let bias = Tensor::new(self.alloc_buffer(details.output_channels), bias_shape);
-
-        // safety: we just constructed this buffer so we're the only one with access to it
-        unsafe {
-            bias.mem.copy_from_host(cast_slice(&vec![0f32; details.output_channels]));
-        }
-
-        let output = Tensor::new(
-            self.alloc_buffer(result_shape.size()),
-            StridedShape::new_simple(result_shape.dims),
-        );
-
-        let input_desc = input.descriptor();
-        let filter_desc = filter.filter_descriptor();
-        let bias_desc = bias.descriptor();
-        let output_desc = output.descriptor();
-
-        let conv_desc = ConvolutionDescriptor::new(
-            details.padding as i32, details.padding as i32,
-            1, 1,
-            1, 1,
-        );
-
-        let algo = STANDARD_CONV_ALGO;
-        let work_size_bytes = conv_desc.workspace_size(&mut self.handle, algo, &input_desc, &filter_desc, &output.descriptor());
-        let work_mem = DeviceMem::alloc(work_size_bytes, self.handle.device());
-
-        let act_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
-
-        let args = FusedConvolutionArgs {
-            conv_desc,
-            algo,
-            work_mem,
-            filter_desc,
-            filter_mem: filter.mem.view(),
-            input_desc,
-            input_mem: input.mem.view(),
-            res_mem: None,
-            bias_desc,
-            bias_mem: bias.mem.view(),
-            act_desc,
-            output_desc,
-            output_mem: output.mem.view(),
+        // clamp(curr, 0, inf)?
+        let act_mode = if let &Operation::Clamp { input, min, max } = &graph[curr].operation {
+            if !self.single_use.contains(&input) || min != 0.0 && max != f32::INFINITY {
+                return None;
+            }
+            cudnnActivationMode_t::CUDNN_ACTIVATION_RELU
+        } else {
+            cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY
         };
 
-        self.plan.push(Step::Conv { details, args });
-        output
+        let mut bias = None;
+        let mut res = None;
+
+        loop {
+            if let &Operation::Add { left, right, subtract: false } = &graph[curr].operation {
+                if !self.single_use.contains(&left) {
+                    return None;
+                }
+
+                //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
+                //TODO try visiting both left and right for the continuation
+
+                if graph[left].shape == graph[right].shape {
+                    // has to be res
+                    if res.is_none() {
+                        res = Some(right);
+                    } else {
+                        return None;
+                    }
+                } else if graph[left].shape.all_ones_except(1) == graph[right].shape {
+                    // has to be bias
+                    if bias.is_none() {
+                        bias = Some(right);
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+
+                curr = left;
+            } else {
+                break;
+            }
+        }
+
+        if let &Operation::Conv { input, filter, details } = &graph[curr].operation {
+            if let Some(res) = res {
+                if graph[input].shape.eval(self.batch_size) != graph[res].shape.eval(self.batch_size) {
+                    return None;
+                }
+            }
+
+            let input = self.visit(input);
+            let filter = self.visit(filter);
+            let bias = bias.map(|bias| self.visit(bias));
+            let res = res.map(|res| self.visit(res));
+
+            if let Some(res) = &res {
+                //TODO this should be checked before we actually start fusing
+                assert_eq!(res.shape, input.shape, "Input and res shapes and strides (!) must match.", );
+            }
+
+            let bias = bias.unwrap_or_else(|| {
+                let bias_shape = StridedShape::new(vec![1, details.output_channels, 1, 1], vec![1, 1, 1, 1]);
+                Tensor::new(self.alloc_buffer(details.output_channels), bias_shape)
+            });
+
+            let output_shape = graph[curr].shape.eval(self.batch_size);
+            let output = Tensor::new(
+                self.alloc_buffer(output_shape.size()),
+                StridedShape::new_simple(output_shape.dims),
+            );
+
+            let input_desc = input.descriptor();
+            let output_desc = output.descriptor();
+            let filter_desc = filter.filter_descriptor();
+
+            let padding = details.padding as i32;
+            let conv_desc = ConvolutionDescriptor::new(padding, padding, 1, 1, 1, 1);
+
+            let algo = STANDARD_CONV_ALGO;
+            let work_size_bytes = conv_desc.workspace_size(self.handle, algo, &input_desc, &filter_desc, &output_desc);
+            let work_mem = DeviceMem::alloc(work_size_bytes, self.handle.device());
+
+            let act_desc = ActivationDescriptor::new(act_mode, 0.0);
+
+            let args = FusedConvolutionArgs {
+                conv_desc,
+                algo,
+                work_mem,
+                filter_desc,
+                filter_mem: filter.mem,
+                input_desc,
+                input_mem: input.mem,
+                res_mem: res.map(|res| res.mem),
+                bias_desc: bias.descriptor(),
+                bias_mem: bias.mem,
+                act_desc,
+                output_desc,
+                output_mem: output.mem.view(),
+            };
+
+            self.plan.push(Step::Conv { details, args });
+            Some(output)
+        } else {
+            None
+        }
     }
 
     fn visit_op(&mut self, result_shape: ConcreteShape, left: Value, right: Value, op: cudnnOpTensorOp_t, negate_right: bool) -> Tensor {

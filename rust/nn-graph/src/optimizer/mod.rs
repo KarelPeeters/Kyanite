@@ -5,9 +5,13 @@ use crate::optimizer::core::Optimizer;
 mod core;
 mod affine;
 
-//TODO run until fixpoint?
-pub fn optimize_graph(graph: &Graph) -> Graph {
-    let mut optimizer = Optimizer::new(graph);
+#[derive(Debug, Copy, Clone)]
+pub struct OptimizerSettings {
+    pub force_bias_through_conv: bool,
+}
+
+pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
+    let mut optimizer = Optimizer::new(settings, graph);
 
     // ensure all inputs are copied over in the same order
     for &old_input in graph.inputs() {
@@ -23,4 +27,10 @@ pub fn optimize_graph(graph: &Graph) -> Graph {
     }
 
     optimizer.new_graph
+}
+
+impl Default for OptimizerSettings {
+    fn default() -> Self {
+        OptimizerSettings { force_bias_through_conv: false }
+    }
 }

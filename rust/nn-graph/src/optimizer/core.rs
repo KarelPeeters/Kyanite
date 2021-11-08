@@ -3,17 +3,22 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 
 use crate::graph::{Graph, Operation, Value};
+use crate::optimizer::OptimizerSettings;
 
 pub struct Optimizer<'a> {
-    pub hidden_values: HashSet<Value>,
+    settings: OptimizerSettings,
+
     pub old_graph: &'a Graph,
     pub new_graph: Graph,
+
+    hidden_values: HashSet<Value>,
     mapping: HashMap<Value, Value>,
 }
 
 impl<'a> Optimizer<'a> {
-    pub fn new(old_graph: &'a Graph) -> Self {
+    pub fn new(settings: OptimizerSettings, old_graph: &'a Graph) -> Self {
         Optimizer {
+            settings,
             hidden_values: find_single_use_values(old_graph),
             new_graph: Graph::new(),
             old_graph,
@@ -79,7 +84,7 @@ impl<'a> Optimizer<'a> {
         let group = self.try_build_affine_group(old_start)?;
 
         let new_input = self.map(group.old_input());
-        let new_start = group.apply_fused(&mut self.new_graph, new_input);
+        let new_start = group.apply_fused(self.settings, &mut self.new_graph, new_input);
 
         Some(new_start)
     }

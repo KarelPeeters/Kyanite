@@ -95,8 +95,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     1 =>
                         (attrs.take_float("min"), attrs.take_float("max")),
                     3 => {
-                        let min = graph.unwrap_const(inputs[1]);
-                        let max = graph.unwrap_const(inputs[1]);
+                        let min = graph.as_const(inputs[1]).unwrap();
+                        let max = graph.as_const(inputs[1]).unwrap();
 
                         assert!(
                             min.len() == 1 && max.len() == 1,
@@ -164,10 +164,10 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let input = inputs[0];
 
                 // assume everything is constant for now, so we can immediately fuse stuff
-                let scale = graph.unwrap_const(inputs[1]);
-                let bias = graph.unwrap_const(inputs[2]);
-                let mean = graph.unwrap_const(inputs[3]);
-                let variance = graph.unwrap_const(inputs[4]);
+                let scale = graph.as_const(inputs[1]).unwrap();
+                let bias = graph.as_const(inputs[2]).unwrap();
+                let mean = graph.as_const(inputs[3]).unwrap();
+                let variance = graph.as_const(inputs[4]).unwrap();
 
                 let epsilon = attrs.take_float("epsilon");
                 let _ = attrs.take_float("momentum");
@@ -214,7 +214,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     .expect("Invalid data type");
                 assert_eq!(to_type, DataType::Int64);
 
-                graph.unwrap_const(input);
+                graph.as_const(input).unwrap();
 
                 // we don't actually cast anything here, and casting is just up to the user
                 //  just make sure we're casting a const to int so nothing can go terribly wrong
@@ -227,7 +227,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let new_shape = inputs[1];
 
                 assert_eq!(1, graph[new_shape].shape.rank(), "Reshape shape must have rank 1");
-                let new_shape_f = graph.unwrap_const(new_shape);
+                let new_shape_f = graph.as_const(new_shape).unwrap();
 
                 let input_shape = &graph[input].shape;
                 let output_shape = calculate_reshape_output_shape(input_shape.size(), new_shape_f);
@@ -243,7 +243,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let axis = attrs.take_int("axis") as usize;
 
                 assert_eq!(graph[indices].shape.rank(), 0, "Only single index gather supported for now");
-                let index = graph.unwrap_const(indices)[0] as usize;
+                let index = graph.as_const(indices).unwrap()[0] as usize;
 
                 graph.index(input, axis, index)
             }

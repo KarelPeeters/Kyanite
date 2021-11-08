@@ -30,6 +30,9 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 * figure out why the value head is so bad at fitting the data
 * add available moves as output for regularization
 * add available moves as input for value head improvement
+* attention blocks 
+* attention policy head
+* remove bachnorm1d, maybe that's what causing train-eval divergence
 
 ## Network evaluation performance
 

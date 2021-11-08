@@ -148,10 +148,13 @@ impl Step {
 
 impl Debug for CudnnExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CudnnExecutor")
-            .field("plan", &self.plan)
-            .field("profile", &self.profile)
-            .field("handle", &self.handle)
-            .finish()
+        write!(f, "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n", self.profile, self.handle)?;
+
+        for step in &self.plan {
+            writeln!(f, "        {:?},", step)?;
+        }
+
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }
