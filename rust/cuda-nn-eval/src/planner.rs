@@ -8,7 +8,7 @@ use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{ConvDetails, Graph, Operation, Value};
+use nn_graph::graph::{Graph, Operation, Value};
 use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::ConcreteShape;
 
@@ -137,9 +137,10 @@ impl<'a> Planner<'a> {
 
         // clamp(curr, 0, inf)?
         let act_mode = if let &Operation::Clamp { input, min, max } = &graph[curr].operation {
-            if !self.single_use.contains(&input) || min != 0.0 && max != f32::INFINITY {
+            if !self.single_use.contains(&input) || min != 0.0 || max != f32::INFINITY {
                 return None;
             }
+            curr = input;
             cudnnActivationMode_t::CUDNN_ACTIVATION_RELU
         } else {
             cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY
@@ -154,6 +155,7 @@ impl<'a> Planner<'a> {
                     return None;
                 }
 
+                //TODO check that left != conv input
                 //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
                 //TODO try visiting both left and right for the continuation
 

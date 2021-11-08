@@ -257,3 +257,27 @@ fn channel_batchnorm(graph: &mut Graph, input: Value) -> Value {
     curr = graph.add(curr, bias);
     curr
 }
+
+#[test]
+fn fuse_res() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(Shape::fixed(&[10, 4, 8, 8]));
+    let other = graph.input(Shape::fixed(&[10, 4, 8, 8]));
+    let filter = graph.constant(Shape::fixed(&[4, 4, 3, 3]), linspace_vec(4 * 4 * 3 * 3));
+
+    let mut curr = input;
+    curr = graph.conv(curr, filter, 1);
+    curr = graph.add(curr, other);
+    curr = graph.clamp(curr, 0.0, f32::INFINITY);
+    graph.output(curr);
+
+    test_all(
+        &graph, 0,
+        &[
+            linspace_tensor((10, 4, 8, 8)).into_dyn(),
+            linspace_tensor((10, 4, 8, 8)).into_dyn() + 1.0
+        ],
+        None,
+    );
+}

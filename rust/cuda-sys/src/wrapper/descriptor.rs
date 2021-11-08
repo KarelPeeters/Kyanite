@@ -218,11 +218,15 @@ impl ConvolutionDescriptor {
 }
 
 #[derive(Debug)]
-pub struct ActivationDescriptor(cudnnActivationDescriptor_t);
+pub struct ActivationDescriptor {
+    inner: cudnnActivationDescriptor_t,
+    mode: cudnnActivationMode_t,
+    coef: f32,
+}
 
 impl Drop for ActivationDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyActivationDescriptor(self.0).unwrap() }
+        unsafe { cudnnDestroyActivationDescriptor(self.inner).unwrap() }
     }
 }
 
@@ -240,12 +244,12 @@ impl ActivationDescriptor {
                 cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
                 coef as f64,
             ).unwrap();
-            ActivationDescriptor(inner)
+            ActivationDescriptor { inner, mode, coef }
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnActivationDescriptor_t {
-        self.0
+        self.inner
     }
 }
 

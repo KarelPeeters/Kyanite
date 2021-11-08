@@ -5,7 +5,7 @@ use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
-use nn_graph::optimizer::optimize_graph;
+use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape::Shape;
 
 pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
@@ -20,7 +20,7 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
     let expected_outputs = expected_outputs.unwrap_or(&cpu_outputs);
 
     println!("Optimizing graph");
-    let optimized = optimize_graph(&graph);
+    let optimized = optimize_graph(&graph, OptimizerSettings::default());
 
     println!("Testing optimized");
     test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
@@ -42,7 +42,7 @@ fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_
     };
 
     println!("Testing with Cudnn");
-    let gpu_outputs = eval_cudnn(graph, batch_size, inputs);
+    let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
     assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
 
     cpu_outputs
