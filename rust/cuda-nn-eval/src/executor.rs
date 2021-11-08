@@ -4,7 +4,7 @@ use std::fmt::{Debug, Formatter};
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use cuda_sys::wrapper::event::CudaEvent;
-use cuda_sys::wrapper::group::{ConvolutionArgs, TensorOpArgs};
+use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use nn_graph::graph::{ConvDetails, Graph};
@@ -25,7 +25,7 @@ pub struct CudnnExecutor {
 #[derive(Debug)]
 pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
-    Conv { details: ConvDetails, args: ConvolutionArgs },
+    Conv { details: ConvDetails, args: FusedConvolutionArgs },
     TensorOp { args: TensorOpArgs },
     CopyOutput { index: usize, tensor: Tensor },
 }

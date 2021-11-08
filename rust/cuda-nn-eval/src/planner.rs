@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use bytemuck::cast_slice;
 
-use cuda_sys::bindings::cudnnOpTensorOp_t;
-use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{ConvolutionArgs, TensorOpArgs};
+use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
+use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
+use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::CudnnHandle;
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
@@ -127,29 +127,40 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_conv(&mut self, result_shape: ConcreteShape, input: Value, filter: Value, details: ConvDetails) -> Tensor {
-        let conv_desc = ConvolutionDescriptor::new(
-            details.padding as i32, details.padding as i32,
-            1, 1,
-            1, 1,
-        );
+        let input = self.visit(input);
+        let filter = self.visit(filter);
+
+        let bias_shape = StridedShape::new(vec![1, details.output_channels, 1, 1], vec![1, 1, 1, 1]);
+        let bias = Tensor::new(self.alloc_buffer(details.output_channels), bias_shape);
+
+        // safety: we just constructed this buffer so we're the only one with access to it
+        unsafe {
+            bias.mem.copy_from_host(cast_slice(&vec![0f32; details.output_channels]));
+        }
 
         let output = Tensor::new(
             self.alloc_buffer(result_shape.size()),
             StridedShape::new_simple(result_shape.dims),
         );
 
-        let input_desc = self.visit(input).descriptor();
+        let input_desc = input.descriptor();
+        let filter_desc = filter.filter_descriptor();
+        let bias_desc = bias.descriptor();
         let output_desc = output.descriptor();
-        let filter_desc = self.visit(filter).filter_descriptor();
+
+        let conv_desc = ConvolutionDescriptor::new(
+            details.padding as i32, details.padding as i32,
+            1, 1,
+            1, 1,
+        );
 
         let algo = STANDARD_CONV_ALGO;
-        let work_size_bytes = conv_desc.workspace_size(&mut self.handle, algo, &input_desc, &filter_desc, &output_desc);
+        let work_size_bytes = conv_desc.workspace_size(&mut self.handle, algo, &input_desc, &filter_desc, &output.descriptor());
         let work_mem = DeviceMem::alloc(work_size_bytes, self.handle.device());
 
-        let input = self.visit(input);
-        let filter = self.visit(filter);
+        let act_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
 
-        let args = ConvolutionArgs {
+        let args = FusedConvolutionArgs {
             conv_desc,
             algo,
             work_mem,
@@ -157,6 +168,10 @@ impl<'a> Planner<'a> {
             filter_mem: filter.mem.view(),
             input_desc,
             input_mem: input.mem.view(),
+            res_mem: None,
+            bias_desc,
+            bias_mem: bias.mem.view(),
+            act_desc,
             output_desc,
             output_mem: output.mem.view(),
         };
@@ -176,8 +191,6 @@ impl<'a> Planner<'a> {
 
         let left = self.visit(left);
         let right = self.visit(right);
-
-        // TODO they're not 4d per se, but we need to create 4D descriptors for them anyway
 
         let args = TensorOpArgs {
             op_desc,

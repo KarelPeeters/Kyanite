@@ -6,6 +6,7 @@ use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::status::Status;
 
 //TODO try automatic conv benchmarking thing again
+//  careful, cudnnConvolutionBiasActivationForward may require this algorithm
 pub const STANDARD_CONV_ALGO: cudnnConvolutionFwdAlgo_t =
     cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
@@ -154,15 +155,6 @@ pub unsafe fn run_activation_in_place(
     ).unwrap();
 }
 
-/// Represents the residual input of a fused operation.
-/// This allows reusing the (mutable) output as input, which would normally not be allowed by Rust.    
-#[derive(Debug)]
-pub enum ResInput<'a> {
-    Zero,
-    Output,
-    Other(&'a DeviceMem),
-}
-
 /// Runs `output = act(conv(input, filter) + res + bias)`.
 ///
 /// * `res` can be 0, equal to the output or a separate tensor.
@@ -178,7 +170,7 @@ pub unsafe fn run_conv_bias_res_activation(
     filter_mem: &DeviceMem,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
-    res: ResInput,
+    res_mem: Option<&DeviceMem>,
     bias_desc: &TensorDescriptor,
     bias_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
@@ -186,15 +178,16 @@ pub unsafe fn run_conv_bias_res_activation(
 ) {
     let alpha1: f32 = 1.0;
 
+    // map res to actual arguments
+    let (alpha2, res_ptr) = match res_mem {
+        None => (0f32, output_mem.ptr()),
+        Some(res_mem) => (1f32, res_mem.ptr()),
+    };
+
     assert_ne!(input_mem.ptr(), output_mem.ptr(), "input and output must be distinct");
     assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
-
-    // map res to actual arguments
-    let (alpha2, res_mem) = match res {
-        ResInput::Zero => (0f32, output_mem.ptr()),
-        ResInput::Output => (1f32, output_mem.ptr()),
-        ResInput::Other(mem) => (1f32, mem.ptr())
-    };
+    assert_ne!(input_mem.ptr(), res_ptr, "input and res must be distinct");
+    assert_eq!(output_desc.shape()[1], bias_desc.shape()[1], "bias must have full output channels");
 
     cudnnConvolutionBiasActivationForward(
         handle.inner(),
@@ -209,7 +202,7 @@ pub unsafe fn run_conv_bias_res_activation(
         work_mem.len_bytes(),
         &alpha2 as *const f32 as *const _,
         output_desc.inner(),
-        res_mem,
+        res_ptr,
         bias_desc.inner(),
         bias_mem.ptr(),
         activation_desc.inner(),
