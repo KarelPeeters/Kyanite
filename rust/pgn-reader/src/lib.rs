@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 pub use buffered_reader;
 use buffered_reader::{BufferedReader, Generic};
+use internal_iterator::InternalIterator;
 use memchr::{memchr, memchr2_iter};
 
 //TODO support escape codes (mostly in headers and values)
@@ -20,6 +21,27 @@ pub struct PgnGame<'a> {
     pub start_index: usize,
     pub header: &'a str,
     pub moves: &'a str,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct PgnMove<'a> {
+    pub mv: &'a str,
+    pub comment: Option<&'a str>,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PgnResult {
+    WinWhite,
+    WinBlack,
+    Draw,
+    Star,
+}
+
+// The evaluation (from the %eval comment), always from the white POV.
+#[derive(Debug, Copy, Clone)]
+pub enum PgnEval {
+    MateIn(i32),
+    Pawns(f32),
 }
 
 #[derive(Debug)]
@@ -68,29 +90,65 @@ impl<'a> PgnGame<'a> {
         None
     }
 
-    /// Call `f` for each actually played (ie. non-variation) move. Also returns the final outcome of the game.
-    pub fn for_each_move(&self, mut f: impl FnMut(&'a str) -> ()) -> PgnResult {
-        let mut left = self.moves;
+    pub fn move_iter(&self) -> MoveIterator<'a> {
+        MoveIterator(self.moves)
+    }
+
+    pub fn result(&self) -> PgnResult {
+        for &(result, result_str) in RESULT_STR {
+            if self.moves.ends_with(result_str) {
+                return result;
+            }
+        }
+        let end = &self.moves[self.moves.len().saturating_sub(10)..self.moves.len()];
+        panic!("Moves string does not end with a result: {:?}", end);
+    }
+}
+
+pub struct MoveIterator<'a>(&'a str);
+
+impl<'a> InternalIterator for MoveIterator<'a> {
+    type Item = PgnMove<'a>;
+
+    fn find_map<R, F>(self, mut f: F) -> Option<R> where F: FnMut(Self::Item) -> Option<R> {
+        let mut left = self.0;
+        let mut curr_mv = None;
 
         //TODO try to optimize this loop some more
         loop {
             left = left.trim_start();
 
-            let left_bytes = left.as_bytes();
-
-            if left_bytes[0] == b'{' {
-                // variation
+            // comment/variation
+            if left.as_bytes()[0] == b'{' {
                 let skip = variation_length(left);
+
+                // report this comment together with the previously parsed move
+                if let Some(mv) = curr_mv {
+                    let comment = left[1..skip - 1].trim();
+                    if let Some(result) = f(PgnMove { mv, comment: Some(comment) }) {
+                        return Some(result);
+                    }
+                    curr_mv = None;
+                }
+
                 left = &left[skip..];
                 continue;
+            } else {
+                // report the previously parsed move without any comment
+                if let Some(mv) = curr_mv.take() {
+                    if let Some(result) = f(PgnMove { mv, comment: None }) {
+                        return Some(result);
+                    }
+                }
             }
+            assert!(curr_mv.is_none());
 
             // outcome?
-            for &(outcome, outcome_str) in RESULT_STR {
+            for &(_, outcome_str) in RESULT_STR {
                 if left.starts_with(outcome_str) {
                     let rest = &left[outcome_str.len()..];
                     assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
-                    return outcome;
+                    return None;
                 }
             }
 
@@ -99,26 +157,26 @@ impl<'a> PgnGame<'a> {
             let len = left[start..].find(' ').unwrap();
 
             const MOVE_SUFFIX_CHARS: &[char] = &['?', '!'];
-            let mv = &left[start..start + len].trim_end_matches(MOVE_SUFFIX_CHARS);
-
-            f(mv);
+            curr_mv = Some(&left[start..start + len].trim_end_matches(MOVE_SUFFIX_CHARS));
             left = &left[start + len..];
         }
     }
-
-    pub fn parse_moves(&self) -> (Vec<&'a str>, PgnResult) {
-        let mut moves = vec![];
-        let outcome = self.for_each_move(|mv| moves.push(mv));
-        (moves, outcome)
-    }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PgnResult {
-    WinWhite,
-    WinBlack,
-    Draw,
-    Star,
+impl<'a> PgnMove<'a> {
+    pub fn field(&self, key: &str) -> Option<&'a str> {
+        //TODO this only considers non-nested variations/comments, maybe check the pgn spec
+        self.comment.and_then(|comment| {
+            comment.split("[%")
+                .skip(1)
+                .find(|s| s.starts_with(key))
+                .map(|s| {
+                    let s = s[key.len()..].trim();
+                    let end = s.find("]").unwrap();
+                    &s[..end]
+                })
+        })
+    }
 }
 
 impl FromStr for PgnResult {
@@ -219,6 +277,27 @@ impl<R: BufferedReader<()>> PgnReader<R> {
                 Ok(Some(game))
             }
         }
+    }
+}
+
+const EVAL_PAWNS_TANH_DIV: f32 = 4.0;
+
+impl PgnEval {
+    pub fn parse(eval: &str) -> PgnEval {
+        if eval.starts_with('#') {
+            PgnEval::MateIn(eval[1..].parse::<i32>().unwrap())
+        } else {
+            PgnEval::Pawns(eval.parse::<f32>().unwrap())
+        }
+    }
+
+    pub fn as_white_win_prob(self) -> f32 {
+        let pawns = match self {
+            PgnEval::MateIn(n) => n.signum() as f32 * f32::INFINITY,
+            PgnEval::Pawns(p) => p as f32,
+        };
+
+        ((pawns / EVAL_PAWNS_TANH_DIV).tanh() + 1.0) / 2.0
     }
 }
 

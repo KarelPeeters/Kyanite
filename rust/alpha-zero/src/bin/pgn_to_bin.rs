@@ -21,6 +21,8 @@ struct Opts {
     min_start_time: Option<u32>,
 
     #[clap(long)]
+    require_eval: bool,
+    #[clap(long)]
     skip_existing: bool,
     #[clap(long)]
     thread_count: Option<usize>,
@@ -55,6 +57,7 @@ fn main_dispatch(opts: &Opts, path: &Path, input: impl Read + Send) {
         min_elo: opts.min_elo,
         max_elo: opts.max_elo,
         min_start_time: opts.min_start_time,
+        require_eval: opts.require_eval,
     };
 
     let ext = path.extension().and_then(|e| e.to_str());

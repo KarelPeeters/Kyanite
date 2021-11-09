@@ -2,10 +2,12 @@ use std::time::Instant;
 
 use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
 use board_game::games::chess::{ChessBoard, Rules};
+use board_game::util::internal_ext::{Control, InternalIteratorExt};
+use board_game::wdl::WDL;
 use chess::ChessMove;
 use internal_iterator::InternalIterator;
 
-use pgn_reader::{PgnGame, PgnReader, PgnResult};
+use pgn_reader::{PgnEval, PgnGame, PgnReader, PgnResult};
 use pgn_reader::buffered_reader::BufferedReader;
 
 use crate::mapping::binary_output::BinaryOutput;
@@ -19,6 +21,7 @@ pub struct Filter {
     pub min_elo: Option<u32>,
     pub max_elo: Option<u32>,
     pub min_start_time: Option<u32>,
+    pub require_eval: bool,
 }
 
 pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
@@ -46,22 +49,29 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
             let mut positions = vec![];
             let mut board = ChessBoard::default_with_rules(Rules::unlimited());
 
-            let outcome = game.for_each_move(|mv| {
-                let mv = board.parse_move(mv).unwrap();
-                positions.push(build_position(&board, mv));
-                board.play(mv);
-            });
-
-            let outcome = match outcome {
+            let outcome = match game.result() {
                 PgnResult::WinWhite => Outcome::WonBy(Player::A),
                 PgnResult::WinBlack => Outcome::WonBy(Player::B),
                 PgnResult::Draw => Outcome::Draw,
                 PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
             };
 
+            let missing_eval = game.move_iter().for_each_control(|mv| {
+                let eval = mv.field("eval").map(PgnEval::parse);
+                if filter.require_eval && eval.is_none() {
+                    Control::Break(())
+                } else {
+                    let mv = board.parse_move(mv.mv).unwrap();
+                    positions.push(build_position(&board, mv, eval));
+                    board.play(mv);
+
+                    Control::Continue
+                }
+            }).is_some();
+
             time_moves += time_since(&mut prev);
 
-            if positions.is_empty() {
+            if missing_eval || positions.is_empty() {
                 skip = true;
             } else {
                 binary_output.append(Simulation { outcome, positions })?;
@@ -184,16 +194,28 @@ impl Logger {
     }
 }
 
-fn build_position(board: &ChessBoard, mv: ChessMove) -> Position<ChessBoard> {
+fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>) -> Position<ChessBoard> {
     let policy: Vec<f32> = board.available_moves()
         .map(|cand| (cand == mv) as u8 as f32)
         .collect();
+
+    let zero_values = eval.map_or(ZeroValues::nan(), |eval| {
+        let win = match board.next_player() {
+            Player::A => eval.as_white_win_prob(),
+            Player::B => 1.0 - eval.as_white_win_prob(),
+        };
+
+        ZeroValues {
+            value: win * 2.0 - 1.0,
+            wdl: WDL::new(win, 0.0, 1.0 - win),
+        }
+    });
 
     Position {
         board: board.clone(),
         should_store: true,
         zero_visits: 0,
         net_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy: vec![f32::NAN; policy.len()] },
-        zero_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy },
+        zero_evaluation: ZeroEvaluation { values: zero_values, policy },
     }
 }

@@ -1561,6 +1561,7 @@ name = "pgn-reader"
 version = "0.1.0"
 dependencies = [
  "buffered-reader",
+ "internal-iterator",
  "memchr",
 ]
 
