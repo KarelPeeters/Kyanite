@@ -28,7 +28,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
     input_pgn: impl BufferedReader<()>,
     binary_output: &mut BinaryOutput<ChessBoard, M>,
     filter: &Filter,
-    max_games: Option<u32>,
+    max_games: Option<u64>,
     print: bool,
 ) -> Result<(), pgn_reader::Error> {
     let mut logger = Logger::new(max_games, print);
@@ -44,6 +44,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
         let mut skip = filter.should_skip(&game);
 
         time_input += time_since(&mut prev);
+        let mut position_count = 0;
 
         if !skip {
             let mut positions = vec![];
@@ -74,13 +75,14 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
             if missing_eval || positions.is_empty() {
                 skip = true;
             } else {
+                position_count = positions.len();
                 binary_output.append(Simulation { outcome, positions })?;
             }
 
             time_output += time_since(&mut prev);
         }
 
-        logger.update(skip, time_input, time_moves, time_output);
+        logger.update(skip, position_count, time_input, time_moves, time_output);
         if max_games.map_or(false, |max_games| logger.accepted_games >= max_games) {
             break;
         }
@@ -156,15 +158,16 @@ fn accept_termination(termination: Option<&str>) -> bool {
 #[derive(Debug)]
 struct Logger {
     print: bool,
-    max_games: Option<u32>,
+    max_games: Option<u64>,
     prev_update: Instant,
 
-    accepted_games: u32,
-    skipped_games: u32,
+    accepted_games: u64,
+    skipped_games: u64,
+    position_count: u64,
 }
 
 impl Logger {
-    fn new(max_games: Option<u32>, print: bool) -> Self {
+    fn new(max_games: Option<u64>, print: bool) -> Self {
         Logger {
             print,
             max_games,
@@ -172,20 +175,22 @@ impl Logger {
 
             accepted_games: 0,
             skipped_games: 0,
+            position_count: 0,
         }
     }
 
-    fn update(&mut self, skip: bool, time_input: f32, time_moves: f32, time_output: f32) {
-        self.accepted_games += (!skip) as u32;
-        self.skipped_games += skip as u32;
+    fn update(&mut self, skip: bool, position_count: usize, time_input: f32, time_moves: f32, time_output: f32) {
+        self.accepted_games += (!skip) as u64;
+        self.skipped_games += skip as u64;
+        self.position_count += position_count as u64;
 
         // log progress
         let now = Instant::now();
         if self.print && (now - self.prev_update).as_secs_f32() > 1.0 {
             let total_games = self.accepted_games + self.skipped_games;
             println!(
-                "Visited {}, converted {}/{:?}, skipped {} = {:.02}, time: (in {:.2} mv {:.2} out {:.2})",
-                total_games, self.accepted_games, self.max_games,
+                "Visited {}, converted {}/{:?}, positions: {}, skipped {} = {:.02}, time: (in {:.2} mv {:.2} out {:.2})",
+                total_games, self.accepted_games, self.max_games, self.position_count,
                 self.skipped_games, self.skipped_games as f32 / total_games as f32,
                 time_input, time_moves, time_output
             );

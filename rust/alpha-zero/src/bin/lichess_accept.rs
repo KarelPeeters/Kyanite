@@ -28,12 +28,17 @@ async fn main_impl() -> LichessResult<()> {
 
             if challenge.variant.key != "standard" {
                 println!("Declined");
-                lichess.challenge_decline(&challenge.id, Some("This bot does not play variants")).await?;
+                if let Err(e) = lichess.challenge_decline(&challenge.id, Some("This bot does not play variants")).await {
+                    println!("Error: {:?}", e)
+                }
+
                 continue;
             }
 
             println!("Accepted");
-            lichess.challenge_accept(&challenge.id).await?;
+            if let Err(e) = lichess.challenge_accept(&challenge.id).await {
+                println!("Error: {:?}", e)
+            }
         }
     }
 

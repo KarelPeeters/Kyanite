@@ -27,7 +27,7 @@ async fn main_impl() -> LichessResult<()> {
 
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = load_graph_from_onnx_path(path);
-    let settings = ZeroSettings::new(100, 4.0, false);
+    let settings = ZeroSettings::new(128, 4.0, false);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
@@ -57,7 +57,7 @@ async fn main_impl() -> LichessResult<()> {
                     visits > 0 && (visits >= max_visits || fraction_time_used >= max_fraction_time_used)
                 });
 
-                println!("{}", tree.display(1, true));
+                println!("{}", tree.display(3, true, 5));
                 let mv = tree.best_move();
 
                 if let Err(e) = lichess.make_a_bot_move(&game.game_id, &mv.to_string(), false).await {

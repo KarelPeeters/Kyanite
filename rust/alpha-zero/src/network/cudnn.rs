@@ -17,13 +17,13 @@ pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
     max_batch_size: usize,
 
     executor: CudnnExecutor,
-    graph: Graph,
 
     input: Vec<f32>,
     ph: PhantomData<B>,
 }
 
 impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
+    //TODO change this to &Graph
     pub fn new(mapper: M, graph: Graph, max_batch_size: usize, device: Device) -> Self {
         check_graph_shapes(mapper, &graph);
 
@@ -31,7 +31,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
 
         let input = vec![0.0; max_batch_size * M::INPUT_FULL_SIZE];
 
-        CudnnNetwork { max_batch_size, mapper, graph, executor, input, ph: PhantomData }
+        CudnnNetwork { max_batch_size, mapper, executor, input, ph: PhantomData }
     }
 
     pub fn executor(&mut self) -> &mut CudnnExecutor {
@@ -68,13 +68,12 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
     }
 }
 
+//TODO figure out a better debug format, maybe something which includes network input and output dims
 impl<B: Board, M: BoardMapper<B>> Debug for CudnnNetwork<B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CudnnNetwork")
             .field("mapper", &self.mapper)
             .field("max_batch_size", &self.max_batch_size)
-            .field("graph", &self.graph)
-            .field("executor", &self.executor)
             .finish()
     }
 }

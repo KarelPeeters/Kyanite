@@ -27,7 +27,7 @@ struct Opts {
     #[clap(long)]
     thread_count: Option<usize>,
     #[clap(long)]
-    max_games: Option<u32>,
+    max_games: Option<u64>,
 
     input: PathBuf,
     output: PathBuf,

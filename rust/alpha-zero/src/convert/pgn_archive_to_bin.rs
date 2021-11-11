@@ -19,7 +19,7 @@ pub fn pgn_archive_to_bin(
     skip_existing: bool,
     filter: &Filter,
     max_entries: Option<usize>,
-    max_games_per_entry: Option<u32>,
+    max_games_per_entry: Option<u64>,
 ) {
     let output_folder = output_folder.as_ref();
     std::fs::create_dir_all(output_folder)
@@ -61,7 +61,7 @@ fn mapper_main(
     mapper: impl BoardMapper<ChessBoard>,
     filter: &Filter,
     skip_existing: bool,
-    max_games_per_entry: Option<u32>,
+    max_games_per_entry: Option<u64>,
 ) {
     let output_folder = output_folder.as_ref();
 

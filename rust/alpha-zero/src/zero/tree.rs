@@ -123,9 +123,9 @@ impl<B: Board> Tree<B> {
     }
 
     #[must_use]
-    pub fn display(&self, max_depth: usize, sort: bool) -> TreeDisplay<B> {
+    pub fn display(&self, max_depth: usize, sort: bool, max_children: usize) -> TreeDisplay<B> {
         let parent_visits = self[0].complete_visits;
-        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, sort, parent_complete_visits: parent_visits }
+        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, max_children, sort, parent_complete_visits: parent_visits }
     }
 }
 
@@ -135,6 +135,7 @@ pub struct TreeDisplay<'a, B: Board> {
     node: usize,
     curr_depth: usize,
     max_depth: usize,
+    max_children: usize,
     sort: bool,
     parent_complete_visits: u64,
 }
@@ -212,7 +213,13 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                 children.iter().copied().max_by_key(|&c| self.tree[c].complete_visits).unwrap()
             };
 
-            for child in children {
+            for (i, &child) in children.iter().enumerate() {
+                if i == self.max_children {
+                    for _ in 0..(self.curr_depth + 1) { write!(f, "  ")? }
+                    writeln!(f, "...")?;
+                    break;
+                }
+
                 let next_max_depth = if child == best_child {
                     self.max_depth
                 } else {
@@ -224,6 +231,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     node: child,
                     curr_depth: self.curr_depth + 1,
                     max_depth: next_max_depth,
+                    max_children: self.max_children,
                     sort: self.sort,
                     parent_complete_visits: node.complete_visits,
                 };
