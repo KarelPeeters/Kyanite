@@ -10,6 +10,7 @@ from lib.util import DEVICE
 POSITION_INFO_SCALAR_COUNT = 6 + 4 * 3
 
 
+# TODO properly parse column headers here instead of depending on indices
 class Position:
     def __init__(self, game: Game, data: bytes):
         data = Taker(data)
@@ -72,6 +73,10 @@ class PositionBatch:
         self.wdl_final = self.all_wdls[:, 0:3]
         self.wdl_zero = self.all_wdls[:, 3:6]
         self.wdl_net = self.all_wdls[:, 6:9]
+
+    # TODO use the proper value column for this instead
+    def value_zero(self):
+        return self.wdl_zero[:, 0] - self.wdl_zero[:, 2]
 
     def value_final(self):
         return self.wdl_final[:, 0] - self.wdl_final[:, 2]

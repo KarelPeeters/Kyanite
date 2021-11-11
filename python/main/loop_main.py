@@ -3,6 +3,7 @@ from torch.optim import AdamW
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.lc0_pre_act import LCZOldPreNetwork
+from lib.model.post_act import PostActNetwork
 from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings
 # TODO fix startup behaviour, only release games in the order they were started to ensure a constant

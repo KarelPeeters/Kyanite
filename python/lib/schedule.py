@@ -28,7 +28,7 @@ class WarmupSchedule(Schedule):
 
 class FixedSchedule(Schedule):
     def __init__(self, values: List[float], periods: List[int]):
-        assert len(periods) == len(values)
+        assert len(values) == len(periods) + 1
         assert len(values) > 0
 
         self.thresholds = np.cumsum(periods)

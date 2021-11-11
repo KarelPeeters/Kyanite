@@ -1,3 +1,4 @@
+from threading import Event
 from typing import Dict, Tuple
 
 import darkdetect
@@ -21,6 +22,8 @@ class LogPlotter(QObject):
         super().__init__()
 
         self.prev_data = None
+        self.running = Event()
+        self.running.set()
 
         # noinspection PyUnresolvedReferences
         self.update_logger_slot.connect(self.on_update_logger)
@@ -56,6 +59,10 @@ class LogPlotter(QObject):
         control_layout = QHBoxLayout()
         main_layout.addLayout(control_layout)
 
+        self.pauseButton = QPushButton("Pause")
+        control_layout.addWidget(self.pauseButton)
+        self.pauseButton.pressed.connect(self.on_pause_pressed)
+
         autoRangeButton = QPushButton("Reset view")
         control_layout.addWidget(autoRangeButton)
         autoRangeButton.pressed.connect(self.on_auto_range_pressed)
@@ -83,6 +90,14 @@ class LogPlotter(QObject):
             plot_widget.autoPixelRange = True
             plot_widget.enableAutoRange(x=False, y=False)
             plot_widget.enableAutoRange(x=True, y=True)
+
+    def on_pause_pressed(self):
+        if self.running.is_set():
+            self.running.clear()
+            self.pauseButton.setText("Resume")
+        else:
+            self.running.set()
+            self.pauseButton.setText("Pause")
 
     def widget_for_group(self, g: str):
         if g in self.plot_widgets:
