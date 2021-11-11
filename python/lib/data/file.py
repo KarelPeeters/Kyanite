@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from threading import Lock
 from typing import Optional
@@ -10,7 +11,7 @@ from lib.games import Game
 
 
 class DataFileInfo:
-    def __init__(self, game: Game, meta: dict, bin_path: Path, offsets: np.array):
+    def __init__(self, game: Game, meta: dict, bin_path: Path, offsets: np.array, final_offset: int):
         assert meta["game"] == game.name
         assert meta["board_bool_planes"] == game.input_bool_channels
         assert meta["board_scalar_count"] == game.input_scalar_channels
@@ -20,6 +21,7 @@ class DataFileInfo:
         self.meta = meta
         self.bin_path = bin_path
         self.offsets = offsets
+        self.final_offset = final_offset
 
         self.loaded_position_count = len(offsets)
 
@@ -56,7 +58,7 @@ class DataFile:
             loaded_position_count = min(loaded_position_count, max_positions)
 
         with open(offset_path, "rb") as off_f:
-            offset_byte_count = (loaded_position_count + 1) * 8
+            offset_byte_count = loaded_position_count * 8
             offset_bytes = off_f.read(offset_byte_count)
 
         assert len(offset_bytes) == offset_byte_count, f"Offset file {offset_path} too short"
@@ -64,8 +66,11 @@ class DataFile:
 
         handle = random_access_handle(bin_path)
 
+        handle.seek(0, os.SEEK_END)
+        final_offset = handle.tell()
+
         # wrap everything up
-        info = DataFileInfo(game, meta, bin_path, offsets)
+        info = DataFileInfo(game, meta, bin_path, offsets, final_offset)
         return DataFile(info, handle)
 
     def with_new_handle(self) -> 'DataFile':
@@ -77,11 +82,8 @@ class DataFile:
     def __getitem__(self, item: int) -> Position:
         assert item < len(self), f"Index {item} out of bounds in file with {len(self)} loaded positions"
 
-        offsets = self.info.offsets
-
-        # TODO write this last offset when converting pgn to bin
-        start_offset = offsets[item]
-        end_offset = offsets[item + 1]
+        start_offset = self.info.offsets[item]
+        end_offset = self.info.offsets[item + 1] if item < len(self) - 1 else self.info.final_offset
 
         # lock to ensure no other thread starts seeking to another position
         with self.lock:
