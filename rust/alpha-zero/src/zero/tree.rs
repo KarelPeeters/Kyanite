@@ -33,16 +33,23 @@ impl<B: Board> Tree<B> {
         &self.root_board
     }
 
+    pub fn best_child(&self, node: usize) -> Option<usize> {
+        let best_child = self[node].children?.iter().max_by_key(|&child| {
+            self[child].complete_visits
+        }).unwrap();
+        Some(best_child)
+    }
+
     pub fn best_move(&self) -> B::Move {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
+        self[self.best_child(0).unwrap()].last_move.unwrap()
+    }
 
-        let children = self[0].children.unwrap();
-
-        let best_child = children.iter().rev().max_by_key(|&child| {
-            self[child].complete_visits
-        }).expect("Root node must have non-empty children");
-
-        self[best_child].last_move.unwrap()
+    pub fn principal_variation(&self, max_len: usize) -> Vec<B::Move> {
+        std::iter::successors(Some(0), |&n| self.best_child(n))
+            .skip(1).take(max_len)
+            .map(|n| self[n].last_move.unwrap())
+            .collect()
     }
 
     /// The values corresponding to `root_board` from the POV of `root_board.next_player`.
@@ -56,8 +63,8 @@ impl<B: Board> Tree<B> {
 
     /// Return `(min, max)` where `min` is the depth of the shallowest un-evaluated node
     /// and `max` is the depth of the deepest evaluated node.
-    pub fn depth_range(&self, start: usize) -> (usize, usize) {
-        match self[start].children {
+    pub fn depth_range(&self, node: usize) -> (usize, usize) {
+        match self[node].children {
             None => (0, 0),
             Some(children) => {
                 let mut total_min = usize::MAX;

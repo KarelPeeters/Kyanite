@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use board_game::board::Board;
 use board_game::games::chess::ChessBoard;
+use itertools::Itertools;
 use tokio_stream::StreamExt;
 use unwrap_match::unwrap_match;
 
@@ -13,15 +14,25 @@ use licoricedev::client::{Lichess, LichessResult};
 use licoricedev::models::board::{BoardState, GameFull};
 use nn_graph::onnx::load_graph_from_onnx_path;
 
-fn main() -> LichessResult<()> {
+fn main() {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async { main_impl().await })
+        .block_on(async { main_async().await })
 }
 
-async fn main_impl() -> LichessResult<()> {
+async fn main_async() {
+    loop {
+        if let Err(e) = main_inner().await {
+            println!("Got error {:?}", e);
+        }
+
+        std::thread::sleep(Duration::from_secs(10));
+    }
+}
+
+async fn main_inner() -> LichessResult<()> {
     let max_visits = 100_000;
     let max_fraction_time_used = 1.0 / 30.0;
 
@@ -34,6 +45,8 @@ async fn main_impl() -> LichessResult<()> {
     let lichess = Lichess::new(token);
 
     loop {
+        let mut was_my_turn = false;
+
         // the games are already sorted by urgency by the lichess API
         let games = lichess.get_ongoing_games(50).await?;
 
@@ -41,6 +54,7 @@ async fn main_impl() -> LichessResult<()> {
             if !game.is_my_turn {
                 continue;
             }
+            was_my_turn = true;
 
             let mut state = lichess.stream_bot_game_state(&game.game_id).await?;
             if let Some(state) = state.next().await {
@@ -65,16 +79,28 @@ async fn main_impl() -> LichessResult<()> {
                     println!("Error while playing move: {:?}", e);
                 }
 
+                let pv = tree.principal_variation(3).iter().skip(1).join(" ");
+
                 let message = format!(
-                    "visits: {}, zero {:.2?} net {:.2?}",
-                    tree.root_visits(), tree.values().wdl.to_slice(), tree[0].net_values.unwrap().wdl.to_slice(),
+                    "visits: {}, depth: {:?}, pv: {}",
+                    tree.root_visits(), tree.depth_range(0), pv,
                 );
+                println!("Sending {:?}", message);
+                lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
+
+                let message = format!(
+                    "zero: {:.2?}, net: {:.2?}",
+                    tree.values().wdl.to_slice(), tree[0].net_values.unwrap().wdl.to_slice(),
+                );
+                println!("Sending {:?}", message);
                 lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
             }
         }
 
-        // wait for a bit
-        std::thread::sleep(Duration::from_secs_f32(1.0));
+        if !was_my_turn {
+            // wait for a bit
+            std::thread::sleep(Duration::from_secs_f32(1.0));
+        }
     }
 }
 
