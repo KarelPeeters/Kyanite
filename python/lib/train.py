@@ -118,8 +118,6 @@ def evaluate_policy(logits, indices, values):
     logits = logits.flatten(1)
 
     selected_logits = torch.gather(logits, 1, indices)
-
-    selected_logits.cpu()[values.cpu() == -1] = -np.inf
     selected_logits[values == -1] = -np.inf
 
     loss = values * torch.log_softmax(selected_logits, 1)
@@ -128,7 +126,7 @@ def evaluate_policy(logits, indices, values):
     loss[masked_moves] = 0
     total_loss = -loss.sum(axis=1).mean(axis=0)
 
-    # accuracy
+    # accuracy (top move matches) and captured (policy of net top move)
     selected_argmax = selected_logits.argmax(dim=1, keepdim=True)
     acc = torch.sum(torch.eq(selected_argmax, values.argmax(dim=1, keepdim=True))) / batch_size
     cap = torch.gather(values, 1, selected_argmax).mean()
