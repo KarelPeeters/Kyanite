@@ -57,13 +57,10 @@ def main():
         train_in_eval_mode=True,
     )
 
-    # 200MB RAM for offsets
-    max_positions = None
-
-    train_files = [DataFile.open(game, path, max_positions) for path in glob.glob(train_pattern)]
+    train_files = [DataFile.open(game, path) for path in glob.glob(train_pattern)]
     train_sampler = FileListSampler(game, train_files, batch_size)
 
-    test_files = [DataFile.open(game, path, max_positions) for path in glob.glob(test_pattern)]
+    test_files = [DataFile.open(game, path) for path in glob.glob(test_pattern)]
     test_sampler = FileListSampler(game, test_files, batch_size)
 
     print(f"Train file count: {len(train_files)}")

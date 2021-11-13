@@ -132,7 +132,7 @@ class LoopSettings:
             gen = Generation.from_gi(self, gi)
             os.makedirs(gen.train_path, exist_ok=True)
 
-            buffer.append(logger, DataFile.open(game, gen.games_path, None))
+            buffer.append(logger, DataFile.open(game, gen.games_path))
             self.evaluate_network(buffer, logger, network)
 
             train_sampler = buffer.sampler_full(self.train_batch_size)
@@ -188,7 +188,7 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
-            buffer.append(None, DataFile.open(game, gen.games_path, None))
+            buffer.append(None, DataFile.open(game, gen.games_path))
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
         setups = [
@@ -263,7 +263,6 @@ class LoopBuffer:
 
             logger.log("gen-size", "games", info.game_count)
             logger.log("gen-size", "positions", info.position_count)
-            logger.log("gen-size", "positions-loaded", info.loaded_position_count)
             logger.log("gen-game-len", "game length min", info.min_game_length)
             logger.log("gen-game-len", "game length mean", info.position_count / info.game_count)
             logger.log("gen-game-len", "game length max", info.max_game_length)

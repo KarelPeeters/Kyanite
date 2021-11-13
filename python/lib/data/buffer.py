@@ -18,6 +18,9 @@ class FileListSampler:
         self.files = files
         self.file_ends = np.cumsum(np.array([len(f) for f in self.files]))
 
+        assert len(self.file_ends), "There must be at least one file"
+        assert self.file_ends[-1] != 0, "All files are empty"
+
         self.batch_size = batch_size
         self.queue = CQueue(threads + 1)
 
