@@ -79,7 +79,8 @@ class LoopSettings:
 
     def run_loop(self):
         print(f"Starting loop with cwd {os.getcwd()}")
-        assert os.path.exists("./rust") and os.path.exists("./python"), "Should be run in root kZero folder"
+        assert os.path.exists("./rust") and os.path.exists("./python"), \
+            f"Should be run in root kZero folder, got {os.getcwd()}"
 
         os.makedirs(self.selfplay_path, exist_ok=True)
         os.makedirs(self.training_path, exist_ok=True)
@@ -131,7 +132,7 @@ class LoopSettings:
             gen = Generation.from_gi(self, gi)
             os.makedirs(gen.train_path, exist_ok=True)
 
-            buffer.append(logger, DataFile.open(game, gen.games_path))
+            buffer.append(logger, DataFile.open(game, gen.games_path, None))
             self.evaluate_network(buffer, logger, network)
 
             train_sampler = buffer.sampler_full(self.train_batch_size)
@@ -187,7 +188,7 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
-            buffer.append(None, DataFile.open(game, gen.games_path))
+            buffer.append(None, DataFile.open(game, gen.games_path, None))
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
         setups = [
@@ -198,7 +199,7 @@ class LoopSettings:
         network.eval()
         for prefix, sampler in setups:
             batch = sampler.next_batch()
-            self.train_settings.evaluate_batch(network, prefix, logger, batch)
+            self.train_settings.evaluate_batch(network, prefix, logger, batch, self.train_settings.value_target)
             sampler.close()
 
 
@@ -252,23 +253,25 @@ class LoopBuffer:
             del self.files[0]
 
         if logger:
-            total_games = sum(f.game_count for f in self.files)
+            total_games = sum(f.info.game_count for f in self.files)
 
             logger.log("buffer", "gens", len(self.files))
             logger.log("buffer", "games", total_games)
             logger.log("buffer", "positions", self.current_positions)
 
-            logger.log("gen-size", "games", file.game_count)
-            logger.log("gen-size", "positions", file.position_count)
-            logger.log("gen-game-len", "game length min", file.min_game_length)
-            logger.log("gen-game-len", "game length mean", file.position_count / file.game_count)
-            logger.log("gen-game-len", "game length max", file.max_game_length)
-            logger.log("gen-game-len", "game length max", file.max_game_length)
+            info = file.info
 
-            if file.root_wdl is not None:
-                logger.log("gen-root-wdl", "w", file.root_wdl[0])
-                logger.log("gen-root-wdl", "d", file.root_wdl[1])
-                logger.log("gen-root-wdl", "l", file.root_wdl[2])
+            logger.log("gen-size", "games", info.game_count)
+            logger.log("gen-size", "positions", info.position_count)
+            logger.log("gen-size", "positions-loaded", info.loaded_position_count)
+            logger.log("gen-game-len", "game length min", info.min_game_length)
+            logger.log("gen-game-len", "game length mean", info.position_count / info.game_count)
+            logger.log("gen-game-len", "game length max", info.max_game_length)
+
+            if info.root_wdl is not None:
+                logger.log("gen-root-wdl", "w", info.root_wdl[0])
+                logger.log("gen-root-wdl", "d", info.root_wdl[1])
+                logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
     def sampler_full(self, batch_size: int):
         return FileListSampler(self.game, self.files, batch_size)

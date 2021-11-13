@@ -24,6 +24,7 @@ class StartupSettings:
 class SelfplaySettings:
     max_game_length: int
     exploration_weight: float
+    use_value: bool
     random_symmetries: bool
     keep_tree: bool
     temperature: float

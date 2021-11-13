@@ -8,32 +8,30 @@ from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings
 # TODO fix startup behaviour, only release games in the order they were started to ensure a constant
 #  distribution of game lengths
-from lib.train import TrainSettings
+from lib.train import TrainSettings, ValueTarget
 
 
 def main():
-    game = Game.find("ttt")
+    game = Game.find("sttt")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=256,
-        games_per_gen=100,
+        batch_size=64,
+        games_per_gen=10,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        # TODO alphazero uses value 30 (plies, 15 moves)
-        zero_temp_move_count=20,
-        # TODO give this information to zero tree search too! now it might be stalling without a good reason
+        zero_temp_move_count=300,
+        use_value=False,
         max_game_length=300,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        # TODO increase this again?
-        full_iterations=400,
-        part_iterations=400,
+        full_iterations=20,
+        part_iterations=20,
         exploration_weight=2.0,
         random_symmetries=True,
         cache_size=0,
@@ -45,17 +43,19 @@ def main():
         wdl_weight=0.2,
         policy_weight=1.0,
         clip_norm=20.0,
+        value_target=ValueTarget.Final,
+        train_in_eval_mode=False,
     )
 
     def initial_network():
-        return DenseNetwork(game, 8, 128, True)
+        return PostActNetwork(game, 8, 32, 8, 64)
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
-        root_path=f"data/newer_loop/test/{game.name}/",
+        root_path=f"data/loop/{game.name}/",
         initial_network=initial_network,
 
-        target_buffer_size=100_000,
+        target_buffer_size=1_000_000,
         train_steps_per_gen=2,
         train_batch_size=256,
 

@@ -1,6 +1,4 @@
 import random
-import time
-from queue import Queue
 from threading import Thread
 from typing import List
 
@@ -9,20 +7,21 @@ import numpy as np
 from lib.data.file import DataFile
 from lib.data.position import PositionBatch
 from lib.games import Game
+from lib.queue import CQueue, CQueueClosed
 from lib.util import PIN_MEMORY
 
 
 class FileListSampler:
-    def __init__(self, game: Game, files: List[DataFile], batch_size: int, threads: int = 4):
+    def __init__(self, game: Game, files: List[DataFile], batch_size: int, threads: int = 2):
         self.game = game
 
         self.files = files
         self.file_ends = np.cumsum(np.array([len(f) for f in self.files]))
 
-        self.closed = False
         self.batch_size = batch_size
-        self.queue = Queue(threads + 1)
-        self.threads = [Thread(target=thread_main, args=(self,))]
+        self.queue = CQueue(threads + 1)
+
+        self.threads = [Thread(target=thread_main, args=(self,)) for _ in range(threads)]
         for thread in self.threads:
             thread.start()
 
@@ -39,11 +38,7 @@ class FileListSampler:
         return fi, pi
 
     def close(self):
-        self.closed = True
-        counter = 0
-        while counter < len(self.threads):
-            x = self.queue.get()
-            counter += x is None
+        self.queue.close()
 
     def __len__(self):
         return self.file_ends[-1] if len(self.file_ends) else 0
@@ -53,23 +48,24 @@ class FileListSampler:
         return self.files[fi][pi]
 
     def next_batch(self):
-        assert not self.closed, "Cannot get batch from closed sampler"
-        batch = self.queue.get()
-        assert batch is not None
-        return batch
+        return self.queue.pop_blocking()
 
 
 def thread_main(sampler: FileListSampler):
     files = [f.with_new_handle() for f in sampler.files]
 
-    while True:
-        positions = []
+    try:
+        while True:
+            positions = []
 
-        for _ in range(sampler.batch_size):
-            i = random.randrange(len(sampler))
-            fi, pi = sampler.split_index(i)
+            for _ in range(sampler.batch_size):
+                i = random.randrange(len(sampler))
+                fi, pi = sampler.split_index(i)
 
-            positions.append(files[fi][pi])
+                positions.append(files[fi][pi])
 
-        batch = PositionBatch(sampler.game, positions, PIN_MEMORY)
-        sampler.queue.put(batch)
+            batch = PositionBatch(sampler.game, positions, PIN_MEMORY)
+            sampler.queue.push_blocking(batch)
+    except CQueueClosed:
+        for f in files:
+            f.close()
