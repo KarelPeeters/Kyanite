@@ -3,6 +3,7 @@ use board_game::wdl::POV;
 use internal_iterator::InternalIterator;
 
 use crate::network::ZeroEvaluation;
+use crate::oracle::Oracle;
 use crate::util::zip_eq_exact;
 use crate::zero::node::{Node, ZeroValues};
 use crate::zero::range::IdxRange;
@@ -28,7 +29,12 @@ pub struct ZeroResponse {
 /// The reached node and its board is returned in a [ZeroRequest],
 /// and all involved nodes end up with their `virtual_visits` counter incremented.
 ///
-pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32, use_value: bool) -> Option<ZeroRequest<B>> {
+pub fn zero_step_gather<B: Board>(
+    tree: &mut Tree<B>,
+    oracle: &impl Oracle<B>,
+    exploration_weight: f32,
+    use_value: bool,
+) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
 
@@ -37,7 +43,7 @@ pub fn zero_step_gather<B: Board>(tree: &mut Tree<B>, exploration_weight: f32, u
         tree[curr_node].virtual_visits += 1;
 
         // if the board is done backpropagate the real value
-        if let Some(outcome) = curr_board.outcome() {
+        if let Some(outcome) = oracle.best_outcome(&curr_board) {
             let outcome = outcome.pov(curr_board.next_player());
             tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome));
             return None;

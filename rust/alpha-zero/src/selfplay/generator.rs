@@ -13,6 +13,7 @@ use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
 use crate::network::cudnn::CudnnNetwork;
 use crate::network::symmetry::RandomSymmetryNetwork;
+use crate::oracle::DummyOracle;
 use crate::selfplay::move_selector::MoveSelector;
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::selfplay::simulation::{Position, Simulation};
@@ -313,7 +314,8 @@ impl<B: Board> SearchState<B> {
                 return StepResult::Done;
             }
 
-            if let Some(request) = zero_step_gather(&mut self.tree, settings.exploration_weight, settings.use_value) {
+            //TODO use an oracle here (based on a boolean or maybe path setting)
+            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.exploration_weight, settings.use_value) {
                 return StepResult::Request(request);
             }
         }

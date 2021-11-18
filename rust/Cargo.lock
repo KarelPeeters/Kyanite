@@ -57,6 +57,8 @@ dependencies = [
  "self_cell",
  "serde",
  "serde_json",
+ "shakmaty 0.20.2",
+ "shakmaty-syzygy",
  "tar",
  "tokio",
  "tokio-stream",
@@ -94,6 +96,12 @@ name = "arrayvec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
+
+[[package]]
+name = "arrayvec"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
 name = "atty"
@@ -336,7 +344,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ed299b171ec34f372945ad6726f7bc1d2afd5f59fb8380f64f48e2bab2f0ec8"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.5.2",
  "failure",
  "nodrop",
  "rand 0.7.3",
@@ -1127,7 +1135,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "shakmaty",
+ "shakmaty 0.17.2",
  "structopt",
  "thiserror",
  "tokio",
@@ -1621,6 +1629,17 @@ dependencies = [
  "crc32fast",
  "deflate",
  "miniz_oxide 0.3.7",
+]
+
+[[package]]
+name = "positioned-io-preview"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7cb91d7f0cdc1718407518e27d7752f3d0dafb35f7a4fcda4abdf95da01ac3"
+dependencies = [
+ "byteorder",
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -2146,9 +2165,38 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e0115b8620f67015c63a1850a05ed40952e8e0f0c1986a8a4056c1ebd927136"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.5.2",
  "bitflags",
  "btoi",
+]
+
+[[package]]
+name = "shakmaty"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55200757d0b17ee743aa21b4b0f048210f56a39289fa6aa4d5a41b2c1bc021d0"
+dependencies = [
+ "arrayvec 0.7.2",
+ "bitflags",
+ "btoi",
+]
+
+[[package]]
+name = "shakmaty-syzygy"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "436854f28d1d94a7e41ade67dbe1a1ad8eb38e11f9ebf09867a8f407aa4a6c76"
+dependencies = [
+ "arrayvec 0.7.2",
+ "bitflags",
+ "byteorder",
+ "itertools",
+ "lazy_static",
+ "num-integer",
+ "once_cell",
+ "positioned-io-preview",
+ "rustc-hash",
+ "shakmaty 0.20.2",
 ]
 
 [[package]]

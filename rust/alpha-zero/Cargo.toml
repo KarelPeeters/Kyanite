@@ -20,6 +20,8 @@ pgn-reader = { path = "../pgn-reader" }
 chess = "3.2.0"
 vampirc-uci = { version = "0.11.0", features = ["chess"] }
 licoricedev = { path = "../licorice" }
+shakmaty-syzygy = "0.17.0"
+shakmaty = "0.20.2"
 
 # data processing
 # onnxruntime = { version = "0.0.14", optional = true }

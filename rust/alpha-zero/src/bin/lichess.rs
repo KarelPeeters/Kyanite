@@ -9,6 +9,7 @@ use tokio_stream::StreamExt;
 use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::Network;
+use alpha_zero::oracle::DummyOracle;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
 use licoricedev::client::{Lichess, LichessResult};
@@ -106,7 +107,7 @@ async fn make_move(
     println!("{}", board);
 
     let start = Instant::now();
-    let tree = settings.build_tree(&board, network, |tree| {
+    let tree = settings.build_tree(&board, network, &DummyOracle, |tree| {
         let fraction_time_used = (Instant::now() - start).as_secs_f32() / game.seconds_left as f32;
         let visits = tree.root_visits();
         visits > 0 && (visits >= MAX_VISITS || fraction_time_used >= MAX_FRACTION_TIME_USED)

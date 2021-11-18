@@ -40,6 +40,7 @@ impl<B: Board> Tree<B> {
         Some(best_child)
     }
 
+    //TODO this doesn't really work for oracle moves any more
     pub fn best_move(&self) -> B::Move {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
         self[self.best_child(0).unwrap()].last_move.unwrap()
