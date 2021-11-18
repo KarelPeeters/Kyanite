@@ -144,8 +144,13 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 }
             });
 
+            // check that everything makes sense
             assert!(!got_none || available_mv_count == 1);
             assert_eq!(available_mv_count, pos.zero_evaluation.policy.len());
+            assert_eq!(available_mv_count, pos.net_evaluation.policy.len());
+
+            pos.zero_evaluation.assert_normalized_or_nan();
+            pos.net_evaluation.assert_normalized_or_nan();
 
             // scalar float data
             scalars.push(game_id as f32);
