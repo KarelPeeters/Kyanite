@@ -147,7 +147,7 @@ impl PrintThroughput {
         self.total_count
     }
 
-    pub fn update(&mut self, count: u64) {
+    pub fn update(&mut self, count: u64) -> bool {
         self.delta_count += count;
         self.total_count += count;
         self.update_count += 1;
@@ -162,6 +162,10 @@ impl PrintThroughput {
             self.last_print = now;
             self.delta_count = 0;
             self.update_count = 0;
+
+            true
+        } else {
+            false
         }
     }
 }

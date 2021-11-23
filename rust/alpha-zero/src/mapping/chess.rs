@@ -237,7 +237,7 @@ fn square(rank: isize, file: isize) -> Option<Square> {
 
 /// View a square from the given pov.
 /// This function can be used for both the abs->pov and pov->abs directions.
-fn square_pov(pov: Color, sq: Square) -> Square {
+pub fn square_pov(pov: Color, sq: Square) -> Square {
     match pov {
         Color::White => sq,
         Color::Black => {

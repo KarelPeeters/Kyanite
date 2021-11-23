@@ -20,21 +20,39 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 
 ## Network architecture
 
+### Input
+
+* add available moves as output for regularization
+* add available moves as input for value head improvement
+
+### Tower
+
 * squeeze-excitation layers
 * fixup initialization
-* more compact policy representations
-    * see LC0 discord for a couple suggestions
 * bottleneck blocks
 * look at mobilenet V1 V2 (V3)
 * Ghost/Virtual Batch norm: use smaller batches to get batch statistics, supposed to solve the very real "train/eval" gap
-* figure out why the value head is so bad at fitting the data
-* add available moves as output for regularization
-* add available moves as input for value head improvement
-* attention blocks 
-* attention policy head
-* remove bachnorm1d, maybe that's what causing train-eval divergence
+* attention blocks
+* add more padding, maybe so the intermediate layers are 10x10 or even 16x16 (with initial dilations)
+* autoencoder style compression and decompression with same-shape skip connections
 
-## Network evaluation performance
+### Value head
+
+* figure out why the value head is so bad at fitting the data
+  * it's not the BN within the value head
+  * it still feels like a BN issue because switching to eval mode during training has a large effect
+  * maybe BN is being abused to pass global info?
+* experiment more with global pooling vs flattening
+
+### Policy head
+
+* more compact policy representations
+    * see LC0 discord for a couple suggestions
+* attention policy head
+    * with and without separated queen moves
+* try flat policy head
+
+## Network inference performance
 
 * weight quantization
 
@@ -52,17 +70,12 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 
 ## Loop infrastructure
 
-* settle on a common data format, probably hdf5 straight from rust
-    * boards and policy should be represented compactly, right now we're wasting massive amounts of space and compensating for it with compression
-
 * estimate Elo during loop, and only switch network if it actually turns out to be better?
     * this involves writing a bot vs bot tool that can actually batch GPU requests
-
 * increase network size over time
-
-* allow for changing loop params at runtime (in the GUI?)
-
 * allow selfplay and training to run on different computers over the real internet
+* allow interactive parameter updates without having to restart, maybe with a config file
+* make it easier to keep multiple config combinations around without hardcoding everything in python
 
 ## Infrastructure
 
@@ -71,7 +84,7 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 ## Dependencies
 
 * look into removing rust dependencies, the alphazero crate is getting heavy
-
+  * it's getting worse and worse ...
 * properly implement cross-platform cudnn header finding (with env var)
 
 
