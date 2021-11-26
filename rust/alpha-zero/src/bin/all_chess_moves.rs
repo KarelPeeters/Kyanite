@@ -2,8 +2,8 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::unreachable;
 use std::io::Write;
+use std::unreachable;
 
 use board_game::board::{Board, BoardAvailableMoves};
 use board_game::games::chess::ChessBoard;
@@ -11,9 +11,10 @@ use chess::{ChessMove, Piece, Square};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::thread_rng;
+use shakmaty::Chess;
+
 use alpha_zero::mapping::chess::{ChessStdMapper, square_pov};
 use alpha_zero::mapping::PolicyMapper;
-
 use alpha_zero::util::PrintThroughput;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -23,6 +24,7 @@ struct FullMove {
     from: Square,
     to: Square,
 }
+
 impl Display for FullMove {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.promotion {
@@ -33,20 +35,17 @@ impl Display for FullMove {
 }
 
 fn main() {
-    let separate_queen_promotion = true;
-    let separate_castling = false;
-
     let mut moves: HashMap<FullMove, u64> = Default::default();
     let mut rng = thread_rng();
 
     let mut pt = PrintThroughput::new("games");
-    for _ in 0..10_000 {
+    for _ in 0..2_000 {
         let mut board = ChessBoard::default();
 
         while !board.is_done() {
             board.available_moves().for_each(|mv| {
                 let full_mv_pov = FullMove {
-                    promotion: mv.get_promotion().filter(|&p| separate_queen_promotion || p != Piece::Queen).map(|p| Reverse(p)),
+                    promotion: mv.get_promotion().map(|p| Reverse(p)),
                     knight: board.inner().piece_on(mv.get_source()) == Some(Piece::Knight),
                     from: square_pov(board.inner().side_to_move(), mv.get_source()),
                     to: square_pov(board.inner().side_to_move(), mv.get_dest()),
@@ -67,8 +66,10 @@ fn main() {
     let mut moves = moves.iter().collect_vec();
     moves.sort_by_key(|(&mv, _)| mv);
 
-    let output = &mut File::create("ignored/chess_moves.csv").unwrap();
-    writeln!(output, "str, flat_i, conv_i, att_from, att_to").unwrap();
+    let output = &mut File::create("ignored/moves/list.csv").unwrap();
+    writeln!(output, "str, flat_i, conv_i, att_from, att_to, att_i").unwrap();
+
+    let mut mappings = ChessMappings::default();
 
     let dummy_board = ChessBoard::default();
 
@@ -87,16 +88,30 @@ fn main() {
                     Piece::Rook => 1,
                     Piece::Bishop => 2,
                     Piece::Knight => 3,
-                    _=> unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 64 + mv_pov.to.get_file().to_index() * 3 + p_i
             }
         };
 
-        writeln!(output, "{}, {}, {}, {}, {},", mv_pov, flat_i, conv_i, att_from, att_to).unwrap();
+        let att_i = att_from * (64 + 8 * 3) + att_to;
+
+        writeln!(output, "{}, {}, {}, {}, {}, {},", mv_pov, flat_i, conv_i, att_from, att_to, att_i).unwrap();
+
+        mappings.flat_to_conv.push(conv_i as u32);
+        mappings.flat_to_att.push(att_i as u32);
     }
+
+    let json = &mut File::create("ignored/moves/chess_mapping.json").unwrap();
+    serde_json::to_writer(json, &mappings).unwrap();
 
     println!("Found {} different full moves", moves.len());
     println!("LC0 move count: 1858");
+}
+
+#[derive(Default, serde::Serialize)]
+struct ChessMappings {
+    flat_to_conv: Vec<u32>,
+    flat_to_att: Vec<u32>,
 }
