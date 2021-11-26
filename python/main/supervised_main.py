@@ -11,7 +11,7 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import PostActNetwork
+from lib.model.post_act import PostActNetwork, PostActValueHead, PostActConvPolicyHead, PostActAttentionPolicyHead
 from lib.plotter import LogPlotter, qt_app
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
@@ -35,9 +35,9 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 def main():
     app = qt_app()
 
-    train_pattern = f"../../data/pgn/*_large.json"
-    test_pattern = f"../../data/pgn/*_large.json"
-    output_folder = "../../data/supervised/lichess_09_2000/"
+    train_pattern = f"../../data/pgn/*.json"
+    test_pattern = f"../../data/pgn/*.json"
+    output_folder = "../../data/supervised/test_policy/"
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -76,7 +76,11 @@ def main():
     if last_bi is None:
         logger = Logger()
         start_bi = 0
-        network = PostActNetwork(game, 16, 128, 8, 128)
+        network = PostActNetwork(
+            game, 16, 128,
+            PostActValueHead(game, 128, 16, 128),
+            PostActAttentionPolicyHead(game, 128, 10),
+        )
     else:
         logger = Logger.load(os.path.join(output_folder, "log.npz"))
         start_bi = last_bi + 1

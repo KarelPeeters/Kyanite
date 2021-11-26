@@ -4,17 +4,10 @@ from torch import nn
 from lib.games import Game
 
 
-class PostActNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int, value_channels: int, value_hidden: int):
+class PostActValueHead(nn.Module):
+    def __init__(self, game: Game, channels: int, value_channels: int, value_hidden: int):
         super().__init__()
-
-        self.tower = nn.Sequential(
-            conv2d(game.full_input_channels, channels, 3),
-            *[Block(channels) for _ in range(depth)],
-            nn.BatchNorm2d(channels),
-        )
-
-        self.value_head = nn.Sequential(
+        self.seq = nn.Sequential(
             conv2d(channels, value_channels, 1),
             nn.ReLU(),
             nn.Flatten(),
@@ -23,11 +16,64 @@ class PostActNetwork(nn.Module):
             nn.Linear(value_hidden, 4)
         )
 
-        self.policy_head = nn.Sequential(
+    def forward(self, common):
+        return self.seq(common)
+
+
+class PostActConvPolicyHead(nn.Module):
+    def __init__(self, game: Game, channels: int):
+        super().__init__()
+        self.seq = nn.Sequential(
             conv2d(channels, channels, 1),
             nn.ReLU(),
             conv2d(channels, game.policy_channels, 1),
         )
+
+    def forward(self, common):
+        return self.seq(common)
+
+
+class PostActAttentionPolicyHead(nn.Module):
+    def __init__(self, game: Game, channels: int, query_channels: int):
+        super().__init__()
+        assert game.name == "chess", "Attention policy only works for chess"
+
+        self.query_channels = query_channels
+        self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
+        self.conv_under = conv2d(channels, 3 * query_channels, 1)
+
+    def forward(self, common):
+        bulk = self.conv_bulk(common)
+        under = self.conv_under(common[:, :, 7, None, :])
+
+        q_from = bulk[:, :self.query_channels, :, :].flatten(2)
+        q_to = torch.cat([
+            bulk[:, self.query_channels:, :, :].flatten(2),
+            under.view(-1, self.query_channels, 3 * 8)
+        ], dim=2)
+
+        policy = torch.bmm(q_from.transpose(1, 2), q_to).flatten(1)
+
+        # TODO use new policy indexing scheme
+
+        picked_policy = torch.gather(policy, dim=1, )
+
+        # indexed [b][from][to_extended] before final flattening
+        return policy
+
+
+class PostActNetwork(nn.Module):
+    def __init__(self, game: Game, depth: int, channels: int, value_head: nn.Module, policy_head: nn.Module):
+        super().__init__()
+
+        self.tower = nn.Sequential(
+            conv2d(game.full_input_channels, channels, 3),
+            *[Block(channels) for _ in range(depth)],
+            nn.BatchNorm2d(channels),
+        )
+
+        self.value_head = value_head
+        self.policy_head = policy_head
 
     def forward(self, input):
         common = self.tower(input)
