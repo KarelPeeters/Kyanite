@@ -4,6 +4,7 @@ use std::fmt::{Debug, Formatter};
 use image::{ImageBuffer, Rgb};
 use itertools::{Itertools, zip};
 use ndarray::{ArcArray, Axis, Ix4};
+use palette::{LinSrgb, Srgb};
 
 use crate::cpu::{ExecutionInfo, Tensor};
 use crate::graph::{Graph, Operation, Value};
@@ -95,7 +96,8 @@ pub fn visualize_graph_activations(
     total_width += HORIZONTAL_PADDING;
     total_height += VERTICAL_PADDING;
 
-    let background = Rgb([60, 60, 60]);
+    let background = Srgb::from(LinSrgb::new(0.01, 0.01, 0.01));
+    let background = Rgb([background.red, background.green, background.blue]);
 
     let mut images = (0..image_count)
         .map(|_| ImageBuffer::from_pixel(total_width as u32, total_height as u32, background))
@@ -128,8 +130,8 @@ pub fn visualize_graph_activations(
                         let f = data_norm[(image_i, c, h, w)];
                         let f_norm = ((f + 1.0) / 2.0).clamp(0.0, 1.0);
 
-                        // TODO bring stddev back in some form
-                        let p = Rgb([(s_norm * 255.0) as u8, (f_norm * 255.0) as u8, (f_norm * 255.0) as u8]);
+                        let color = Srgb::from(LinSrgb::new(s_norm, f_norm, f_norm));
+                        let p = Rgb([color.red, color.green, color.blue]);
                         image.put_pixel(x as u32, y as u32, p);
                     }
                 }
