@@ -14,6 +14,7 @@ use vampirc_uci::UciMessage;
 
 use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
+use alpha_zero::oracle::DummyOracle;
 use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
@@ -47,7 +48,7 @@ fn main() -> std::io::Result<()> {
             if let Some(tree) = &mut tree {
                 let mut prev_send = Instant::now();
 
-                settings.expand_tree(tree, &mut network, |tree| {
+                settings.expand_tree(tree, &mut network, &DummyOracle, |tree| {
                     let now = Instant::now();
                     if tree.root_visits() > 0 && (now - prev_send).as_secs_f32() > INFO_PERIOD {
                         let root = &tree[0];

@@ -11,7 +11,6 @@ use chess::{ChessMove, Piece, Square};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 use rand::thread_rng;
-use shakmaty::Chess;
 
 use alpha_zero::mapping::chess::{ChessStdMapper, square_pov};
 use alpha_zero::mapping::PolicyMapper;
