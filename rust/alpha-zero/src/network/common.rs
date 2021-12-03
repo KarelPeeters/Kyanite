@@ -5,6 +5,7 @@ use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
 
 use nn_graph::graph::Graph;
+use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
 use crate::mapping::{BoardMapper, PolicyMapper};
@@ -19,9 +20,11 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     batch_policy_logit: &[f32],
 ) -> Vec<ZeroEvaluation> {
     let batch_size = boards.len();
+    let policy_len = policy_mapper.policy_len();
+
     assert_eq!(batch_size, batch_value_logit.len());
     assert_eq!(batch_size * 3, batch_wdl_logit.len());
-    assert_eq!(batch_size * P::POLICY_SIZE, batch_policy_logit.len());
+    assert_eq!(batch_size * policy_len, batch_policy_logit.len());
 
     boards.iter().enumerate().map(|(bi, board)| {
         let board = board.borrow();
@@ -36,7 +39,7 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
         let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
 
         // policy
-        let policy_logit = &batch_policy_logit[P::POLICY_SIZE * bi..(P::POLICY_SIZE * bi) + P::POLICY_SIZE];
+        let policy_logit = &batch_policy_logit[policy_len * bi..(policy_len * bi) + policy_len];
         let mut policy: Vec<f32> = board.available_moves().map(|mv| {
             policy_mapper.move_to_index(board, mv)
                 .map_or(1.0, |index| policy_logit[index])
@@ -61,17 +64,14 @@ pub fn softmax_in_place(slice: &mut [f32]) {
     }
 }
 
-pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(_: M, graph: &Graph) {
+pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph) {
     // input
     let inputs = graph.inputs();
     assert_eq!(1, inputs.len(), "Wrong number of inputs");
 
     let input_shape = &graph[inputs[0]].shape;
-
-    let input_board_size = Size::fixed(M::INPUT_BOARD_SIZE);
-    let expected_input_size =
-        Shape::new(vec![Size::BATCH, Size::fixed(M::INPUT_FULL_PLANES), input_board_size, input_board_size]);
-    assert_eq!(input_shape, &expected_input_size, "Wrong input shape");
+    let expected_input_shape = shape![Size::BATCH].concat(&Shape::fixed(&mapper.input_full_shape()));
+    assert_eq!(input_shape, &expected_input_shape, "Wrong input shape");
 
     // outputs
     let outputs = graph.outputs();
@@ -81,12 +81,9 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(_: M, graph: &Graph) {
     let wdl_shape = &graph[outputs[1]].shape;
     let policy_shape = &graph[outputs[2]].shape;
 
-    let policy_board_size = Size::fixed(M::POLICY_BOARD_SIZE);
-    assert_eq!(value_shape, &Shape::new(vec![Size::BATCH]), "Wrong value shape");
-    assert_eq!(wdl_shape, &Shape::new(vec![Size::BATCH, Size::fixed(3)]), "Wrong wdl shape");
-    assert_eq!(
-        policy_shape,
-        &Shape::new(vec![Size::BATCH, Size::fixed(M::POLICY_PLANES), policy_board_size, policy_board_size]),
-        "Wrong policy shape"
-    );
+    let expected_policy_shape = shape![Size::BATCH].concat(&Shape::fixed(mapper.policy_shape()));
+
+    assert_eq!(value_shape, &shape![Size::BATCH], "Wrong value shape");
+    assert_eq!(wdl_shape, &shape![Size::BATCH, 3], "Wrong wdl shape");
+    assert_eq!(policy_shape, &expected_policy_shape, "Wrong policy shape");
 }

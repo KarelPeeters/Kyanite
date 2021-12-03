@@ -8,9 +8,13 @@ use crate::mapping::bit_buffer::BitBuffer;
 pub struct TTTStdMapper;
 
 impl InputMapper<TTTBoard> for TTTStdMapper {
-    const INPUT_BOARD_SIZE: usize = 3;
-    const INPUT_BOOL_PLANES: usize = 2;
-    const INPUT_SCALAR_COUNT: usize = 0;
+    fn input_bool_shape(&self) -> [usize; 3] {
+        [2, 9, 9]
+    }
+
+    fn input_scalar_count(&self) -> usize {
+        0
+    }
 
     fn encode(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &TTTBoard) {
         bools.extend(Coord::all().map(|c| board.tile(c) == Some(board.next_player())));
@@ -19,8 +23,9 @@ impl InputMapper<TTTBoard> for TTTStdMapper {
 }
 
 impl PolicyMapper<TTTBoard> for TTTStdMapper {
-    const POLICY_BOARD_SIZE: usize = 3;
-    const POLICY_PLANES: usize = 1;
+    fn policy_shape(&self) -> &[usize] {
+        &[1, 3, 3]
+    }
 
     fn move_to_index(&self, _: &TTTBoard, mv: Coord) -> Option<usize> {
         Some(mv.i())

@@ -16,51 +16,59 @@ pub mod binary_output;
 
 /// A way to encode a board as a tensor.
 pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
-    const INPUT_BOARD_SIZE: usize;
+    fn input_bool_shape(&self) -> [usize; 3];
+    fn input_scalar_count(&self) -> usize;
 
-    const INPUT_BOOL_PLANES: usize;
-    const INPUT_SCALAR_COUNT: usize;
+    fn input_full_shape(&self) -> [usize; 3] {
+        let [b, w, h] = self.input_bool_shape();
+        let s = self.input_scalar_count();
+        [b + s, w, h]
+    }
 
-    const INPUT_BOOL_COUNT: usize = Self::INPUT_BOOL_PLANES * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
-
-    const INPUT_FULL_PLANES: usize = Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES;
-    const INPUT_FULL_SHAPE: [usize; 3] = [Self::INPUT_FULL_PLANES, Self::INPUT_BOARD_SIZE, Self::INPUT_BOARD_SIZE];
-    const INPUT_FULL_SIZE: usize = (Self::INPUT_SCALAR_COUNT + Self::INPUT_BOOL_PLANES) * Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE;
+    fn input_bool_len(&self) -> usize {
+        self.input_bool_shape().iter().product()
+    }
+    fn input_full_len(&self) -> usize {
+        self.input_full_shape().iter().product()
+    }
 
     /// Encode this board.
     /// Should append `BOOL_COUNT` booleans to `bool_result` and `FLOAT_COUNT` floats to `float_result`..
     fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B);
 
     fn encode_full(&self, result: &mut Vec<f32>, board: &B) {
-        let mut bools = BitBuffer::new(Self::INPUT_BOOL_COUNT);
+        let bool_count = self.input_bool_len();
+        let [_, w, h] = self.input_bool_shape();
+
+        let mut bools = BitBuffer::new(bool_count);
         let mut scalars = vec![];
 
         self.encode(&mut bools, &mut scalars, board);
 
-        assert_eq!(Self::INPUT_BOOL_COUNT, bools.len());
-        assert_eq!(Self::INPUT_SCALAR_COUNT, scalars.len());
+        assert_eq!(bool_count, bools.len());
+        assert_eq!(self.input_scalar_count(), scalars.len());
 
         let result_start = result.len();
 
         for s in scalars {
-            result.extend(std::iter::repeat(s).take(Self::INPUT_BOARD_SIZE * Self::INPUT_BOARD_SIZE));
+            result.extend(std::iter::repeat(s).take(w * h));
         }
-        for i in 0..Self::INPUT_BOOL_COUNT {
+        for i in 0..bool_count {
             result.push(bools[i] as u8 as f32)
         }
 
         let result_delta = result.len() - result_start;
-        assert_eq!(Self::INPUT_FULL_SIZE, result_delta);
+        assert_eq!(self.input_full_len(), result_delta);
     }
 }
 
 /// A way to encode and decode moves on a board into a tensor.
 pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
-    const POLICY_BOARD_SIZE: usize;
-    const POLICY_PLANES: usize;
+    fn policy_shape(&self) -> &[usize];
 
-    const POLICY_SHAPE: [usize; 3] = [Self::POLICY_PLANES, Self::POLICY_BOARD_SIZE, Self::POLICY_BOARD_SIZE];
-    const POLICY_SIZE: usize = Self::POLICY_PLANES * Self::POLICY_BOARD_SIZE * Self::POLICY_BOARD_SIZE;
+    fn policy_len(&self) -> usize {
+        self.policy_shape().iter().product()
+    }
 
     /// Get the index in the policy tensor corresponding to the given move.
     /// A return of `None` means that this move is structurally forced and does not get a place in the policy tensor.
@@ -103,9 +111,13 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Clone for ComposedMapper<B
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Copy for ComposedMapper<B, I, P> {}
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> InputMapper<B> for ComposedMapper<B, I, P> {
-    const INPUT_BOARD_SIZE: usize = I::INPUT_BOARD_SIZE;
-    const INPUT_BOOL_PLANES: usize = I::INPUT_BOOL_PLANES;
-    const INPUT_SCALAR_COUNT: usize = I::INPUT_SCALAR_COUNT;
+    fn input_bool_shape(&self) -> [usize; 3] {
+        self.input_mapper.input_bool_shape()
+    }
+
+    fn input_scalar_count(&self) -> usize {
+        self.input_mapper.input_scalar_count()
+    }
 
     fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B) {
         self.input_mapper.encode(bools, scalars, board)
@@ -113,8 +125,9 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> InputMapper<B> for Compose
 }
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> PolicyMapper<B> for ComposedMapper<B, I, P> {
-    const POLICY_BOARD_SIZE: usize = P::POLICY_BOARD_SIZE;
-    const POLICY_PLANES: usize = P::POLICY_PLANES;
+    fn policy_shape(&self) -> &[usize] {
+        self.policy_mapper.policy_shape()
+    }
 
     fn move_to_index(&self, board: &B, mv: B::Move) -> Option<usize> {
         self.policy_mapper.move_to_index(board, mv)

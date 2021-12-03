@@ -7,9 +7,13 @@ use crate::mapping::bit_buffer::BitBuffer;
 pub struct AtaxxStdMapper;
 
 impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
-    const INPUT_BOARD_SIZE: usize = 7;
-    const INPUT_BOOL_PLANES: usize = 3;
-    const INPUT_SCALAR_COUNT: usize = 0;
+    fn input_bool_shape(&self) -> [usize; 3] {
+        [3, 7, 7]
+    }
+
+    fn input_scalar_count(&self) -> usize {
+        0
+    }
 
     fn encode(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
         let (next_tiles, other_tiles) = board.tiles_pov();
@@ -20,8 +24,9 @@ impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
 }
 
 impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
-    const POLICY_BOARD_SIZE: usize = 7;
-    const POLICY_PLANES: usize = 17;
+    fn policy_shape(&self) -> &[usize] {
+        &[17, 7, 7]
+    }
 
     fn move_to_index(&self, _: &AtaxxBoard, mv: Move) -> Option<usize> {
         let index = match mv {
@@ -40,14 +45,14 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
         };
 
         if let Some(index) = index {
-            assert!(index < Self::POLICY_SIZE)
+            assert!(index < self.policy_len())
         }
 
         index
     }
 
     fn index_to_move(&self, _: &AtaxxBoard, index: usize) -> Option<Move> {
-        assert!(index < Self::POLICY_SIZE);
+        assert!(index < self.policy_len());
 
         let to = Coord::from_dense_i((index % (7 * 7)) as u8);
 

@@ -2,7 +2,7 @@ use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 use chess::{ChessMove, Piece, Square};
 
-use alpha_zero::mapping::chess::{ChessStdMapper, ClassifiedPovMove};
+use alpha_zero::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
 use alpha_zero::mapping::PolicyMapper;
 use alpha_zero::util::display_option;
 
@@ -18,7 +18,7 @@ fn queen_distance_white() {
     // mostly empty with white queen on A1
     let board = board("8/8/8/6k1/8/6K1/8/Q7 w - - 0 1");
 
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(0 * 64), Some(ChessMove::new(Square::A1, Square::A2, None))),
         (Some(1 * 64), Some(ChessMove::new(Square::A1, Square::A3, None))),
         (Some(2 * 64), Some(ChessMove::new(Square::A1, Square::A4, None))),
@@ -34,7 +34,7 @@ fn queen_distance_black() {
     // mostly empty with black queen on A8
     let board = board("q7/8/8/6k1/8/6K1/8/8 b - - 0 1");
 
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(0 * 64), Some(ChessMove::new(Square::A8, Square::A7, None))),
         (Some(1 * 64), Some(ChessMove::new(Square::A8, Square::A6, None))),
         (Some(2 * 64), Some(ChessMove::new(Square::A8, Square::A5, None))),
@@ -51,7 +51,7 @@ fn queen_direction_white() {
     let board = board("8/8/6k1/8/3Q4/6K1/8/8 w - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(0 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::D5, None))),
         (Some(1 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E5, None))),
         (Some(2 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E4, None))),
@@ -69,7 +69,7 @@ fn queen_direction_black() {
     let board = board("8/8/6k1/3q4/8/6K1/8/8 b - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(0 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::D4, None))),
         (Some(1 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E4, None))),
         (Some(2 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E5, None))),
@@ -87,7 +87,7 @@ fn knight_direction_white() {
     let board = board("8/8/6k1/8/3N4/6K1/8/8 w - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(56 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E6, None))),
         (Some(57 * 64 + d4), Some(ChessMove::new(Square::D4, Square::F5, None))),
         (Some(58 * 64 + d4), Some(ChessMove::new(Square::D4, Square::F3, None))),
@@ -105,7 +105,7 @@ fn knight_direction_black() {
     let board = board("8/8/6k1/3n4/8/6K1/8/8 b - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         (Some(56 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E3, None))),
         (Some(57 * 64 + d4), Some(ChessMove::new(Square::D5, Square::F4, None))),
         (Some(58 * 64 + d4), Some(ChessMove::new(Square::D5, Square::F6, None))),
@@ -122,7 +122,7 @@ fn white_potential_promotions() {
     // lots of promotion opportunities for white
     let board = board("r1r5/1P4R1/5RNP/2k5/5K2/pnr5/1r4p1/5R1R w - - 0 1");
 
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         // rook, no promotion
         (Some((0 * 7 + 1) * 64 + Square::F6.to_index()), Some(ChessMove::new(Square::F6, Square::F8, None))),
         (Some((0 * 7 + 0) * 64 + Square::G7.to_index()), Some(ChessMove::new(Square::G7, Square::G8, None))),
@@ -154,7 +154,7 @@ fn black_potential_promotions() {
     let board = board("r1r5/1P4R1/5RNP/2k5/5K2/pnr5/1r4p1/5R1R b - - 0 1");
 
     // careful, move indices are from the POV of black!
-    test_policy_pairs(&board, &[
+    test_conv_policy_pairs(&board, &[
         // rook, no promotion
         (Some((0 * 7 + 1) * 64 + Square::C6.to_index()), Some(ChessMove::new(Square::C3, Square::C1, None))),
         (Some((0 * 7 + 0) * 64 + Square::B7.to_index()), Some(ChessMove::new(Square::B2, Square::B1, None))),
@@ -185,12 +185,12 @@ fn en_passant() {
     let white_board = board("8/8/5k2/1pP5/8/5K2/8/8 w - b6 0 2");
     let black_board = board("8/8/5k2/8/1pP5/5K2/8/8 b - c3 0 1");
 
-    test_policy_pairs(&white_board, &[
+    test_conv_policy_pairs(&white_board, &[
         (Some((7 * 7 + 0) * 64 + Square::C5.to_index()), Some(ChessMove::new(Square::C5, Square::B6, None)))
     ]);
 
     // careful, move indices are from the POV of black!
-    test_policy_pairs(&black_board, &[
+    test_conv_policy_pairs(&black_board, &[
         (Some((1 * 7 + 0) * 64 + Square::B5.to_index()), Some(ChessMove::new(Square::B4, Square::C3, None)))
     ]);
 }
@@ -201,13 +201,13 @@ fn castles() {
     let white_board = board("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
     let black_board = board("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
 
-    test_policy_pairs(&white_board, &[
+    test_conv_policy_pairs(&white_board, &[
         (Some((2 * 7 + 1) * 64 + Square::E1.to_index()), Some(ChessMove::new(Square::E1, Square::G1, None))),
         (Some((6 * 7 + 1) * 64 + Square::E1.to_index()), Some(ChessMove::new(Square::E1, Square::C1, None))),
     ]);
 
     // careful, move indices are from the POV of black!
-    test_policy_pairs(&black_board, &[
+    test_conv_policy_pairs(&black_board, &[
         (Some((2 * 7 + 1) * 64 + Square::E1.to_index()), Some(ChessMove::new(Square::E8, Square::G8, None))),
         (Some((6 * 7 + 1) * 64 + Square::E1.to_index()), Some(ChessMove::new(Square::E8, Square::C8, None))),
     ]);
@@ -217,10 +217,11 @@ fn board(fen: &str) -> ChessBoard {
     ChessBoard::new_without_history_fen(fen, Rules::default())
 }
 
-pub fn test_policy_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
-    let mapper = ChessStdMapper;
+fn test_conv_policy_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
+    test_valid_mapping(ChessStdMapper, board);
+    test_valid_mapping(ChessLegacyConvPolicyMapper, board);
 
-    test_valid_mapping(mapper, board);
+    let mapper = ChessLegacyConvPolicyMapper;
 
     println!("Running on board\n  {}", board);
     println!("Using mapper {:?}", mapper);

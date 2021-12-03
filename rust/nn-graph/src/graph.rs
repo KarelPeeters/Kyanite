@@ -4,6 +4,7 @@ use std::ops::{Deref, Index};
 
 use itertools::{Itertools, zip_eq};
 
+use crate::shape;
 use crate::shape::{Shape, Size};
 
 #[derive(Clone)]
@@ -104,21 +105,11 @@ pub struct ConvDetails {
 
 impl ConvDetails {
     pub fn input_shape(&self) -> Shape {
-        Shape::new(vec![
-            self.batch_size,
-            Size::fixed(self.input_channels),
-            Size::fixed(self.input_size),
-            Size::fixed(self.input_size),
-        ])
+        shape![self.batch_size, self.input_channels, self.input_size, self.input_size]
     }
 
     pub fn output_shape(&self) -> Shape {
-        Shape::new(vec![
-            self.batch_size,
-            Size::fixed(self.output_channels),
-            Size::fixed(self.output_size),
-            Size::fixed(self.output_size),
-        ])
+        shape![self.batch_size, self.output_channels, self.output_size, self.output_size]
     }
     
     pub fn kernel_shape(&self) -> [usize; 4] {
@@ -247,8 +238,7 @@ impl Graph {
         );
 
         let new_shape = if start_axis == 0 {
-            let size = old_shape.size();
-            Shape::new(vec![Size::fixed(1), size])
+            shape![1, old_shape.size()]
         } else {
             let kept_dims = &old_shape.dims[..start_axis];
             let flat_size = old_shape.dims[start_axis..].iter().copied().product();
@@ -356,11 +346,11 @@ impl Graph {
         assert_eq!(ci, weight_shape[1]);
 
         // convert this linear operation into the equivalent convolution
-        let input_view_shape = Shape::new(vec![n, ci, Size::ONE, Size::ONE]);
+        let input_view_shape = shape![n, ci, 1, 1];
         let input_view = self.view(input, input_view_shape);
-        let weight_view_shape = Shape::new(vec![co, ci, Size::ONE, Size::ONE]);
+        let weight_view_shape = shape![co, ci, 1, 1];
         let weight_view = self.view(weight, weight_view_shape);
-        let output_view_shape = Shape::new(vec![n, co]);
+        let output_view_shape = shape![n, co];
 
         let output = self.conv(input_view, weight_view, 0);
         self.view(output, output_view_shape)

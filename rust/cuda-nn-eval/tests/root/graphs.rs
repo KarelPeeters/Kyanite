@@ -1,5 +1,6 @@
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::s;
+use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
 use crate::root::runner::test_all;
@@ -17,8 +18,8 @@ fn copy() {
     let fixed_size = 10;
     let batch_size = 8;
 
-    let fixed = graph.input(Shape::fixed(&[fixed_size]));
-    let batch = graph.input(Shape::new(vec![Size::BATCH]));
+    let fixed = graph.input(shape![fixed_size]);
+    let batch = graph.input(shape![Size::BATCH]);
     graph.output_all(&[fixed, batch]);
 
     let fixed_tensor = linspace_tensor(fixed_size).into_dyn();
@@ -84,7 +85,7 @@ fn linear() {
 fn fuse_clamp() {
     let mut graph = Graph::new();
 
-    let mut curr = graph.input(Shape::new(vec![Size::BATCH]));
+    let mut curr = graph.input(shape![Size::BATCH]);
 
     curr = graph.clamp(curr, -5.0, f32::INFINITY);
     curr = graph.clamp(curr, f32::NEG_INFINITY, 2.0);

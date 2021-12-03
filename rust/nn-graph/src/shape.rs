@@ -3,6 +3,13 @@ use std::fmt::{Debug, Display, Formatter};
 
 use itertools::Itertools;
 
+#[macro_export]
+macro_rules! shape {
+    [$($(*)? $value:expr),* $(,)?] => {
+        Shape::new(vec![$(Size::from($value)),*])
+    };
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct Shape {
     pub dims: Vec<Size>,
@@ -23,7 +30,7 @@ impl Shape {
     pub fn new(dims: Vec<Size>) -> Shape {
         Shape { dims }
     }
-    
+
     pub fn single(size: Size) -> Shape {
         Shape { dims: vec![size] }
     }
@@ -67,7 +74,7 @@ impl Shape {
     pub fn unwrap_4(&self) -> [Size; 4] {
         self.dims.as_slice().try_into().expect("Expected rank 4 shape")
     }
-    
+
     pub fn concat(mut self, other: &Shape) -> Shape {
         self.dims.extend_from_slice(&other.dims);
         self
@@ -83,6 +90,12 @@ impl Shape {
             })
             .collect_vec();
         Shape { dims }
+    }
+}
+
+impl From<usize> for Size {
+    fn from(fixed_factor: usize) -> Self {
+        Size::fixed(fixed_factor)
     }
 }
 

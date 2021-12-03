@@ -29,7 +29,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
 
         let executor = CudnnExecutor::new(device, &graph, max_batch_size);
 
-        let input = vec![0.0; max_batch_size * M::INPUT_FULL_SIZE];
+        let input = vec![0.0; max_batch_size * mapper.input_full_len()];
 
         CudnnNetwork { max_batch_size, mapper, executor, input, ph: PhantomData }
     }
@@ -52,7 +52,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         }
 
         // fill rest of input with zeros
-        self.input.resize(max_batch_size * M::INPUT_FULL_SIZE, f32::NAN);
+        self.input.resize(max_batch_size * self.mapper.input_full_len(), f32::NAN);
 
         // run the actual computation
         let outputs = self.executor.evaluate(&[&self.input]);
@@ -63,7 +63,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
             boards,
             &outputs[0][0..batch_size],
             &outputs[1][0..batch_size * 3],
-            &outputs[2][0..batch_size * M::POLICY_SIZE],
+            &outputs[2][0..batch_size * self.mapper.policy_len()],
         )
     }
 }

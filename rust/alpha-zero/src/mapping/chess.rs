@@ -1,23 +1,31 @@
 use std::cmp::max;
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use board_game::games::chess::ChessBoard;
 use chess::{BitBoard, ChessMove, Color, File, Piece, Rank, Square};
+use lazy_static::lazy_static;
 
 use crate::mapping::{InputMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
 use crate::util::IndexOf;
 
-//TODO try different (policy) embeddings discussed in Discord
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
 
+#[derive(Debug, Copy, Clone)]
+pub struct ChessLegacyConvPolicyMapper;
+
 impl InputMapper<ChessBoard> for ChessStdMapper {
-    const INPUT_BOARD_SIZE: usize = 8;
-    // pieces, en passant
-    const INPUT_BOOL_PLANES: usize = (2 * 6) + 1;
-    // side to move, 50 move counter, repetition counter, castling rights,
-    const INPUT_SCALAR_COUNT: usize = 2 + (1 + 1) + (2 * 2);
+    fn input_bool_shape(&self) -> [usize; 3] {
+        // pieces, en passant
+        [(2 * 6) + 1, 8, 8]
+    }
+
+    fn input_scalar_count(&self) -> usize {
+        // side to move, 50 move counter, repetition counter, castling rights,
+        2 + (1 + 1) + (2 * 2)
+    }
 
     fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
@@ -63,20 +71,58 @@ fn pov_ranks(board: BitBoard, pov: Color) -> u64 {
     }
 }
 
+struct FlatMoveInfo {
+    index_to_mv: Vec<ChessMove>,
+    mv_to_index: HashMap<ChessMove, usize>,
+}
+
+pub const FLAT_MOVE_COUNT: usize = 1880;
+lazy_static! {
+    static ref FLAT_MOVES_POV: FlatMoveInfo = {
+        let index_to_mv = generate_all_flat_moves_pov();
+        let mv_to_index = index_to_mv.iter().enumerate().map(|(i, &mv)| (mv, i)).collect();
+        FlatMoveInfo {
+            index_to_mv,
+            mv_to_index,
+        }
+    };
+}
+
 impl PolicyMapper<ChessBoard> for ChessStdMapper {
-    const POLICY_BOARD_SIZE: usize = 8;
-    const POLICY_PLANES: usize = POLICY_CHANNELS;
+    fn policy_shape(&self) -> &[usize] {
+        &[FLAT_MOVE_COUNT]
+    }
+
+    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> Option<usize> {
+        let mv_pov = move_pov(board.inner().side_to_move(), mv);
+        let index = *FLAT_MOVES_POV.mv_to_index.get(&mv_pov).unwrap_or_else(|| {
+            panic!("mv {:?}, pov_mv {:?} not found in flat moves", mv, mv_pov)
+        });
+        Some(index)
+    }
+
+    fn index_to_move(&self, board: &ChessBoard, index: usize) -> Option<ChessMove> {
+        let mv_pov = FLAT_MOVES_POV.index_to_mv[index];
+        let mv = move_pov(board.inner().side_to_move(), mv_pov);
+        Some(mv)
+    }
+}
+
+impl PolicyMapper<ChessBoard> for ChessLegacyConvPolicyMapper {
+    fn policy_shape(&self) -> &[usize] {
+        &[CONV_POLICY_CHANNELS, 8, 8]
+    }
 
     fn move_to_index(&self, board: &ChessBoard, mv_abs: ChessMove) -> Option<usize> {
         let mv = move_pov(board.inner().side_to_move(), mv_abs);
 
         let classified = ClassifiedPovMove::from_move(mv);
         let channel = classified.to_channel();
-        assert!(channel < POLICY_CHANNELS);
+        assert!(channel < CONV_POLICY_CHANNELS);
 
         let from_index = mv.get_source().to_index();
         let index = channel * 8 * 8 + from_index;
-        assert!(index < Self::POLICY_SIZE);
+        assert!(index < self.policy_len());
 
         Some(index)
     }
@@ -200,7 +246,7 @@ impl ClassifiedPovMove {
     }
 
     pub fn from_channel(channel: usize) -> Self {
-        assert!(channel < POLICY_CHANNELS);
+        assert!(channel < CONV_POLICY_CHANNELS);
 
         if channel < QUEEN_CHANNELS {
             let direction = channel / 7;
@@ -236,7 +282,7 @@ fn square(rank: isize, file: isize) -> Option<Square> {
 }
 
 /// View a square from the given pov.
-/// This function can be used for both the abs->pov and pov->abs directions.
+/// This function works for both the abs->pov and pov->abs directions.
 pub fn square_pov(pov: Color, sq: Square) -> Square {
     match pov {
         Color::White => sq,
@@ -247,6 +293,8 @@ pub fn square_pov(pov: Color, sq: Square) -> Square {
     }
 }
 
+/// View a square from the given pov.
+/// This function works for both the abs->pov and pov->abs directions.
 fn move_pov(pov: Color, mv: ChessMove) -> ChessMove {
     ChessMove::new(
         square_pov(pov, mv.get_source()),
@@ -263,7 +311,7 @@ const QUEEN_CHANNELS: usize = QUEEN_DISTANCE_COUNT * QUEEN_DIRECTION_COUNT;
 const KNIGHT_CHANNELS: usize = KNIGHT_DIRECTION_COUNT;
 const UNDERPROMOTION_CHANNELS: usize = 3 * 3;
 
-const POLICY_CHANNELS: usize = QUEEN_CHANNELS + KNIGHT_CHANNELS + UNDERPROMOTION_CHANNELS;
+const CONV_POLICY_CHANNELS: usize = QUEEN_CHANNELS + KNIGHT_CHANNELS + UNDERPROMOTION_CHANNELS;
 
 // clockwise starting from NNE
 const KNIGHT_DELTAS: [(isize, isize); KNIGHT_DIRECTION_COUNT] =
@@ -275,3 +323,49 @@ const QUEEN_DIRECTIONS: [(isize, isize); QUEEN_DIRECTION_COUNT] =
 
 const UNDERPROMOTION_PIECES: [Piece; 3] =
     [Piece::Rook, Piece::Bishop, Piece::Knight];
+
+/// Generate all possible moves from the POV of the player making the move.
+/// The moves are generated in an intuitive order, but are not sorted.
+pub fn generate_all_flat_moves_pov() -> Vec<ChessMove> {
+    let mut result = vec![];
+
+    // queen moves
+    for from in !BitBoard::default() {
+        for to in !BitBoard::default() {
+            let df = (from.get_file().to_index() as i8) - (to.get_file().to_index() as i8);
+            let dr = (from.get_rank().to_index() as i8) - (to.get_rank().to_index() as i8);
+
+            if ((df == 0) ^ (dr == 0)) || (df != 0 && df.abs() == dr.abs()) {
+                result.push(ChessMove::new(from, to, None))
+            }
+        }
+    }
+
+    // knight moves
+    for from in !BitBoard::default() {
+        for to in !BitBoard::default() {
+            let df = (from.get_file().to_index() as i8) - (to.get_file().to_index() as i8);
+            let dr = (from.get_rank().to_index() as i8) - (to.get_rank().to_index() as i8);
+
+            if (df.abs() == 1 && dr.abs() == 2) || (df.abs() == 2 && dr.abs() == 1) {
+                result.push(ChessMove::new(from, to, None))
+            }
+        }
+    }
+
+    // promotions
+    for piece in [Piece::Queen, Piece::Rook, Piece::Bishop, Piece::Knight] {
+        for from_f in chess::ALL_FILES {
+            for to_f in chess::ALL_FILES {
+                if (from_f.to_index() as i8 - to_f.to_index() as i8).abs() <= 1 {
+                    let from = Square::make_square(Rank::Seventh, from_f);
+                    let to = Square::make_square(Rank::Eighth, to_f);
+                    result.push(ChessMove::new(from, to, Some(piece)))
+                }
+            }
+        }
+    }
+
+    assert_eq!(result.len(), FLAT_MOVE_COUNT);
+    result
+}

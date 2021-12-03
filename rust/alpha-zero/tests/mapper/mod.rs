@@ -6,8 +6,9 @@ use internal_iterator::InternalIterator;
 use alpha_zero::mapping::PolicyMapper;
 use alpha_zero::util::display_option;
 
-mod chess_manual;
+mod chess_manual_conv;
 mod chess_random;
+mod chess_flat_gen;
 
 pub fn test_valid_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     assert!(!board.is_done());
@@ -17,7 +18,7 @@ pub fn test_valid_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
 }
 
 pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
-    let mut prev = vec![vec![]; M::POLICY_SIZE];
+    let mut prev = vec![vec![]; mapper.policy_len()];
     board.available_moves().for_each(|mv: B::Move| {
         match mapper.move_to_index(board, mv) {
             None => assert_eq!(1, board.available_moves().count()),
@@ -53,7 +54,7 @@ pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
 }
 
 pub fn test_index_to_move<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
-    for index in 0..M::POLICY_SIZE {
+    for index in 0..mapper.policy_len() {
         let mv = std::panic::catch_unwind(|| { mapper.index_to_move(board, index) });
 
         match mv {

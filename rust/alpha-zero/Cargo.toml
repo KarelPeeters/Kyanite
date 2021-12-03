@@ -34,6 +34,7 @@ rayon = "1.5.1"
 # util
 itertools = "0.10.1"
 internal-iterator = "0.1.2"
+
 tokio = { version = "1.1.0", features = ["macros"] }
 tokio-stream = { version = "0.1.2" }
 tokio-util = { version = "0.6.2" }
@@ -41,6 +42,7 @@ tokio-util = { version = "0.6.2" }
 rand = "0.8.4"
 rand_distr = "0.4.1"
 
+lazy_static = "1.4.0"
 unwrap-match = "0.1.0"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 self_cell = "0.10.0"

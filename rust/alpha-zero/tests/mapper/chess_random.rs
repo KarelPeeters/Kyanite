@@ -3,14 +3,24 @@ use board_game::games::chess::ChessBoard;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
-use alpha_zero::mapping::chess::ChessStdMapper;
+use alpha_zero::mapping::{BoardMapper, PolicyMapper};
+use alpha_zero::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper};
 
 use crate::mapper::test_valid_mapping;
 
 #[test]
 #[ignore]
-fn main() {
-    let mapper = ChessStdMapper;
+fn std() {
+    random_impl(ChessStdMapper)
+}
+
+#[test]
+#[ignore]
+fn conv() {
+    random_impl(ChessLegacyConvPolicyMapper)
+}
+
+fn random_impl(mapper: impl PolicyMapper<ChessBoard>) {
     let mut rng = SmallRng::seed_from_u64(0);
 
     let game_count = 10_000;
@@ -24,4 +34,3 @@ fn main() {
         }
     }
 }
-

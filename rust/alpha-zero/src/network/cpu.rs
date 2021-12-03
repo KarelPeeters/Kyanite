@@ -40,7 +40,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
         let input_len = input.len();
 
         let mut input_shape = vec![batch_size];
-        input_shape.extend_from_slice(&M::INPUT_FULL_SHAPE);
+        input_shape.extend_from_slice(&self.mapper.input_full_shape());
 
         let input = Tensor::from_shape_vec(IxDyn(&input_shape), input)
             .unwrap_or_else(|_| panic!("Incompatible shapes: ({}) -> {:?}", input_len, input_shape));

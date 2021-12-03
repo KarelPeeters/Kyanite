@@ -19,9 +19,9 @@ use crate::util::kdl_divergence;
 struct MetaData<'a> {
     game: &'a str,
 
-    board_bool_planes: usize,
-    board_scalar_count: usize,
-    policy_planes: usize,
+    input_bool_shape: &'a [usize],
+    input_scalar_count: usize,
+    policy_shape: &'a [usize],
 
     game_count: usize,
     position_count: usize,
@@ -114,7 +114,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         self.total_root_wdl += simulation.outcome.pov(simulation.positions[0].board.next_player()).to_wdl();
 
         let mut scalars: Vec<f32> = vec![];
-        let mut board_bools = BitBuffer::new(M::INPUT_BOOL_COUNT);
+        let mut board_bools = BitBuffer::new(self.mapper.input_bool_len());
         let mut board_scalars: Vec<f32> = vec![];
         let mut policy_indices: Vec<u32> = vec![];
 
@@ -125,9 +125,9 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             // board
             self.mapper.encode(&mut board_bools, &mut board_scalars, board);
 
-            assert_eq!(M::INPUT_BOOL_COUNT, board_bools.len());
-            assert_eq!(M::INPUT_SCALAR_COUNT, board_scalars.len());
-            assert_eq!((M::INPUT_BOOL_COUNT + 7) / 8, board_bools.storage().len());
+            assert_eq!(self.mapper.input_bool_len(), board_bools.len());
+            assert_eq!(self.mapper.input_scalar_count(), board_scalars.len());
+            assert_eq!((self.mapper.input_bool_len() + 7) / 8, board_bools.storage().len());
 
             // policy
             let mut got_none = false;
@@ -206,9 +206,9 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         let meta = MetaData {
             game: &self.game,
             scalar_names: SCALAR_NAMES,
-            board_bool_planes: M::INPUT_BOOL_PLANES,
-            board_scalar_count: M::INPUT_SCALAR_COUNT,
-            policy_planes: M::POLICY_PLANES,
+            input_bool_shape: &self.mapper.input_bool_shape(),
+            input_scalar_count: self.mapper.input_scalar_count(),
+            policy_shape: self.mapper.policy_shape(),
             game_count: self.game_count,
             position_count: self.position_count,
             max_game_length: self.max_game_length.unwrap_or(-1),

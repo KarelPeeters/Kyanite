@@ -56,9 +56,9 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
             Some(0) => Some(tensor.mapv(f32::tanh).to_shared()),
             Some(1) => Some(softmax(tensor, Axis(1)).to_shared()),
             Some(2) => {
-                let mut result_logit: Array2<f32> = tensor.reshape((boards.len(), M::POLICY_SIZE)).to_owned();
+                let mut result_logit: Array2<f32> = tensor.reshape((boards.len(), mapper.policy_len())).to_owned();
                 for (bi, board) in boards.iter().enumerate() {
-                    for i in 0..M::POLICY_SIZE {
+                    for i in 0..mapper.policy_len() {
                         let is_available = mapper.index_to_move(board, i)
                             .map_or(false, |mv| board.is_available_move(mv));
 
@@ -68,7 +68,7 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
                     }
                 }
                 let result = softmax(result_logit, Axis(1))
-                    .into_shape([&[boards.len()][..], &M::POLICY_SHAPE].concat())
+                    .into_shape([&[boards.len()][..], mapper.policy_shape()].concat())
                     .unwrap().to_shared();
                 Some(result)
             }

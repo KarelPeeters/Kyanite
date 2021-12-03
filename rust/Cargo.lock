@@ -46,6 +46,7 @@ dependencies = [
  "image",
  "internal-iterator",
  "itertools",
+ "lazy_static",
  "licoricedev",
  "ndarray",
  "nn-graph",

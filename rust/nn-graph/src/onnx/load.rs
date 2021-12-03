@@ -10,6 +10,7 @@ use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::store::Store;
+use crate::shape;
 use crate::shape::{Shape, Size};
 
 pub fn load_model_proto(buf: &[u8]) -> ModelProto {
@@ -74,7 +75,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 if let Some(bias) = bias {
                     let bias_size = graph[bias].shape.unwrap_1();
-                    let bias_view_shape = Shape::new(vec![Size::ONE, bias_size, Size::ONE, Size::ONE]);
+                    let bias_view_shape = shape![1, bias_size, 1, 1];
 
                     let bias_view = graph.view(bias, bias_view_shape);
                     graph.add(conv, bias_view)
@@ -146,7 +147,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let output = if let Some(bias) = bias {
                     let bias_len = graph[bias].shape.unwrap_1();
-                    let bias_view_shape = Shape::new(vec![Size::ONE, bias_len]);
+                    let bias_view_shape = shape![1, bias_len];
                     let bias_view = graph.view(bias, bias_view_shape);
 
                     graph.add(linear, bias_view)
