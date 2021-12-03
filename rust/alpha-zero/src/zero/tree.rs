@@ -214,7 +214,11 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         if let Some(children) = node.children {
             let mut children = children.iter().collect_vec();
             let best_child = if self.sort {
-                children.sort_by_key(|&c| self.tree[c].complete_visits);
+                // sort by visits first, then by policy
+                children.sort_by_key(|&c| (
+                    self.tree[c].complete_visits,
+                    decorum::Total::from(self.tree[c].net_policy)
+                ));
                 children.reverse();
                 children[0]
             } else {
