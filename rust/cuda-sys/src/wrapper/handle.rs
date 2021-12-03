@@ -79,6 +79,12 @@ impl CudaStream {
     pub unsafe fn record_event(&mut self, event: &CudaEvent) {
         cudaEventRecord(event.inner(), self.inner()).unwrap()
     }
+
+    pub unsafe fn record_new_event(&mut self) -> CudaEvent {
+        let event = CudaEvent::new();
+        self.record_event(&event);
+        event
+    }
 }
 
 #[derive(Debug)]

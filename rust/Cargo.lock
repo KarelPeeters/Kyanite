@@ -607,6 +607,7 @@ dependencies = [
  "cuda-sys",
  "itertools",
  "nn-graph",
+ "rand 0.8.4",
 ]
 
 [[package]]

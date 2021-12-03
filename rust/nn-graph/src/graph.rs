@@ -103,6 +103,24 @@ pub struct ConvDetails {
 }
 
 impl ConvDetails {
+    pub fn input_shape(&self) -> Shape {
+        Shape::new(vec![
+            self.batch_size,
+            Size::fixed(self.input_channels),
+            Size::fixed(self.input_size),
+            Size::fixed(self.input_size),
+        ])
+    }
+
+    pub fn output_shape(&self) -> Shape {
+        Shape::new(vec![
+            self.batch_size,
+            Size::fixed(self.output_channels),
+            Size::fixed(self.output_size),
+            Size::fixed(self.output_size),
+        ])
+    }
+    
     pub fn kernel_shape(&self) -> [usize; 4] {
         [self.output_channels, self.input_channels, self.kernel_size, self.kernel_size]
     }

@@ -23,6 +23,10 @@ impl Shape {
     pub fn new(dims: Vec<Size>) -> Shape {
         Shape { dims }
     }
+    
+    pub fn single(size: Size) -> Shape {
+        Shape { dims: vec![size] }
+    }
 
     pub fn fixed(dims: &[usize]) -> Shape {
         let dims = dims.iter().map(|&d| Size::fixed(d)).collect_vec();
@@ -62,6 +66,11 @@ impl Shape {
 
     pub fn unwrap_4(&self) -> [Size; 4] {
         self.dims.as_slice().try_into().expect("Expected rank 4 shape")
+    }
+    
+    pub fn concat(mut self, other: &Shape) -> Shape {
+        self.dims.extend_from_slice(&other.dims);
+        self
     }
 
     /// Returns a new shape with the same rank with all sizes set to 1, except the size at `index` is kept.

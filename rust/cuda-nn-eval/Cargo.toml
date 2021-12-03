@@ -9,6 +9,7 @@ nn-graph = { path = "../nn-graph" }
 
 bytemuck = "1.7.2"
 itertools = "0.10.1"
+rand = "0.8.4"
 
 [dev-dependencies]
 criterion = "0.3"
