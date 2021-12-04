@@ -6,6 +6,7 @@ use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
+use nn_graph::shape;
 use nn_graph::shape::Shape;
 
 pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
@@ -54,8 +55,8 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
     let values = vec![0.0, 1.0, 2.0, 5.0, 6.0, 7.0, -1.0, -1.0, 0.5, 100.0, -100.0];
     let pair_count = values.len() * values.len();
 
-    let left = graph.input(Shape::fixed(&[pair_count]));
-    let right = graph.input(Shape::fixed(&[pair_count]));
+    let left = graph.input(shape![pair_count]);
+    let right = graph.input(shape![pair_count]);
 
     let output = graph_op(&mut graph, left, right);
     graph.output(output);

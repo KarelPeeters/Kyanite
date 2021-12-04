@@ -4,6 +4,7 @@ use crate::cpu::convolution;
 use crate::graph::{ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
 use crate::optimizer::{Optimizer, OptimizerSettings};
+use crate::shape;
 use crate::shape::{Shape, Size};
 
 impl Optimizer<'_> {
@@ -244,7 +245,7 @@ struct ScaleBias {
 
 impl ScaleBias {
     fn apply(self, graph: &mut Graph, input: Value) -> Value {
-        let const_shape = Shape::fixed(&[1, self.scale.len(), 1, 1]);
+        let const_shape = shape![1, self.scale.len(), 1, 1];
         let scale = graph.constant(const_shape.clone(), self.scale.to_vec());
         let bias = graph.constant(const_shape.clone(), self.bias.to_vec());
 

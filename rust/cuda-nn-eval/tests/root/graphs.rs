@@ -37,7 +37,7 @@ fn copy() {
 fn slice() {
     let mut graph = Graph::new();
 
-    let input = graph.input(Shape::fixed(&[10, 4]));
+    let input = graph.input(shape![10, 4]);
     let indexed = graph.index(input, 1, 0);
     let sliced = graph.slice(input, 0, 0, 2);
     let both = graph.slice(indexed, 0, 0, 2);
@@ -61,9 +61,9 @@ fn slice() {
 fn linear() {
     let mut graph = Graph::new();
 
-    let input = graph.input(Shape::fixed(&[1, 4]));
-    let weight = graph.constant(Shape::fixed(&[2, 4]), range_vec(8));
-    let bias = graph.constant(Shape::fixed(&[1, 2]), vec![-10.0, 10.0]);
+    let input = graph.input(shape![1, 4]);
+    let weight = graph.constant(shape![2, 4], range_vec(8));
+    let bias = graph.constant(shape![1, 2], vec![-10.0, 10.0]);
 
     let linear = graph.linear(input, weight);
     let biased = graph.add(linear, bias);
@@ -106,8 +106,8 @@ fn fuse_clamp() {
 fn add_broadcast() {
     let mut graph = Graph::new();
 
-    let left = graph.constant(Shape::fixed(&[2, 2, 2]), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
-    let right = graph.constant(Shape::fixed(&[1, 2, 2]), vec![0.0, 1.0, 2.0, 3.0]);
+    let left = graph.constant(shape![2, 2, 2], vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+    let right = graph.constant(shape![1, 2, 2], vec![0.0, 1.0, 2.0, 3.0]);
     let output = graph.add(left, right);
     graph.output(output);
 
@@ -126,14 +126,14 @@ fn affine_single_element() {
 
     let mut graph = Graph::new();
 
-    let const_shape = Shape::fixed(&[1, 1, 1, 1]);
+    let const_shape = shape![1, 1, 1, 1];
     let bias_0 = graph.constant(const_shape.clone(), vec![1.0]);
     let scale_0 = graph.constant(const_shape.clone(), vec![2.0]);
     let filter = graph.constant(const_shape.clone(), vec![10.0]);
     let bias_1 = graph.constant(const_shape.clone(), vec![3.0]);
     let scale_1 = graph.constant(const_shape.clone(), vec![4.0]);
 
-    let curr = graph.input(Shape::fixed(&input_data.shape()));
+    let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
     let curr = graph.conv(curr, filter, 0);
@@ -155,9 +155,9 @@ fn affine_multiple_channels() {
 
     let mut graph = Graph::new();
 
-    let before_shape = Shape::fixed(&[1, 3, 1, 1]);
-    let after_shape = Shape::fixed(&[1, 2, 1, 1]);
-    let filter_shape = Shape::fixed(&[2, 3, 1, 1]);
+    let before_shape = shape![1, 3, 1, 1];
+    let after_shape = shape![1, 2, 1, 1];
+    let filter_shape = shape![2, 3, 1, 1];
 
     let bias_0 = graph.constant(before_shape.clone(), vec![1.0, 2.0, 3.0]);
     let scale_0 = graph.constant(before_shape.clone(), vec![2.0, 3.0, 4.0]);
@@ -165,7 +165,7 @@ fn affine_multiple_channels() {
     let bias_1 = graph.constant(after_shape.clone(), vec![3.0, 4.0]);
     let scale_1 = graph.constant(after_shape.clone(), vec![4.0, 5.0]);
 
-    let curr = graph.input(Shape::fixed(&input_data.shape()));
+    let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
     let curr = graph.conv(curr, filter, 0);
@@ -188,9 +188,9 @@ fn affine_padding() {
 
     let mut graph = Graph::new();
 
-    let filter = graph.constant(Shape::fixed(&filter_data.shape()), filter_data.to_owned().into_raw_vec());
-    let bias_0 = graph.constant(Shape::fixed(&[1, 3, 1, 1]), linspace_vec(3));
-    let bias_1 = graph.constant(Shape::fixed(&[1, 5, 1, 1]), linspace_vec(5));
+    let filter = graph.constant(Shape::fixed(filter_data.shape()), filter_data.to_owned().into_raw_vec());
+    let bias_0 = graph.constant(shape![1, 3, 1, 1], linspace_vec(3));
+    let bias_1 = graph.constant(shape![1, 5, 1, 1], linspace_vec(5));
 
     let mut curr = graph.input(Shape::fixed(&input_data.shape()));
     curr = graph.add(curr, bias_0);
@@ -213,9 +213,9 @@ fn pre_act_resnet() {
     let input_data = linspace_tensor((8, 3, 8, 8)).into_dyn();
     let input = graph.input(Shape::fixed(input_data.shape()));
 
-    let filter_initial = graph.constant(Shape::fixed(&[5, 3, 3, 3]), linspace_vec(5 * 3 * 3 * 3));
-    let filter_tower = graph.constant(Shape::fixed(&[5, 5, 3, 3]), linspace_vec(5 * 5 * 3 * 3));
-    let filter_policy = graph.constant(Shape::fixed(&[2, 5, 1, 1]), linspace_vec(5 * 2));
+    let filter_initial = graph.constant(shape![5, 3, 3, 3], linspace_vec(5 * 3 * 3 * 3));
+    let filter_tower = graph.constant(shape![5, 5, 3, 3], linspace_vec(5 * 5 * 3 * 3));
+    let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
     let mut tower = graph.conv(input, filter_initial, 1);
     for _ in 0..4 {
@@ -244,7 +244,7 @@ fn channel_batchnorm(graph: &mut Graph, input: Value) -> Value {
     let [_, c, _, _] = graph[input].shape.unwrap_4();
     let c = c.unwrap_fixed("Dummy BN channel count");
 
-    let const_shape = Shape::fixed(&[1, c, 1, 1]);
+    let const_shape = shape![1, c, 1, 1];
 
     let mean = graph.constant(const_shape.clone(), linspace_vec(c));
     let var = graph.constant(const_shape.clone(), linspace_vec(c));
@@ -263,9 +263,9 @@ fn channel_batchnorm(graph: &mut Graph, input: Value) -> Value {
 fn fuse_res() {
     let mut graph = Graph::new();
 
-    let input = graph.input(Shape::fixed(&[10, 4, 8, 8]));
-    let other = graph.input(Shape::fixed(&[10, 4, 8, 8]));
-    let filter = graph.constant(Shape::fixed(&[4, 4, 3, 3]), linspace_vec(4 * 4 * 3 * 3));
+    let input = graph.input(shape![10, 4, 8, 8]);
+    let other = graph.input(shape![10, 4, 8, 8]);
+    let filter = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
 
     let mut curr = input;
     curr = graph.conv(curr, filter, 1);

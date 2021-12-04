@@ -6,7 +6,7 @@ use itertools::Itertools;
 #[macro_export]
 macro_rules! shape {
     [$($(*)? $value:expr),* $(,)?] => {
-        Shape::new(vec![$(Size::from($value)),*])
+        $crate::shape::Shape::new(vec![$($crate::shape::Size::from($value)),*])
     };
 }
 
