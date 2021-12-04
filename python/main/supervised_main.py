@@ -92,7 +92,7 @@ def main():
     print_param_count(network)
 
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
-    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 16_000]))
+    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 1_000]))
 
     plotter = LogPlotter()
     plotter.update(logger)
