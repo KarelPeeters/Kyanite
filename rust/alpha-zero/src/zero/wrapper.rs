@@ -8,7 +8,7 @@ use itertools::Itertools;
 use crate::network::Network;
 use crate::oracle::Oracle;
 use crate::util::zip_eq_exact;
-use crate::zero::step::{zero_step_apply, zero_step_gather};
+use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
@@ -16,11 +16,12 @@ pub struct ZeroSettings {
     pub batch_size: usize,
     pub exploration_weight: f32,
     pub use_value: bool,
+    pub fpu_mode: FpuMode,
 }
 
 impl ZeroSettings {
-    pub fn new(batch_size: usize, exploration_weight: f32, use_value: bool) -> Self {
-        ZeroSettings { batch_size, exploration_weight, use_value }
+    pub fn new(batch_size: usize, exploration_weight: f32, use_value: bool, fpu_mode: FpuMode) -> Self {
+        ZeroSettings { batch_size, exploration_weight, use_value, fpu_mode }
     }
 }
 
@@ -56,7 +57,7 @@ impl ZeroSettings {
             // collect enough requests to fill the batch
             // TODO what about when we have explored the entire tree and are left with a half-filled batch?
             while requests.len() < self.batch_size {
-                let request = zero_step_gather(tree, oracle, self.exploration_weight, self.use_value);
+                let request = zero_step_gather(tree, oracle, self.exploration_weight, self.use_value, self.fpu_mode);
                 if let Some(request) = request {
                     requests.push(request);
                 }

@@ -1,5 +1,5 @@
 use board_game::board::Board;
-use board_game::wdl::POV;
+use board_game::wdl::{Flip, OutcomeWDL, POV};
 use internal_iterator::InternalIterator;
 
 use crate::network::ZeroEvaluation;
@@ -21,6 +21,12 @@ pub struct ZeroResponse {
     pub eval: ZeroEvaluation,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum FpuMode {
+    Fixed(ZeroValues),
+    Parent,
+}
+
 /// The first half of a step, walks down the tree until either:
 /// * a **terminal** node is reached.
 /// The resulting wdl value is immediately propagated back to the root, the `visit` counters are incremented
@@ -34,9 +40,12 @@ pub fn zero_step_gather<B: Board>(
     oracle: &impl Oracle<B>,
     exploration_weight: f32,
     use_value: bool,
+    fpu_mode: FpuMode,
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
+
+    let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw);
 
     loop {
         // count each node as visited
@@ -67,10 +76,17 @@ pub fn zero_step_gather<B: Board>(
             Some(children) => children,
         };
 
+        // update fpu
+        if tree[curr_node].complete_visits > 0 {
+            fpu = tree[curr_node].values();
+        }
+        fpu = fpu.flip();
+
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].total_visits();
+
         let selected = children.iter().max_by_key(|&child| {
-            tree[child].uct(parent_total_visits, exploration_weight, use_value)
+            tree[child].uct(parent_total_visits, fpu_mode.select(fpu), exploration_weight, use_value)
         }).expect("Board is not done, this node should have a child");
 
         curr_node = selected;
@@ -116,6 +132,15 @@ fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: 
             Some(parent) => parent,
             None => break,
         };
+    }
+}
+
+impl FpuMode {
+    pub fn select(&self, parent_flipped: ZeroValues) -> ZeroValues {
+        match self {
+            FpuMode::Fixed(values) => *values,
+            FpuMode::Parent => parent_flipped,
+        }
     }
 }
 

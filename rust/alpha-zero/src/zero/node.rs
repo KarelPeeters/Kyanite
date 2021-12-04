@@ -87,17 +87,19 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn uct(&self, parent_total_visits: u64, exploration_weight: f32, use_value: bool) -> N32 {
+    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, exploration_weight: f32, use_value: bool) -> N32 {
         let total_visits = self.total_visits();
 
-        let v = if total_visits == 0 {
-            0.0
+        let data = if total_visits == 0 {
+            fpu
         } else {
-            if use_value {
-                self.total_data().value
-            } else {
-                self.total_data().wdl.value()
-            }
+            self.total_data()
+        };
+
+        let v = if use_value {
+            data.value
+        } else {
+            data.wdl.value()
         };
 
         let q = (v + 1.0) / 2.0;
@@ -159,5 +161,14 @@ impl std::ops::Div<f32> for ZeroValues {
 impl Display for ZeroValues {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.3}, {:.3}/{:.3}/{:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss)
+    }
+}
+
+impl Flip for ZeroValues {
+    fn flip(self) -> Self {
+        ZeroValues {
+            value: -self.value,
+            wdl: self.wdl.flip(),
+        }
     }
 }

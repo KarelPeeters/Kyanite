@@ -18,7 +18,7 @@ use crate::selfplay::move_selector::MoveSelector;
 use crate::selfplay::protocol::{Command, GeneratorUpdate, Settings};
 use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::zip_eq_exact;
-use crate::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest, ZeroResponse};
+use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather, ZeroRequest, ZeroResponse};
 use crate::zero::tree::Tree;
 
 pub fn generator_main<B: Board>(
@@ -315,7 +315,7 @@ impl<B: Board> SearchState<B> {
             }
 
             //TODO use an oracle here (based on a boolean or maybe path setting)
-            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.exploration_weight, settings.use_value) {
+            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.exploration_weight, settings.use_value, FpuMode::Parent) {
                 return StepResult::Request(request);
             }
         }
