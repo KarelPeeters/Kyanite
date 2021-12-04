@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+from lib.chess_mapping.chess_mapping import FLAT_TO_ATT, FLAT_TO_CONV
 from lib.games import Game
 
 
@@ -22,25 +23,33 @@ class PostActValueHead(nn.Module):
 
 class PostActConvPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int):
+        assert game.policy_conv_channels is not None, "Conv head only works for games with policy_conv_channels set"
         super().__init__()
+
         self.seq = nn.Sequential(
             conv2d(channels, channels, 1),
             nn.ReLU(),
-            conv2d(channels, game.policy_channels, 1),
+            conv2d(channels, game.policy_conv_channels, 1),
         )
 
+        self.FLAT_TO_CONV = FLAT_TO_CONV
+
     def forward(self, common):
-        return self.seq(common)
+        policy = self.seq(common)
+        flat_policy = policy.flatten(1)[:, self.FLAT_TO_CONV]
+        return flat_policy
 
 
 class PostActAttentionPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int, query_channels: int):
         super().__init__()
-        assert game.name == "chess", "Attention policy only works for chess"
+        assert game.name == "chess", "Attention policy head only works for chess for now"
 
         self.query_channels = query_channels
         self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
         self.conv_under = conv2d(channels, 3 * query_channels, 1)
+
+        self.FLAT_TO_ATT = FLAT_TO_ATT
 
     def forward(self, common):
         bulk = self.conv_bulk(common)
@@ -52,14 +61,10 @@ class PostActAttentionPolicyHead(nn.Module):
             under.view(-1, self.query_channels, 3 * 8)
         ], dim=2)
 
-        policy = torch.bmm(q_from.transpose(1, 2), q_to).flatten(1)
+        policy = torch.bmm(q_from.transpose(1, 2), q_to)
 
-        # TODO use new policy indexing scheme
-
-        picked_policy = torch.gather(policy, dim=1, )
-
-        # indexed [b][from][to_extended] before final flattening
-        return policy
+        flat_policy = policy.flatten(1)[:, self.FLAT_TO_ATT]
+        return flat_policy
 
 
 class PostActNetwork(nn.Module):

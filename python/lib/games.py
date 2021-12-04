@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Tuple, Optional
 
 
 @dataclass
@@ -9,7 +9,9 @@ class Game:
     board_size: int
     input_bool_channels: int
     input_scalar_channels: int
-    policy_channels: int
+
+    policy_shape: Tuple[int, ...]
+    policy_conv_channels: Optional[int]
 
     estimate_moves_per_game: float
 
@@ -18,7 +20,6 @@ class Game:
 
     full_input_channels: int = field(init=False)
     full_input_shape: Tuple[int, int, int] = field(init=False)
-    policy_shape: Tuple[int, int, int] = field(init=False)
 
     def __post_init__(self):
         self.input_bool_shape = (self.input_bool_channels, self.board_size, self.board_size)
@@ -26,7 +27,6 @@ class Game:
 
         self.full_input_channels = self.input_bool_channels + self.input_scalar_channels
         self.full_input_shape = (self.full_input_channels, self.board_size, self.board_size)
-        self.policy_shape = (self.policy_channels, self.board_size, self.board_size)
 
     @classmethod
     def find(cls, name: str):
@@ -43,7 +43,8 @@ GAMES = [
         board_size=7,
         input_bool_channels=3,
         input_scalar_channels=0,
-        policy_channels=17,
+        policy_shape=(17, 7, 7),
+        policy_conv_channels=17,
         estimate_moves_per_game=150,
     ),
     Game(
@@ -51,7 +52,8 @@ GAMES = [
         board_size=8,
         input_bool_channels=13,
         input_scalar_channels=8,
-        policy_channels=73,
+        policy_shape=(1880,),
+        policy_conv_channels=73,
         estimate_moves_per_game=150,
     ),
     Game(
@@ -59,7 +61,8 @@ GAMES = [
         board_size=9,
         input_bool_channels=3,
         input_scalar_channels=0,
-        policy_channels=1,
+        policy_shape=(1, 9, 9),
+        policy_conv_channels=1,
         estimate_moves_per_game=40,
     ),
     Game(
@@ -67,7 +70,8 @@ GAMES = [
         board_size=3,
         input_bool_channels=2,
         input_scalar_channels=0,
-        policy_channels=1,
+        policy_shape=(1, 3, 3),
+        policy_conv_channels=1,
         estimate_moves_per_game=5,
     )
 ]

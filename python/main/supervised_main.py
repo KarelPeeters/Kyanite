@@ -35,9 +35,9 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 def main():
     app = qt_app()
 
-    train_pattern = f"../../data/pgn/*.json"
-    test_pattern = f"../../data/pgn/*.json"
-    output_folder = "../../data/supervised/test_policy/"
+    train_pattern = f"../../data/lichess/*.json"
+    test_pattern = f"../../data/lichess/*.json"
+    output_folder = "../../data/supervised/flat_conv/"
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -76,10 +76,12 @@ def main():
     if last_bi is None:
         logger = Logger()
         start_bi = 0
+
+        channels = 32
         network = PostActNetwork(
-            game, 16, 128,
-            PostActValueHead(game, 128, 16, 128),
-            PostActAttentionPolicyHead(game, 128, 10),
+            game, 8, channels,
+            PostActValueHead(game, channels, 4, 64),
+            PostActConvPolicyHead(game, channels),
         )
     else:
         logger = Logger.load(os.path.join(output_folder, "log.npz"))

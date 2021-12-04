@@ -12,9 +12,9 @@ OFFSET_SIZE_IN_BYTES = 8
 class DataFileInfo:
     def __init__(self, game: Game, meta: dict, bin_path: Path, off_path: Path, final_offset: int):
         assert meta["game"] == game.name
-        assert meta["board_bool_planes"] == game.input_bool_channels
-        assert meta["board_scalar_count"] == game.input_scalar_channels
-        assert meta["policy_planes"] == game.policy_channels
+        assert meta["input_bool_shape"] == list(game.input_bool_shape)
+        assert meta["input_scalar_count"] == game.input_scalar_channels
+        assert meta["policy_shape"] == list(game.policy_shape)
 
         self.game = game
         self.meta = meta
@@ -27,6 +27,9 @@ class DataFileInfo:
         self.min_game_length = meta["min_game_length"]
         self.max_game_length = meta["max_game_length"]
         self.root_wdl = meta.get("root_wdl")
+
+        # TODO actually use these names to split the scalars properly
+        self.scalar_names = meta["scalar_names"]
 
 
 class DataFile:
