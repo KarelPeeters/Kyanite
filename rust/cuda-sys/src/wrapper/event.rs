@@ -31,7 +31,7 @@ impl CudaEvent {
 impl Drop for CudaEvent {
     fn drop(&mut self) {
         unsafe {
-            cudaEventDestroy(self.0).unwrap()
+            cudaEventDestroy(self.0).unwrap_in_drop()
         }
     }
 }

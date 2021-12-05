@@ -13,7 +13,7 @@ pub struct TensorDescriptor {
 
 impl Drop for TensorDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyTensorDescriptor(self.inner).unwrap() }
+        unsafe { cudnnDestroyTensorDescriptor(self.inner).unwrap_in_drop() }
     }
 }
 
@@ -75,7 +75,7 @@ pub struct FilterDescriptor {
 impl Drop for FilterDescriptor {
     fn drop(&mut self) {
         unsafe {
-            cudnnDestroyFilterDescriptor(self.inner).unwrap()
+            cudnnDestroyFilterDescriptor(self.inner).unwrap_in_drop()
         }
     }
 }
@@ -123,7 +123,7 @@ pub struct ConvolutionDescriptor(cudnnConvolutionDescriptor_t);
 
 impl Drop for ConvolutionDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyConvolutionDescriptor(self.0).unwrap() }
+        unsafe { cudnnDestroyConvolutionDescriptor(self.0).unwrap_in_drop() }
     }
 }
 
@@ -226,7 +226,7 @@ pub struct ActivationDescriptor {
 
 impl Drop for ActivationDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyActivationDescriptor(self.inner).unwrap() }
+        unsafe { cudnnDestroyActivationDescriptor(self.inner).unwrap_in_drop() }
     }
 }
 
@@ -257,7 +257,7 @@ pub struct PoolingDescriptor(cudnnPoolingDescriptor_t);
 
 impl Drop for PoolingDescriptor {
     fn drop(&mut self) {
-        unsafe { cudnnDestroyPoolingDescriptor(self.0).unwrap() }
+        unsafe { cudnnDestroyPoolingDescriptor(self.0).unwrap_in_drop() }
     }
 }
 
@@ -318,7 +318,7 @@ pub struct TensorOpDescriptor {
 impl Drop for TensorOpDescriptor {
     fn drop(&mut self) {
         unsafe {
-            cudnnDestroyOpTensorDescriptor(self.inner).unwrap()
+            cudnnDestroyOpTensorDescriptor(self.inner).unwrap_in_drop()
         }
     }
 }

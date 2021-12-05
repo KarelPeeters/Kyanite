@@ -28,7 +28,7 @@ impl Drop for DeviceMemInner {
     fn drop(&mut self) {
         unsafe {
             self.device.switch_to();
-            cudaFree(self.dev_ptr).unwrap()
+            cudaFree(self.dev_ptr).unwrap_in_drop()
         }
     }
 }

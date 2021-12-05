@@ -13,7 +13,7 @@ pub struct PinnedMem {
 impl Drop for PinnedMem {
     fn drop(&mut self) {
         unsafe {
-            cudaFreeHost(self.ptr()).unwrap();
+            cudaFreeHost(self.ptr()).unwrap_in_drop();
         }
     }
 }

@@ -47,7 +47,7 @@ pub struct CudaStream {
 impl Drop for CudaStream {
     fn drop(&mut self) {
         unsafe {
-            cudaStreamDestroy(self.inner).unwrap();
+            cudaStreamDestroy(self.inner).unwrap_in_drop();
         }
     }
 }
@@ -97,7 +97,7 @@ impl Drop for CudnnHandle {
     fn drop(&mut self) {
         unsafe {
             self.device().switch_to();
-            cudnnDestroy(self.inner).unwrap()
+            cudnnDestroy(self.inner).unwrap_in_drop()
         }
     }
 }
