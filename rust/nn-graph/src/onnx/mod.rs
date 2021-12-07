@@ -10,6 +10,7 @@ mod proto {
 mod attributes;
 mod store;
 mod load;
+mod typed_value;
 
 pub fn load_graph_from_onnx_path(path: impl AsRef<Path>) -> Graph {
     let path = path.as_ref();

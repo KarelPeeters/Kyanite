@@ -3,13 +3,14 @@ use itertools::Itertools;
 use num_traits::cast;
 use prost::Message;
 
-use crate::graph::{Graph, Value};
+pub use crate::graph::Graph;
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::store::Store;
+use crate::onnx::typed_value::{SizeOrInt, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -24,7 +25,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
     let model_graph = model.graph.as_ref().unwrap();
 
     let mut graph = Graph::new();
-    let mut nodes = Store::default();
+    let mut nodes: Store<TypedValue> = Store::default();
 
     load_initializers(&mut graph, &mut nodes, &model_graph.initializer);
 
@@ -34,9 +35,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             continue;
         }
 
-        let shape = resolve_tensor_shape(input.r#type.as_ref().unwrap());
+        let shape = resolve_float_tensor_shape(input.r#type.as_ref().unwrap());
         let value = graph.input(shape);
-        nodes.define(&input.name, value);
+        nodes.define(&input.name, TypedValue::FloatTensor(value));
     }
 
     for node in &model_graph.node {
@@ -44,17 +45,19 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
         let output_name = &node.output[0];
 
         let mut attrs = Attributes::from(&node.attribute);
-        let inputs: Vec<Value> = node.input.iter().enumerate().map(|(i, name)| {
-            *nodes.get(name)
+        let inputs: Vec<&TypedValue> = node.input.iter().enumerate().map(|(i, name)| {
+            nodes.get(name)
                 .unwrap_or_else(|| panic!("Input {} {} of node {} not found", i, name, node.name))
         }).collect_vec();
 
-        let value = match &*node.op_type {
+        // TODO put this huge match expression in a separate function
+        // TODO in general panic a lot less and return a proper result type instead
+        let value: TypedValue = match &*node.op_type {
             "Conv" => {
                 assert!(inputs.len() <= 3);
-                let input = inputs[0];
-                let filter = inputs[1];
-                let bias = inputs.get(2).copied();
+                let input = inputs[0].unwrap_float();
+                let filter = inputs[1].unwrap_float();
+                let bias = inputs.get(2).map(|v| v.unwrap_float());
 
                 let groups = attrs.take_int("group");
                 let [kernel_width, kernel_height] = unwrap_2(attrs.take_ints("kernel_shape"));
@@ -73,7 +76,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let conv = graph.conv(input, filter, padding_y0, padding_x0);
 
-                if let Some(bias) = bias {
+                let result = if let Some(bias) = bias {
                     let bias_size = graph[bias].shape.unwrap_1();
                     let bias_view_shape = shape![1, bias_size, 1, 1];
 
@@ -81,23 +84,26 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     graph.add(conv, bias_view)
                 } else {
                     conv
-                }
+                };
+
+                TypedValue::FloatTensor(result)
             }
             "Relu" => {
                 assert_eq!(1, inputs.len());
-                let input = inputs[0];
-                graph.relu(input)
+                let input = inputs[0].unwrap_float();
+                let result = graph.relu(input);
+                TypedValue::FloatTensor(result)
             }
             "Clip" => {
                 assert!(inputs.len() >= 1);
-                let input = inputs[0];
+                let input = inputs[0].unwrap_float();
 
                 let (min, max) = match inputs.len() {
                     1 =>
                         (attrs.take_float("min"), attrs.take_float("max")),
                     3 => {
-                        let min = graph.as_const(inputs[1]).unwrap();
-                        let max = graph.as_const(inputs[1]).unwrap();
+                        let min = graph.as_const(inputs[1].unwrap_float()).unwrap();
+                        let max = graph.as_const(inputs[1].unwrap_float()).unwrap();
 
                         assert!(
                             min.len() == 1 && max.len() == 1,
@@ -111,29 +117,32 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         panic!("Expected either 1 or 3 inputs for Clip, got {}", len),
                 };
 
-                graph.clamp(input, min, max)
+                let result = graph.clamp(input, min, max);
+                TypedValue::FloatTensor(result)
             }
             "Add" => {
                 assert_eq!(2, inputs.len());
-                let left = inputs[0];
-                let right = inputs[1];
-                graph.add(left, right)
+                let left = inputs[0].unwrap_float();
+                let right = inputs[1].unwrap_float();
+                let result = graph.add(left, right);
+                TypedValue::FloatTensor(result)
             }
             "Flatten" => {
                 assert_eq!(1, inputs.len());
-                let input = inputs[0];
+                let input = inputs[0].unwrap_float();
 
                 let rel_axis = attrs.take_int("axis");
                 let axis = abs_axis(rel_axis, graph[input].shape.rank());
 
-                graph.flatten(input, axis)
+                let result = graph.flatten(input, axis);
+                TypedValue::FloatTensor(result)
             }
             "Gemm" => {
                 assert_eq!(3, inputs.len());
 
-                let input = inputs[0];
-                let weight = inputs[1];
-                let bias = inputs.get(2).copied();
+                let input = inputs[0].unwrap_float();
+                let weight = inputs[1].unwrap_float();
+                let bias = inputs.get(2).map(|v| v.unwrap_float());
 
                 let alpha = attrs.take_float("alpha");
                 let beta = attrs.take_float("beta");
@@ -145,7 +154,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let linear = graph.linear(input, weight);
 
-                let output = if let Some(bias) = bias {
+                let result = if let Some(bias) = bias {
                     let bias_len = graph[bias].shape.unwrap_1();
                     let bias_view_shape = shape![1, bias_len];
                     let bias_view = graph.view(bias, bias_view_shape);
@@ -155,20 +164,20 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     linear
                 };
 
-                output
+                TypedValue::FloatTensor(result)
             }
             "BatchNormalization" => {
                 //TODO also try without merging anything here to see how much of a difference it makes
 
                 assert_eq!(5, inputs.len());
 
-                let input = inputs[0];
+                let input = inputs[0].unwrap_float();
 
                 // assume everything is constant for now, so we can immediately fuse stuff
-                let scale = graph.as_const(inputs[1]).unwrap();
-                let bias = graph.as_const(inputs[2]).unwrap();
-                let mean = graph.as_const(inputs[3]).unwrap();
-                let variance = graph.as_const(inputs[4]).unwrap();
+                let scale = graph.as_const(inputs[1].unwrap_float()).unwrap();
+                let bias = graph.as_const(inputs[2].unwrap_float()).unwrap();
+                let mean = graph.as_const(inputs[3].unwrap_float()).unwrap();
+                let variance = graph.as_const(inputs[4].unwrap_float()).unwrap();
 
                 let epsilon = attrs.take_float("epsilon");
                 let _ = attrs.take_float("momentum");
@@ -197,49 +206,47 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let total_bias = graph.constant(const_shape.clone(), total_bias);
 
                 let scaled = graph.mul(input, total_scale);
-                graph.add(scaled, total_bias)
+                let result = graph.add(scaled, total_bias);
+                TypedValue::FloatTensor(result)
             }
             "Constant" => {
                 assert!(inputs.is_empty());
 
                 let tensor = attrs.take_tensor("value");
-                let (shape, data) = load_tensor_float_data(tensor);
-
-                graph.constant(shape, data)
+                define_tensor_data(&mut graph, tensor)
             }
             "Cast" => {
                 assert_eq!(1, inputs.len());
-                let input = inputs[0];
+                let input = inputs[0].unwrap_tensor();
 
                 let to_type = DataType::from_i32(attrs.take_int("to") as i32)
                     .expect("Invalid data type");
-                assert_eq!(to_type, DataType::Int64);
 
-                graph.as_const(input).unwrap();
-
-                // we don't actually cast anything here, and casting is just up to the user
-                //  just make sure we're casting a const to int so nothing can go terribly wrong
-                input
+                match to_type {
+                    DataType::Float => TypedValue::FloatTensor(input),
+                    DataType::Int64 => TypedValue::IntTensor(input),
+                    _ => panic!("Casting to type {:?} not supported yet", to_type),
+                }
             }
             "Reshape" => {
                 assert_eq!(2, inputs.len());
 
                 let input = inputs[0];
-                let new_shape = inputs[1];
+                let new_shape = inputs[1].unwrap_as_shape(&graph);
 
-                assert_eq!(1, graph[new_shape].shape.rank(), "Reshape shape must have rank 1");
-                let new_shape_f = graph.as_const(new_shape).unwrap();
+                let input_tensor = input.unwrap_tensor();
+                let input_size = graph[input_tensor].shape.size();
+                let output_shape = calculate_reshape_output_shape(input_size, &new_shape);
 
-                let input_shape = &graph[input].shape;
-                let output_shape = calculate_reshape_output_shape(input_shape.size(), new_shape_f);
-
-                graph.view(input, output_shape)
+                let result = graph.view(input_tensor, output_shape);
+                TypedValue::with_same_type(result, input)
             }
             "Unsqueeze" => {
                 assert_eq!(1, inputs.len());
 
                 let input = inputs[0];
-                let input_shape = &graph[input].shape;
+                let input_tensor = input.unwrap_tensor();
+                let input_shape = &graph[input_tensor].shape;
 
                 let rel_axes = attrs.take_ints("axes");
                 let output_rank = input_shape.rank() + rel_axes.len();
@@ -262,45 +269,51 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 assert_eq!(input_shape_left.len(), 0);
 
                 let output_shape = Shape::new(output_dims);
-                graph.view(input, output_shape)
+                let result = graph.view(input_tensor, output_shape);
+
+                TypedValue::with_same_type(result, input)
             }
             "Gather" => {
                 assert_eq!(2, inputs.len());
 
                 let input = inputs[0];
-                let indices = inputs[1];
+                let input_tensor = input.unwrap_tensor();
+                let indices = inputs[1].unwrap_int();
 
                 let axis = attrs.take_int("axis") as usize;
 
-                match graph[indices].shape.rank() {
+                let result = match graph[indices].shape.rank() {
                     0 => {
                         if let Some(index) = graph.as_const(indices) {
                             let index = index[0] as usize;
-                            graph.index(input, axis, index)
+                            graph.index(input_tensor, axis, index)
                         } else {
                             panic!("Rank-0 gather only supported with constant index");
                         }
                     }
                     1 => {
-                        graph.gather(input, axis, indices)
+                        graph.gather(input_tensor, axis, indices)
                     }
                     rank => {
                         panic!("Gather only supported for index rank <2, got {}", rank)
                     }
-                }
+                };
+
+                TypedValue::with_same_type(result, input)
             }
             "Slice" => {
                 assert_eq!(1, inputs.len());
                 let input = inputs[0];
-                let input_shape = graph[input].shape.clone();
 
                 let axes = attrs.take_ints("axes");
                 let starts = attrs.take_ints("starts");
                 let ends = attrs.take_ints("ends");
 
+                let input_tensor = input.unwrap_tensor();
+                let input_shape = graph[input_tensor].shape.clone();
                 assert!(axes.len() == starts.len() && axes.len() == ends.len(), "Inconsistent axes count");
 
-                (0..axes.len()).fold(input, |curr, i| {
+                let result = (0..axes.len()).fold(input_tensor, |curr, i| {
                     let axis = abs_axis(axes[i], input_shape.rank());
                     let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
 
@@ -310,7 +323,17 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         abs_axis(starts[i], axis_size),
                         abs_axis(ends[i], axis_size),
                     )
-                })
+                });
+                TypedValue::with_same_type(result, input)
+            }
+            "Shape" => {
+                assert_eq!(1, inputs.len());
+                let input = inputs[0].unwrap_tensor();
+                let shape = graph[input].shape.clone();
+                let dims = shape.dims.iter().copied()
+                    .map(SizeOrInt::Size)
+                    .collect_vec();
+                TypedValue::Shape(dims)
             }
             _ => {
                 eprintln!("Already parsed graph:\n{:?}", graph);
@@ -324,22 +347,21 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
     }
 
     for output in &model_graph.output {
-        graph.output(nodes[&output.name]);
+        graph.output(nodes[&output.name].unwrap_float());
     }
 
     graph
 }
 
-fn load_initializers<'a>(graph: &mut Graph, store: &mut Store<'a, Value>, initializers: &'a [TensorProto]) {
+fn load_initializers<'a>(graph: &mut Graph, store: &mut Store<'a, TypedValue>, initializers: &'a [TensorProto]) {
     for tensor in initializers {
-        let (shape, data) = load_tensor_float_data(tensor);
-        let node = graph.constant(shape, data);
-        store.define(&tensor.name, node)
+        let value = define_tensor_data(graph, tensor);
+        store.define(&tensor.name, value)
     }
 }
 
-fn load_tensor_float_data(tensor: &TensorProto) -> (Shape, Vec<f32>) {
-    // figure out the dimension
+fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto) -> TypedValue {
+    // figure out the shape
     let dims = tensor.dims.iter().map(|&d| Size::fixed(d as usize)).collect_vec();
     let shape = Shape::new(dims);
     let size = shape.size().unwrap_fixed("Data tensor shape must be fixed");
@@ -347,42 +369,52 @@ fn load_tensor_float_data(tensor: &TensorProto) -> (Shape, Vec<f32>) {
     // load the data
     let data_type = DataType::from_i32(tensor.data_type).expect("Illegal data type");
 
-    let data = match data_type {
+    let (is_int, data) = match data_type {
         DataType::Float => {
-            if !tensor.float_data.is_empty() {
+            let data = if !tensor.float_data.is_empty() {
                 tensor.float_data.clone()
             } else {
                 let mut float_data = vec![0.0; size];
                 LittleEndian::read_f32_into(&tensor.raw_data, &mut float_data);
                 float_data
-            }
+            };
+
+            (false, data)
         }
         DataType::Double => {
-            if !tensor.double_data.is_empty() {
+            let data = if !tensor.double_data.is_empty() {
                 tensor.double_data.iter().map(|&f| f as f32).collect_vec()
             } else {
                 let mut data = vec![0.0; size];
                 LittleEndian::read_f64_into(&tensor.raw_data, &mut data);
                 data.iter().map(|&d| cast(d).unwrap()).collect_vec()
-            }
+            };
+
+            (false, data)
         }
-        //TODO it's really starting to become easier to just implement types in the graph
         DataType::Int64 => {
-            if !tensor.int64_data.is_empty() {
+            let data = if !tensor.int64_data.is_empty() {
                 tensor.int64_data.iter().map(|&i| cast(i).unwrap()).collect_vec()
             } else {
                 let mut data = vec![0; size];
                 LittleEndian::read_i64_into(&tensor.raw_data, &mut data);
                 data.iter().map(|&i| cast(i).unwrap()).collect_vec()
-            }
+            };
+
+            (true, data)
         }
         _ => panic!("Unexpected data type {:?} {}", data_type, tensor.data_type),
     };
 
-    (shape, data)
+    let value = graph.constant(shape, data);
+
+    match is_int {
+        false => TypedValue::FloatTensor(value),
+        true => TypedValue::IntTensor(value),
+    }
 }
 
-fn resolve_tensor_shape(ty: &TypeProto) -> Shape {
+fn resolve_float_tensor_shape(ty: &TypeProto) -> Shape {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
     match value {
         ProtoTypeValue::TensorType(tensor) => {
@@ -434,30 +466,29 @@ fn unwrap_4(slice: &[i64]) -> [usize; 4] {
     [slice[0] as usize, slice[1] as usize, slice[2] as usize, slice[3] as usize]
 }
 
-fn calculate_reshape_output_shape(old_size: Size, new_shape_f: &[f32]) -> Shape {
-    let new_shape_int = new_shape_f.iter().map(|&f| {
-        assert_eq!(f as i64 as f32, f, "Reshape shape must only contain integers, got {}", f);
-        f as i64
-    }).collect_vec();
-
+fn calculate_reshape_output_shape(old_size: Size, new_shape_raw: &[SizeOrInt]) -> Shape {
     let mut new_shape = vec![];
     let mut leftover_index = None;
     let mut leftover_size = old_size;
 
-    for (i, &size) in new_shape_int.iter().enumerate() {
-        let size = if size == -1 {
-            assert!(leftover_index.is_none(), "Reshape shape can only contain a single -1 value");
-            leftover_index = Some(i);
-            Size::ZERO
-        } else {
-            assert!(size >= 0, "Size must be positive or -1");
-            let size = Size::fixed(size as usize);
-            leftover_size = (leftover_size / size).unwrap_or_else(|| {
-                panic!("Cannot reshape {} into {:?}", old_size, new_shape_int);
-            });
-            size
+    for (i, &size_or_int) in new_shape_raw.iter().enumerate() {
+        let size = match size_or_int {
+            SizeOrInt::Int(-1) => {
+                assert!(leftover_index.is_none(), "Reshape shape can only contain a single -1 value");
+                leftover_index = Some(i);
+                new_shape.push(Size::ZERO);
+                continue;
+            }
+            SizeOrInt::Int(int) => {
+                assert!(int >= 0, "Size must be positive or -1");
+                Size::fixed(int as usize)
+            }
+            SizeOrInt::Size(size) => size,
         };
 
+        leftover_size = (leftover_size / size).unwrap_or_else(|| {
+            panic!("Cannot reshape {} into {:?}", old_size, new_shape_raw);
+        });
         new_shape.push(size);
     }
 
