@@ -86,6 +86,16 @@ impl<'a> Planner<'a> {
 
                 Tensor::new(input_tensor.mem.view(), new_shape)
             }
+            &Operation::Permute { input, ref permutation } => {
+                let input_tensor = self.visit(input);
+
+                // just permute the shape and strides
+                let new_sizes = permutation.iter().map(|&i| input_tensor.shape.shape()[i]).collect();
+                let new_strides = permutation.iter().map(|&i| input_tensor.shape.strides()[i]).collect();
+                let new_shape = StridedShape::new(new_sizes, new_strides);
+
+                Tensor::new(input_tensor.mem, new_shape)
+            }
             &Operation::Slice { input, axis, start, end } => {
                 // Steps to slice a tensor:
                 //  * use the new shape

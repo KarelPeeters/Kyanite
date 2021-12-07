@@ -162,7 +162,9 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                     zip(&graph[input].shape.dims, &graph[other].shape.dims)
                         .all(|(l, r)| l == r)
                 }
-                Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. } | Operation::Conv { .. } => false,
+                Operation::Permute { .. }
+                | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
+                | Operation::Conv { .. } => false,
                 &Operation::Add { left, right, subtract: _ } | &Operation::Mul { left, right } => {
                     graph[left].shape != graph[right].shape
                 }
@@ -177,17 +179,16 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
 }
 
 fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
-    match &graph[value].operation {
-        Operation::Constant { .. } =>
-            true,
-        &Operation::View { input } | &Operation::Slice { input, .. } =>
-            is_effectively_constant(graph, input),
-        &Operation::Gather { input, indices, .. } =>
-            is_effectively_constant(graph, input) && is_effectively_constant(graph, indices),
-        Operation::Concat { inputs, .. } =>
-            inputs.iter().all(|&x| is_effectively_constant(graph, x)),
-        Operation::Input { .. } | Operation::Conv { .. } | Operation::Add { .. } | Operation::Mul { .. } | Operation::Clamp { .. } =>
-            false,
+    let operation = &graph[value].operation;
+    match operation {
+        Operation::Input { .. } => false,
+        Operation::Constant { .. } => true,
+        Operation::View { .. } | Operation::Permute { .. }
+        | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
+        | Operation::Conv { .. } | Operation::Add { .. } | Operation::Mul { .. }
+        | Operation::Clamp { .. } => {
+            operation.inputs().iter().all(|&v| is_effectively_constant(graph, v))
+        }
     }
 }
 

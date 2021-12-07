@@ -37,6 +37,10 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 let input = &map.get(&input).unwrap().tensor;
                 input.reshape(output_shape_dyn)
             }
+            &Operation::Permute { input, ref permutation } => {
+                let input = &map.get(&input).unwrap().tensor;
+                input.view().permuted_axes(permutation.clone()).to_shared()
+            }
             &Operation::Slice { input, axis, start, end, } => {
                 let input = &map.get(&input).unwrap().tensor;
                 let info = slice_info(input.ndim(), axis, start, end);

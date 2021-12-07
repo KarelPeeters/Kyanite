@@ -41,6 +41,8 @@ pub enum Operation {
 
     /// View a value as a different shape.
     View { input: Value },
+    /// Change the order of axis in the shape.
+    Permute { input: Value, permutation: Vec<usize> },
     /// Slice the last three axis of a value, each with range `start[i]..end[i]`
     Slice { input: Value, axis: usize, start: usize, end: usize },
     /// Gather values from `input` at the indices in `index` on the given axis.
@@ -67,6 +69,7 @@ impl Operation {
             Operation::Input { index: _ } => vec![],
             Operation::Constant { data: _ } => vec![],
             &Operation::View { input } => vec![input],
+            &Operation::Permute { input, permutation: _ } => vec![input],
             &Operation::Slice { input, axis: _, start: _, end: _ } => vec![input],
             &Operation::Gather { input, axis: _, indices } => vec![input, indices],
             Operation::Concat { inputs, axis: _ } => inputs.clone(),
@@ -85,12 +88,14 @@ impl Operation {
                 Operation::Constant { data: data.clone() },
             &Operation::View { input } =>
                 Operation::View { input: f(input) },
+            &Operation::Permute { input, ref permutation } =>
+                Operation::Permute { input: f(input), permutation: permutation.clone() },
             &Operation::Slice { input, axis, start, end } =>
                 Operation::Slice { input: f(input), axis, start, end },
             &Operation::Gather { input, axis, indices } =>
                 Operation::Gather { input: f(input), axis, indices: f(indices) },
-            Operation::Concat { inputs, axis } =>
-                Operation::Concat { inputs: inputs.iter().copied().map(f).collect(), axis: *axis },
+            &Operation::Concat { ref inputs, axis } =>
+                Operation::Concat { inputs: inputs.iter().copied().map(f).collect(), axis },
             &Operation::Conv { input, filter, details: conv_shape } =>
                 Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
             &Operation::Add { left, right, subtract } =>
@@ -270,6 +275,23 @@ impl Graph {
         };
 
         self.view(input, new_shape)
+    }
+
+    /// Change the order of axis in the shape.
+    #[must_use]
+    pub fn permute(&mut self, input: Value, permutation: Vec<usize>) -> Value {
+        let input_shape = &self[input].shape;
+
+        assert_eq!(permutation.len(), input_shape.rank(), "Permutation rank must match input shape, got {:?} and {:?}", permutation, input_shape);
+        assert!(permutation.iter().all_unique(), "Permutation cannot contain repeated axis, got {:?}", permutation);
+        assert!(permutation.iter().all(|&i| i < input_shape.rank()), "Permutation axis out of bounds, got {:?}", permutation);
+
+        let result_dims = permutation.iter()
+            .map(|&i| input_shape[i])
+            .collect_vec();
+        let result_shape = Shape::new(result_dims);
+
+        self.push(result_shape, Operation::Permute { input, permutation })
     }
 
     /// View part of an existing value.

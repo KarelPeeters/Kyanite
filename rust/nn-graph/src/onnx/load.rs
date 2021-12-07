@@ -273,6 +273,16 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 TypedValue::with_same_type(result, input)
             }
+            "Transpose" => {
+                assert_eq!(1, inputs.len());
+                let input = inputs[0];
+
+                let permutation = attrs.take_ints("perm");
+                let permutation = permutation.iter().map(|&x| x as usize).collect_vec();
+
+                let result = graph.permute(input.unwrap_tensor(), permutation);
+                TypedValue::with_same_type(result, input)
+            }
             "Gather" => {
                 assert_eq!(2, inputs.len());
 

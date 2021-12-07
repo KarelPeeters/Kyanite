@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::s;
 use nn_graph::shape;
@@ -338,6 +340,21 @@ fn concat() {
 
     let result = graph.concat(vec![a, b, c], 1);
     graph.output(result);
+
+    test_all(&graph, 0, &[], None);
+}
+
+#[test]
+fn permute() {
+    let mut graph = Graph::new();
+
+    let a = graph.constant(shape![2, 3, 4, 5], range_vec(2 * 3 * 4 * 5));
+    for (i, permutation) in (0..4).permutations(4).enumerate() {
+        println!("Output {} is permutation {:?}", i, permutation);
+
+        let result = graph.permute(a, permutation);
+        graph.output(result);
+    }
 
     test_all(&graph, 0, &[], None);
 }
