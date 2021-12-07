@@ -56,22 +56,22 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let filter = inputs[1];
                 let bias = inputs.get(2).copied();
 
-                let g = attrs.take_int("group");
-                let [kw, kh] = unwrap_2(attrs.take_ints("kernel_shape"));
-                let [ph0, pv0, ph1, pv1] = unwrap_4(attrs.take_ints("pads"));
-                let [sw, sh] = unwrap_2(attrs.take_ints("strides"));
-                let [dw, dh] = unwrap_2(attrs.take_ints("dilations"));
+                let groups = attrs.take_int("group");
+                let [kernel_width, kernel_height] = unwrap_2(attrs.take_ints("kernel_shape"));
+                let [padding_y0, padding_x0, padding_y1, padding_x1] = unwrap_4(attrs.take_ints("pads"));
+                let [stride_y, stride_x] = unwrap_2(attrs.take_ints("strides"));
+                let [dilation_y, dilation_x] = unwrap_2(attrs.take_ints("dilations"));
 
                 let [_, _, kernel_w, kernel_h] =
                     graph[filter].shape.unwrap_fixed("Convolution kernel shape must be fixed").unwrap_4();
 
-                assert_eq!(1, g);
-                assert!(ph0 == ph1 && pv0 == pv1 && ph0 == pv0);
-                assert!(dw == 1 && dh == 1);
-                assert!(sw == 1 && sh == 1);
-                assert!(kernel_w == kw && kernel_h == kh);
+                assert_eq!(1, groups);
+                assert!(padding_y0 == padding_y1 && padding_x0 == padding_x1 && padding_y0 == padding_x0);
+                assert!(dilation_y == 1 && dilation_x == 1);
+                assert!(stride_y == 1 && stride_x == 1);
+                assert!(kernel_w == kernel_width && kernel_h == kernel_height);
 
-                let conv = graph.conv(input, filter, ph0);
+                let conv = graph.conv(input, filter, padding_y0, padding_x0);
 
                 if let Some(bias) = bias {
                     let bias_size = graph[bias].shape.unwrap_1();

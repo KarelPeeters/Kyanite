@@ -222,8 +222,10 @@ impl<'a> Planner<'a> {
             let output_desc = output.descriptor();
             let filter_desc = filter.filter_descriptor();
 
-            let padding = details.padding as i32;
-            let conv_desc = ConvolutionDescriptor::new(padding, padding, 1, 1, 1, 1);
+            let conv_desc = ConvolutionDescriptor::new(
+                details.padding_y as i32, details.padding_x as i32,
+                1, 1, 1, 1,
+            );
 
             let algo = STANDARD_CONV_ALGO;
             let work_size_bytes = conv_desc.workspace_size(self.handle, algo, &input_desc, &filter_desc, &output_desc);

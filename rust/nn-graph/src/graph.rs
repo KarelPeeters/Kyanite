@@ -99,26 +99,38 @@ impl Operation {
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConvDetails {
+    pub batch_size: Size,
+
     pub input_channels: usize,
     pub output_channels: usize,
-    pub input_size: usize,
-    pub kernel_size: usize,
-    pub padding: usize,
-    pub output_size: usize,
-    pub batch_size: Size,
+
+    pub input_h: usize,
+    pub input_w: usize,
+    pub kernel_h: usize,
+    pub kernel_w: usize,
+    pub padding_y: usize,
+    pub padding_x: usize,
+    pub output_h: usize,
+    pub output_w: usize,
 }
 
 impl ConvDetails {
     pub fn input_shape(&self) -> Shape {
-        shape![self.batch_size, self.input_channels, self.input_size, self.input_size]
+        shape![self.batch_size, self.input_channels, self.input_h, self.input_w]
     }
 
     pub fn output_shape(&self) -> Shape {
-        shape![self.batch_size, self.output_channels, self.output_size, self.output_size]
+        shape![self.batch_size, self.output_channels, self.output_h, self.output_w]
     }
 
+    pub fn keeps_spatial_shape(&self) -> bool {
+        (self.input_h == self.output_h) && (self.input_w == self.output_w)
+    }
+
+    pub fn has_padding() {}
+
     pub fn kernel_shape(&self) -> [usize; 4] {
-        [self.output_channels, self.input_channels, self.kernel_size, self.kernel_size]
+        [self.output_channels, self.input_channels, self.kernel_h, self.kernel_w]
     }
 }
 
@@ -307,42 +319,42 @@ impl Graph {
 
     /// Apply 2D convolution.
     #[must_use]
-    pub fn conv(&mut self, input: Value, filter: Value, padding: usize) -> Value {
-        let [n, in_c, in_w, in_h]: [Size; 4] = self[input].shape.dims.as_slice().try_into()
+    pub fn conv(&mut self, input: Value, filter: Value, padding_y: usize, padding_x: usize) -> Value {
+        let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input].shape.dims.as_slice().try_into()
             .expect("Convolution input must have rank 4");
-        let [out_c, in_c_check, k_w, k_h]: [Size; 4] = self[filter].shape.dims.as_slice().try_into()
+        let [out_c, in_c_check, k_h, k_w]: [Size; 4] = self[filter].shape.dims.as_slice().try_into()
             .expect("Convolution filter must have rank 4");
 
         // almost everything must be fixed, except for the batch size n
-        let in_c = in_c.unwrap_fixed("Conv input channels");
-        let in_w = in_w.unwrap_fixed("Conv input width");
-        let in_h = in_h.unwrap_fixed("Conv input height");
-        let out_c = out_c.unwrap_fixed("Conv output channels");
+        let input_channels = in_c.unwrap_fixed("Conv input channels");
+        let input_h = in_h.unwrap_fixed("Conv input height");
+        let input_w = in_w.unwrap_fixed("Conv input width");
+        let output_channels = out_c.unwrap_fixed("Conv output channels");
         let in_c_check = in_c_check.unwrap_fixed("Filter input channels");
-        let k_w = k_w.unwrap_fixed("Conv kernel width");
-        let k_h = k_h.unwrap_fixed("Conv kernel height");
+        let kernel_h = k_h.unwrap_fixed("Conv kernel height");
+        let kernel_w = k_w.unwrap_fixed("Conv kernel width");
 
-        assert_eq!(1, k_w % 2, "Kernel width must be odd, got {}", k_w);
-        assert_eq!(1, k_h % 2, "Kernel height must be odd, got {}", k_h);
+        assert_eq!(1, kernel_h % 2, "Kernel height must be odd, got {}", kernel_h);
+        assert_eq!(1, kernel_w % 2, "Kernel width must be odd, got {}", kernel_w);
 
-        assert_eq!(in_c, in_c_check, "Input channel mismatch");
+        assert_eq!(input_channels, in_c_check, "Input channel mismatch");
 
-        assert_eq!(in_w, in_h, "Only square inputs supported");
-        assert_eq!(k_w, k_h, "Only square kernels supported");
-
-        let out_w = in_w - k_w + 1 + 2 * padding;
-        let out_h = in_h - k_h + 1 + 2 * padding;
-        let output_shape = vec![n, Size::fixed(out_c), Size::fixed(out_w), Size::fixed(out_h)];
-        let output_shape = Shape::new(output_shape);
+        let output_h = input_h - kernel_h + 1 + 2 * padding_y;
+        let output_w = input_w - kernel_w + 1 + 2 * padding_x;
+        let output_shape = shape![batch_size, output_channels, output_h, output_w];
 
         let details = ConvDetails {
-            batch_size: n,
-            input_channels: in_c,
-            output_channels: out_c,
-            input_size: in_w,
-            kernel_size: k_w,
-            padding,
-            output_size: out_w,
+            batch_size,
+            input_channels,
+            output_channels,
+            input_h,
+            input_w,
+            kernel_h,
+            kernel_w,
+            padding_y,
+            padding_x,
+            output_h,
+            output_w,
         };
         self.push(
             output_shape,
@@ -369,7 +381,7 @@ impl Graph {
         let weight_view = self.view(weight, weight_view_shape);
         let output_view_shape = shape![n, co];
 
-        let output = self.conv(input_view, weight_view, 0);
+        let output = self.conv(input_view, weight_view, 0, 0);
         self.view(output, output_view_shape)
     }
 

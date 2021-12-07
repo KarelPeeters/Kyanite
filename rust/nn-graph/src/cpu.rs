@@ -100,10 +100,10 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
 }
 
 pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    assert_eq!(details.output_size, details.input_size, "Different in/out shape not supported yet");
+    assert!(details.keeps_spatial_shape(), "Different in/out shape not supported yet");
 
     let batch_size = input.shape()[0];
-    let output_shape = (batch_size, details.output_channels, details.output_size, details.output_size);
+    let output_shape = (batch_size, details.output_channels, details.output_h, details.output_w);
 
     let mut result = Array4::zeros(output_shape);
     for b in 0..batch_size {

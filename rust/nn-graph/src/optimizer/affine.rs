@@ -37,10 +37,10 @@ impl Optimizer<'_> {
 
     fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> Option<Value> {
         match operation {
-            &Operation::Conv { input, filter, details: conv_shape } => {
+            &Operation::Conv { input, filter, details } => {
                 if let Some(filter) = self.follow_const(filter) {
-                    if builder.conv.is_none() && conv_shape.output_size == conv_shape.input_size {
-                        builder.set_conv(ConvOperation { details: conv_shape, filter: filter.to_owned() });
+                    if builder.conv.is_none() && details.keeps_spatial_shape() {
+                        builder.set_conv(ConvOperation { details, filter: filter.to_owned() });
                         Some(input)
                     } else {
                         None
@@ -191,7 +191,7 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
             let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
 
             let mut curr = input;
-            curr = graph.conv(curr, value_filter, details.padding);
+            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
             curr = graph.add(curr, value_bias);
             curr
         }
@@ -203,7 +203,7 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
 
             let mut curr = input;
             curr = before.apply(graph, curr);
-            curr = graph.conv(curr, value_filter, details.padding);
+            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
             curr = graph.add(curr, value_bias_after);
             curr
         }
@@ -214,7 +214,7 @@ fn pull_bias_through_conv(settings: OptimizerSettings, details: ConvDetails, bef
     if is_entirely(&before, 0.0) {
         // we don't need to expand the shape even if there is padding, so immediately return 0 here
         Ok(Array4::zeros((1, details.output_channels, 1, 1)))
-    } else if details.padding == 0 {
+    } else if details.padding_y == 0 && details.padding_x == 0 {
         // the bias will be the same for each output (x,y), so we can keep a single bias vector
         let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
 
@@ -229,7 +229,7 @@ fn pull_bias_through_conv(settings: OptimizerSettings, details: ConvDetails, bef
 
             // the bias will be different for the edges, so it needs to be full-sized
             let before_broadcast = before_shaped
-                .broadcast((1, details.input_channels, details.input_size, details.input_size)).unwrap();
+                .broadcast((1, details.input_channels, details.input_h, details.input_w)).unwrap();
 
             Ok(convolution(details, before_broadcast, filter.view()))
         } else {

@@ -99,6 +99,34 @@ fn linear() {
 }
 
 #[test]
+fn horizontal_1x1_conv() {
+    let mut graph = Graph::new();
+
+    let input = graph.constant(shape![2, 4, 1, 8], linspace_vec(2 * 4 * 8));
+    let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
+
+    let output = graph.conv(input, filter, 0, 0);
+    graph.output(output);
+
+    assert_eq!(graph[output].shape, shape![2, 3, 1, 8]);
+    test_all(&graph, 0, &[], None)
+}
+
+#[test]
+fn vertical_1x1_conv() {
+    let mut graph = Graph::new();
+
+    let input = graph.constant(shape![2, 4, 8, 1], linspace_vec(2 * 4 * 8));
+    let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
+
+    let output = graph.conv(input, filter, 0, 0);
+    graph.output(output);
+
+    assert_eq!(graph[output].shape, shape![2, 3, 8, 1]);
+    test_all(&graph, 0, &[], None)
+}
+
+#[test]
 fn fuse_clamp() {
     let mut graph = Graph::new();
 
@@ -153,7 +181,7 @@ fn affine_single_element() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0);
+    let curr = graph.conv(curr, filter, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
@@ -185,7 +213,7 @@ fn affine_multiple_channels() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0);
+    let curr = graph.conv(curr, filter, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
@@ -211,7 +239,7 @@ fn affine_padding() {
 
     let mut curr = graph.input(Shape::fixed(&input_data.shape()));
     curr = graph.add(curr, bias_0);
-    curr = graph.conv(curr, filter, 1);
+    curr = graph.conv(curr, filter, 1, 1);
     curr = graph.add(curr, bias_1);
     graph.output(curr);
 
@@ -234,17 +262,17 @@ fn pre_act_resnet() {
     let filter_tower = graph.constant(shape![5, 5, 3, 3], linspace_vec(5 * 5 * 3 * 3));
     let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
-    let mut tower = graph.conv(input, filter_initial, 1);
+    let mut tower = graph.conv(input, filter_initial, 1, 1);
     for _ in 0..4 {
         let mut curr = channel_batchnorm(&mut graph, tower);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1);
         tower = graph.add(curr, tower);
     }
 
-    let policy = graph.conv(tower, filter_policy, 0);
+    let policy = graph.conv(tower, filter_policy, 0, 0);
 
     graph.output(tower);
     graph.output(policy);
@@ -285,7 +313,7 @@ fn fuse_res() {
     let filter = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
 
     let mut curr = input;
-    curr = graph.conv(curr, filter, 1);
+    curr = graph.conv(curr, filter, 1, 1);
     curr = graph.add(curr, other);
     curr = graph.clamp(curr, 0.0, f32::INFINITY);
     graph.output(curr);

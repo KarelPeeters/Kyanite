@@ -85,9 +85,6 @@ impl FilterDescriptor {
     /// * `c`: input channels
     /// * `(h, w)`: kernel size
     pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
-        //TODO whats with (h, w) here? that's super inconsistent with everything else?
-        assert_eq!(h, w, "Only square kernels supported for now");
-
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
@@ -129,14 +126,16 @@ impl Drop for ConvolutionDescriptor {
 
 impl ConvolutionDescriptor {
     pub fn new(
-        pad_h: i32,
-        pad_w: i32,
-        stride_h: i32,
-        stride_v: i32,
-        dilation_h: i32,
-        dilation_w: i32,
+        pad_y: i32,
+        pad_x: i32,
+        stride_y: i32,
+        stride_x: i32,
+        dilation_y: i32,
+        dilation_x: i32,
     ) -> Self {
-        let checked = [stride_h, stride_v, dilation_h, dilation_w];
+        assert!(pad_y >= 0 && pad_x >= 0, "Padding cannot be negative, got ({}, {})", pad_y, pad_x);
+
+        let checked = [stride_y, stride_x, dilation_y, dilation_x];
         assert!(
             checked.iter().all(|&x| x > 0),
             "Dilation and stride must be strictly positive, 1 means dense convolution. Got {:?}",
@@ -148,7 +147,7 @@ impl ConvolutionDescriptor {
             cudnnCreateConvolutionDescriptor(&mut inner as *mut _).unwrap();
             cudnnSetConvolution2dDescriptor(
                 inner,
-                pad_h, pad_w, stride_h, stride_v, dilation_h, dilation_w,
+                pad_y, pad_x, stride_y, stride_x, dilation_y, dilation_x,
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
             ).unwrap();
@@ -264,12 +263,12 @@ impl Drop for PoolingDescriptor {
 impl PoolingDescriptor {
     pub fn new(
         mode: cudnnPoolingMode_t,
-        h: i32,
-        w: i32,
-        pad_h: i32,
-        pad_w: i32,
-        stride_h: i32,
-        stride_v: i32,
+        size_y: i32,
+        size_x: i32,
+        pad_y: i32,
+        pad_x: i32,
+        stride_y: i32,
+        stride_x: i32,
     ) -> Self {
         unsafe {
             let mut inner = null_mut();
@@ -278,9 +277,9 @@ impl PoolingDescriptor {
                 inner,
                 mode,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-                h, w,
-                pad_h, pad_w,
-                stride_h, stride_v,
+                size_y, size_x,
+                pad_y, pad_x,
+                stride_y, stride_x,
             ).unwrap();
             PoolingDescriptor(inner)
         }
