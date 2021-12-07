@@ -7,8 +7,10 @@ use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
+use cuda_sys::wrapper::status::Status;
 use nn_graph::graph::{ConvDetails, Graph};
 
+use crate::kernels;
 use crate::planner::Planner;
 use crate::tensor::Tensor;
 
@@ -27,6 +29,7 @@ pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
     Conv { details: ConvDetails, args: FusedConvolutionArgs },
     TensorOp { args: TensorOpArgs },
+    Gather { input: Tensor, axis: usize, indices: Tensor, output: Tensor },
     CopyOutput { index: usize, tensor: Tensor },
 }
 
@@ -79,6 +82,7 @@ impl CudnnExecutor {
         if self.profile {
             let mut conv_time = 0.0;
             let mut tensor_op_time = 0.0;
+            let mut gather_time = 0.0;
             let mut copy_to_device_time = 0.0;
             let mut copy_to_host_time = 0.0;
 
@@ -89,6 +93,7 @@ impl CudnnExecutor {
                     Step::CopyInput { .. } => &mut copy_to_device_time,
                     Step::Conv { .. } => &mut conv_time,
                     Step::TensorOp { .. } => &mut tensor_op_time,
+                    Step::Gather { .. } => &mut gather_time,
                     Step::CopyOutput { .. } => &mut copy_to_host_time,
                 } += time;
 
@@ -97,6 +102,7 @@ impl CudnnExecutor {
 
             println!("Conv:      {:.4}", conv_time);
             println!("Tensor op: {:.4}", tensor_op_time);
+            println!("Gather:    {:.4}", gather_time);
             println!("Copy ->:   {:.4}", copy_to_device_time);
             println!("Copy <-:   {:.4}", copy_to_host_time);
         }
@@ -120,6 +126,25 @@ impl Step {
             }
             Step::TensorOp { args } => {
                 args.run(handle);
+            }
+            Step::Gather { input, axis, indices, output } => {
+                assert!(
+                    *axis == 1 && input.shape.rank() == 2,
+                    "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
+                    input.shape, axis
+                );
+                assert!(
+                    indices.shape.rank() == 1 && indices.shape.has_simple_strides(),
+                    "Gather indices must be rank-1 tensor with simple strides",
+                );
+
+                kernels::gather2dAxis1FloatFloat(
+                    handle.stream().inner(),
+                    input.shape.shape()[0] as i32, input.shape.shape()[1] as i32,
+                    input.shape.strides()[0] as i32, input.shape.strides()[1] as i32,
+                    indices.shape.size() as i32,
+                    input.mem.ptr() as *const f32, indices.mem.ptr() as *const f32, output.mem.ptr() as *mut f32,
+                ).unwrap();
             }
             //TODO look into fusing the copy operation if multiple outputs are sliced views on the same value
             Step::CopyOutput { index, tensor } => {

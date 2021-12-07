@@ -5,7 +5,7 @@ use convolutions_rs::convolutions::*;
 use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array4, ArrayView4, IxDyn, SliceInfo, SliceInfoElem};
+use ndarray::{ArcArray, Array4, ArrayView4, concatenate, IxDyn, SliceInfo, SliceInfoElem};
 
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
@@ -41,6 +41,20 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 let input = &map.get(&input).unwrap().tensor;
                 let info = slice_info(input.ndim(), axis, start, end);
                 input.slice(info).to_shared()
+            }
+            &Operation::Gather { input, axis, indices } => {
+                let input = &map.get(&input).unwrap().tensor;
+                let indices = &map.get(&indices).unwrap().tensor;
+
+                assert_eq!(indices.ndim(), 1);
+                let slices = indices.iter().map(|&f| {
+                    let i = f as usize;
+                    assert_eq!(i as f32, f);
+
+                    input.slice(slice_info(input.ndim(), axis, i, i + 1))
+                }).collect_vec();
+
+                concatenate(Axis(axis), &slices).unwrap().into_shared()
             }
             &Operation::Conv { input, filter, details: conv_shape } => {
                 let input = map.get(&input).unwrap().tensor.view().into_dimensionality().unwrap();
@@ -108,7 +122,7 @@ pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
         S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
 {
     let mut result = array.to_owned();
-    result.map_inplace(|x| *x = x.exp());
+    result.map_inplace(|x: &mut f32| *x = x.exp());
     let sum = result.sum_axis(axis).insert_axis(axis);
     result /= &sum;
 

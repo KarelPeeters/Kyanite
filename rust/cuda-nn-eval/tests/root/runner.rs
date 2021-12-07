@@ -7,7 +7,6 @@ use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
-use nn_graph::shape::Shape;
 
 pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
     if expected_outputs.is_none() {

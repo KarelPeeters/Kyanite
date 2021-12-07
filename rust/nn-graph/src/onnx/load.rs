@@ -243,10 +243,22 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let axis = attrs.take_int("axis") as usize;
 
-                assert_eq!(graph[indices].shape.rank(), 0, "Only single index gather supported for now");
-                let index = graph.as_const(indices).unwrap()[0] as usize;
-
-                graph.index(input, axis, index)
+                match graph[indices].shape.rank() {
+                    0 => {
+                        if let Some(index) = graph.as_const(indices) {
+                            let index = index[0] as usize;
+                            graph.index(input, axis, index)
+                        } else {
+                            panic!("Rank-0 gather only supported with constant index");
+                        }
+                    }
+                    1 => {
+                        graph.gather(input, axis, indices)
+                    }
+                    rank => {
+                        panic!("Gather only supported for index rank <2, got {}", rank)
+                    }
+                }
             }
             "Slice" => {
                 assert_eq!(1, inputs.len());

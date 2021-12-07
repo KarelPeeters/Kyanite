@@ -44,6 +44,7 @@ impl Tensor {
         )
     }
 
+    /// Returns a (shallow) clone of this tensor, pointing to the same memory.
     pub fn view(&self) -> Tensor {
         Tensor {
             mem: self.mem.view(),

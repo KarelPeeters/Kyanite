@@ -62,10 +62,8 @@ impl CudaStream {
         }
     }
 
-    pub fn synchronize(&mut self) {
-        unsafe {
-            cudaStreamSynchronize(self.inner()).unwrap()
-        }
+    pub unsafe fn synchronize(&self) {
+        cudaStreamSynchronize(self.inner()).unwrap()
     }
 
     pub fn device(&self) -> Device {
@@ -76,11 +74,11 @@ impl CudaStream {
         self.inner
     }
 
-    pub unsafe fn record_event(&mut self, event: &CudaEvent) {
+    pub unsafe fn record_event(&self, event: &CudaEvent) {
         cudaEventRecord(event.inner(), self.inner()).unwrap()
     }
 
-    pub unsafe fn record_new_event(&mut self) -> CudaEvent {
+    pub unsafe fn record_new_event(&self) -> CudaEvent {
         let event = CudaEvent::new();
         self.record_event(&event);
         event

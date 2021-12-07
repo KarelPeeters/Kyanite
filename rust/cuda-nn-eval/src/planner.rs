@@ -67,19 +67,16 @@ impl<'a> Planner<'a> {
 
         let result: Tensor = match &result_info.operation {
             &Operation::Input { index } => {
-                let buffer = self.alloc_buffer(result_shape.size());
-                self.plan.push(Step::CopyInput { index, mem: buffer.view() });
-                Tensor::new(buffer, StridedShape::new_simple(result_shape.dims))
+                let result = self.alloc_tensor(result_shape);
+                self.plan.push(Step::CopyInput { index, mem: result.mem.view() });
+                result
             }
             Operation::Constant { data } => {
-                let buffer = self.alloc_buffer(result_shape.size());
-
-                // safety: we just allocated the buffer so we're the only one that can mutate it
+                let result = self.alloc_tensor(result_shape);
                 unsafe {
-                    buffer.copy_from_host(cast_slice(&**data));
+                    result.mem.copy_from_host(cast_slice(&**data));
                 }
-
-                Tensor::new(buffer, StridedShape::new_simple(result_shape.dims))
+                result
             }
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
@@ -104,6 +101,15 @@ impl<'a> Planner<'a> {
 
                 let mem = input_tensor.mem.slice_bytes(start_bytes, len_bytes);
                 Tensor::new(mem, result_shape)
+            }
+            &Operation::Gather { input, axis, indices } => {
+                let input = self.visit(input);
+                let indices = self.visit(indices);
+
+                let output = self.alloc_tensor(result_shape);
+
+                self.plan.push(Step::Gather { input, axis, indices, output: output.view() });
+                output
             }
             &Operation::Conv { .. } =>
                 unreachable!("conv should have been handled earlier by the fuser"),
@@ -200,16 +206,17 @@ impl<'a> Planner<'a> {
                 assert_eq!(res.shape, input.shape, "Input and res shapes and strides (!) must match.", );
             }
 
+            // if there is no real bias, allocate a small zero buffer for it
             let bias = bias.unwrap_or_else(|| {
-                let bias_shape = StridedShape::new(vec![1, details.output_channels, 1, 1], vec![1, 1, 1, 1]);
-                Tensor::new(self.alloc_buffer(details.output_channels), bias_shape)
+                let zero_bias = self.alloc_tensor(ConcreteShape::new(vec![1, details.output_channels, 1, 1]));
+                unsafe {
+                    zero_bias.mem.copy_from_host(cast_slice(&vec![0f32; details.output_channels]));
+                }
+                zero_bias
             });
 
             let output_shape = graph[curr].shape.eval(self.batch_size);
-            let output = Tensor::new(
-                self.alloc_buffer(output_shape.size()),
-                StridedShape::new_simple(output_shape.dims),
-            );
+            let output = self.alloc_tensor(output_shape);
 
             let input_desc = input.descriptor();
             let output_desc = output.descriptor();
@@ -251,10 +258,7 @@ impl<'a> Planner<'a> {
         let op_desc = TensorOpDescriptor::new(op);
         let alpha_2 = if negate_right { -1.0 } else { 1.0 };
 
-        let output = Tensor::new(
-            self.alloc_buffer(result_shape.size()),
-            StridedShape::new_simple(result_shape.dims),
-        );
+        let output = self.alloc_tensor(result_shape);
 
         let left = self.visit(left);
         let right = self.visit(right);
@@ -281,20 +285,12 @@ impl<'a> Planner<'a> {
         let op_desc = TensorOpDescriptor::new(op);
 
         // create a one-element tensor with the same rank as `left` to hold the limit value
-        let right = Tensor::new(
-            self.alloc_buffer(1),
-            StridedShape::new_simple(vec![1; result_shape.rank()]),
-        );
-
-        // safety: we just allocated this memory so no one else can modify it
+        let right = self.alloc_tensor(ConcreteShape::new(vec![1; result_shape.rank()]));
         unsafe {
             right.mem.copy_from_host(cast_slice(&[limit]));
         }
 
-        let output = Tensor::new(
-            self.alloc_buffer(result_shape.size()),
-            StridedShape::new_simple(result_shape.dims).clone(),
-        );
+        let output = self.alloc_tensor(result_shape);
 
         let args = TensorOpArgs {
             op_desc,
@@ -313,7 +309,11 @@ impl<'a> Planner<'a> {
         output
     }
 
-    fn alloc_buffer(&mut self, size: usize) -> DeviceMem {
-        DeviceMem::alloc(size * 4, self.handle.device())
+    fn alloc_tensor(&mut self, shape: ConcreteShape) -> Tensor {
+        let shape = StridedShape::new_simple(shape.dims);
+        Tensor::new(
+            DeviceMem::alloc(shape.strided_size() * 4, self.handle.device()),
+            shape,
+        )
     }
 }

@@ -43,6 +43,8 @@ pub enum Operation {
     View { input: Value },
     /// Slice the last three axis of a value, each with range `start[i]..end[i]`
     Slice { input: Value, axis: usize, start: usize, end: usize },
+    /// Gather values from `input` at the indices in `index` on the given axis.
+    Gather { input: Value, axis: usize, indices: Value },
 
     /// The standard convolution operator.
     Conv { input: Value, filter: Value, details: ConvDetails },
@@ -59,14 +61,15 @@ pub enum Operation {
 impl Operation {
     pub fn inputs(&self) -> Vec<Value> {
         match self {
-            Operation::Input { .. } => vec![],
-            Operation::Constant { .. } => vec![],
+            Operation::Input { index: _ } => vec![],
+            Operation::Constant { data: _ } => vec![],
             &Operation::View { input } => vec![input],
-            &Operation::Slice { input, .. } => vec![input],
-            &Operation::Conv { input, filter, .. } => vec![input, filter],
-            &Operation::Add { left, right, .. } => vec![left, right],
+            &Operation::Slice { input, axis: _, start: _, end: _ } => vec![input],
+            &Operation::Gather { input, axis: _, indices } => vec![input, indices],
+            &Operation::Conv { input, filter, details: _ } => vec![input, filter],
+            &Operation::Add { left, right, subtract: _ } => vec![left, right],
             &Operation::Mul { left, right } => vec![left, right],
-            &Operation::Clamp { input, .. } => vec![input],
+            &Operation::Clamp { input, min: _, max: _ } => vec![input],
         }
     }
 
@@ -80,6 +83,8 @@ impl Operation {
                 Operation::View { input: f(input) },
             &Operation::Slice { input, axis, start, end } =>
                 Operation::Slice { input: f(input), axis, start, end },
+            &Operation::Gather { input, axis, indices } =>
+                Operation::Gather { input: f(input), axis, indices: f(indices) },
             &Operation::Conv { input, filter, details: conv_shape } =>
                 Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
             &Operation::Add { left, right, subtract } =>
@@ -111,7 +116,7 @@ impl ConvDetails {
     pub fn output_shape(&self) -> Shape {
         shape![self.batch_size, self.output_channels, self.output_size, self.output_size]
     }
-    
+
     pub fn kernel_shape(&self) -> [usize; 4] {
         [self.output_channels, self.input_channels, self.kernel_size, self.kernel_size]
     }
@@ -286,6 +291,18 @@ impl Graph {
         new_shape.dims.remove(axis);
 
         self.view(sliced, new_shape)
+    }
+
+    /// Index along the given axis with indices given by `index`.
+    #[must_use]
+    pub fn gather(&mut self, input: Value, axis: usize, indices: Value) -> Value {
+        let input_shape = &self[input].shape;
+        let index_size = self[indices].shape.unwrap_1();
+
+        let mut result_shape = input_shape.clone();
+        result_shape.dims[axis] = index_size;
+
+        self.push(result_shape, Operation::Gather { input, axis, indices })
     }
 
     /// Apply 2D convolution.

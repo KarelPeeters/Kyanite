@@ -58,6 +58,23 @@ fn slice() {
 }
 
 #[test]
+fn gather() {
+    let mut graph = Graph::new();
+
+    let input = graph.constant(shape![2, 3], range_vec(2 * 3 * 1));
+    let index = graph.constant(shape![4], vec![0.0, 2.0, 1.0, 0.0]);
+    let result = graph.gather(input, 1, index);
+    graph.output(result);
+
+    let expected_result = manual_tensor((2, 4), vec![0.0, 2.0, 1.0, 0.0, 3.0, 5.0, 4.0, 3.0]);
+
+    test_all(
+        &graph, 0, &[],
+        Some(&[expected_result]),
+    )
+}
+
+#[test]
 fn linear() {
     let mut graph = Graph::new();
 
