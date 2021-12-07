@@ -2,7 +2,8 @@ use itertools::Itertools;
 use unwrap_match::unwrap_match;
 
 use crate::graph::{Graph, Value};
-use crate::shape::Size;
+use crate::shape;
+use crate::shape::{Shape, Size};
 
 /// A value as it appears in the onnx graph.
 ///
@@ -57,6 +58,14 @@ impl TypedValue {
             TypedValue::Shape(_) => panic!("Cannot wrap value as shape"),
             TypedValue::FloatTensor(_) => TypedValue::FloatTensor(result),
             TypedValue::IntTensor(_) => TypedValue::IntTensor(result),
+        }
+    }
+
+    pub fn shape(&self, graph: &Graph) -> Shape {
+        match self {
+            TypedValue::Shape(shape) => shape![shape.len()],
+            &TypedValue::FloatTensor(tensor) | &TypedValue::IntTensor(tensor) =>
+                graph[tensor].shape.clone()
         }
     }
 }

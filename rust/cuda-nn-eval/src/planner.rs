@@ -111,6 +111,11 @@ impl<'a> Planner<'a> {
                 self.plan.push(Step::Gather { input, axis, indices, output: output.view() });
                 output
             }
+            &Operation::Concat { .. } => {
+                //TODO maybe (ab)use cudnnactivationforward for this? it already does the re-striding for us!
+                // alternatively use cudaMemCpy2D (and finally figure out how it actually works)
+                todo!("GPU concat");
+            }
             &Operation::Conv { .. } =>
                 unreachable!("conv should have been handled earlier by the fuser"),
             &Operation::Add { left, right, subtract } => {

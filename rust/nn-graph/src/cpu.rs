@@ -56,6 +56,12 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
 
                 concatenate(Axis(axis), &slices).unwrap().into_shared()
             }
+            Operation::Concat { inputs, axis } => {
+                let inputs = inputs.iter()
+                    .map(|x| map.get(x).unwrap().tensor.view())
+                    .collect_vec();
+                ndarray::concatenate(Axis(*axis), &inputs).unwrap().into_shared()
+            }
             &Operation::Conv { input, filter, details: conv_shape } => {
                 let input = map.get(&input).unwrap().tensor.view().into_dimensionality().unwrap();
                 let filter = map.get(&filter).unwrap().tensor.view().into_dimensionality().unwrap();

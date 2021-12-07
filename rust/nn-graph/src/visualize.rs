@@ -162,7 +162,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                     zip(&graph[input].shape.dims, &graph[other].shape.dims)
                         .all(|(l, r)| l == r)
                 }
-                Operation::Slice { .. } | Operation::Gather { .. } | Operation::Conv { .. } => false,
+                Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. } | Operation::Conv { .. } => false,
                 &Operation::Add { left, right, subtract: _ } | &Operation::Mul { left, right } => {
                     graph[left].shape != graph[right].shape
                 }
@@ -184,6 +184,8 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
             is_effectively_constant(graph, input),
         &Operation::Gather { input, indices, .. } =>
             is_effectively_constant(graph, input) && is_effectively_constant(graph, indices),
+        Operation::Concat { inputs, .. } =>
+            inputs.iter().all(|&x| is_effectively_constant(graph, x)),
         Operation::Input { .. } | Operation::Conv { .. } | Operation::Add { .. } | Operation::Mul { .. } | Operation::Clamp { .. } =>
             false,
     }

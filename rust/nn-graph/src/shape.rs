@@ -84,12 +84,22 @@ impl Shape {
     pub fn all_ones_except(&self, index: usize) -> Shape {
         assert!(index < self.rank());
 
-        let dims = self.dims.iter().enumerate()
-            .map(|(i, &s)| {
-                if i == index { s } else { Size::ONE }
-            })
-            .collect_vec();
-        Shape { dims }
+        let mut result = self.clone();
+        for i in 0..self.rank() {
+            if i != index {
+                result.dims[i] = Size::ONE;
+            }
+        }
+        result
+    }
+
+    /// Returns a new shape with the size at `index` set to 1, the rest are kept.
+    pub fn with_one_at(&self, index: usize) -> Shape {
+        assert!(index < self.rank());
+
+        let mut result = self.clone();
+        result[index] = Size::ONE;
+        result
     }
 }
 

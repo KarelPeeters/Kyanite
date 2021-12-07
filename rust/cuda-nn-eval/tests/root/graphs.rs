@@ -327,3 +327,17 @@ fn fuse_res() {
         None,
     );
 }
+
+#[test]
+fn concat() {
+    let mut graph = Graph::new();
+
+    let a = graph.constant(shape![2, 3, 4], linspace_vec(2 * 3 * 4));
+    let b = graph.constant(shape![2, 1, 4], linspace_vec(2 * 1 * 4));
+    let c = graph.constant(shape![2, 8, 4], linspace_vec(2 * 8 * 4));
+
+    let result = graph.concat(vec![a, b, c], 1);
+    graph.output(result);
+
+    test_all(&graph, 0, &[], None);
+}

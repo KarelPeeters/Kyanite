@@ -46,6 +46,9 @@ pub enum Operation {
     /// Gather values from `input` at the indices in `index` on the given axis.
     Gather { input: Value, axis: usize, indices: Value },
 
+    /// Concatenate values along an axis.
+    Concat { inputs: Vec<Value>, axis: usize },
+
     /// The standard convolution operator.
     Conv { input: Value, filter: Value, details: ConvDetails },
 
@@ -66,6 +69,7 @@ impl Operation {
             &Operation::View { input } => vec![input],
             &Operation::Slice { input, axis: _, start: _, end: _ } => vec![input],
             &Operation::Gather { input, axis: _, indices } => vec![input, indices],
+            Operation::Concat { inputs, axis: _ } => inputs.clone(),
             &Operation::Conv { input, filter, details: _ } => vec![input, filter],
             &Operation::Add { left, right, subtract: _ } => vec![left, right],
             &Operation::Mul { left, right } => vec![left, right],
@@ -85,6 +89,8 @@ impl Operation {
                 Operation::Slice { input: f(input), axis, start, end },
             &Operation::Gather { input, axis, indices } =>
                 Operation::Gather { input: f(input), axis, indices: f(indices) },
+            Operation::Concat { inputs, axis } =>
+                Operation::Concat { inputs: inputs.iter().copied().map(f).collect(), axis: *axis },
             &Operation::Conv { input, filter, details: conv_shape } =>
                 Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
             &Operation::Add { left, right, subtract } =>
@@ -315,6 +321,24 @@ impl Graph {
         result_shape.dims[axis] = index_size;
 
         self.push(result_shape, Operation::Gather { input, axis, indices })
+    }
+
+    /// Concatenate values along an axis.
+    #[must_use]
+    pub fn concat(&mut self, inputs: Vec<Value>, axis: usize) -> Value {
+        assert!(inputs.len() > 0, "Must concatenate at least one value");
+
+        let base_shape = self[inputs[0]].shape.with_one_at(axis);
+
+        let size_along_axis = inputs.iter().map(|&v| {
+            assert_eq!(self[v].shape.with_one_at(axis), base_shape, "All concatenated values must match base shape");
+            self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
+        }).sum::<usize>();
+
+        let mut result_shape = base_shape.clone();
+        result_shape[axis] = Size::fixed(size_along_axis);
+
+        self.push(result_shape, Operation::Concat { inputs, axis })
     }
 
     /// Apply 2D convolution.

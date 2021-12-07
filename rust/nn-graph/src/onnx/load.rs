@@ -320,7 +320,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         let end = abs_axis(ends[0], shape.len());
 
                         TypedValue::Shape(shape[start..end].to_vec())
-                    },
+                    }
                     &TypedValue::FloatTensor(input_tensor) | &TypedValue::IntTensor(input_tensor) => {
                         let input_shape = graph[input_tensor].shape.clone();
 
@@ -336,6 +336,46 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                             )
                         });
                         TypedValue::with_same_type(result, input)
+                    }
+                }
+            }
+            "Concat" => {
+                assert!(inputs.len() > 0, "Must concatenate at least one value");
+                let rank = inputs[0].shape(&graph).rank();
+
+                let rel_axis = attrs.take_int("axis");
+                let axis = abs_axis(rel_axis, rank);
+
+                let any_shape = inputs.iter().any(|x| matches!(x, TypedValue::Shape(_)));
+                let any_float = inputs.iter().any(|x| matches!(x, TypedValue::FloatTensor(_)));
+                let any_int = inputs.iter().any(|x| matches!(x, TypedValue::IntTensor(_)));
+
+                if any_shape {
+                    assert_eq!(axis, 0, "Shape concatenation must happen along axis 0");
+
+                    let shape = inputs.iter().flat_map(|x| {
+                        x.unwrap_as_shape(&graph).into_iter()
+                    }).collect_vec();
+
+                    TypedValue::Shape(shape)
+                } else {
+                    let input_tensors = inputs.iter().map(|v| v.unwrap_tensor()).collect_vec();
+                    let result = graph.concat(input_tensors, axis);
+
+                    if any_float {
+                        assert!(
+                            inputs.iter().all(|&x| matches!(x, TypedValue::FloatTensor(_))),
+                            "All concatenated values must have the same type (float)"
+                        );
+                        TypedValue::FloatTensor(result)
+                    } else if any_int {
+                        assert!(
+                            inputs.iter().all(|&x| matches!(x, TypedValue::IntTensor(_))),
+                            "All concatenated values must have the same type (int)"
+                        );
+                        TypedValue::IntTensor(result)
+                    } else {
+                        unreachable!()
                     }
                 }
             }
