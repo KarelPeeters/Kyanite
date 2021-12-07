@@ -40,7 +40,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
     }
 
     for node in &model_graph.node {
-        assert_eq!(1, node.output.len(), "nodes with multiple outputs not supported");
+        assert_eq!(1, node.output.len(), "nodes with multiple outputs not yet supported");
         let output_name = &node.output[0];
 
         let mut attrs = Attributes::from(&node.attribute);
@@ -124,7 +124,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let input = inputs[0];
 
                 let rel_axis = attrs.take_int("axis");
-                let axis = index_to_abs(rel_axis, graph[input].shape.rank());
+                let axis = abs_axis(rel_axis, graph[input].shape.rank());
 
                 graph.flatten(input, axis)
             }
@@ -235,6 +235,35 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 graph.view(input, output_shape)
             }
+            "Unsqueeze" => {
+                assert_eq!(1, inputs.len());
+
+                let input = inputs[0];
+                let input_shape = &graph[input].shape;
+
+                let rel_axes = attrs.take_ints("axes");
+                let output_rank = input_shape.rank() + rel_axes.len();
+                let axes = rel_axes.iter().map(|&a| abs_axis(a, output_rank)).collect_vec();
+
+                assert!(
+                    axes.iter().all_unique() && axes.iter().all(|&a| a < output_rank),
+                    "Invalid axis {:?} for input rank {} in Unsqueeze",
+                    axes, input_shape.rank(),
+                );
+
+                let mut input_shape_left = input_shape.dims.iter().copied();
+                let output_dims = (0..output_rank).map(|i| {
+                    if axes.contains(&i) {
+                        Size::ONE
+                    } else {
+                        input_shape_left.next().unwrap()
+                    }
+                }).collect_vec();
+                assert_eq!(input_shape_left.len(), 0);
+
+                let output_shape = Shape::new(output_dims);
+                graph.view(input, output_shape)
+            }
             "Gather" => {
                 assert_eq!(2, inputs.len());
 
@@ -272,14 +301,14 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 assert!(axes.len() == starts.len() && axes.len() == ends.len(), "Inconsistent axes count");
 
                 (0..axes.len()).fold(input, |curr, i| {
-                    let axis = index_to_abs(axes[i], input_shape.rank());
+                    let axis = abs_axis(axes[i], input_shape.rank());
                     let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
 
                     graph.slice(
                         curr,
                         axis,
-                        index_to_abs(starts[i], axis_size),
-                        index_to_abs(ends[i], axis_size),
+                        abs_axis(starts[i], axis_size),
+                        abs_axis(ends[i], axis_size),
                     )
                 })
             }
@@ -383,13 +412,13 @@ fn resolve_tensor_dim(dim: &tensor_shape_proto::Dimension) -> Size {
     }
 }
 
-fn index_to_abs(index: i64, size: usize) -> usize {
-    if index == i64::MAX {
-        size
-    } else if index < 0 {
-        size - ((-index) as usize)
+fn abs_axis(axis: i64, rank: usize) -> usize {
+    if axis == i64::MAX {
+        rank
+    } else if axis < 0 {
+        rank - ((-axis) as usize)
     } else {
-        index as usize
+        axis as usize
     }
 }
 
