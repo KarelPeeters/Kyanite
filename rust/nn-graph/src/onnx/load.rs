@@ -309,22 +309,35 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let starts = attrs.take_ints("starts");
                 let ends = attrs.take_ints("ends");
 
-                let input_tensor = input.unwrap_tensor();
-                let input_shape = graph[input_tensor].shape.clone();
                 assert!(axes.len() == starts.len() && axes.len() == ends.len(), "Inconsistent axes count");
+                assert!(axes.iter().all_unique(), "Slice axis cannot be repeated, got {:?}", axes);
 
-                let result = (0..axes.len()).fold(input_tensor, |curr, i| {
-                    let axis = abs_axis(axes[i], input_shape.rank());
-                    let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
+                match input {
+                    TypedValue::Shape(shape) => {
+                        assert_eq!(axes.len(), 1, "Slicing shape can only be on axis 0");
 
-                    graph.slice(
-                        curr,
-                        axis,
-                        abs_axis(starts[i], axis_size),
-                        abs_axis(ends[i], axis_size),
-                    )
-                });
-                TypedValue::with_same_type(result, input)
+                        let start = abs_axis(starts[0], shape.len());
+                        let end = abs_axis(ends[0], shape.len());
+
+                        TypedValue::Shape(shape[start..end].to_vec())
+                    },
+                    &TypedValue::FloatTensor(input_tensor) | &TypedValue::IntTensor(input_tensor) => {
+                        let input_shape = graph[input_tensor].shape.clone();
+
+                        let result = (0..axes.len()).fold(input_tensor, |curr, i| {
+                            let axis = abs_axis(axes[i], input_shape.rank());
+                            let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
+
+                            graph.slice(
+                                curr,
+                                axis,
+                                abs_axis(starts[i], axis_size),
+                                abs_axis(ends[i], axis_size),
+                            )
+                        });
+                        TypedValue::with_same_type(result, input)
+                    }
+                }
             }
             "Shape" => {
                 assert_eq!(1, inputs.len());
