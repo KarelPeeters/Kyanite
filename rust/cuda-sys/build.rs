@@ -12,6 +12,7 @@ fn link_cuda(builder: Builder) -> Builder {
     println!("cargo:rustc-link-lib=dylib=cuda");
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
+    println!("cargo:rustc-link-lib=dylib=cublas");
 
     builder
         .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include")
@@ -46,6 +47,7 @@ fn main() {
         .default_enum_style(EnumVariation::Rust { non_exhaustive: true })
         .must_use_type("cudaError")
         .must_use_type("cudnnStatus_t")
+        .must_use_type("cublasStatus_t")
         .layout_tests(false)
 
         // output

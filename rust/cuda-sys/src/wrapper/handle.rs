@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
+use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::status::Status;
@@ -119,15 +119,45 @@ impl CudnnHandle {
         self.stream.device()
     }
 
-    pub unsafe fn stream(&mut self) -> &mut CudaStream {
-        &mut self.stream
+    pub unsafe fn stream(&self) -> &CudaStream {
+        &self.stream
     }
 
-    pub unsafe fn inner(&mut self) -> cudnnHandle_t {
+    pub unsafe fn inner(&self) -> cudnnHandle_t {
         self.inner
     }
+}
 
-    pub fn into_inner(self) -> cudnnHandle_t {
+#[derive(Debug)]
+pub struct CublasHandle {
+    inner: cublasHandle_t,
+    stream: CudaStream,
+}
+
+impl Drop for CublasHandle {
+    fn drop(&mut self) {
+        unsafe {
+            cublasDestroy_v2(self.inner).unwrap_in_drop()
+        }
+    }
+}
+
+impl CublasHandle {
+    pub fn new(device: Device) -> Self {
+        CublasHandle::new_with_stream(CudaStream::new(device))
+    }
+
+    pub fn new_with_stream(stream: CudaStream) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            stream.device.switch_to();
+            cublasCreate_v2(&mut inner as *mut _).unwrap();
+            cublasSetStream_v2(inner, stream.inner()).unwrap();
+            CublasHandle { inner, stream }
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cublasHandle_t {
         self.inner
     }
 }
