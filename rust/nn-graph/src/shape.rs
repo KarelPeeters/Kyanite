@@ -71,6 +71,10 @@ impl Shape {
         self.dims.as_slice().try_into().expect("Expected rank 2 shape")
     }
 
+    pub fn unwrap_3(&self) -> [Size; 3] {
+        self.dims.as_slice().try_into().expect("Expected rank 3 shape")
+    }
+
     pub fn unwrap_4(&self) -> [Size; 4] {
         self.dims.as_slice().try_into().expect("Expected rank 4 shape")
     }

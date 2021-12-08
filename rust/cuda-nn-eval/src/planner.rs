@@ -2,22 +2,21 @@ use std::collections::{HashMap, HashSet};
 
 use bytemuck::cast_slice;
 
-use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
+use cuda_sys::bindings::{cublasOperation_t, cudnnActivationMode_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
-use cuda_sys::wrapper::handle::CudnnHandle;
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulArg, TensorOpArgs};
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use nn_graph::graph::{Graph, Operation, Value};
 use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::ConcreteShape;
 
-use crate::executor::Step;
+use crate::executor::{Handles, Step};
 use crate::shape::StridedShape;
 use crate::tensor::Tensor;
 
-pub struct Planner<'a> {
-    handle: &'a mut CudnnHandle,
+pub(crate) struct Planner<'a> {
+    handles: &'a Handles,
     graph: &'a Graph,
     batch_size: usize,
 
@@ -28,11 +27,11 @@ pub struct Planner<'a> {
 }
 
 impl<'a> Planner<'a> {
-    pub fn new(handle: &'a mut CudnnHandle, graph: &'a Graph, batch_size: usize) -> Self {
+    pub(crate) fn new(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Self {
         let single_use = find_single_use_values(graph);
 
         Planner {
-            handle,
+            handles,
             graph,
             batch_size,
             single_use,
@@ -88,12 +87,7 @@ impl<'a> Planner<'a> {
             }
             &Operation::Permute { input, ref permutation } => {
                 let input_tensor = self.visit(input);
-
-                // just permute the shape and strides
-                let new_sizes = permutation.iter().map(|&i| input_tensor.shape.shape()[i]).collect();
-                let new_strides = permutation.iter().map(|&i| input_tensor.shape.strides()[i]).collect();
-                let new_shape = StridedShape::new(new_sizes, new_strides);
-
+                let new_shape = input_tensor.shape.permute(permutation);
                 Tensor::new(input_tensor.mem, new_shape)
             }
             &Operation::Slice { input, axis, start, end } => {
@@ -128,6 +122,43 @@ impl<'a> Planner<'a> {
             }
             &Operation::Conv { .. } =>
                 unreachable!("conv should have been handled earlier by the fuser"),
+            &Operation::MatMul { left, right } => {
+                //TODO should we also handle this in the fuser?
+                // not that important for now since it only shows up once in the graphs we're actually using
+                //TODO should we go for the general stride implementation here? -> yes, so first figure out how that works
+                //TODO or just assume we have dense row/col-major storage and transpose? -> do this for now, maybe even with a
+                // restride operation (similar to concat)
+
+                let left = self.visit(left);
+                let right = self.visit(right);
+
+                assert!(left.shape.rank() == 3 && right.shape.rank() == 3);
+                let batch_size = left.shape.shape()[0];
+                let m = left.shape.shape()[1];
+                let k = left.shape.shape()[2];
+                let n = right.shape.shape()[2];
+
+                // construct a result tensor with col-major strides
+                let result_transposed = self.alloc_tensor(ConcreteShape::new(vec![batch_size, n, m]));
+                let result = Tensor::new(result_transposed.mem.view(), result_transposed.shape.permute(&[0, 2, 1]));
+
+                let args = BatchedMatMulArgs {
+                    m: m as i32,
+                    n: n as i32,
+                    k: k as i32,
+                    alpha: 1.0,
+                    beta: 0.0,
+                    a: to_mat_mul_arg(&left),
+                    b: to_mat_mul_arg(&right),
+                    c: to_mat_mul_arg(&result),
+                    batch_count: batch_size as i32,
+                };
+                println!("{:#?}", args);
+
+                self.plan.push(Step::MatMul { args });
+
+                result
+            }
             &Operation::Add { left, right, subtract } => {
                 self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, subtract)
             }
@@ -243,8 +274,8 @@ impl<'a> Planner<'a> {
             );
 
             let algo = STANDARD_CONV_ALGO;
-            let work_size_bytes = conv_desc.workspace_size(self.handle, algo, &input_desc, &filter_desc, &output_desc);
-            let work_mem = DeviceMem::alloc(work_size_bytes, self.handle.device());
+            let work_size_bytes = conv_desc.workspace_size(&self.handles.cudnn, algo, &input_desc, &filter_desc, &output_desc);
+            let work_mem = DeviceMem::alloc(work_size_bytes, self.handles.cudnn.device());
 
             let act_desc = ActivationDescriptor::new(act_mode, 0.0);
 
@@ -264,7 +295,7 @@ impl<'a> Planner<'a> {
                 output_mem: output.mem.view(),
             };
 
-            self.plan.push(Step::Conv { details, args });
+            self.plan.push(Step::Conv { args });
             Some(output)
         } else {
             None
@@ -329,8 +360,30 @@ impl<'a> Planner<'a> {
     fn alloc_tensor(&mut self, shape: ConcreteShape) -> Tensor {
         let shape = StridedShape::new_simple(shape.dims);
         Tensor::new(
-            DeviceMem::alloc(shape.strided_size() * 4, self.handle.device()),
+            DeviceMem::alloc(shape.strided_size() * 4, self.handles.cudnn.device()),
             shape,
         )
+    }
+}
+
+fn to_mat_mul_arg(tensor: &Tensor) -> MatMulArg {
+    assert_eq!(tensor.shape.rank(), 3);
+
+    // whether the strides are col-major (true) or row-major (false)
+    let col_major = if tensor.shape.has_simple_strides() {
+        false
+    } else if tensor.shape.permute(&[0, 2, 1]).has_simple_strides() {
+        true
+    } else {
+        panic!("For now matmul operand must be either col- or row-major, got {:?}", tensor)
+    };
+
+    let lead_axis = if col_major { 1 } else { 2 };
+
+    MatMulArg {
+        mem: tensor.mem.view(),
+        trans: if col_major { cublasOperation_t::CUBLAS_OP_N } else { cublasOperation_t::CUBLAS_OP_T },
+        ld: tensor.shape.shape()[lead_axis] as i32,
+        stride: tensor.shape.strides()[0] as i64,
     }
 }

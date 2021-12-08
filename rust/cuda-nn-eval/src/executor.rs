@@ -4,18 +4,18 @@ use std::fmt::{Debug, Formatter};
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use cuda_sys::wrapper::event::CudaEvent;
-use cuda_sys::wrapper::group::{FusedConvolutionArgs, TensorOpArgs};
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
+use cuda_sys::wrapper::handle::{CublasHandle, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
-use nn_graph::graph::{ConvDetails, Graph};
+use nn_graph::graph::Graph;
 
 use crate::kernels;
 use crate::planner::Planner;
 use crate::tensor::Tensor;
 
 pub struct CudnnExecutor {
-    handle: CudnnHandle,
+    handles: Handles,
     plan: Vec<Step>,
 
     stage: Vec<f32>,
@@ -25,9 +25,16 @@ pub struct CudnnExecutor {
 }
 
 #[derive(Debug)]
+pub(crate) struct Handles {
+    pub cudnn: CudnnHandle,
+    pub cublas: CublasHandle,
+}
+
+#[derive(Debug)]
 pub enum Step {
     CopyInput { index: usize, mem: DeviceMem },
-    Conv { details: ConvDetails, args: FusedConvolutionArgs },
+    Conv { args: FusedConvolutionArgs },
+    MatMul { args: BatchedMatMulArgs },
     TensorOp { args: TensorOpArgs },
     Gather { input: Tensor, axis: usize, indices: Tensor, output: Tensor },
     CopyOutput { index: usize, tensor: Tensor },
@@ -35,8 +42,11 @@ pub enum Step {
 
 impl CudnnExecutor {
     pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
-        let mut handle = CudnnHandle::new(device);
-        let mut planner = Planner::new(&mut handle, graph, batch_size);
+        let handles = Handles {
+            cudnn: CudnnHandle::new(device),
+            cublas: CublasHandle::new(device),
+        };
+        let mut planner = Planner::new(&handles, graph, batch_size);
 
         // do all necessary calculations
         for &output in graph.outputs() {
@@ -60,7 +70,7 @@ impl CudnnExecutor {
         let stage = vec![f32::NAN; stage_size];
         let plan = planner.finish();
 
-        CudnnExecutor { handle, plan, stage, outputs, profile: false }
+        CudnnExecutor { handles, plan, stage, outputs, profile: false }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -71,9 +81,9 @@ impl CudnnExecutor {
                 let start = CudaEvent::new();
                 let end = CudaEvent::new();
 
-                self.handle.stream().record_event(&start);
-                step.run(&mut self.handle, inputs, &mut self.stage, &mut self.outputs);
-                self.handle.stream().record_event(&end);
+                self.handles.cudnn.stream().record_event(&start);
+                step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
+                self.handles.cudnn.stream().record_event(&end);
 
                 timers.push((step, start, end));
             }
@@ -81,6 +91,7 @@ impl CudnnExecutor {
 
         if self.profile {
             let mut conv_time = 0.0;
+            let mut mat_mul_time = 0.0;
             let mut tensor_op_time = 0.0;
             let mut gather_time = 0.0;
             let mut copy_to_device_time = 0.0;
@@ -92,6 +103,7 @@ impl CudnnExecutor {
                 *match step {
                     Step::CopyInput { .. } => &mut copy_to_device_time,
                     Step::Conv { .. } => &mut conv_time,
+                    Step::MatMul { .. } => &mut mat_mul_time,
                     Step::TensorOp { .. } => &mut tensor_op_time,
                     Step::Gather { .. } => &mut gather_time,
                     Step::CopyOutput { .. } => &mut copy_to_host_time,
@@ -101,6 +113,7 @@ impl CudnnExecutor {
             }
 
             println!("Conv:      {:.4}", conv_time);
+            println!("Matmul:    {:.4}", mat_mul_time);
             println!("Tensor op: {:.4}", tensor_op_time);
             println!("Gather:    {:.4}", gather_time);
             println!("Copy ->:   {:.4}", copy_to_device_time);
@@ -116,16 +129,28 @@ impl CudnnExecutor {
 }
 
 impl Step {
-    unsafe fn run(&self, handle: &mut CudnnHandle, inputs: &[&[f32]], stage: &mut [f32], outputs: &mut [Vec<f32>]) {
+    unsafe fn run(&self, handles: &Handles, inputs: &[&[f32]], stage: &mut [f32], outputs: &mut [Vec<f32>]) {
         match self {
             Step::CopyInput { index, mem } => {
                 mem.copy_from_host(cast_slice(inputs[*index]))
             }
-            Step::Conv { details: _, args } => {
-                args.run(handle);
+            Step::Conv { args } => {
+                args.run(&handles.cudnn);
+            }
+            Step::MatMul { args } => {
+                // schedule blas wait for cuda
+                let cuda_event = handles.cudnn.stream().record_new_event();
+                handles.cublas.stream().wait_for_event(&cuda_event);
+
+                // schedule operation on blas
+                args.run(&handles.cublas);
+
+                // schedule cuda wait for blas
+                let blas_event = handles.cublas.stream().record_new_event();
+                handles.cudnn.stream().wait_for_event(&blas_event);
             }
             Step::TensorOp { args } => {
-                args.run(handle);
+                args.run(&handles.cudnn);
             }
             Step::Gather { input, axis, indices, output } => {
                 assert!(
@@ -139,7 +164,7 @@ impl Step {
                 );
 
                 kernels::gather2dAxis1FloatFloat(
-                    handle.stream().inner(),
+                    handles.cudnn.stream().inner(),
                     input.shape.shape()[0] as i32, input.shape.shape()[1] as i32,
                     input.shape.strides()[0] as i32, input.shape.strides()[1] as i32,
                     indices.shape.size() as i32,
@@ -173,13 +198,13 @@ impl Step {
 
 impl Debug for CudnnExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n", self.profile, self.handle)?;
+        write!(f, "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n", self.profile, self.handles)?;
 
         for step in &self.plan {
             writeln!(f, "        {:?},", step)?;
         }
 
-        writeln!(f, "}}")?;
+        writeln!(f, "    ]\n}}")?;
         Ok(())
     }
 }

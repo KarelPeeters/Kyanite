@@ -164,7 +164,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 }
                 Operation::Permute { .. }
                 | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
-                | Operation::Conv { .. } => false,
+                | Operation::Conv { .. } | Operation::MatMul { .. } => false,
                 &Operation::Add { left, right, subtract: _ } | &Operation::Mul { left, right } => {
                     graph[left].shape != graph[right].shape
                 }
@@ -185,7 +185,8 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         Operation::Constant { .. } => true,
         Operation::View { .. } | Operation::Permute { .. }
         | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
-        | Operation::Conv { .. } | Operation::Add { .. } | Operation::Mul { .. }
+        | Operation::Conv { .. } | Operation::MatMul { .. }
+        | Operation::Add { .. } | Operation::Mul { .. }
         | Operation::Clamp { .. } => {
             operation.inputs().iter().all(|&v| is_effectively_constant(graph, v))
         }

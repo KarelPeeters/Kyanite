@@ -1,8 +1,9 @@
-use crate::bindings::cudnnConvolutionFwdAlgo_t;
+use crate::bindings::{cublasOperation_t, cublasSgemmStridedBatched, cudnnConvolutionFwdAlgo_t};
 use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor};
-use crate::wrapper::handle::CudnnHandle;
+use crate::wrapper::handle::{CublasHandle, CudnnHandle};
 use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::operation::{run_conv_bias_res_activation, run_tensor_op};
+use crate::wrapper::status::Status;
 
 /// The arguments necessary for a fused convolution call.
 #[derive(Debug)]
@@ -27,7 +28,7 @@ pub struct FusedConvolutionArgs {
 }
 
 impl FusedConvolutionArgs {
-    pub unsafe fn run(&self, handle: &mut CudnnHandle) {
+    pub unsafe fn run(&self, handle: &CudnnHandle) {
         run_conv_bias_res_activation(
             handle,
             &self.act_desc,
@@ -62,7 +63,7 @@ pub struct TensorOpArgs {
 }
 
 impl TensorOpArgs {
-    pub unsafe fn run(&self, handle: &mut CudnnHandle) {
+    pub unsafe fn run(&self, handle: &CudnnHandle) {
         run_tensor_op(
             handle,
             &self.op_desc,
@@ -76,5 +77,51 @@ impl TensorOpArgs {
             &self.output_desc,
             &self.output_mem,
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct MatMulArg {
+    pub mem: DeviceMem,
+    pub trans: cublasOperation_t,
+    pub ld: i32,
+    pub stride: i64,
+}
+
+#[derive(Debug)]
+pub struct BatchedMatMulArgs {
+    pub m: i32,
+    pub n: i32,
+    pub k: i32,
+    pub alpha: f32,
+    pub beta: f32,
+    pub a: MatMulArg,
+    pub b: MatMulArg,
+    pub c: MatMulArg,
+    pub batch_count: i32,
+}
+
+impl BatchedMatMulArgs {
+    pub unsafe fn run(&self, handle: &CublasHandle) {
+        assert_eq!(self.c.trans, cublasOperation_t::CUBLAS_OP_N);
+
+        cublasSgemmStridedBatched(
+            handle.inner(),
+            self.a.trans,
+            self.b.trans,
+            self.m, self.n, self.k,
+            &(self.alpha) as *const f32,
+            self.a.mem.ptr() as *const f32,
+            self.a.ld,
+            self.a.stride,
+            self.b.mem.ptr() as *const f32,
+            self.b.ld,
+            self.b.stride,
+            &(self.beta) as *const f32,
+            self.c.mem.ptr() as *mut f32,
+            self.c.ld,
+            self.c.stride,
+            self.batch_count,
+        ).unwrap()
     }
 }

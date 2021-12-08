@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use itertools::zip_eq;
+use itertools::{Itertools, zip_eq};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StridedShape {
@@ -141,6 +141,17 @@ impl StridedShape {
             //finish last group
             f(group_size, prev_stride)
         }
+    }
+
+    pub fn permute(&self, permutation: &[usize]) -> StridedShape {
+        assert_eq!(permutation.len(), self.rank());
+        assert!(permutation.iter().all_unique());
+
+        // just permute the shape and strides
+        let new_shape = permutation.iter().map(|&i| self.shape()[i]).collect();
+        let new_strides = permutation.iter().map(|&i| self.strides()[i]).collect();
+
+        StridedShape::new(new_shape, new_strides)
     }
 }
 

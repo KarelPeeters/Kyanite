@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudnnCreate, cudnnDestroy, cudnnSetStream};
+use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::status::Status;
@@ -83,6 +83,10 @@ impl CudaStream {
         self.record_event(&event);
         event
     }
+
+    pub unsafe fn wait_for_event(&self, event: &CudaEvent) {
+        cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+    }
 }
 
 #[derive(Debug)]
@@ -155,6 +159,10 @@ impl CublasHandle {
             cublasSetStream_v2(inner, stream.inner()).unwrap();
             CublasHandle { inner, stream }
         }
+    }
+
+    pub unsafe fn stream(&self) -> &CudaStream {
+        &self.stream
     }
 
     pub unsafe fn inner(&self) -> cublasHandle_t {

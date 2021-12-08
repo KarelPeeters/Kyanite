@@ -5,7 +5,7 @@ use convolutions_rs::convolutions::*;
 use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array4, ArrayView4, concatenate, IxDyn, SliceInfo, SliceInfoElem};
+use ndarray::{ArcArray, Array3, Array4, ArrayView3, ArrayView4, concatenate, Ix3, IxDyn, s, SliceInfo, SliceInfoElem};
 
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
@@ -72,6 +72,15 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                 let result = convolution(conv_shape, input, filter);
                 result.into_dyn().into_shared()
             }
+            &Operation::MatMul { left, right } => {
+                let left = &map.get(&left).unwrap().tensor;
+                let right = &map.get(&right).unwrap().tensor;
+
+                batched_mat_mul(
+                    left.view().into_dimensionality::<Ix3>().unwrap(),
+                    right.view().into_dimensionality::<Ix3>().unwrap(),
+                ).into_dyn().into_shared()
+            }
             &Operation::Add { left, right, subtract } => {
                 let left = &map.get(&left).unwrap().tensor;
                 let right = &map.get(&right).unwrap().tensor;
@@ -121,6 +130,19 @@ pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayVi
         result.index_axis_mut(Axis(0), b).assign(&result_b);
     }
 
+    result
+}
+
+pub fn batched_mat_mul(left: ArrayView3<f32>, right: ArrayView3<f32>) -> Array3<f32> {
+    let (n0, p, q0) = left.dim();
+    let (n1, q1, r) = right.dim();
+    assert!(n0 == n1 && q0 == q1, "Invalid matmul dimensions: {:?} and {:?}", left.dim(), right.dim());
+
+    let mut result = Array3::zeros((n0, p, r));
+    for i in 0..n0 {
+        let slice = s![i, .., ..];
+        result.slice_mut(&slice).assign(&left.slice(&slice).dot(&right.slice(&slice)));
+    }
     result
 }
 

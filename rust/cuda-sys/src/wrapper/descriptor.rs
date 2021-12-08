@@ -157,7 +157,7 @@ impl ConvolutionDescriptor {
 
     pub fn workspace_size(
         &self,
-        handle: &mut CudnnHandle,
+        handle: &CudnnHandle,
         algo: cudnnConvolutionFwdAlgo_t,
         input: &TensorDescriptor,
         filter: &FilterDescriptor,

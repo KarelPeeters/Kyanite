@@ -11,7 +11,7 @@ pub const STANDARD_CONV_ALGO: cudnnConvolutionFwdAlgo_t =
     cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
 pub fn find_conv_algorithms(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     conv: &ConvolutionDescriptor,
     filter: &FilterDescriptor,
     input: &TensorDescriptor,
@@ -52,7 +52,7 @@ pub fn find_conv_algorithms(
 
 /// Run `output = conv(input, filter)`
 pub unsafe fn run_conv(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     conv_desc: &ConvolutionDescriptor,
     algo: cudnnConvolutionFwdAlgo_t,
     work_mem: &DeviceMem,
@@ -89,7 +89,7 @@ pub unsafe fn run_conv(
 
 /// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
 pub unsafe fn run_add_tensor(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
     output_desc: &TensorDescriptor,
@@ -111,7 +111,7 @@ pub unsafe fn run_add_tensor(
 
 /// Run `output = act(input)`.
 pub unsafe fn run_activation(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     activation_desc: &ActivationDescriptor,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
@@ -135,7 +135,7 @@ pub unsafe fn run_activation(
 
 /// Runs `output = act(output)`.
 pub unsafe fn run_activation_in_place(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     activation_desc: &ActivationDescriptor,
     data_desc: &TensorDescriptor,
     data_mem: &DeviceMem,
@@ -161,7 +161,7 @@ pub unsafe fn run_activation_in_place(
 /// * `input` must be different from both `output` and `res`.
 /// * `res` is assumed to have the same descriptor as `output`.
 pub unsafe fn run_conv_bias_res_activation(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     activation_desc: &ActivationDescriptor,
     conv_desc: &ConvolutionDescriptor,
     algo: cudnnConvolutionFwdAlgo_t,
@@ -214,7 +214,7 @@ pub unsafe fn run_conv_bias_res_activation(
 
 /// Runs `output = pool(input)`.
 pub unsafe fn run_pooling(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     pool_desc: &PoolingDescriptor,
     input_desc: &TensorDescriptor,
     input_mem: &DeviceMem,
@@ -238,7 +238,7 @@ pub unsafe fn run_pooling(
 
 /// Runs `output = op(alpha_1 * input_1, alpha_2 * input_2) + b * output`
 pub unsafe fn run_tensor_op(
-    handle: &mut CudnnHandle,
+    handle: &CudnnHandle,
     op_desc: &TensorOpDescriptor,
     alpha_1: f32,
     input_1_desc: &TensorDescriptor,

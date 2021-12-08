@@ -53,6 +53,8 @@ pub enum Operation {
 
     /// The standard convolution operator.
     Conv { input: Value, filter: Value, details: ConvDetails },
+    /// Batched matrix multiply.
+    MatMul { left: Value, right: Value },
 
     /// Elementwise add two values, with broadcasting on the right.
     Add { left: Value, right: Value, subtract: bool },
@@ -74,6 +76,7 @@ impl Operation {
             &Operation::Gather { input, axis: _, indices } => vec![input, indices],
             Operation::Concat { inputs, axis: _ } => inputs.clone(),
             &Operation::Conv { input, filter, details: _ } => vec![input, filter],
+            &Operation::MatMul { left, right } => vec![left, right],
             &Operation::Add { left, right, subtract: _ } => vec![left, right],
             &Operation::Mul { left, right } => vec![left, right],
             &Operation::Clamp { input, min: _, max: _ } => vec![input],
@@ -98,6 +101,8 @@ impl Operation {
                 Operation::Concat { inputs: inputs.iter().copied().map(f).collect(), axis },
             &Operation::Conv { input, filter, details: conv_shape } =>
                 Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
+            &Operation::MatMul { left, right } =>
+                Operation::MatMul { left: f(left), right: f(right) },
             &Operation::Add { left, right, subtract } =>
                 Operation::Add { left: f(left), right: f(right), subtract },
             &Operation::Mul { left, right } =>
@@ -429,6 +434,18 @@ impl Graph {
 
         let output = self.conv(input_view, weight_view, 0, 0);
         self.view(output, output_view_shape)
+    }
+
+    /// Batched matrix multiply. Inputs must have shapes `[N, p, q]`, `[N, q, r]` and the result has shape `[N, p, r]`.
+    #[must_use]
+    pub fn mat_mul(&mut self, left: Value, right: Value) -> Value {
+        let [n0, p, q0] = self[left].shape.unwrap_3();
+        let [n1, q1, r] = self[right].shape.unwrap_3();
+
+        assert!(n0 == n1 && q0 == q1, "MatMul dimension mismatch: {:?} and {:?}", self[left].shape, self[right].shape);
+
+        let result_shape = shape![n0, p, r];
+        self.push(result_shape, Operation::MatMul { left, right })
     }
 
     /// Elementwise clamp.

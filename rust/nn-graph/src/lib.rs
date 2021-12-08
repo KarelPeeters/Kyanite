@@ -9,5 +9,4 @@ pub mod cpu;
 
 pub mod wrap_debug;
 pub mod visualize;
-mod util;
 

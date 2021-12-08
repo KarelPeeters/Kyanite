@@ -101,6 +101,35 @@ fn linear() {
 }
 
 #[test]
+fn mat_mul() {
+    // run the "transposed" cases first since they're simpler for cublas
+    for transpose_a in [true, false] {
+        for transpose_b in [true, false] {
+            println!("Transpose a: {}, b: {}", transpose_a, transpose_b);
+            let mut graph = Graph::new();
+
+            let mut shape_a = shape![4, 5, 6];
+            let mut shape_b = shape![4, 6, 3];
+
+            if transpose_a { shape_a.dims.swap(1, 2); }
+            if transpose_b { shape_b.dims.swap(1, 2); }
+
+            let a_orig = graph.constant(shape_a, linspace_vec(4 * 5 * 6));
+            let b_orig = graph.constant(shape_b, linspace_vec(4 * 6 * 3));
+
+            let a = if transpose_a { graph.permute(a_orig, vec![0, 2, 1]) } else { a_orig };
+            let b = if transpose_b { graph.permute(b_orig, vec![0, 2, 1]) } else { b_orig };
+
+            let result = graph.mat_mul(a, b);
+            assert_eq!(graph[result].shape, shape![4, 5, 3]);
+            graph.output(result);
+
+            test_all(&graph, 0, &[], None);
+        }
+    }
+}
+
+#[test]
 fn horizontal_1x1_conv() {
     let mut graph = Graph::new();
 
