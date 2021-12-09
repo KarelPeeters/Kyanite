@@ -351,13 +351,18 @@ impl<'a> Planner<'a> {
 fn to_mat_mul_arg(tensor: &Tensor) -> MatMulArg {
     assert_eq!(tensor.shape.rank(), 3);
 
+    let inner_shape = StridedShape::new(
+        tensor.shape.shape()[1..].to_vec(),
+        tensor.shape.strides()[1..].to_vec(),
+    );
+
     // whether the strides are col-major (true) or row-major (false)
-    let col_major = if tensor.shape.has_simple_strides() {
+    let col_major = if inner_shape.has_simple_strides() {
         false
-    } else if tensor.shape.permute(&[0, 2, 1]).has_simple_strides() {
+    } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
         true
     } else {
-        panic!("For now matmul operand must be either col- or row-major, got {:?}", tensor)
+        panic!("For now GPU matmul operand must be either col- or row-major, got {:?}", tensor)
     };
 
     let lead_axis = if col_major { 1 } else { 2 };
