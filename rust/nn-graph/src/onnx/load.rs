@@ -3,6 +3,7 @@ use itertools::Itertools;
 use num_traits::cast;
 use prost::Message;
 
+use crate::graph::ElementOp;
 pub use crate::graph::Graph;
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
@@ -120,11 +121,21 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
-            "Add" => {
+            "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" => {
+                let op = match &*node.op_type {
+                    "Add" => ElementOp::Add,
+                    "Sub" => ElementOp::Sub,
+                    "Mul" => ElementOp::Mul,
+                    "Div" => ElementOp::Div,
+                    "Min" => ElementOp::Min,
+                    "Max" => ElementOp::Max,
+                    _ => unreachable!(),
+                };
+
                 assert_eq!(2, inputs.len());
                 let left = inputs[0].unwrap_float();
                 let right = inputs[1].unwrap_float();
-                let result = graph.add(left, right);
+                let result = graph.ele(op, left, right);
                 TypedValue::FloatTensor(result)
             }
             "Flatten" => {
