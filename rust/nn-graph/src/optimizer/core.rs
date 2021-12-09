@@ -57,6 +57,7 @@ impl<'a> Optimizer<'a> {
     fn try_fuse(&mut self, old_start: Value) -> Option<Value> {
         if let Some(result) = self.try_fuse_clamp(old_start) { return Some(result); }
         if let Some(result) = self.try_fuse_conv_affine(old_start) { return Some(result); }
+        if let Some(result) = self.try_convert_div_to_mul(old_start) { return Some(result); }
 
         None
     }
@@ -105,6 +106,23 @@ impl<'a> Optimizer<'a> {
         Some(new_start)
     }
 
+    fn try_convert_div_to_mul(&mut self, old_start: Value) -> Option<Value> {
+        if let &Operation::Element { left, right, op: ElementOp::Div } = &self.old_graph[old_start].operation {
+            if let Some(data) = self.follow_const(right) {
+                let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
+                let new_right = self.new_graph.constant(self.old_graph[right].shape.clone(), new_data);
+
+                let new_left = self.map(left);
+                let result = self.new_graph.mul(new_left, new_right);
+                Some(result)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     //TODO this should maybe support slicing and permuting as well
     pub fn follow_const(&self, start: Value) -> Option<&[f32]> {
         let input = self.follow_views(start);
@@ -116,6 +134,8 @@ impl<'a> Optimizer<'a> {
         }
     }
 
+    //TODO this is wrong, since this can change strides etc which the receiver of the data does not know about
+    //  either we need a proper striding system or this can only follow views that add or remove size-1 axis
     pub fn follow_views(&self, start: Value) -> Value {
         self.follow_if(start, |_, _, operation| {
             if let &Operation::View { input } = operation {

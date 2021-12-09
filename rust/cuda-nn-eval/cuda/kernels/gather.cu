@@ -64,9 +64,6 @@ cudaError gather2dAxis1FloatFloat(
     int blockCount = batch_size;
     int threadCount = min(64, index_size);
 
-    printf("Launching %d blocks with %d threads\n", blockCount, threadCount);
-    fflush(stdout);
-
     if (blockCount != 0 && threadCount != 0) {
         gather2dAxis1FloatFloatKernel<<<blockCount, threadCount, 0, stream>>>(
                 batch_size, input_size,

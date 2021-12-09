@@ -2,10 +2,11 @@ use itertools::Itertools;
 
 use nn_graph::graph::{ElementOp, Graph, Value};
 use nn_graph::ndarray::s;
+use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
-use crate::root::runner::test_all;
+use crate::root::runner::{test_all, test_all_graph};
 use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec};
 
 #[test]
@@ -187,7 +188,7 @@ fn ele_broadcast() {
         let mut graph = Graph::new();
         let left = graph.constant(shape![2, 3, 4], linspace_vec(2 * 3 * 4));
 
-        for shape in [shape![1, 1, 1], shape![2, 3, 4], shape![2, 1, 4], shape![]] {
+        for shape in [Shape::SCALAR, shape![1, 1, 1], shape![2, 3, 4], shape![2, 1, 4]] {
             println!("  with right shape {}", shape);
             let size = shape.size().eval(0);
             let right = graph.constant(shape, linspace_vec(size));
@@ -244,6 +245,23 @@ fn affine_single_element() {
         &[input_data],
         Some(&[output_data]),
     )
+}
+
+#[test]
+fn affine_single_div() {
+    let mut graph = Graph::new();
+
+    let left = graph.constant(shape![2, 3], range_vec(2 * 3));
+    let right = graph.constant(Shape::SCALAR, vec![2.0]);
+    let result = graph.ele(ElementOp::Div, left, right);
+    graph.output(result);
+
+    let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
+
+    // only test optimized since div is not yet supported on GPU
+    // and the optimizer converts it to a scale affine operation
+    let optimized = optimize_graph(&graph, OptimizerSettings::default());
+    test_all_graph(&optimized, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
 }
 
 #[test]

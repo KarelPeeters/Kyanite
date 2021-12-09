@@ -26,7 +26,7 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
     test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
 }
 
-fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) -> Vec<Tensor> {
+pub fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) -> Vec<Tensor> {
     println!("Testing:\n{}", graph);
 
     println!("Testing with CPU");

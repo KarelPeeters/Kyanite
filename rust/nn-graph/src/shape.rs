@@ -27,6 +27,8 @@ pub struct ConcreteShape {
 }
 
 impl Shape {
+    pub const SCALAR: Shape = Shape { dims: vec![] };
+
     pub fn new(dims: Vec<Size>) -> Shape {
         Shape { dims }
     }
