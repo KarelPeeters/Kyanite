@@ -187,7 +187,7 @@ fn ele_broadcast() {
         let mut graph = Graph::new();
         let left = graph.constant(shape![2, 3, 4], linspace_vec(2 * 3 * 4));
 
-        for shape in [shape![1, 1, 1], shape![2, 3, 4], shape![2, 1, 4]] {
+        for shape in [shape![1, 1, 1], shape![2, 3, 4], shape![2, 1, 4], shape![]] {
             println!("  with right shape {}", shape);
             let size = shape.size().eval(0);
             let right = graph.constant(shape, linspace_vec(size));
