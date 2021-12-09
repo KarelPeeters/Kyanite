@@ -1,9 +1,9 @@
 use std::cmp::max;
 use std::fmt::{Debug, Formatter};
+use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CublasHandle, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
@@ -75,19 +75,25 @@ impl CudnnExecutor {
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
         let mut timers = vec![];
+        let start_cpu = Instant::now();
+        let start_all;
+        let end_all;
 
         unsafe {
-            for step in &self.plan {
-                let start = CudaEvent::new();
-                let end = CudaEvent::new();
+            start_all = self.handles.cudnn.stream().record_new_event();
 
-                self.handles.cudnn.stream().record_event(&start);
+            for step in &self.plan {
+                let start = self.handles.cudnn.stream().record_new_event();
                 step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
-                self.handles.cudnn.stream().record_event(&end);
+                let end = self.handles.cudnn.stream().record_new_event();
 
                 timers.push((step, start, end));
             }
+
+            end_all = self.handles.cudnn.stream().record_new_event();
         }
+
+        let end_cpu = Instant::now();
 
         if self.profile {
             let mut conv_time = 0.0;
@@ -112,12 +118,15 @@ impl CudnnExecutor {
                 println!("{: >4} time {:.4} ms, step {:?}", i, time, step);
             }
 
-            println!("Conv:      {:.4}", conv_time);
-            println!("Matmul:    {:.4}", mat_mul_time);
-            println!("Tensor op: {:.4}", tensor_op_time);
-            println!("Gather:    {:.4}", gather_time);
-            println!("Copy ->:   {:.4}", copy_to_device_time);
-            println!("Copy <-:   {:.4}", copy_to_host_time);
+            println!("Conv:      {:.4} ms", conv_time);
+            println!("Matmul:    {:.4} ms", mat_mul_time);
+            println!("Tensor op: {:.4} ms", tensor_op_time);
+            println!("Gather:    {:.4} ms", gather_time);
+            println!("Copy ->:   {:.4} ms", copy_to_device_time);
+            println!("Copy <-:   {:.4} ms", copy_to_host_time);
+            println!("================");
+            println!("Total GPU: {:.4} ms", end_all.time_elapsed_since(&start_all));
+            println!("Total CPU: {:.4} ms", (end_cpu - start_cpu).as_secs_f32() * 1000.0);
         }
 
         &self.outputs

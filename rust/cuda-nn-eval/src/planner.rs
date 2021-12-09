@@ -161,7 +161,6 @@ impl<'a> Planner<'a> {
                     c: to_mat_mul_arg(&result),
                     batch_count: batch_size as i32,
                 };
-                println!("{:#?}", args);
 
                 self.plan.push(Step::MatMul { args });
 
