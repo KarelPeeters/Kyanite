@@ -8,7 +8,7 @@ use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor,
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulArg, TensorOpArgs};
 use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{Graph, Operation, Value};
+use nn_graph::graph::{ElementOp, Graph, Operation, Value};
 use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::ConcreteShape;
 
@@ -167,21 +167,17 @@ impl<'a> Planner<'a> {
 
                 result
             }
-            &Operation::Add { left, right, subtract } => {
-                self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, subtract)
-            }
-            &Operation::Mul { left, right } => {
-                self.visit_op(result_shape, left, right, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false)
-            }
-            &Operation::Clamp { input, min, max } => {
-                let mut curr = self.visit(input).view();
-                if min != f32::NEG_INFINITY {
-                    curr = self.visit_clamp(result_shape.clone(), &curr, min, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX);
-                }
-                if max != f32::INFINITY {
-                    curr = self.visit_clamp(result_shape, &curr, max, cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN);
-                }
-                curr
+            &Operation::Element { left, right, op } => {
+                let (op, negate_right) = match op {
+                    ElementOp::Add => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, false),
+                    ElementOp::Sub => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, true),
+                    ElementOp::Mul => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false),
+                    ElementOp::Div => todo!("GPU elementwise division not yet supported"),
+                    ElementOp::Min => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN, false),
+                    ElementOp::Max => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX, false),
+                };
+
+                self.visit_op(result_shape, left, right, op, negate_right)
             }
         };
 
@@ -196,12 +192,12 @@ impl<'a> Planner<'a> {
         let mut curr = value;
         let graph = self.graph;
 
-        // clamp(curr, 0, inf)?
-        let act_mode = if let &Operation::Clamp { input, min, max } = &graph[curr].operation {
-            if !self.single_use.contains(&input) || min != 0.0 || max != f32::INFINITY {
+        // relu(curr)?
+        let act_mode = if let &Operation::Element { left, right, op: ElementOp::Max } = &graph[curr].operation {
+            if !self.single_use.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
                 return None;
             }
-            curr = input;
+            curr = left;
             cudnnActivationMode_t::CUDNN_ACTIVATION_RELU
         } else {
             cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY
@@ -211,7 +207,8 @@ impl<'a> Planner<'a> {
         let mut res = None;
 
         loop {
-            if let &Operation::Add { left, right, subtract: false } = &graph[curr].operation {
+            // TODO it should be relatively easy to allow subtract here as well
+            if let &Operation::Element { left, right, op: ElementOp::Add } = &graph[curr].operation {
                 if !self.single_use.contains(&left) {
                     return None;
                 }
@@ -322,35 +319,6 @@ impl<'a> Planner<'a> {
             input_1_desc: left.descriptor(),
             input_1_mem: left.mem.view(),
             alpha_2,
-            input_2_desc: right.descriptor(),
-            input_2_mem: right.mem.view(),
-            beta: 0.0,
-            output_desc: output.descriptor(),
-            output_mem: output.mem.view(),
-        };
-
-        self.plan.push(Step::TensorOp { args });
-        output
-    }
-
-    fn visit_clamp(&mut self, result_shape: ConcreteShape, input: &Tensor, limit: f32, op: cudnnOpTensorOp_t) -> Tensor {
-        assert!(op == cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN || op == cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX);
-        let op_desc = TensorOpDescriptor::new(op);
-
-        // create a one-element tensor with the same rank as `left` to hold the limit value
-        let right = self.alloc_tensor(ConcreteShape::new(vec![1; result_shape.rank()]));
-        unsafe {
-            right.mem.copy_from_host(cast_slice(&[limit]));
-        }
-
-        let output = self.alloc_tensor(result_shape);
-
-        let args = TensorOpArgs {
-            op_desc,
-            alpha_1: 1.0,
-            input_1_desc: input.descriptor(),
-            input_1_mem: input.mem.view(),
-            alpha_2: 1.0,
             input_2_desc: right.descriptor(),
             input_2_mem: right.mem.view(),
             beta: 0.0,

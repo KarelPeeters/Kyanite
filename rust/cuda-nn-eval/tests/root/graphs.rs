@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use nn_graph::graph::{Graph, Value};
+use nn_graph::graph::{ElementOp, Graph, Value};
 use nn_graph::ndarray::s;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -176,6 +176,27 @@ fn fuse_clamp() {
         &[manual_tensor(5, vec![-2.0, 0.0, 0.5, 1.0, 2.0])],
         Some(&[manual_tensor(5, vec![0.0, 0.0, 0.5, 1.0, 1.0])]),
     )
+}
+
+#[test]
+fn ele_broadcast() {
+    // don't test division, since the GPU doesn't support it yet
+    for op in [ElementOp::Add, ElementOp::Sub, ElementOp::Mul, ElementOp::Min, ElementOp::Max] {
+        println!("Testing operation {:?}", op);
+
+        let mut graph = Graph::new();
+        let left = graph.constant(shape![2, 3, 4], linspace_vec(2 * 3 * 4));
+
+        for shape in [shape![1, 1, 1], shape![2, 3, 4], shape![2, 1, 4]] {
+            println!("  with right shape {}", shape);
+            let size = shape.size().eval(0);
+            let right = graph.constant(shape, linspace_vec(size));
+            let result = graph.ele(op, left, right);
+            graph.output(result);
+        }
+
+        test_all(&graph, 0, &[], None);
+    }
 }
 
 #[test]

@@ -156,7 +156,8 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
 
         if other_operation.inputs().contains(&value) {
             match other_operation {
-                Operation::Input { .. } | Operation::Constant { .. } => unreachable!(),
+                Operation::Input { .. } | Operation::Constant { .. } =>
+                    unreachable!(),
                 &Operation::View { input } => {
                     // check if all commons dims at the start match, which implies the only different is trailing 1s
                     zip(&graph[input].shape.dims, &graph[other].shape.dims)
@@ -164,11 +165,10 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 }
                 Operation::Permute { .. }
                 | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
-                | Operation::Conv { .. } | Operation::MatMul { .. } => false,
-                &Operation::Add { left, right, subtract: _ } | &Operation::Mul { left, right } => {
+                | Operation::Conv { .. } | Operation::MatMul { .. } =>
+                    false,
+                &Operation::Element { left, right, op: _ } =>
                     graph[left].shape != graph[right].shape
-                }
-                Operation::Clamp { .. } => true,
             }
         } else {
             false
@@ -186,8 +186,7 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         Operation::View { .. } | Operation::Permute { .. }
         | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
         | Operation::Conv { .. } | Operation::MatMul { .. }
-        | Operation::Add { .. } | Operation::Mul { .. }
-        | Operation::Clamp { .. } => {
+        | Operation::Element { .. } => {
             operation.inputs().iter().all(|&v| is_effectively_constant(graph, v))
         }
     }

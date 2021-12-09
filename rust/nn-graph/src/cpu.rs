@@ -5,9 +5,9 @@ use convolutions_rs::convolutions::*;
 use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array3, Array4, ArrayView3, ArrayView4, concatenate, Ix3, IxDyn, s, SliceInfo, SliceInfoElem};
+use ndarray::{ArcArray, Array3, Array4, ArrayView3, ArrayView4, concatenate, Ix3, IxDyn, s, SliceInfo, SliceInfoElem, Zip};
 
-use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
+use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 
 /// We're using an ArcArray so reshaping is free.
@@ -81,21 +81,19 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -
                     right.view().into_dimensionality::<Ix3>().unwrap(),
                 ).into_dyn().into_shared()
             }
-            &Operation::Add { left, right, subtract } => {
+            &Operation::Element { left, right, op } => {
                 let left = &map.get(&left).unwrap().tensor;
                 let right = &map.get(&right).unwrap().tensor;
 
-                let result = if subtract { left - right } else { left + right };
+                let result = match op {
+                    ElementOp::Add => left + right,
+                    ElementOp::Sub => left - right,
+                    ElementOp::Mul => left * right,
+                    ElementOp::Div => left / right,
+                    ElementOp::Min => Zip::from(left).and_broadcast(right).map_collect(|&l, &r| f32::min(l, r)),
+                    ElementOp::Max => Zip::from(left).and_broadcast(right).map_collect(|&l, &r| f32::max(l, r)),
+                };
                 result.into_shared()
-            }
-            &Operation::Mul { left, right } => {
-                let left = &map.get(&left).unwrap().tensor;
-                let right = &map.get(&right).unwrap().tensor;
-                (left * right).into_shared()
-            }
-            &Operation::Clamp { input, min, max } => {
-                let input = &map.get(&input).unwrap().tensor;
-                input.map(|&x| x.clamp(min, max)).into_shared()
             }
         };
 

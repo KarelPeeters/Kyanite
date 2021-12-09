@@ -56,13 +56,19 @@ pub enum Operation {
     /// Batched matrix multiply.
     MatMul { left: Value, right: Value },
 
-    /// Elementwise add two values, with broadcasting on the right.
-    Add { left: Value, right: Value, subtract: bool },
-    /// Elementwise multiply two values, with broadcasting on the right value.
-    Mul { left: Value, right: Value },
+    /// Elementwise operation between two operands, with broadcasting on the right.
+    Element { left: Value, right: Value, op: ElementOp },
+}
 
-    /// Elementwise clip a value.
-    Clamp { input: Value, min: f32, max: f32 },
+/// An elementwise operation.
+#[derive(Debug, Copy, Clone)]
+pub enum ElementOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Min,
+    Max,
 }
 
 impl Operation {
@@ -77,9 +83,7 @@ impl Operation {
             Operation::Concat { inputs, axis: _ } => inputs.clone(),
             &Operation::Conv { input, filter, details: _ } => vec![input, filter],
             &Operation::MatMul { left, right } => vec![left, right],
-            &Operation::Add { left, right, subtract: _ } => vec![left, right],
-            &Operation::Mul { left, right } => vec![left, right],
-            &Operation::Clamp { input, min: _, max: _ } => vec![input],
+            &Operation::Element { left, right, op: _ } => vec![left, right],
         }
     }
 
@@ -103,12 +107,8 @@ impl Operation {
                 Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
             &Operation::MatMul { left, right } =>
                 Operation::MatMul { left: f(left), right: f(right) },
-            &Operation::Add { left, right, subtract } =>
-                Operation::Add { left: f(left), right: f(right), subtract },
-            &Operation::Mul { left, right } =>
-                Operation::Mul { left: f(left), right: f(right) },
-            &Operation::Clamp { input, min, max } =>
-                Operation::Clamp { input: f(input), min, max },
+            &Operation::Element { left, right, op } =>
+                Operation::Element { left: f(left), right: f(right), op },
         }
     }
 }
@@ -210,12 +210,8 @@ impl Graph {
         }
     }
 
-    pub fn is_all_zero(&self, value: Value) -> bool {
-        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == 0.0))
-    }
-
-    pub fn is_all_one(&self, value: Value) -> bool {
-        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == 1.0))
+    pub fn is_const_filled_with(&self, value: Value, f: f32) -> bool {
+        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == f))
     }
 
     #[must_use]
@@ -448,59 +444,63 @@ impl Graph {
         self.push(result_shape, Operation::MatMul { left, right })
     }
 
-    /// Elementwise clamp.
-    #[must_use]
-    pub fn clamp(&mut self, input: Value, min: f32, max: f32) -> Value {
-        if min == f32::NEG_INFINITY && max == f32::INFINITY {
-            return input;
-        }
-
-        self.push(self[input].shape.clone(), Operation::Clamp { input, min, max })
-    }
-
-    /// Elementwise relu.
+    /// Elementwise relu..
     #[must_use]
     pub fn relu(&mut self, input: Value) -> Value {
         self.clamp(input, 0.0, f32::INFINITY)
     }
 
-    /// Add two values together elementwise.
-    /// They must have the same rank, and the right shape is broadcasted to the left shape.
+    /// Elementwise clamp.
+    #[must_use]
+    pub fn clamp(&mut self, input: Value, min: f32, max: f32) -> Value {
+        // careful, min/max are intentionally flipped to yield MAX(MIN(x, max), min)
+        let right_shape = self[input].shape.all_ones();
+
+        let mut curr = input;
+
+        // these checks are kind of tedious but it prevents the value allocations if they're not necessary
+        if max != f32::INFINITY {
+            let max_value = self.constant(right_shape.clone(), vec![max]);
+            curr = self.ele(ElementOp::Min, curr, max_value);
+        }
+
+        if min != f32::INFINITY {
+            let min_value = self.constant(right_shape.clone(), vec![min]);
+            curr = self.ele(ElementOp::Max, curr, min_value);
+        }
+
+        curr
+    }
+
     #[must_use]
     pub fn add(&mut self, left: Value, right: Value) -> Value {
-        let output_shape = self.check_broadcast(left, right);
-
-        if self.is_all_zero(right) {
-            return left;
-        }
-
-        self.push(output_shape, Operation::Add { left, right, subtract: false })
+        self.ele(ElementOp::Add, left, right)
     }
 
-    /// Subtract two values elementwise.
-    /// They must have the same rank, and the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn sub(&mut self, left: Value, right: Value) -> Value {
-        let output_shape = self.check_broadcast(left, right);
-
-        if self.is_all_zero(right) {
-            return left;
-        }
-
-        self.push(output_shape, Operation::Add { left, right, subtract: true })
+        self.ele(ElementOp::Sub, left, right)
     }
 
-    /// Multiple two values elementwise.
-    /// They must have the same rank, and the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn mul(&mut self, left: Value, right: Value) -> Value {
+        self.ele(ElementOp::Mul, left, right)
+    }
+
+    /// Compute an elementwise operation between two values.
+    /// They must have the same rank, and the right shape is broadcasted to the left shape.
+    pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
         let output_shape = self.check_broadcast(left, right);
 
-        if self.is_all_one(right) {
-            return left;
-        }
+        let skip = match op {
+            ElementOp::Sub | ElementOp::Add => self.is_const_filled_with(right, 0.0),
+            ElementOp::Mul | ElementOp::Div => self.is_const_filled_with(right, 1.0),
+            ElementOp::Min => self.is_const_filled_with(right, f32::INFINITY),
+            ElementOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
+        };
+        if skip { return left; }
 
-        self.push(output_shape, Operation::Mul { left, right })
+        self.push(output_shape, Operation::Element { left, right, op })
     }
 
     /// Register an existing value as an output

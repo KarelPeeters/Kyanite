@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 
-use crate::graph::{Graph, Operation, Value};
+use crate::graph::{ElementOp, Graph, Operation, Value};
 use crate::optimizer::OptimizerSettings;
 
 pub struct Optimizer<'a> {
@@ -66,10 +66,26 @@ impl<'a> Optimizer<'a> {
         let mut total_max = f32::INFINITY;
 
         let old_input = self.follow_if(old_start, |_, _, operation| {
-            if let &Operation::Clamp { input: old_input, min, max } = operation {
-                total_min = f32::max(total_min, min);
-                total_max = f32::min(total_max, max);
-                Some(old_input)
+            if let &Operation::Element {
+                left: old_left, right: old_right,
+                op: op @ (ElementOp::Min | ElementOp::Max)
+            } = operation {
+                // if right is a single constant value we can fuse it
+                if let Some(&[f]) = self.old_graph.as_const(old_right) {
+                    match op {
+                        ElementOp::Min => {
+                            total_max = f32::min(total_max, f)
+                        }
+                        ElementOp::Max => {
+                            total_min = f32::max(total_min, f)
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    Some(old_left)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -89,6 +105,7 @@ impl<'a> Optimizer<'a> {
         Some(new_start)
     }
 
+    //TODO this should maybe support slicing and permuting as well
     pub fn follow_const(&self, start: Value) -> Option<&[f32]> {
         let input = self.follow_views(start);
 

@@ -84,6 +84,11 @@ impl Shape {
         self
     }
 
+    /// Returns a new shape with the same rank with all sizes set to 1.
+    pub fn all_ones(&self) -> Shape {
+        Shape::new(vec![Size::ONE; self.rank()])
+    }
+
     /// Returns a new shape with the same rank with all sizes set to 1, except the size at `index` is kept.
     pub fn all_ones_except(&self, index: usize) -> Shape {
         assert!(index < self.rank());

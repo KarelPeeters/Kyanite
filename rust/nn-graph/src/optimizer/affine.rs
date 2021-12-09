@@ -1,7 +1,7 @@
 use ndarray::{Array1, Array4, ArrayView1, Data, Dimension, s};
 
 use crate::cpu::convolution;
-use crate::graph::{ConvDetails, Graph, Operation, Value};
+use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
 use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
@@ -49,27 +49,38 @@ impl Optimizer<'_> {
                     None
                 }
             }
-            &Operation::Add { left, right, subtract } => {
+            &Operation::Element {
+                left, right,
+                op: op @ (ElementOp::Add | ElementOp::Sub | ElementOp::Mul | ElementOp::Div)
+            } => {
                 if let &[Size::ONE, channels, Size::ONE, Size::ONE] = self.old_graph[right].shape.dims.as_slice() {
-                    assert_eq!(channels, Size::fixed(builder.current_channels()));
+                    let expected_channels = builder.current_channels();
+                    assert!(
+                        channels == Size::ONE || channels == Size::fixed(expected_channels),
+                        "Invalid shape for right in element operation, got {:?} expected {:?}", channels, expected_channels
+                    );
 
                     if let Some(data) = self.follow_const(right) {
-                        builder.push_affine(AffineOperation::AddChannel { data: data.to_owned(), subtract });
-                        Some(left)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            &Operation::Mul { left, right } => {
-                if let &[Size::ONE, channels, Size::ONE, Size::ONE] = self.old_graph[right].shape.dims.as_slice() {
-                    assert_eq!(channels, Size::fixed(builder.current_channels()));
+                        let data = data.iter().copied().cycle().take(expected_channels);
 
-                    if let Some(data) = self.follow_const(right) {
-                        builder.push_affine(AffineOperation::ScaleChannel { data: data.to_owned() });
-                        Some(left)
+                        let affine_op = match op {
+                            ElementOp::Add =>
+                                Some(AffineOperation::AddChannel { data: data.collect() }),
+                            ElementOp::Sub =>
+                                Some(AffineOperation::AddChannel { data: data.map(|x| -x).collect() }),
+                            ElementOp::Mul =>
+                                Some(AffineOperation::ScaleChannel { data: data.collect() }),
+                            ElementOp::Div =>
+                                Some(AffineOperation::ScaleChannel { data: data.map(|x| { 1.0 / x }).collect() }),
+                            _ => unreachable!(),
+                        };
+
+                        if let Some(affine_op) = affine_op {
+                            builder.push_affine(affine_op);
+                            Some(left)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -192,7 +203,7 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
 
             let mut curr = input;
             curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
-            curr = graph.add(curr, value_bias);
+            curr = graph.ele(ElementOp::Add, curr, value_bias);
             curr
         }
         Err(bias_before) => {
@@ -204,7 +215,7 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
             let mut curr = input;
             curr = before.apply(graph, curr);
             curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
-            curr = graph.add(curr, value_bias_after);
+            curr = graph.ele(ElementOp::Add, curr, value_bias_after);
             curr
         }
     }
@@ -250,8 +261,8 @@ impl ScaleBias {
         let bias = graph.constant(const_shape.clone(), self.bias.to_vec());
 
         let mut curr = input;
-        curr = graph.mul(curr, scale);
-        curr = graph.add(curr, bias);
+        curr = graph.ele(ElementOp::Mul, curr, scale);
+        curr = graph.ele(ElementOp::Add, curr, bias);
 
         curr
     }
@@ -267,17 +278,12 @@ fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item=&'a 
 
     for op in operations {
         match op {
-            AffineOperation::AddChannel { data, subtract } => {
+            AffineOperation::AddChannel { data } => {
                 let data = ArrayView1::from_shape(channels, data).unwrap();
-                if *subtract {
-                    total_bias -= &data;
-                } else {
-                    total_bias += &data;
-                }
+                total_bias += &data;
             }
             AffineOperation::ScaleChannel { data } => {
                 let data = ArrayView1::from_shape(channels, data).unwrap();
-
                 total_scale *= &data;
                 total_bias *= &data;
             }
@@ -307,7 +313,7 @@ struct AffineShape {
 
 #[derive(Debug)]
 enum AffineOperation {
-    AddChannel { data: Vec<f32>, subtract: bool },
+    AddChannel { data: Vec<f32> },
     ScaleChannel { data: Vec<f32> },
 }
 
