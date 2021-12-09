@@ -168,20 +168,26 @@ impl Graph {
         assert!(value.0 < self.values.len());
     }
 
-    fn check_broadcast(&self, left: Value, right: Value) -> Shape {
+    fn broadcast(&mut self, left: Value, right: Value) -> Value {
         let left_shape = &self[left].shape;
         let right_shape = &self[right].shape;
-        assert_eq!(
-            left_shape.rank(), right_shape.rank(),
-            "Both inputs must have the same rank, got {:?} and {:?}",
-            left_shape, right_shape
-        );
 
-        for (&l, &r) in zip_eq(&left_shape.dims, &right_shape.dims) {
-            assert!(l == r || r == Size::ONE, "Cannot broadcast shape {:?} to {:?}", right_shape, left_shape);
+        if right_shape.rank() == 0 {
+            let new_right_shape = left_shape.all_ones();
+            self.view(right, new_right_shape)
+        } else {
+            assert_eq!(
+                left_shape.rank(), right_shape.rank(),
+                "Both inputs must have the same rank (or right must have rank 0), got {:?} and {:?}",
+                left_shape, right_shape
+            );
+
+            for (&l, &r) in zip_eq(&left_shape.dims, &right_shape.dims) {
+                assert!(l == r || r == Size::ONE, "Cannot broadcast shape {:?} to {:?}", right_shape, left_shape);
+            }
+
+            right
         }
-
-        left_shape.clone()
     }
 
     /// Iterate over the values in this graph, in topological order,
@@ -488,9 +494,9 @@ impl Graph {
     }
 
     /// Compute an elementwise operation between two values.
-    /// They must have the same rank, and the right shape is broadcasted to the left shape.
+    /// They must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
     pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
-        let output_shape = self.check_broadcast(left, right);
+        let right = self.broadcast(left, right);
 
         let skip = match op {
             ElementOp::Sub | ElementOp::Add => self.is_const_filled_with(right, 0.0),
@@ -500,7 +506,8 @@ impl Graph {
         };
         if skip { return left; }
 
-        self.push(output_shape, Operation::Element { left, right, op })
+        let result_shape = self[left].shape.clone();
+        self.push(result_shape, Operation::Element { left, right, op })
     }
 
     /// Register an existing value as an output
