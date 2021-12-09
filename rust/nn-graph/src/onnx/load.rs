@@ -166,6 +166,15 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 TypedValue::FloatTensor(result)
             }
+            "MatMul" => {
+                assert_eq!(2, inputs.len());
+
+                let input_a = inputs[0].unwrap_float();
+                let input_b = inputs[1].unwrap_float();
+
+                let result = graph.mat_mul(input_a, input_b);
+                TypedValue::FloatTensor(result)
+            }
             "BatchNormalization" => {
                 //TODO also try without merging anything here to see how much of a difference it makes
 
