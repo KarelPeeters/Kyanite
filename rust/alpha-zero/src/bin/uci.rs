@@ -15,6 +15,7 @@ use vampirc_uci::UciMessage;
 use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::oracle::DummyOracle;
+use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
@@ -33,7 +34,7 @@ fn main() -> std::io::Result<()> {
     // search settings
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/supervised/lichess_huge/network_5140.onnx";
     let batch_size = 100;
-    let settings = ZeroSettings::new(batch_size, 2.0, false);
+    let settings = ZeroSettings::new(batch_size, 2.0, false, FpuMode::Parent);
 
     let graph = load_graph_from_onnx_path(path);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, batch_size, Device::new(0));

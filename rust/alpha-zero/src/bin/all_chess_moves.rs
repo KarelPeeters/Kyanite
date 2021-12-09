@@ -7,7 +7,7 @@ use std::unreachable;
 use board_game::games::chess::ChessBoard;
 use chess::{Piece, Square};
 
-use alpha_zero::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper, generate_all_flat_moves_pov};
+use alpha_zero::mapping::chess::{ChessLegacyConvPolicyMapper, generate_all_flat_moves_pov};
 use alpha_zero::mapping::PolicyMapper;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]

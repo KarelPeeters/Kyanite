@@ -10,6 +10,7 @@ use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::Network;
 use alpha_zero::oracle::DummyOracle;
+use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
 use licoricedev::client::{Lichess, LichessResult};
@@ -41,7 +42,7 @@ async fn main_async() {
 async fn main_inner() -> LichessResult<()> {
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = load_graph_from_onnx_path(path);
-    let settings = ZeroSettings::new(128, 4.0, false);
+    let settings = ZeroSettings::new(128, 4.0, false, FpuMode::Parent);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;

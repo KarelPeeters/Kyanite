@@ -3,8 +3,8 @@ use board_game::games::chess::ChessBoard;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
-use alpha_zero::mapping::{BoardMapper, PolicyMapper};
 use alpha_zero::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper};
+use alpha_zero::mapping::PolicyMapper;
 
 use crate::mapper::test_valid_mapping;
 
