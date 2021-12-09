@@ -37,7 +37,7 @@ def main():
 
     train_pattern = f"../../data/lichess/*.json"
     test_pattern = f"../../data/lichess/*.json"
-    output_folder = "../../data/supervised/flat_conv/"
+    output_folder = "../../data/supervised/att_repro/"
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -77,11 +77,11 @@ def main():
         logger = Logger()
         start_bi = 0
 
-        channels = 32
+        channels = 128
         network = PostActNetwork(
             game, 8, channels,
-            PostActValueHead(game, channels, 4, 64),
-            PostActConvPolicyHead(game, channels),
+            PostActValueHead(game, channels, 16, 128),
+            PostActAttentionPolicyHead(game, channels, 64),
         )
     else:
         logger = Logger.load(os.path.join(output_folder, "log.npz"))

@@ -61,7 +61,8 @@ class PostActAttentionPolicyHead(nn.Module):
             under.view(-1, self.query_channels, 3 * 8)
         ], dim=2)
 
-        policy = torch.bmm(q_from.transpose(1, 2), q_to)
+        # TODO try to do this scaling inside of the weight (and bias?) initializations instead
+        policy = torch.bmm(q_from.transpose(1, 2), q_to) / self.query_channels ** 0.5
 
         flat_policy = policy.flatten(1)[:, self.FLAT_TO_ATT]
         return flat_policy
