@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bytemuck::cast_slice;
+use itertools::Itertools;
 
 use cuda_sys::bindings::{cublasOperation_t, cudnnActivationMode_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
@@ -20,6 +21,7 @@ pub(crate) struct Planner<'a> {
     graph: &'a Graph,
     batch_size: usize,
 
+    // all values that are only used once in the graph (and are thus candidates for fusing)
     single_use: HashSet<Value>,
 
     map: HashMap<Value, Tensor>,
@@ -87,24 +89,11 @@ impl<'a> Planner<'a> {
             }
             &Operation::Permute { input, ref permutation } => {
                 let input_tensor = self.visit(input);
-                let new_shape = input_tensor.shape.permute(permutation);
-                Tensor::new(input_tensor.mem, new_shape)
+                input_tensor.permute(permutation)
             }
             &Operation::Slice { input, axis, start, end } => {
-                // Steps to slice a tensor:
-                //  * use the new shape
-                //  * keep the old strides
-                //  * offset initial pointer to account for `start`
-                //  * limit the buffer length based on the new size
-
                 let input_tensor = self.visit(input);
-                let result_shape = input_tensor.shape.slice(axis, start, end);
-
-                let start_bytes = result_shape.strides()[axis] * start * 4;
-                let len_bytes = result_shape.strided_size() * 4;
-
-                let mem = input_tensor.mem.slice_bytes(start_bytes, len_bytes);
-                Tensor::new(mem, result_shape)
+                input_tensor.slice(axis, start, end)
             }
             &Operation::Gather { input, axis, indices } => {
                 let input = self.visit(input);
@@ -115,20 +104,39 @@ impl<'a> Planner<'a> {
                 self.plan.push(Step::Gather { input, axis, indices, output: output.view() });
                 output
             }
-            &Operation::Concat { .. } => {
-                //TODO maybe (ab)use cudnnactivationforward for this? it already does the re-striding for us!
-                // alternatively use cudaMemCpy2D (and finally figure out how it actually works)
-                todo!("GPU concat");
+            &Operation::Concat { ref inputs, axis } => {
+                let result = self.alloc_tensor(result_shape);
+                let inputs = inputs.iter().map(|&x| self.visit(x)).collect_vec();
+
+                // copy each input into the right slice of the output
+                let mut curr_start = 0;
+                for input in inputs {
+                    let curr_size = input.shape.shape()[axis];
+                    let result_slice = result.slice(axis, curr_start, curr_start + curr_size);
+                    let zero = self.alloc_zero_tensor(ConcreteShape::new(vec![1; result_slice.shape.rank()]));
+
+                    let args = TensorOpArgs {
+                        op_desc: TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD),
+                        alpha_1: 1.0,
+                        input_1_desc: input.descriptor(),
+                        input_1_mem: input.mem,
+                        alpha_2: 0.0,
+                        input_2_desc: zero.descriptor(),
+                        input_2_mem: zero.mem,
+                        beta: 0.0,
+                        output_desc: result_slice.descriptor(),
+                        output_mem: result_slice.mem.view(),
+                    };
+                    self.plan.push(Step::TensorOp { args });
+
+                    curr_start += curr_size;
+                }
+
+                result
             }
             &Operation::Conv { .. } =>
                 unreachable!("conv should have been handled earlier by the fuser"),
             &Operation::MatMul { left, right } => {
-                //TODO should we also handle this in the fuser?
-                // not that important for now since it only shows up once in the graphs we're actually using
-                //TODO should we go for the general stride implementation here? -> yes, so first figure out how that works
-                //TODO or just assume we have dense row/col-major storage and transpose? -> do this for now, maybe even with a
-                // restride operation (similar to concat)
-
                 let left = self.visit(left);
                 let right = self.visit(right);
 
@@ -140,7 +148,7 @@ impl<'a> Planner<'a> {
 
                 // construct a result tensor with col-major strides
                 let result_transposed = self.alloc_tensor(ConcreteShape::new(vec![batch_size, n, m]));
-                let result = Tensor::new(result_transposed.mem.view(), result_transposed.shape.permute(&[0, 2, 1]));
+                let result = result_transposed.permute(&[0, 2, 1]);
 
                 let args = BatchedMatMulArgs {
                     m: m as i32,
@@ -177,6 +185,7 @@ impl<'a> Planner<'a> {
             }
         };
 
+        assert_eq!(result.shape.shape(), result_info.shape.eval(self.batch_size).dims, "Got wrong result shape");
         let prev = self.map.insert(value, result.view());
         assert!(prev.is_none());
 
@@ -252,13 +261,9 @@ impl<'a> Planner<'a> {
                 assert_eq!(res.shape, input.shape, "Input and res shapes and strides (!) must match.", );
             }
 
-            // if there is no real bias, allocate a small zero buffer for it
             let bias = bias.unwrap_or_else(|| {
-                let zero_bias = self.alloc_tensor(ConcreteShape::new(vec![1, details.output_channels, 1, 1]));
-                unsafe {
-                    zero_bias.mem.copy_from_host(cast_slice(&vec![0f32; details.output_channels]));
-                }
-                zero_bias
+                let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);
+                self.alloc_zero_tensor(bias_shape)
             });
 
             let output_shape = graph[curr].shape.eval(self.batch_size);
@@ -363,6 +368,15 @@ impl<'a> Planner<'a> {
             DeviceMem::alloc(shape.strided_size() * 4, self.handles.cudnn.device()),
             shape,
         )
+    }
+
+    fn alloc_zero_tensor(&mut self, shape: ConcreteShape) -> Tensor {
+        let size = shape.size();
+        let result = self.alloc_tensor(shape);
+        unsafe {
+            result.mem.copy_from_host(cast_slice(&vec![0; size]));
+        }
+        result
     }
 }
 

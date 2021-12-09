@@ -51,4 +51,26 @@ impl Tensor {
             shape: self.shape.clone(),
         }
     }
+
+    pub fn permute(&self, permutation: &[usize]) -> Tensor {
+        Tensor::new(
+            self.mem.view(),
+            self.shape.permute(permutation),
+        )
+    }
+
+    pub fn slice(&self, axis: usize, start: usize, end: usize) -> Tensor {
+        // Steps to slice a tensor:
+        //  * use the new shape
+        //  * keep the old strides
+        //  * offset initial pointer to account for `start`
+        //  * limit the buffer length based on the new size
+        let result_shape = self.shape.slice(axis, start, end);
+
+        let start_bytes = result_shape.strides()[axis] * start * 4;
+        let len_bytes = result_shape.strided_size() * 4;
+
+        let mem = self.mem.slice_bytes(start_bytes, len_bytes);
+        Tensor::new(mem, result_shape)
+    }
 }

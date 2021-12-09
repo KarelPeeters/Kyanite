@@ -172,6 +172,7 @@ impl Step {
                 ).unwrap();
             }
             //TODO look into fusing the copy operation if multiple outputs are sliced views on the same value
+            //  this has recently become easier now that restriding is available
             Step::CopyOutput { index, tensor } => {
                 let index = *index;
 
