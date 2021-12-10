@@ -17,6 +17,7 @@ use licoricedev::client::{Lichess, LichessResult};
 use licoricedev::models::board::{BoardState, GameFull};
 use licoricedev::models::game::UserGame;
 use nn_graph::onnx::load_graph_from_onnx_path;
+use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 const MAX_VISITS: u64 = 100_000;
 const MAX_FRACTION_TIME_USED: f32 = 1.0 / 30.0;
@@ -41,8 +42,8 @@ async fn main_async() {
 
 async fn main_inner() -> LichessResult<()> {
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
-    let graph = load_graph_from_onnx_path(path);
-    let settings = ZeroSettings::new(128, 4.0, false, FpuMode::Parent);
+    let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
+    let settings = ZeroSettings::new(64, 4.0, false, FpuMode::Parent);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
