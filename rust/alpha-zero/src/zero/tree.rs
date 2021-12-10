@@ -35,7 +35,10 @@ impl<B: Board> Tree<B> {
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
         let best_child = self[node].children?.iter().max_by_key(|&child| {
-            self[child].complete_visits
+            (
+                self[child].complete_visits,
+                decorum::Total::from(self[child].net_policy),
+            )
         }).unwrap();
         Some(best_child)
     }
