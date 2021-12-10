@@ -32,7 +32,7 @@ impl ZeroSettings {
         root_board: &B,
         network: &mut impl Network<B>,
         oracle: &impl Oracle<B>,
-        stop: impl Fn(&Tree<B>) -> bool,
+        stop: impl FnMut(&Tree<B>) -> bool,
     ) -> Tree<B> {
         let mut tree = Tree::new(root_board.clone());
         self.expand_tree(&mut tree, network, oracle, stop);

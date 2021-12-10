@@ -1,10 +1,11 @@
 use std::fs::{File, read_to_string};
 use std::io::BufReader;
 
-use board_game::board::{Board, Outcome};
+use board_game::board::{Board, BoardAvailableMoves, Outcome};
 use board_game::games::chess::{ChessBoard, Rules};
 use chess::ChessMove;
 use decorum::Total;
+use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
 use alpha_zero::mapping::chess::ChessStdMapper;
@@ -22,7 +23,7 @@ fn main() {
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
 
-    let settings = ZeroSettings::new(10, 2.0, false, FpuMode::Parent);
+    let settings = ZeroSettings::new(100, 2.0, false, FpuMode::Parent);
     let visits = 10_000;
 
     let mapper = ChessStdMapper;
@@ -49,19 +50,28 @@ fn main() {
             let is_mate = correct_next_board.outcome() == won_outcome;
 
             if board.next_player() == player {
+                let correct_moves: Vec<_> = board.available_moves()
+                    .filter(|&mv| is_correct_move(&board, is_mate, correct_mv, mv))
+                    .collect();
+                println!("Correct moves: {}", correct_moves.iter().map(|mv| mv.to_string()).join(", "));
+
+                let mut zero_correct_policy_history = vec![];
+
                 // see if we can find the move
                 let tree = settings.build_tree(&board, &mut network, &DummyOracle, |tree| {
+                    if tree.root_visits() > 0 {
+                        let zero_correct_policy: f32 = tree[0].children.unwrap().iter().map(|c| {
+                            if correct_moves.contains(&tree[c].last_move.unwrap()) {
+                                tree[c].complete_visits as f32 / (tree[0].complete_visits - 1) as f32
+                            } else {
+                                0.0
+                            }
+                        }).sum();
+                        zero_correct_policy_history.push(zero_correct_policy);
+                    }
+
                     tree.root_visits() >= visits
                 });
-
-                let correct_children = tree[0].children.unwrap().iter().filter(|&c| {
-                    is_correct_move(&board, is_mate, correct_mv, tree[c].last_move.unwrap())
-                }).collect_vec();
-
-                let correct_moves = correct_children.iter()
-                    .map(|&c| format!("{}", tree[c].last_move.unwrap()))
-                    .collect_vec();
-                println!("Correct moves: {:?}", correct_moves);
 
                 let net_best_child = tree[0].children.unwrap().iter()
                     .max_by_key(|&c| Total::from(tree[c].net_policy)).unwrap();
@@ -71,6 +81,10 @@ fn main() {
                 let zero_mv = tree.best_move();
                 let zero_best_child = tree[0].children.unwrap().iter().find(|&c| tree[c].last_move == Some(zero_mv)).unwrap();
                 let zero_mv_policy = tree[zero_best_child].complete_visits as f32 / (tree[0].complete_visits - 1) as f32;
+
+                let correct_children = tree[0].children.unwrap().iter().filter(|&c| {
+                    correct_moves.contains(&tree[c].last_move.unwrap())
+                }).collect_vec();
 
                 let net_correct_policy: f32 = correct_children.iter()
                     .map(|&c| tree[c].net_policy).sum();
@@ -89,6 +103,7 @@ fn main() {
                 println!("  eval           {}", tree[0].values());
                 println!("  best move      {}, {:.4}, {}", zero_mv, zero_mv_policy, zero_is_correct);
                 println!("  correct policy {:.4}", zero_correct_policy);
+                println!("    history      {:.4?}", zero_correct_policy_history);
 
                 if !zero_is_correct {
                     println!();
