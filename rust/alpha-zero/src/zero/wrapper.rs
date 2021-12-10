@@ -48,18 +48,20 @@ impl ZeroSettings {
         mut stop: impl FnMut(&Tree<B>) -> bool,
     ) {
         'outer: loop {
-            // TODO what about resuming after we've stopped? we don't want to drop the requests!
-            //   moving the check to once per outer loop is correct but very coarse
             if stop(tree) { break 'outer; }
 
+            // collect requests until the batch is full or we repeatedly fail to find new positions to evaluate
             let mut requests = vec![];
+            let mut terminal_gathers = 0;
 
-            // collect enough requests to fill the batch
-            // TODO what about when we have explored the entire tree and are left with a half-filled batch?
-            while requests.len() < self.batch_size {
-                let request = zero_step_gather(tree, oracle, self.exploration_weight, self.use_value, self.fpu_mode);
-                if let Some(request) = request {
-                    requests.push(request);
+            while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
+                match zero_step_gather(tree, oracle, self.exploration_weight, self.use_value, self.fpu_mode) {
+                    Some(request) => {
+                        requests.push(request);
+                    }
+                    None => {
+                        terminal_gathers += 1;
+                    }
                 }
             }
 
