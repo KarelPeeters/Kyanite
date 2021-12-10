@@ -51,7 +51,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
             self.mapper.encode_full(&mut self.input, board.borrow())
         }
 
-        // fill rest of input with zeros
+        // pad the rest of input with nans
         self.input.resize(max_batch_size * self.mapper.input_full_len(), f32::NAN);
 
         // run the actual computation
