@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -22,6 +22,7 @@ pub struct CudnnExecutor {
     outputs: Vec<Vec<f32>>,
 
     profile: bool,
+    last_profile: Option<Profile>,
 }
 
 #[derive(Debug)]
@@ -38,6 +39,22 @@ pub enum Step {
     TensorOp { args: TensorOpArgs },
     Gather { input: Tensor, axis: usize, indices: Tensor, output: Tensor },
     CopyOutput { index: usize, tensor: Tensor },
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Profile {
+    pub steps: Vec<String>,
+
+    pub conv: f32,
+    pub mat_mul: f32,
+    pub tensor_op: f32,
+    pub gather: f32,
+    pub copy_to_device: f32,
+    pub copy_to_host: f32,
+
+    pub total_cpu: f32,
+    pub total_gpu: f32,
+    pub timing_overhead: f32,
 }
 
 impl CudnnExecutor {
@@ -70,7 +87,7 @@ impl CudnnExecutor {
         let stage = vec![f32::NAN; stage_size];
         let plan = planner.finish();
 
-        CudnnExecutor { handles, plan, stage, outputs, profile: false }
+        CudnnExecutor { handles, plan, stage, outputs, profile: false, last_profile: None }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -87,46 +104,43 @@ impl CudnnExecutor {
                 step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
                 let end = self.handles.cudnn.stream().record_new_event();
 
-                timers.push((step, start, end));
+                if self.profile {
+                    timers.push((step, start, end));
+                }
             }
 
             end_all = self.handles.cudnn.stream().record_new_event();
+            self.handles.cudnn.stream().synchronize();
         }
 
         let end_cpu = Instant::now();
 
         if self.profile {
-            let mut conv_time = 0.0;
-            let mut mat_mul_time = 0.0;
-            let mut tensor_op_time = 0.0;
-            let mut gather_time = 0.0;
-            let mut copy_to_device_time = 0.0;
-            let mut copy_to_host_time = 0.0;
+            let mut profile = Profile::default();
 
             for (i, (step, start, end)) in timers.iter().enumerate() {
                 let time = end.time_elapsed_since(start);
 
                 *match step {
-                    Step::CopyInput { .. } => &mut copy_to_device_time,
-                    Step::Conv { .. } => &mut conv_time,
-                    Step::MatMul { .. } => &mut mat_mul_time,
-                    Step::TensorOp { .. } => &mut tensor_op_time,
-                    Step::Gather { .. } => &mut gather_time,
-                    Step::CopyOutput { .. } => &mut copy_to_host_time,
+                    Step::CopyInput { .. } => &mut profile.copy_to_device,
+                    Step::Conv { .. } => &mut profile.conv,
+                    Step::MatMul { .. } => &mut profile.mat_mul,
+                    Step::TensorOp { .. } => &mut profile.tensor_op,
+                    Step::Gather { .. } => &mut profile.gather,
+                    Step::CopyOutput { .. } => &mut profile.copy_to_host,
                 } += time;
 
-                println!("{: >4} time {:.4} ms, step {:?}", i, time, step);
+                profile.steps.push(format!("{: >4} time {:.4} ms, step {:?}", i, time, step));
             }
 
-            println!("Conv:      {:.4} ms", conv_time);
-            println!("Matmul:    {:.4} ms", mat_mul_time);
-            println!("Tensor op: {:.4} ms", tensor_op_time);
-            println!("Gather:    {:.4} ms", gather_time);
-            println!("Copy ->:   {:.4} ms", copy_to_device_time);
-            println!("Copy <-:   {:.4} ms", copy_to_host_time);
-            println!("================");
-            println!("Total GPU: {:.4} ms", end_all.time_elapsed_since(&start_all));
-            println!("Total CPU: {:.4} ms", (end_cpu - start_cpu).as_secs_f32() * 1000.0);
+            let overhead_end = Instant::now();
+            profile.total_gpu = end_all.time_elapsed_since(&start_all);
+            profile.total_cpu = (end_cpu - start_cpu).as_secs_f32();
+            profile.timing_overhead = (overhead_end - end_cpu).as_secs_f32();
+
+            self.last_profile = Some(profile)
+        } else {
+            self.last_profile = None;
         }
 
         &self.outputs
@@ -134,6 +148,10 @@ impl CudnnExecutor {
 
     pub fn set_profile(&mut self, profile: bool) {
         self.profile = profile;
+    }
+
+    pub fn last_profile(&self) -> Option<&Profile> {
+        self.last_profile.as_ref()
     }
 }
 
@@ -215,6 +233,31 @@ impl Debug for CudnnExecutor {
         }
 
         writeln!(f, "    ]\n}}")?;
+        Ok(())
+    }
+}
+
+impl Display for Profile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Profile {{\n  steps: [\n")?;
+        for step in &self.steps {
+            writeln!(f, "    {}", step)?;
+        }
+        write!(f, "  ]\n\n")?;
+
+        writeln!(f, "  Conv:      {:.4} ms", self.conv)?;
+        writeln!(f, "  Matmul:    {:.4} ms", self.mat_mul)?;
+        writeln!(f, "  Tensor op: {:.4} ms", self.tensor_op)?;
+        writeln!(f, "  Gather:    {:.4} ms", self.gather)?;
+        writeln!(f, "  Copy ->:   {:.4} ms", self.copy_to_device)?;
+        writeln!(f, "  Copy <-:   {:.4} ms", self.copy_to_host)?;
+        writeln!(f, "  ================")?;
+        writeln!(f, "  Total GPU: {:.4} ms", self.total_gpu)?;
+        writeln!(f, "  Total CPU: {:.4} ms", self.total_cpu)?;
+        writeln!(f, "  Overhead:  {:.4} ms", self.timing_overhead)?;
+
+        writeln!(f, "}}")?;
+
         Ok(())
     }
 }

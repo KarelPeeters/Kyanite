@@ -145,11 +145,13 @@ impl Size {
         }
     }
 
+    #[track_caller]
     pub fn unwrap_fixed(self, what: &str) -> usize {
         assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
         self.fixed_factor
     }
 
+    #[track_caller]
     pub fn unwrap_fixed_mut(&mut self, what: &str) -> &mut usize {
         assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
         &mut self.fixed_factor

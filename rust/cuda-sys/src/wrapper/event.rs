@@ -19,11 +19,12 @@ impl CudaEvent {
         self.0
     }
 
+    /// Return the elapsed time since `start` _in seconds_.
     pub fn time_elapsed_since(&self, start: &CudaEvent) -> f32 {
         unsafe {
             let mut result: f32 = 0.0;
             cudaEventElapsedTime(&mut result as *mut _, start.inner(), self.inner()).unwrap();
-            result
+            result / 1000.0
         }
     }
 }
