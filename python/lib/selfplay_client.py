@@ -43,8 +43,8 @@ class SelfplaySettings:
 def connect_to_selfplay_server() -> socket.socket:
     while True:
         try:
-            s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            s.connect(("::1", 63105))
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(("127.0.0.1", 63105))
             return s
         except ConnectionRefusedError as e:
             print(e)

@@ -22,7 +22,7 @@ use crate::selfplay::generator::generator_main;
 use crate::selfplay::protocol::{Command, StartupSettings};
 
 pub fn selfplay_server_main() {
-    let (stream, addr) = TcpListener::bind("::1:63105").unwrap()
+    let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap()
         .accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
 
