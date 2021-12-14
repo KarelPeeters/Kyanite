@@ -58,7 +58,7 @@ dependencies = [
  "self_cell",
  "serde",
  "serde_json",
- "shakmaty 0.20.2",
+ "shakmaty",
  "shakmaty-syzygy",
  "tar",
  "tokio",
@@ -1146,8 +1146,9 @@ checksum = "c7d73b3f436185384286bd8098d17ec07c9a7d2388a6599f824d8502b529702a"
 [[package]]
 name = "licoricedev"
 version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb3fa9004d29e4f00c80c2b516227118f6b73307cde451ce32ae0cf36ceb6ffd"
 dependencies = [
- "anyhow",
  "bytes",
  "chrono",
  "futures-util",
@@ -1155,8 +1156,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "shakmaty 0.17.2",
- "structopt",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -2250,17 +2249,6 @@ dependencies = [
 
 [[package]]
 name = "shakmaty"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e0115b8620f67015c63a1850a05ed40952e8e0f0c1986a8a4056c1ebd927136"
-dependencies = [
- "arrayvec 0.5.2",
- "bitflags",
- "btoi",
-]
-
-[[package]]
-name = "shakmaty"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55200757d0b17ee743aa21b4b0f048210f56a39289fa6aa4d5a41b2c1bc021d0"
@@ -2285,7 +2273,7 @@ dependencies = [
  "once_cell",
  "positioned-io-preview",
  "rustc-hash",
- "shakmaty 0.20.2",
+ "shakmaty",
 ]
 
 [[package]]
@@ -2327,30 +2315,6 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "structopt"
-version = "0.3.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40b9788f4202aa75c240ecc9c15c65185e6a39ccdeb0fd5d008b98825464c87c"
-dependencies = [
- "clap 2.33.3",
- "lazy_static",
- "structopt-derive",
-]
-
-[[package]]
-name = "structopt-derive"
-version = "0.4.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcb5ae327f9cc13b68763b5749770cb9e048a99bd9dfdfa58d0cf05d5f64afe0"
-dependencies = [
- "heck",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "syn"
@@ -2499,7 +2463,6 @@ dependencies = [
  "libc",
  "memchr",
  "mio",
- "num_cpus",
  "pin-project-lite",
  "tokio-macros",
  "winapi",

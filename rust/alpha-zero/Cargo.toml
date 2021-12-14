@@ -19,7 +19,7 @@ pgn-reader = { path = "../pgn-reader" }
 # games
 chess = "3.2.0"
 vampirc-uci = { version = "0.11.0", features = ["chess"] }
-licoricedev = { path = "../licorice" }
+licoricedev = "0.1.2"
 shakmaty-syzygy = "0.17.0"
 shakmaty = "0.20.2"
 
