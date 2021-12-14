@@ -1,3 +1,5 @@
+import sys
+
 from torch.optim import AdamW, SGD
 
 from lib.games import Game
@@ -54,6 +56,7 @@ def main():
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
+        gui=sys.platform == "win32",
         root_path=f"data/loop/{game.name}/small/",
         initial_network=initial_network,
 
