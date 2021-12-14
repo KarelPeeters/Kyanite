@@ -26,7 +26,11 @@ pub enum Command {
 pub enum GeneratorUpdate<B> {
     Stop,
 
-    FinishedSimulation(Simulation<B>),
+    FinishedSimulation {
+        thread_id: usize,
+        index: u64,
+        simulation: Simulation<B>,
+    },
 
     // all values since the last progress update
     Progress {

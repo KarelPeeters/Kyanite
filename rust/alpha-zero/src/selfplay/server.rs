@@ -7,6 +7,7 @@ use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
 use crossbeam::channel;
+use itertools::Itertools;
 
 use cuda_nn_eval::Device;
 
@@ -90,8 +91,11 @@ fn selfplay_start<B: Board>(
     let (update_sender, update_receiver) = channel::unbounded();
 
     crossbeam::scope(|s| {
-        for device in Device::all() {
-            for _ in 0..startup.threads_per_device {
+        let devices = Device::all().collect_vec();
+        let thread_count = devices.len() * startup.threads_per_device;
+
+        for device in devices {
+            for thread_id in 0..startup.threads_per_device {
                 let (cmd_sender, cmd_receiver) = channel::unbounded();
                 cmd_senders.push(cmd_sender);
                 let update_sender = update_sender.clone();
@@ -99,12 +103,12 @@ fn selfplay_start<B: Board>(
                 let start_pos = &start_pos;
                 let batch_size = startup.batch_size;
                 s.spawn(move |_| {
-                    generator_main(mapper, start_pos, device, batch_size, cmd_receiver, update_sender)
+                    generator_main(thread_id, mapper, start_pos, device, batch_size, cmd_receiver, update_sender)
                 });
             }
         }
 
-        s.spawn(|_| {
+        s.spawn(move |_| {
             collector_main(
                 &startup.game,
                 writer,
@@ -113,6 +117,7 @@ fn selfplay_start<B: Board>(
                 &startup.output_folder,
                 mapper,
                 update_receiver,
+                thread_count,
             )
         });
 

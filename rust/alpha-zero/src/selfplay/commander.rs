@@ -7,6 +7,7 @@ use crossbeam::channel::Sender;
 
 use cuda_nn_eval::tester::check_cudnn;
 use nn_graph::onnx::load_graph_from_onnx_path;
+use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 use crate::selfplay::protocol::{Command, GeneratorUpdate};
 
@@ -23,7 +24,9 @@ pub fn commander_main<B: Board>(
             if path_bin.exists() {
                 println!("Commander checking new network {}", path);
 
-                let graph = load_graph_from_onnx_path(path);
+                let loaded_graph = load_graph_from_onnx_path(path);
+                let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
+
                 let check_data = std::fs::read(path_bin)
                     .expect("Failed to read check data");
                 check_cudnn(&graph, &check_data);

@@ -8,6 +8,7 @@ use rand_distr::Dirichlet;
 
 use cuda_nn_eval::Device;
 use nn_graph::onnx::load_graph_from_onnx_path;
+use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 use crate::mapping::BoardMapper;
 use crate::network::{Network, ZeroEvaluation};
@@ -22,6 +23,7 @@ use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather, ZeroRequest,
 use crate::zero::tree::Tree;
 
 pub fn generator_main<B: Board>(
+    thread_id: usize,
     mapper: impl BoardMapper<B>,
     start_pos: impl Fn() -> B,
     device: Device,
@@ -36,6 +38,7 @@ pub fn generator_main<B: Board>(
 
     let mut settings = None;
     let mut network = None;
+    let mut next_index = 0;
 
     loop {
         // If we don't yet have settings and an executor, block until we get a message.
@@ -60,7 +63,8 @@ pub fn generator_main<B: Board>(
             }
             Ok(Command::NewNetwork(path)) => {
                 println!("Generator thread loading new network {:?}", path);
-                let graph = load_graph_from_onnx_path(path);
+                let loaded_graph = load_graph_from_onnx_path(path);
+                let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
                 network = Some(CudnnNetwork::new(mapper, graph, batch_size, device));
             }
         }
@@ -68,8 +72,9 @@ pub fn generator_main<B: Board>(
         // advance generator
         if let Some(settings) = &settings {
             if let Some(network) = &mut network {
-                let mut ctx = Context { settings: &settings, rng: &mut rng };
+                let mut ctx = Context { thread_id, next_index, settings: &settings, rng: &mut rng };
                 state.step(&mut ctx, &start_pos, network, &sender)?;
+                next_index = ctx.next_index;
             }
         }
     }
@@ -82,6 +87,9 @@ type RngType = ThreadRng;
 
 #[derive(Debug)]
 struct Context<'a> {
+    thread_id: usize,
+    next_index: u64,
+
     settings: &'a Settings,
     rng: &'a mut RngType,
 }
@@ -95,6 +103,7 @@ struct GeneratorState<B: Board> {
 
 #[derive(Debug)]
 struct GameState<B: Board> {
+    index: u64,
     search: SearchState<B>,
     positions: Vec<Position<B>>,
 }
@@ -203,7 +212,10 @@ impl<B: Board> GeneratorState<B> {
 impl<B: Board> GameState<B> {
     fn new(ctx: &mut Context, start_pos: B) -> Self {
         let tree = Tree::new(MaxMovesBoard::new(start_pos, ctx.max_moves()));
+        let index = ctx.next_index;
+        ctx.next_index += 1;
         GameState {
+            index,
             search: SearchState::new(ctx, tree),
             positions: vec![],
         }
@@ -265,7 +277,11 @@ impl<B: Board> GameState<B> {
         if let Some(outcome) = next_board.outcome() {
             //record this game
             let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
-            sender.send(GeneratorUpdate::FinishedSimulation(simulation)).unwrap();
+            sender.send(GeneratorUpdate::FinishedSimulation {
+                thread_id: ctx.thread_id,
+                index: self.index,
+                simulation,
+            }).unwrap();
 
             //report that this game is done
             true
