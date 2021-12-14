@@ -4,6 +4,7 @@
 pub mod status;
 pub mod handle;
 
+pub mod graph;
 pub mod event;
 
 pub mod mem;

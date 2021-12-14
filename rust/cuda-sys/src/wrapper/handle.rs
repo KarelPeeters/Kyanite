@@ -1,8 +1,9 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamCreate, cudaStreamDestroy, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate, cudnnDestroy, cudnnSetStream};
+use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
 use crate::wrapper::event::CudaEvent;
+use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::status::Status;
 
 pub fn cuda_device_count() -> i32 {
@@ -86,6 +87,16 @@ impl CudaStream {
 
     pub unsafe fn wait_for_event(&self, event: &CudaEvent) {
         cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+    }
+
+    pub unsafe fn begin_capture(&self) {
+        cudaStreamBeginCapture(self.inner(), cudaStreamCaptureMode::cudaStreamCaptureModeGlobal).unwrap()
+    }
+
+    pub unsafe fn end_capture(&self) -> CudaGraph {
+        let mut graph = null_mut();
+        cudaStreamEndCapture(self.inner(), &mut graph as *mut _).unwrap();
+        CudaGraph::new_from_inner(graph)
     }
 }
 
