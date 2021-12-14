@@ -1,8 +1,7 @@
-from math import prod
-
 from torch import nn
 
 from lib.games import Game
+from lib.util import prod
 
 
 class DenseNetwork(nn.Module):
