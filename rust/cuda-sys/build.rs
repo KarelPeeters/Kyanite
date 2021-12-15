@@ -1,7 +1,9 @@
 use std::env;
+use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, EnumVariation};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
+use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 
 //TODO rewrite this thing again to find cuda automatically (env Var & default location),
 // and verify that cudnn is installed
@@ -25,10 +27,40 @@ fn link_cuda(builder: Builder) -> Builder {
     println!("cargo:rustc-link-lib=dylib=cuda");
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
+    println!("cargo:rustc-link-lib=dylib=cublas");
 
     builder
         .clang_arg("-I/usr/local/cuda/include/")
         .clang_arg("-I/usr/local/cuda/include/nvtx3")
+}
+
+// see https://github.com/rust-lang/rust-bindgen/issues/687,
+// specifically https://github.com/rust-lang/rust-bindgen/issues/687#issuecomment-450750547
+const IGNORED_MACROS: &[&str] = &[
+    "FP_INFINITE",
+    "FP_NAN",
+    "FP_NORMAL",
+    "FP_SUBNORMAL",
+    "FP_ZERO",
+    "IPPORT_RESERVED",
+];
+
+#[derive(Debug)]
+struct CustomParseCallBacks;
+
+impl ParseCallbacks for CustomParseCallBacks {
+    fn will_parse_macro(&self, name: &str) -> MacroParsingBehavior {
+        if IGNORED_MACROS.contains(&name) {
+            MacroParsingBehavior::Ignore
+        } else {
+            MacroParsingBehavior::Default
+        }
+    }
+
+    // redirect to normal handler
+    fn include_file(&self, filename: &str) {
+        CargoCallbacks.include_file(filename)
+    }
 }
 
 fn main() {
@@ -39,7 +71,7 @@ fn main() {
     link_cuda(Builder::default())
         // input
         .header("wrapper.h")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(CustomParseCallBacks))
 
         // settings
         .size_t_is_usize(true)

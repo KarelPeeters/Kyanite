@@ -16,7 +16,7 @@ pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
     assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
-const ERROR_TOLERANCE: f32 = 0.0001;
+const ERROR_TOLERANCE: f32 = 0.001;
 
 pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor], outputs: &[Tensor], print: bool) {
     assert_eq!(expected_outputs.len(), outputs.len(), "Wrong number of outputs");

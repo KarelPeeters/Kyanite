@@ -1,34 +1,36 @@
-from torch.optim import AdamW
+import sys
+
+from torch.optim import AdamW, SGD
 
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.lc0_pre_act import LCZOldPreNetwork
-from lib.model.post_act import PostActNetwork
+from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
 from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings
 from lib.train import TrainSettings, ValueTarget
 
 
 def main():
-    game = Game.find("sttt")
+    game = Game.find("chess")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=64,
-        games_per_gen=10,
+        batch_size=256,
+        games_per_gen=100,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        zero_temp_move_count=300,
+        zero_temp_move_count=30,
         use_value=False,
         max_game_length=300,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=20,
+        full_iterations=400,
         part_iterations=20,
         exploration_weight=2.0,
         random_symmetries=True,
@@ -38,7 +40,7 @@ def main():
     train_settings = TrainSettings(
         game=game,
         value_weight=0.1,
-        wdl_weight=0.2,
+        wdl_weight=1.0,
         policy_weight=1.0,
         clip_norm=20.0,
         value_target=ValueTarget.Final,
@@ -46,18 +48,23 @@ def main():
     )
 
     def initial_network():
-        return PostActNetwork(game, 8, 32, 8, 64)
+        return PostActNetwork(
+            game, 8, 32,
+            PostActValueHead(game, 32, 4, 64),
+            PostActAttentionPolicyHead(game, 32, 32)
+        )
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
-        root_path=f"data/loop/{game.name}/",
+        gui=sys.platform == "win32",
+        root_path=f"data/loop/{game.name}/small/",
         initial_network=initial_network,
 
         target_buffer_size=1_000_000,
-        train_steps_per_gen=2,
+        train_steps_per_gen=4,
         train_batch_size=256,
 
-        optimizer=lambda params: AdamW(params, weight_decay=1e-5),
+        optimizer=lambda params: SGD(params, lr=0.01, momentum=0.9, weight_decay=1e-5),
 
         fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,

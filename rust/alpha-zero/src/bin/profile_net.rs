@@ -44,6 +44,8 @@ fn main() {
         loaded_graph
     };
 
+    println!("{}", graph);
+
     if batch_size < 1 {
         profile_different_batch_sizes(&graph);
     } else {
@@ -100,6 +102,7 @@ fn profile_single_batch_size(graph: &Graph, batch_size: usize) {
     println!("Profiling");
     executor.set_profile(true);
     executor.evaluate(&inputs);
+    println!("{}", executor.last_profile().unwrap());
 
     // only print this now so it's easily visible
     println!("Throughput: {} evals/s", throughput);

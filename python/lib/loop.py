@@ -43,6 +43,7 @@ class FixedSelfplaySettings:
 
 @dataclass
 class LoopSettings:
+    gui: bool
     root_path: str
     initial_network: Callable[[], nn.Module]
 
@@ -88,16 +89,22 @@ class LoopSettings:
         start_gen, buffer, logger, network, network_path_onnx = self.load_start_state()
         print_param_count(network)
 
-        app = qt_app()
-        plotter = LogPlotter()
-        plotter.update(logger)
+        if self.gui:
+            app = qt_app()
+            plotter = LogPlotter()
+            plotter.update(logger)
+        else:
+            app = None
+            plotter = None
 
-        # TODO this is a large a amount of tricky parameters, find a better way to pass them to the thread
-        thread = Thread(target=self.run_loop_thread,
-                        args=(start_gen, buffer, logger, plotter, network, network_path_onnx))
-        thread.start()
+        args = (start_gen, buffer, logger, plotter, network, network_path_onnx)
 
-        app.exec()
+        if self.gui:
+            thread = Thread(target=self.run_loop_thread, args=args)
+            thread.start()
+            app.exec()
+        else:
+            self.run_loop_thread(*args)
 
     def run_loop_thread(
             self,

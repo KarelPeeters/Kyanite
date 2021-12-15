@@ -1,11 +1,10 @@
-from math import prod
 from typing import List
 
 import numpy as np
 import torch
 
 from lib.games import Game
-from lib.util import DEVICE
+from lib.util import DEVICE, prod
 
 POSITION_INFO_SCALAR_COUNT = 6 + 4 * 3
 

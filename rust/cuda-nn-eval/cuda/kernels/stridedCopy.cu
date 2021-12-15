@@ -46,7 +46,11 @@ cudaError stridedCopyFloat(
     int blocks = (size + blockSize - 1) / blockSize;
 
     switch (rank) {
-        BRANCH(0, float)
+        // special-case rank-0 since some cuda versions don't allow zero-sized kernel parameters
+        case 0: {
+            cudaMemcpy(output, input, sizeof(float), cudaMemcpyKind::cudaMemcpyDeviceToDevice);
+            break;
+        }
         BRANCH(1, float)
         BRANCH(2, float)
         BRANCH(3, float)
