@@ -26,8 +26,15 @@ impl CudaGraph {
         }
     }
 
-    pub fn new_from_inner(inner: cudaGraph_t) -> CudaGraph {
+    pub unsafe fn new_from_inner(inner: cudaGraph_t) -> CudaGraph {
         CudaGraph { inner }
+    }
+
+    pub unsafe fn instantiate(&self) -> CudaGraphExec {
+        //TODO try printing error string for fun
+        let mut inner = null_mut();
+        cudaGraphInstantiate(&mut inner as *mut _, self.inner(), null_mut(), null_mut(), 0).unwrap();
+        CudaGraphExec { inner }
     }
 
     pub unsafe fn inner(&self) -> cudaGraph_t {
@@ -49,12 +56,6 @@ impl Drop for CudaGraphExec {
 }
 
 impl CudaGraphExec {
-    pub unsafe fn instantiate(graph: &CudaGraph) -> CudaGraphExec {
-        let mut inner = null_mut();
-        cudaGraphInstantiate(&mut inner as *mut _, graph.inner, null_mut(), null_mut(), 0).unwrap();
-        CudaGraphExec { inner }
-    }
-
     pub unsafe fn inner(&self) -> cudaGraphExec_t {
         self.inner
     }

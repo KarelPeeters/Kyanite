@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
+use cuda_sys::wrapper::graph::CudaGraphExec;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CublasHandle, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
@@ -18,9 +19,13 @@ pub struct CudnnExecutor {
     handles: Handles,
     plan: Vec<Step>,
 
+    graph_steps: (Vec<usize>, Vec<usize>),
+    graph_exec: CudaGraphExec,
+
     stage: Vec<f32>,
     outputs: Vec<Vec<f32>>,
 
+    use_graph: bool,
     profile: bool,
     last_profile: Option<Profile>,
 }
@@ -87,7 +92,9 @@ impl CudnnExecutor {
         let stage = vec![f32::NAN; stage_size];
         let plan = planner.finish();
 
-        CudnnExecutor { handles, plan, stage, outputs, profile: false, last_profile: None }
+        let (graph_exec, graph_steps) = record_graph(&handles, &plan);
+
+        CudnnExecutor { handles, plan, graph_exec, graph_steps, stage, outputs, use_graph: true, profile: false, last_profile: None }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -99,13 +106,25 @@ impl CudnnExecutor {
         unsafe {
             start_all = self.handles.cudnn.stream().record_new_event();
 
-            for step in &self.plan {
-                let start = self.handles.cudnn.stream().record_new_event();
-                step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
-                let end = self.handles.cudnn.stream().record_new_event();
+            if self.use_graph {
+                for &step in &self.graph_steps.0 {
+                    self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
+                }
 
-                if self.profile {
-                    timers.push((step, start, end));
+                self.graph_exec.launch(self.handles.cudnn.stream());
+
+                for &step in &self.graph_steps.1 {
+                    self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
+                }
+            } else {
+                for step in &self.plan {
+                    let start = self.handles.cudnn.stream().record_new_event();
+                    step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
+                    let end = self.handles.cudnn.stream().record_new_event();
+
+                    if self.profile {
+                        timers.push((step, start, end));
+                    }
                 }
             }
 
@@ -146,12 +165,47 @@ impl CudnnExecutor {
         &self.outputs
     }
 
+    pub fn use_graph(&mut self, use_graph: bool) {
+        self.use_graph = use_graph;
+    }
+
     pub fn set_profile(&mut self, profile: bool) {
         self.profile = profile;
     }
 
     pub fn last_profile(&self) -> Option<&Profile> {
         self.last_profile.as_ref()
+    }
+}
+
+fn record_graph(handles: &Handles, steps: &[Step]) -> (CudaGraphExec, (Vec<usize>, Vec<usize>)) {
+    let mut input_steps = vec![];
+    let mut output_steps = vec![];
+
+    unsafe {
+        handles.cudnn.stream().begin_capture();
+
+        for (i, step) in steps.iter().enumerate() {
+            match step {
+                Step::CopyInput { .. } => {
+                    input_steps.push(i);
+                    continue;
+                }
+                Step::CopyOutput { .. } => {
+                    output_steps.push(i);
+                    continue;
+                }
+                Step::Conv { .. } | Step::MatMul { .. } | Step::TensorOp { .. } | Step::Gather { .. } => {
+                    step.run(handles, &[], &mut [], &mut []);
+                }
+            }
+        }
+
+        let graph = handles.cudnn.stream().end_capture();
+
+        // println!("input_steps: {:?}", input_steps);
+        // println!("output_steps: {:?}", output_steps);
+        (graph.instantiate(), (input_steps, output_steps))
     }
 }
 
@@ -226,7 +280,11 @@ impl Step {
 
 impl Debug for CudnnExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n", self.profile, self.handles)?;
+        write!(
+            f,
+            "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    use_graph: {}, plan: [\n",
+            self.profile, self.handles, self.use_graph
+        )?;
 
         for step in &self.plan {
             writeln!(f, "        {:?},", step)?;
