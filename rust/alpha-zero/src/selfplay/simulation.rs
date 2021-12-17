@@ -16,6 +16,6 @@ pub struct Position<B> {
     pub should_store: bool,
 
     pub zero_visits: u64,
-    pub zero_evaluation: ZeroEvaluation,
-    pub net_evaluation: ZeroEvaluation,
+    pub zero_evaluation: ZeroEvaluation<'static>,
+    pub net_evaluation: ZeroEvaluation<'static>,
 }

@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
@@ -27,7 +27,7 @@ impl<B: Board, N: Network<B>, R: Rng> RandomSymmetryNetwork<B, N, R> {
 }
 
 impl<B: Board, N: Network<B>, R: Rng> Network<B> for RandomSymmetryNetwork<B, N, R> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         if !self.enabled || B::Symmetry::is_unit() {
             // shortcut, just forward to inner if there's nothing to do
             return self.inner.evaluate_batch(boards);
@@ -56,7 +56,7 @@ impl<B: Board, N: Network<B>, R: Rng> Network<B> for RandomSymmetryNetwork<B, N,
     }
 }
 
-fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eval: ZeroEvaluation) -> ZeroEvaluation {
+fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eval: ZeroEvaluation) -> ZeroEvaluation<'static> {
     let mapped_moves: Vec<B::Move> = mapped_board.available_moves().collect();
 
     let policy = board.available_moves().map(|mv| {
@@ -67,7 +67,7 @@ fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eva
 
     ZeroEvaluation {
         values: mapped_eval.values,
-        policy,
+        policy: Cow::Owned(policy),
     }
 }
 

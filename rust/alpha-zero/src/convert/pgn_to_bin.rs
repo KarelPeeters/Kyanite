@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
@@ -220,7 +221,7 @@ fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>) -> P
         board: board.clone(),
         should_store: true,
         zero_visits: 0,
-        net_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy: vec![f32::NAN; policy.len()] },
-        zero_evaluation: ZeroEvaluation { values: zero_values, policy },
+        net_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy: Cow::Owned(vec![f32::NAN; policy.len()]) },
+        zero_evaluation: ZeroEvaluation { values: zero_values, policy: Cow::Owned(policy) },
     }
 }

@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 
 use board_game::board::Board;
 use board_game::wdl::WDL;
@@ -18,7 +18,7 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     batch_value_logit: &[f32],
     batch_wdl_logit: &[f32],
     batch_policy_logit: &[f32],
-) -> Vec<ZeroEvaluation> {
+) -> Vec<ZeroEvaluation<'static>> {
     let batch_size = boards.len();
     let policy_len = policy_mapper.policy_len();
 
@@ -48,7 +48,7 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
 
         // combine everything
         let values = ZeroValues { value, wdl };
-        ZeroEvaluation { values, policy }
+        ZeroEvaluation { values, policy: Cow::Owned(policy) }
     }).collect()
 }
 

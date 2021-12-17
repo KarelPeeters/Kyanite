@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use board_game::ai::solver::solve_all_moves;
 use board_game::board::Board;
 use internal_iterator::InternalIterator;
@@ -51,11 +53,11 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(start: &B, count:
                 zero_visits: 0,
                 net_evaluation: ZeroEvaluation {
                     values: ZeroValues::nan(),
-                    policy: vec![f32::NAN; mv_count],
+                    policy: Cow::Owned(vec![f32::NAN; mv_count]),
                 },
                 zero_evaluation: ZeroEvaluation {
                     values: ZeroValues::nan(),
-                    policy,
+                    policy: Cow::Owned(policy),
                 },
             });
 

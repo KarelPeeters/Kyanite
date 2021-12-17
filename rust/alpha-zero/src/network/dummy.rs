@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
 
 use board_game::board::Board;
@@ -41,18 +41,18 @@ impl<B: Board, N: Network<B>> DummyPolicyNetwork<B, N> {
 }
 
 impl<B: Board> Network<B> for DummyNetwork {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         boards.iter()
             .map(|board| ZeroEvaluation {
                 values: uniform_values(),
-                policy: uniform_policy(board.borrow().available_moves().count()),
+                policy: Cow::Owned(uniform_policy(board.borrow().available_moves().count())),
             })
             .collect()
     }
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         self.inner.evaluate_batch(boards).into_iter()
             .map(|orig| ZeroEvaluation {
                 values: uniform_values(),
@@ -63,11 +63,11 @@ impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         self.inner.evaluate_batch(boards).into_iter()
             .map(|orig| ZeroEvaluation {
                 values: orig.values,
-                policy: uniform_policy(orig.policy.len()),
+                policy: Cow::Owned(uniform_policy(orig.policy.len())),
             })
             .collect()
     }
@@ -91,7 +91,7 @@ fn uniform_policy(available_moves: usize) -> Vec<f32> {
 pub struct MaxMovesNetwork<N>(pub N);
 
 impl<N: Network<B>, B: Board> Network<MaxMovesBoard<B>> for MaxMovesNetwork<N> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<MaxMovesBoard<B>>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<MaxMovesBoard<B>>]) -> Vec<ZeroEvaluation<'static>> {
         // TODO memory allocation, look into changing network so it accepts an iterator
         //   maybe instead of that (since it generates a lot of extra code), accept already-encoded boards as an input?
         let inner_boards = boards.iter()

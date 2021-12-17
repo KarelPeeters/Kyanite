@@ -1,7 +1,10 @@
+use std::borrow::Cow;
+
 use board_game::board::Board;
 use board_game::games::max_length::MaxMovesBoard;
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use itertools::Itertools;
+use lru::LruCache;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use rand_distr::Dirichlet;
@@ -97,7 +100,7 @@ struct Context<'a> {
 #[derive(Debug)]
 struct GeneratorState<B: Board> {
     games: Vec<GameState<B>>,
-    responses: Vec<ZeroResponse>,
+    responses: Vec<ZeroResponse<'static, MaxMovesBoard<B>>>,
     batch_size: usize,
 }
 
@@ -106,6 +109,7 @@ struct GameState<B: Board> {
     index: u64,
     search: SearchState<B>,
     positions: Vec<Position<B>>,
+    cache: LruCache<MaxMovesBoard<B>, ZeroEvaluation<'static>>,
 }
 
 #[derive(Debug)]
@@ -113,7 +117,7 @@ struct SearchState<B: Board> {
     tree: Tree<MaxMovesBoard<B>>,
     needs_dirichlet: bool,
     is_full_search: bool,
-    root_net_eval: Option<ZeroEvaluation>,
+    root_net_eval: Option<ZeroEvaluation<'static>>,
 }
 
 #[derive(Debug)]
@@ -181,7 +185,10 @@ impl<B: Board> GeneratorState<B> {
         let mut requests = vec![];
         let existing_games = std::mem::take(&mut self.games);
 
-        let mut step_and_append = |ctx: &mut Context, games: &mut Vec<GameState<B>>, mut game: GameState<B>, response: Option<ZeroResponse>| {
+        let mut step_and_append = |ctx: &mut Context,
+                                   games: &mut Vec<GameState<B>>,
+                                   mut game: GameState<B>,
+                                   response: Option<ZeroResponse<'static, MaxMovesBoard<B>>>| {
             let result = game.step(ctx, response, sender, counter);
 
             match result {
@@ -218,23 +225,34 @@ impl<B: Board> GameState<B> {
             index,
             search: SearchState::new(ctx, tree),
             positions: vec![],
+            cache: LruCache::new(ctx.settings.cache_size),
         }
     }
 
     fn step(
         &mut self,
         ctx: &mut Context,
-        initial_response: Option<ZeroResponse>,
+        initial_response: Option<ZeroResponse<'static, MaxMovesBoard<B>>>,
         sender: &UpdateSender<B>,
         counter: &mut Counter,
     ) -> StepResult<B> {
         let mut response = initial_response;
+        if let Some(response) = &response {
+            self.cache.put(response.board.clone(), response.eval.clone());
+        }
 
         loop {
             let result = self.search.step(ctx, response.take());
 
             match result {
                 StepResult::Request(request) => {
+                    if let Some(eval) = self.cache.get(&request.board) {
+                        counter.cache_hits += 1;
+                        // TODO we could do a shallow clone here instead but the compiler can't figure out the lifetimes
+                        response = Some(request.respond(eval.clone()));
+                        continue;
+                    }
+
                     return StepResult::Request(request);
                 }
                 StepResult::Done => {
@@ -261,7 +279,7 @@ impl<B: Board> GameState<B> {
 
         //store this position
         let net_evaluation = self.search.root_net_eval.take().unwrap();
-        let zero_evaluation = ZeroEvaluation { values: tree.values(), policy };
+        let zero_evaluation = ZeroEvaluation { values: tree.values(), policy: Cow::Owned(policy) };
 
         self.positions.push(Position {
             board: tree.root_board().inner().clone(),
@@ -311,7 +329,7 @@ impl<B: Board> SearchState<B> {
         }
     }
 
-    fn step(&mut self, ctx: &mut Context, response: Option<ZeroResponse>) -> StepResult<B> {
+    fn step(&mut self, ctx: &mut Context, response: Option<ZeroResponse<'static, MaxMovesBoard<B>>>) -> StepResult<B> {
         let settings = ctx.settings;
 
         if let Some(response) = response {
@@ -338,12 +356,12 @@ impl<B: Board> SearchState<B> {
     }
 }
 
-fn extract_root_net_eval<B: Board>(tree: &Tree<B>) -> ZeroEvaluation {
+fn extract_root_net_eval<B: Board>(tree: &Tree<B>) -> ZeroEvaluation<'static> {
     let values = tree[0].net_values.unwrap();
     let policy = tree[0].children.unwrap().iter()
         .map(|c| tree[c].net_policy)
         .collect();
-    ZeroEvaluation { values, policy }
+    ZeroEvaluation { values, policy: Cow::Owned(policy) }
 }
 
 fn add_dirichlet_noise<B: Board>(ctx: &mut Context, tree: &mut Tree<B>) {

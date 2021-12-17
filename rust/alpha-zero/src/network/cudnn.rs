@@ -40,7 +40,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let batch_size = boards.len();
         let max_batch_size = self.max_batch_size;
         assert!(batch_size <= max_batch_size);

@@ -16,9 +16,10 @@ pub struct ZeroRequest<B> {
 }
 
 #[derive(Debug)]
-pub struct ZeroResponse {
+pub struct ZeroResponse<'a, B> {
     node: usize,
-    pub eval: ZeroEvaluation,
+    pub board: B,
+    pub eval: ZeroEvaluation<'a>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -97,9 +98,9 @@ pub fn zero_step_gather<B: Board>(
 /// The second half of a step. Applies a network evaluation to the given node,
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
-pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse) {
+pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) {
     // we don't explicitly assert that we're expecting this node since wdl already checks for net_wdl and virtual_visits
-    let ZeroResponse { node: curr_node, eval } = response;
+    let ZeroResponse { node: curr_node, board: _, eval } = response;
 
     // wdl
     assert!(tree[curr_node].net_values.is_none(), "Node {} was already evaluated by the network", curr_node);
@@ -109,7 +110,7 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse) {
     // policy
     let children = tree[curr_node].children.expect("Applied node should have initialized children");
     assert_eq!(children.length as usize, eval.policy.len(), "Wrong children length");
-    for (c, p) in zip_eq_exact(children, eval.policy) {
+    for (c, &p) in zip_eq_exact(children, eval.policy.as_ref()) {
         tree[c].net_policy = p;
     }
 }
@@ -145,7 +146,7 @@ impl FpuMode {
 }
 
 impl<B> ZeroRequest<B> {
-    pub fn respond(&self, eval: ZeroEvaluation) -> ZeroResponse {
-        ZeroResponse { node: self.node, eval }
+    pub fn respond(self, eval: ZeroEvaluation) -> ZeroResponse<B> {
+        ZeroResponse { node: self.node, board: self.board, eval }
     }
 }

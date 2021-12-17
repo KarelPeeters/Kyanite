@@ -59,7 +59,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
-    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation> {
+    fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let outputs = self.evaluate_batch_exec(boards).output_tensors();
 
         // decode the output
