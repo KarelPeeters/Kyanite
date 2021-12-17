@@ -60,6 +60,7 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop/{game.name}/small/",
         initial_network=initial_network,
+        only_generate=True,
 
         target_buffer_size=1_000_000,
         train_steps_per_gen=4,

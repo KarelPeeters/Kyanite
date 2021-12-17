@@ -48,6 +48,7 @@ class LoopSettings:
     gui: bool
     root_path: str
     initial_network: Callable[[], nn.Module]
+    only_generate: bool
 
     target_buffer_size: int
     train_steps_per_gen: int
@@ -134,9 +135,14 @@ class LoopSettings:
             print(f"Waiting for gen {gi} games")
             gen_start = time.perf_counter()
             actual_gi = client.wait_for_file()
-            client.send_wait_for_new_network()
             logger.log("time", "selfplay", time.perf_counter() - gen_start)
             assert gi == actual_gi, f"Unexpected finished generation, expected {gi} got {actual_gi}"
+
+            if self.only_generate:
+                print("Not training new network, we're only generating data")
+                continue
+
+            client.send_wait_for_new_network()
 
             gen = Generation.from_gi(self, gi)
             os.makedirs(gen.train_path, exist_ok=True)
