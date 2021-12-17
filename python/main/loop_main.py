@@ -1,5 +1,6 @@
 import sys
 
+import torch
 from torch.optim import AdamW, SGD
 
 from lib.games import Game
@@ -17,8 +18,8 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=256,
-        games_per_gen=100,
+        batch_size=512,
+        games_per_gen=1000,
         reorder_games=False,
     )
 
@@ -31,11 +32,11 @@ def main():
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=400,
+        full_iterations=600,
         part_iterations=20,
         exploration_weight=2.0,
         random_symmetries=True,
-        cache_size=0,
+        cache_size=600,
     )
 
     train_settings = TrainSettings(
@@ -49,11 +50,7 @@ def main():
     )
 
     def initial_network():
-        return PostActNetwork(
-            game, 8, 32,
-            PostActValueHead(game, 32, 4, 64),
-            PostActAttentionPolicyHead(game, 32, 32)
-        )
+        return torch.jit.load("data/network_24448.pb")
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
