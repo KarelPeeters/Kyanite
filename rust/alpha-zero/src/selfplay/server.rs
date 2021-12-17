@@ -102,13 +102,13 @@ fn selfplay_start<B: Board>(
 
                 let start_pos = &start_pos;
                 let batch_size = startup.batch_size;
-                s.spawn(move |_| {
+                s.builder().name(format!("generator-d{}-{}", device.inner(), thread_id)).spawn(move |_| {
                     generator_main(thread_id, mapper, start_pos, device, batch_size, cmd_receiver, update_sender)
-                });
+                }).unwrap();
             }
         }
 
-        s.spawn(move |_| {
+        s.builder().name("collector".to_string()).spawn(move |_| {
             collector_main(
                 &startup.game,
                 writer,
@@ -119,7 +119,7 @@ fn selfplay_start<B: Board>(
                 update_receiver,
                 thread_count,
             )
-        });
+        }).unwrap();
 
         commander_main(reader, cmd_senders, update_sender);
     }).unwrap();
