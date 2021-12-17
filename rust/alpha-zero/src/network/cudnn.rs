@@ -27,7 +27,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
     pub fn new(mapper: M, graph: Graph, max_batch_size: usize, device: Device) -> Self {
         check_graph_shapes(mapper, &graph);
 
-        let executor = CudnnExecutor::new(device, &graph, max_batch_size);
+        let executor = CudnnExecutor::new(device, &graph, max_batch_size, false);
 
         let input = vec![0.0; max_batch_size * mapper.input_full_len()];
 

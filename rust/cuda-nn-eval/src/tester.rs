@@ -10,9 +10,9 @@ use crate::executor::CudnnExecutor;
 
 /// Check that the given graph produces the correct outputs as described by `check_data`,
 /// which typically comes from a `.bin` file next to the `.onnx` file.
-pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
+pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8], use_graph: bool) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
-    let outputs = eval_cudnn(&graph, batch_size, &inputs, false, true);
+    let outputs = eval_cudnn(&graph, batch_size, &inputs, false, use_graph);
     assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
@@ -47,8 +47,7 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bo
         .map(|x| x.as_slice().expect("Only sliceable inputs supported in test framework"))
         .collect_vec();
 
-    let mut executor = CudnnExecutor::new(Device::new(0), graph, batch_size);
-    executor.use_graph(use_graph);
+    let mut executor = CudnnExecutor::new(Device::new(0), graph, batch_size, use_graph);
     if print {
         println!("{:?}", executor);
     }

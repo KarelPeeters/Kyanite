@@ -18,6 +18,8 @@ struct Args {
     optimize: bool,
     #[clap(short, long)]
     graph: bool,
+    #[clap(short, long)]
+    print: bool,
 
     path: String,
 }
@@ -28,7 +30,7 @@ const TEST_BATCH_ITERATIONS: &[usize] = &[100, 100, 100, 100, 100, 100, 100, 100
 const ITERATIONS: usize = 100;
 
 fn main() {
-    let Args { batch_size, optimize, graph: use_graph, path } = Args::parse();
+    let Args { batch_size, optimize, graph: use_graph, print, path } = Args::parse();
 
     if cfg!(debug_assertions) {
         println!("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
@@ -49,7 +51,9 @@ fn main() {
         loaded_graph
     };
 
-    println!("{}", graph);
+    if print {
+        println!("{}", graph);
+    }
 
     if batch_size < 1 {
         profile_different_batch_sizes(&graph, use_graph);
@@ -64,8 +68,7 @@ fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
     for (&batch_size, &iterations) in izip!(TEST_BATCH_SIZES, TEST_BATCH_ITERATIONS) {
         println!("Testing batch size {} with {} iterations", batch_size, iterations);
 
-        let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size);
-        executor.use_graph(use_graph);
+        let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
         let inputs = dummy_inputs(&graph, batch_size);
         let inputs = inputs.iter().map(|v| &**v).collect_vec();
 
@@ -88,8 +91,7 @@ fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
 }
 
 fn profile_single_batch_size(graph: &Graph, use_graph: bool, batch_size: usize) {
-    let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size);
-    executor.use_graph(use_graph);
+    let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
 
     let inputs = dummy_inputs(&graph, batch_size);
     let inputs = inputs.iter().map(|v| &**v).collect_vec();

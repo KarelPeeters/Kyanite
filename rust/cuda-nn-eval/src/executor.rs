@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use itertools::Itertools;
 
 use cuda_sys::wrapper::graph::CudaGraphExec;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
@@ -18,9 +19,7 @@ use crate::tensor::Tensor;
 pub struct CudnnExecutor {
     handles: Handles,
     plan: Vec<Step>,
-
-    graph_steps: (Vec<usize>, Vec<usize>),
-    graph_exec: CudaGraphExec,
+    graph_plan: Option<GraphPlan>,
 
     stage: Vec<f32>,
     outputs: Vec<Vec<f32>>,
@@ -28,6 +27,12 @@ pub struct CudnnExecutor {
     use_graph: bool,
     profile: bool,
     last_profile: Option<Profile>,
+}
+
+struct GraphPlan {
+    steps_before: Vec<usize>,
+    graph_exec: CudaGraphExec,
+    steps_after: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -63,7 +68,7 @@ pub struct Profile {
 }
 
 impl CudnnExecutor {
-    pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
+    pub fn new(device: Device, graph: &Graph, batch_size: usize, use_graph: bool) -> Self {
         let handles = Handles {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
@@ -92,9 +97,13 @@ impl CudnnExecutor {
         let stage = vec![f32::NAN; stage_size];
         let plan = planner.finish();
 
-        let (graph_exec, graph_steps) = record_graph(&handles, &plan);
+        let graph_plan = if use_graph {
+            Some(record_graph(&handles, &plan))
+        } else {
+            None
+        };
 
-        CudnnExecutor { handles, plan, graph_exec, graph_steps, stage, outputs, use_graph: true, profile: false, last_profile: None }
+        CudnnExecutor { handles, plan, graph_plan, stage, outputs, use_graph: true, profile: false, last_profile: None }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -106,14 +115,14 @@ impl CudnnExecutor {
         unsafe {
             start_all = self.handles.cudnn.stream().record_new_event();
 
-            if self.use_graph {
-                for &step in &self.graph_steps.0 {
+            if let Some(graph_plan) = &self.graph_plan {
+                for &step in &graph_plan.steps_before {
                     self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
                 }
 
-                self.graph_exec.launch(self.handles.cudnn.stream());
+                graph_plan.graph_exec.launch(self.handles.cudnn.stream());
 
-                for &step in &self.graph_steps.1 {
+                for &step in &graph_plan.steps_after {
                     self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
                 }
             } else {
@@ -178,9 +187,9 @@ impl CudnnExecutor {
     }
 }
 
-fn record_graph(handles: &Handles, steps: &[Step]) -> (CudaGraphExec, (Vec<usize>, Vec<usize>)) {
-    let mut input_steps = vec![];
-    let mut output_steps = vec![];
+fn record_graph(handles: &Handles, steps: &[Step]) -> GraphPlan {
+    let mut steps_before = vec![];
+    let mut steps_after = vec![];
 
     unsafe {
         handles.cudnn.stream().begin_capture();
@@ -188,11 +197,11 @@ fn record_graph(handles: &Handles, steps: &[Step]) -> (CudaGraphExec, (Vec<usize
         for (i, step) in steps.iter().enumerate() {
             match step {
                 Step::CopyInput { .. } => {
-                    input_steps.push(i);
+                    steps_before.push(i);
                     continue;
                 }
                 Step::CopyOutput { .. } => {
-                    output_steps.push(i);
+                    steps_after.push(i);
                     continue;
                 }
                 Step::Conv { .. } | Step::MatMul { .. } | Step::TensorOp { .. } | Step::Gather { .. } => {
@@ -201,11 +210,17 @@ fn record_graph(handles: &Handles, steps: &[Step]) -> (CudaGraphExec, (Vec<usize
             }
         }
 
-        let graph = handles.cudnn.stream().end_capture();
+        assert_eq!(steps_before, (0..steps_before.len()).collect_vec());
+        assert_eq!(steps_after, (steps_after.len()..(steps.len() - steps_after.len())).collect_vec());
 
-        // println!("input_steps: {:?}", input_steps);
-        // println!("output_steps: {:?}", output_steps);
-        (graph.instantiate(), (input_steps, output_steps))
+        let graph = handles.cudnn.stream().end_capture();
+        let graph_exec = graph.instantiate();
+
+        GraphPlan {
+            steps_before,
+            graph_exec,
+            steps_after,
+        }
     }
 }
 
