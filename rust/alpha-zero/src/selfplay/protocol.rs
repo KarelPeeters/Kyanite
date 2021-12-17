@@ -10,6 +10,7 @@ pub struct StartupSettings {
     pub batch_size: usize,
     pub games_per_gen: usize,
     pub first_gen: u32,
+    pub reorder_games: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -16,6 +16,7 @@ class StartupSettings:
     threads_per_device: int
     batch_size: int
     games_per_gen: int
+    reorder_games: bool
 
     def as_dict(self):
         return dataclasses.asdict(self)

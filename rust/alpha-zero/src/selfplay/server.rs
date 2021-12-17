@@ -118,6 +118,7 @@ fn selfplay_start<B: Board>(
                 mapper,
                 update_receiver,
                 thread_count,
+                startup.reorder_games,
             )
         }).unwrap();
 

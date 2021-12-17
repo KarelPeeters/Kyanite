@@ -23,6 +23,7 @@ pub fn collector_main<B: Board>(
     mapper: impl BoardMapper<B>,
     update_receiver: Receiver<GeneratorUpdate<B>>,
     thread_count: usize,
+    reorder_games: bool,
 ) {
     let new_output = |gen: u32| {
         let path = format!("{}/games_{}", output_folder, gen);
@@ -47,8 +48,9 @@ pub fn collector_main<B: Board>(
     for update in update_receiver {
         match update {
             GeneratorUpdate::Stop => break,
-            GeneratorUpdate::FinishedSimulation { thread_id, index, simulation } => {
+            GeneratorUpdate::FinishedSimulation { thread_id, index: real_index, simulation } => {
                 let (next_index, max_index) = &mut indices_next_max[thread_id];
+                let index = if reorder_games { real_index } else { *next_index };
 
                 estimator.add_game();
                 heaps[thread_id].push(HeapItem { index, simulation });

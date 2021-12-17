@@ -19,6 +19,7 @@ def main():
         threads_per_device=2,
         batch_size=256,
         games_per_gen=100,
+        reorder_games=False,
     )
 
     selfplay_settings = SelfplaySettings(

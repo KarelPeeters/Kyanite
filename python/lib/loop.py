@@ -29,6 +29,7 @@ class FixedSelfplaySettings:
     threads_per_device: int
     batch_size: int
     games_per_gen: int
+    reorder_games: bool
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
@@ -38,6 +39,7 @@ class FixedSelfplaySettings:
             threads_per_device=self.threads_per_device,
             batch_size=self.batch_size,
             games_per_gen=self.games_per_gen,
+            reorder_games=self.reorder_games,
         )
 
 
