@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaEvent_t, cudaEventCreate, cudaEventDestroy, cudaEventElapsedTime};
+use crate::bindings::{cudaEvent_t, cudaEventCreate, cudaEventDestroy, cudaEventElapsedTime, cudaEventSynchronize};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -26,6 +26,10 @@ impl CudaEvent {
             cudaEventElapsedTime(&mut result as *mut _, start.inner(), self.inner()).unwrap();
             result / 1000.0
         }
+    }
+
+    pub unsafe fn synchronize(&self) {
+        cudaEventSynchronize(self.inner()).unwrap()
     }
 }
 

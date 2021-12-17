@@ -45,6 +45,10 @@ impl TensorDescriptor {
         }
     }
 
+    pub fn rank(&self) -> usize {
+        self.shape.len()
+    }
+
     pub fn shape(&self) -> &[i32] {
         &self.shape
     }
@@ -249,6 +253,10 @@ impl ActivationDescriptor {
 
     pub unsafe fn inner(&self) -> cudnnActivationDescriptor_t {
         self.inner
+    }
+
+    pub fn mode(&self) -> cudnnActivationMode_t {
+        self.mode
     }
 }
 

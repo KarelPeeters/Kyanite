@@ -1,5 +1,5 @@
 pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
-use crate::bindings::{cudnnOpTensor, cudnnPoolingForward};
+use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward};
 use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor, TensorOpDescriptor};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::device::DeviceMem;
@@ -187,8 +187,20 @@ pub unsafe fn run_conv_bias_res_activation(
     assert_ne!(input_mem.ptr(), output_mem.ptr(), "input and output must be distinct");
     assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
     assert_ne!(input_mem.ptr(), res_ptr, "input and res must be distinct");
-    assert_eq!(output_desc.shape()[1], bias_desc.shape()[1], "bias must have full output channels");
+    assert_eq!(bias_desc.shape()[0], 1, "bias first dim must be 1");
+    assert_eq!(bias_desc.shape()[1], output_desc.shape()[1], "bias channels must match output channels");
     assert_eq!(bias_desc.strides()[1], 1, "bias second stride must be one");
+    assert_eq!(&conv_desc.output_shape(input_desc, filter_desc), output_desc.shape(), "output shape mismatch");
+
+    assert_eq!(input_desc.rank(), 4, "input desc wrong rank");
+    assert_eq!(output_desc.rank(), 4, "output desc wrong rank");
+    assert_eq!(bias_desc.rank(), 4, "bias desc wrong rank");
+
+    assert!(
+        activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_RELU ||
+            activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
+        "unsupported activation mode"
+    );
 
     cudnnConvolutionBiasActivationForward(
         handle.inner(),
