@@ -2,6 +2,7 @@ import dataclasses
 import json
 import os
 import socket
+import time
 from dataclasses import dataclass
 from typing import Union
 
@@ -40,14 +41,22 @@ class SelfplaySettings:
         return dataclasses.asdict(self)
 
 
+CONNECT_TRY_PERIOD = 1.0
+
+
 def connect_to_selfplay_server() -> socket.socket:
     while True:
+        last_attempt_start = time.time()
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect(("127.0.0.1", 63105))
             return s
         except ConnectionRefusedError as e:
             print(e)
+
+        delay = (time.time() - last_attempt_start) - CONNECT_TRY_PERIOD
+        if delay > 0:
+            time.sleep(delay)
 
 
 class SelfplayClient:
