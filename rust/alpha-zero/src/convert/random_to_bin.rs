@@ -50,6 +50,7 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(start: &B, count:
             positions.push(Position {
                 board: board.clone(),
                 should_store: true,
+                played_mv: mv,
                 zero_visits: 0,
                 net_evaluation: ZeroEvaluation {
                     values: ZeroValues::nan(),

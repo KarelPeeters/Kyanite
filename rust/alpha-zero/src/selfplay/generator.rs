@@ -284,6 +284,7 @@ impl<B: Board> GameState<B> {
         self.positions.push(Position {
             board: tree.root_board().inner().clone(),
             should_store: self.search.is_full_search,
+            played_mv: picked_move,
             zero_visits: tree.root_visits(),
             net_evaluation,
             zero_evaluation,

@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::BoardMapper;
-use crate::selfplay::simulation::Simulation;
+use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::kdl_divergence;
 
 #[derive(Serialize)]
@@ -59,7 +59,8 @@ pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
 type Result<T> = std::io::Result<T>;
 
 const SCALAR_NAMES: &[&str] = &[
-    "game_id", "pos_index", "game_length", "zero_visits", "available_mv_count", "kdl_policy",
+    "game_id", "pos_index", "game_length", "zero_visits", "available_mv_count", "played_mv",
+    "kdl_policy",
     "final_v", "final_wdl_w", "final_wdl_d", "final_wdl_l",
     "zero_v", "zero_wdl_w", "zero_wdl_d", "zero_wdl_l",
     "net_v", "net_wdl_w", "net_wdl_d", "net_wdl_l",
@@ -118,8 +119,14 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         let mut board_scalars: Vec<f32> = vec![];
         let mut policy_indices: Vec<u32> = vec![];
 
-        for (pos_index, pos) in simulation.positions.iter().enumerate() {
-            let board = &pos.board;
+        for (pos_index, _pos) in simulation.positions.iter().enumerate() {
+            let &Position {
+                ref board, should_store, played_mv, zero_visits,
+                ref zero_evaluation, ref net_evaluation
+            } = _pos;
+
+            if !should_store { continue; }
+
             let player = board.next_player();
 
             // board
@@ -143,30 +150,31 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                     }
                 }
             });
+            let played_mv_index = self.mapper.move_to_index(board, played_mv);
 
             // check that everything makes sense
             assert!(!got_none || available_mv_count == 1);
-            assert_eq!(available_mv_count, pos.zero_evaluation.policy.len());
-            assert_eq!(available_mv_count, pos.net_evaluation.policy.len());
-
-            pos.zero_evaluation.assert_normalized_or_nan();
-            pos.net_evaluation.assert_normalized_or_nan();
+            assert_eq!(available_mv_count, zero_evaluation.policy.len());
+            assert_eq!(available_mv_count, net_evaluation.policy.len());
+            zero_evaluation.assert_normalized_or_nan();
+            net_evaluation.assert_normalized_or_nan();
 
             // scalar float data
             scalars.push(game_id as f32);
             scalars.push(pos_index as f32);
             scalars.push(game_length as f32);
-            scalars.push(pos.zero_visits as f32);
+            scalars.push(zero_visits as f32);
             scalars.push(available_mv_count as f32);
+            scalars.push(played_mv_index.map_or(-1.0, |i| i as f32));
 
-            scalars.push(kdl_divergence(&pos.zero_evaluation.policy, &pos.net_evaluation.policy));
+            scalars.push(kdl_divergence(&zero_evaluation.policy, &net_evaluation.policy));
 
             scalars.push(simulation.outcome.pov(player).sign::<f32>());
             scalars.extend_from_slice(&simulation.outcome.pov(player).to_wdl().to_slice());
-            scalars.push(pos.zero_evaluation.values.value);
-            scalars.extend_from_slice(&pos.zero_evaluation.values.wdl.to_slice());
-            scalars.push(pos.net_evaluation.values.value);
-            scalars.extend_from_slice(&pos.net_evaluation.values.wdl.to_slice());
+            scalars.push(zero_evaluation.values.value);
+            scalars.extend_from_slice(&zero_evaluation.values.wdl.to_slice());
+            scalars.push(net_evaluation.values.value);
+            scalars.extend_from_slice(&net_evaluation.values.wdl.to_slice());
 
             assert_eq!(SCALAR_NAMES.len(), scalars.len());
 
@@ -181,7 +189,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 transmute_to_bytes(board_bools.storage()),
                 transmute_to_bytes(&board_scalars),
                 transmute_to_bytes(&policy_indices),
-                transmute_to_bytes(&pos.zero_evaluation.policy),
+                transmute_to_bytes(&zero_evaluation.policy),
             ];
             for data in data_to_write {
                 self.bin_write.write_all(data)?;

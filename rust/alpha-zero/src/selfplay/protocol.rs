@@ -1,3 +1,4 @@
+use board_game::board::Board;
 use serde::{Deserialize, Serialize};
 
 use crate::selfplay::simulation::Simulation;
@@ -24,7 +25,7 @@ pub enum Command {
 }
 
 #[derive(Debug)]
-pub enum GeneratorUpdate<B> {
+pub enum GeneratorUpdate<B: Board> {
     Stop,
 
     FinishedSimulation {

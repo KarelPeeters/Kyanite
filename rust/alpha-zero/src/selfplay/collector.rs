@@ -93,7 +93,7 @@ pub fn collector_main<B: Board>(
 }
 
 #[derive(Debug)]
-struct HeapItem<B> {
+struct HeapItem<B: Board> {
     index: u64,
     simulation: Simulation<B>,
 }
@@ -127,7 +127,7 @@ impl ThroughputEstimator {
         self.total_games += 1;
     }
 
-    fn update<B>(
+    fn update<B: Board>(
         &mut self, real_evals: u64, cached_evals: u64, moves: u64,
         heaps: &[BinaryHeap<HeapItem<B>>], indices_next_max: &[(u64, u64)],
     ) {
@@ -166,21 +166,21 @@ impl ThroughputEstimator {
     }
 }
 
-impl<B> Eq for HeapItem<B> {}
+impl<B: Board> Eq for HeapItem<B> {}
 
-impl<B> PartialEq<Self> for HeapItem<B> {
+impl<B: Board> PartialEq<Self> for HeapItem<B> {
     fn eq(&self, other: &Self) -> bool {
         self.index.eq(&other.index)
     }
 }
 
-impl<B> Ord for HeapItem<B> {
+impl<B: Board> Ord for HeapItem<B> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.index.cmp(&other.index).reverse()
     }
 }
 
-impl<B> PartialOrd for HeapItem<B> {
+impl<B: Board> PartialOrd for HeapItem<B> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
