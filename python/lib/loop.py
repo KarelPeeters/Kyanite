@@ -33,7 +33,7 @@ class FixedSelfplaySettings:
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
-            output_folder=output_folder,
+            output_folder=os.path.abspath(output_folder),
             first_gen=first_gen,
             game=self.game.name,
             threads_per_device=self.threads_per_device,
