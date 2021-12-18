@@ -28,7 +28,6 @@ class DataFileInfo:
         self.max_game_length = meta["max_game_length"]
         self.root_wdl = meta.get("root_wdl")
 
-        # TODO actually use these names to split the scalars properly
         self.scalar_names = meta["scalar_names"]
 
 
@@ -44,9 +43,9 @@ class DataFile:
     @staticmethod
     def open(game: Game, path: str) -> 'DataFile':
         path = Path(path)
-        json_path = path.with_suffix(".json")
-        bin_path = path.with_suffix(".bin")
-        off_path = path.with_suffix(".off")
+        json_path = path.with_suffix(".json").absolute()
+        bin_path = path.with_suffix(".bin").absolute()
+        off_path = path.with_suffix(".off").absolute()
 
         for p in [json_path, off_path, bin_path]:
             assert p.exists(), f"{p} does not exist"
@@ -80,7 +79,8 @@ class DataFile:
         return self.info.position_count
 
     def __getitem__(self, item: int) -> Position:
-        assert item < len(self), f"Index {item} out of bounds in file with {len(self)} positions"
+        if not (0 <= item < len(self)):
+            raise IndexError(f"Index {item} out of bounds in file with {len(self)} positions")
 
         # lock to ensure no other thread starts seeking to another position
         with self.lock:
@@ -98,7 +98,7 @@ class DataFile:
             self.bin_handle.seek(start_offset)
             data = self.bin_handle.read(end_offset - start_offset)
 
-        return Position(self.info.game, data)
+        return Position(self.info.game, self.info.scalar_names, data)
 
     def close(self):
         self.bin_handle.close()

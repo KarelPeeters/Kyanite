@@ -6,28 +6,36 @@ import torch
 from lib.games import Game
 from lib.util import DEVICE, prod
 
-POSITION_INFO_SCALAR_COUNT = 6 + 4 * 3
-
 
 # TODO properly parse column headers here instead of depending on indices
 class Position:
-    def __init__(self, game: Game, data: bytes):
+    def __init__(self, game: Game, scalar_names: List[str], data: bytes):
         data = Taker(data)
 
-        scalars = Taker(np.frombuffer(data.take(POSITION_INFO_SCALAR_COUNT * 4), dtype=np.float32))
+        scalar_array = np.frombuffer(data.take(len(scalar_names) * 4), dtype=np.float32)
+        scalars = {n: v for n, v in zip(scalar_names, scalar_array)}
 
-        [self.game_id, self.pos_index, self.game_length, self.zero_visits, self.available_moves] = \
-            scalars.take(5).astype(int)
-        self.kdl_policy = scalars.take(1)
+        self.game_id = int(scalars.pop("game_id"))
+        self.pos_index = int(scalars.pop("pos_index"))
+        self.game_length = int(scalars.pop("game_length"))
+        self.zero_visits = int(scalars.pop("zero_visits"))
+        self.available_mv_count = int(scalars.pop("available_mv_count"))
 
-        self.final_v = scalars.take(1)
-        self.final_wdl = scalars.take(3)
-        self.zero_v = scalars.take(1)
-        self.zero_wdl = scalars.take(3)
-        self.net_v = scalars.take(1)
-        self.net_wdl = scalars.take(3)
+        played_mv_float = scalars.pop("played_mv", None)
+        self.played_mv = int(played_mv_float) if played_mv_float is not None else None
 
-        scalars.finish()
+        self.kdl_policy = scalars.pop("kdl_policy")
+
+        self.final_v = scalars.pop("final_v")
+        self.zero_v = scalars.pop("zero_v")
+        self.net_v = scalars.pop("net_v")
+
+        self.final_wdl = np.array([scalars.pop("final_wdl_w"), scalars.pop("final_wdl_d"), scalars.pop("final_wdl_l")])
+        self.zero_wdl = np.array([scalars.pop("zero_wdl_w"), scalars.pop("zero_wdl_d"), scalars.pop("zero_wdl_l")])
+        self.net_wdl = np.array([scalars.pop("net_wdl_w"), scalars.pop("net_wdl_d"), scalars.pop("net_wdl_l")])
+
+        if len(scalars):
+            print(f"Leftover scalars: {list(scalars.keys())}")
 
         bool_count = prod(game.input_bool_shape)
         bit_buffer = np.frombuffer(data.take((bool_count + 7) // 8), dtype=np.uint8)
@@ -35,15 +43,15 @@ class Position:
         self.input_bools = bool_buffer[:bool_count]
         self.input_scalars = np.frombuffer(data.take(game.input_scalar_channels * 4), dtype=np.float32)
 
-        self.policy_indices = np.frombuffer(data.take(self.available_moves * 4), dtype=np.int32)
-        self.policy_values = np.frombuffer(data.take(self.available_moves * 4), dtype=np.float32)
+        self.policy_indices = np.frombuffer(data.take(self.available_mv_count * 4), dtype=np.int32)
+        self.policy_values = np.frombuffer(data.take(self.available_mv_count * 4), dtype=np.float32)
 
         data.finish()
 
 
 class PositionBatch:
     def __init__(self, game: Game, positions: List[Position], pin_memory: bool):
-        self.max_available_moves = max(p.available_moves for p in positions)
+        self.max_available_moves = max(p.available_mv_count for p in positions)
 
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
@@ -61,8 +69,8 @@ class PositionBatch:
             all_wdls[i, 0:3] = torch.from_numpy(p.final_wdl)
             all_wdls[i, 3:6] = torch.from_numpy(p.zero_wdl)
             all_wdls[i, 6:9] = torch.from_numpy(p.net_wdl)
-            policy_indices[i, :p.available_moves] = torch.from_numpy(p.policy_indices.copy())
-            policy_values[i, :p.available_moves] = torch.from_numpy(p.policy_values.copy())
+            policy_indices[i, :p.available_mv_count] = torch.from_numpy(p.policy_indices.copy())
+            policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
         self.input_full = input_full.to(DEVICE)
         self.policy_indices = policy_indices.to(DEVICE)
