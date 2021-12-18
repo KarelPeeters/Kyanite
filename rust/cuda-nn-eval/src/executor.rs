@@ -211,7 +211,7 @@ fn record_graph(handles: &Handles, steps: &[Step]) -> GraphPlan {
         }
 
         assert_eq!(steps_before, (0..steps_before.len()).collect_vec());
-        assert_eq!(steps_after, (steps_after.len()..(steps.len() - steps_after.len())).collect_vec());
+        assert_eq!(steps_after, ((steps.len() - steps_after.len())..steps.len()).collect_vec());
 
         let graph = handles.cudnn.stream().end_capture();
         let graph_exec = graph.instantiate();

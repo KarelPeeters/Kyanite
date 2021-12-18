@@ -45,6 +45,10 @@ pub fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expec
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true, false);
     assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
 
+    println!("Testing Cudnn with graph");
+    let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true, true);
+    assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
+
     cpu_outputs
 }
 
