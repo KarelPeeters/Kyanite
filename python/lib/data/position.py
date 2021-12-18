@@ -7,7 +7,6 @@ from lib.games import Game
 from lib.util import DEVICE, prod
 
 
-# TODO properly parse column headers here instead of depending on indices
 class Position:
     def __init__(self, game: Game, scalar_names: List[str], data: bytes):
         data = Taker(data)
@@ -55,6 +54,7 @@ class PositionBatch:
 
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
+        all_values = torch.empty(len(positions), 3, pin_memory=pin_memory)
 
         policy_indices = torch.zeros(len(positions), self.max_available_moves, dtype=torch.int64, pin_memory=pin_memory)
         policy_values = torch.empty(len(positions), self.max_available_moves, pin_memory=pin_memory)
@@ -69,6 +69,10 @@ class PositionBatch:
             all_wdls[i, 0:3] = torch.from_numpy(p.final_wdl)
             all_wdls[i, 3:6] = torch.from_numpy(p.zero_wdl)
             all_wdls[i, 6:9] = torch.from_numpy(p.net_wdl)
+            all_values[i, 0] = torch.from_numpy(p.final_v)
+            all_values[i, 1] = torch.from_numpy(p.zero_v)
+            all_values[i, 2] = torch.from_numpy(p.net_v)
+
             policy_indices[i, :p.available_mv_count] = torch.from_numpy(p.policy_indices.copy())
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
@@ -77,16 +81,13 @@ class PositionBatch:
         self.policy_values = policy_values.to(DEVICE)
 
         self.all_wdls = all_wdls.to(DEVICE)
+        self.all_values = all_values.to(DEVICE)
         self.wdl_final = self.all_wdls[:, 0:3]
         self.wdl_zero = self.all_wdls[:, 3:6]
         self.wdl_net = self.all_wdls[:, 6:9]
-
-    # TODO use the proper value column for this instead
-    def value_zero(self):
-        return self.wdl_zero[:, 0] - self.wdl_zero[:, 2]
-
-    def value_final(self):
-        return self.wdl_final[:, 0] - self.wdl_final[:, 2]
+        self.v_final = self.all_values[:, 0]
+        self.v_zero = self.all_values[:, 1]
+        self.v_net = self.all_values[:, 2]
 
     def __len__(self):
         return len(self.input_full)

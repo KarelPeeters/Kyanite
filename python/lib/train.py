@@ -78,7 +78,7 @@ class TrainSettings:
         value = torch.tanh(value_logit)
         wdl = nnf.softmax(wdl_logit, -1)
 
-        batch_value = value_target.pick(final=batch.value_final(), zero=batch.value_zero())
+        batch_value = value_target.pick(final=batch.v_final, zero=batch.v_zero)
         batch_wdl = value_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
 
         # losses
