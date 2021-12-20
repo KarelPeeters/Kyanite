@@ -50,15 +50,17 @@ class LoopSettings:
     initial_network: Callable[[], nn.Module]
     only_generate: bool
 
-    target_buffer_size: int
-    train_steps_per_gen: int
+    min_buffer_size: int
+    max_buffer_size: int
+
+    train_batch_size: int
+    samples_per_position: float
 
     # TODO re-implement testing
     # test_fraction: float
     # eval_steps_per_gen: int
 
     optimizer: Callable[[Iterator[nn.Parameter]], Optimizer]
-    train_batch_size: int
 
     fixed_settings: FixedSelfplaySettings
     selfplay_settings: Optional[SelfplaySettings]
@@ -80,6 +82,40 @@ class LoopSettings:
     @property
     def training_path(self):
         return os.path.join(self.root_path, "training")
+
+    def calc_batch_count_per_gen(self) -> int:
+        game = self.fixed_settings.game
+        positions_in_buffer = self.max_buffer_size
+
+        # this does not depend on gens_in_buffer since that divides itself away
+        positions_per_gen = game.estimate_moves_per_game * self.fixed_settings.games_per_gen
+        batch_count = self.samples_per_position * positions_per_gen / self.train_batch_size
+
+        batch_count_int = round(batch_count)
+        if batch_count_int == 0:
+            batch_count_int = 1
+
+        # extra calculations for prints
+        gens_in_buffer = positions_in_buffer / positions_per_gen
+        games_in_buffer = gens_in_buffer * self.fixed_settings.games_per_gen
+        samples_per_game = self.samples_per_position * game.estimate_moves_per_game
+        samples_per_gen = samples_per_game * self.fixed_settings.games_per_gen
+
+        print("Behaviour estimates:")
+        print(f"  Gen:")
+        print(f"    {self.fixed_settings.games_per_gen} games")
+        print(f"    {positions_per_gen} positions")
+        print(f"  Buffer:")
+        print(f"    {gens_in_buffer:.4} gens")
+        print(f"    {games_in_buffer:.4} games")
+        print(f"    {positions_in_buffer} positions")
+        print(f"  Sampling rate:")
+        print(f"    {samples_per_gen:.4} /gen")
+        print(f"    {samples_per_game:.4} /game")
+        print(f"    {self.samples_per_position:.4} /position")
+        print(f"Calculated {batch_count:.4} -> {batch_count_int} batches per gen")
+
+        return batch_count_int
 
     def run_loop(self):
         print(f"Starting loop with cwd {os.getcwd()}")
@@ -117,6 +153,7 @@ class LoopSettings:
     ):
         game = self.fixed_settings.game
         optimizer = self.optimizer(network.parameters())
+        batch_count_per_gen = self.calc_batch_count_per_gen()
 
         startup_settings = self.fixed_settings.to_startup(
             output_folder=self.selfplay_path,
@@ -142,6 +179,11 @@ class LoopSettings:
                 print("Not training new network, we're only generating data")
                 continue
 
+            if buffer.position_count < self.min_buffer_size:
+                print(
+                    f"Not training new network yet, only got {buffer.position_count}/{self.min_buffer_size} positions")
+                continue
+
             client.send_wait_for_new_network()
 
             gen = Generation.from_gi(self, gi)
@@ -154,7 +196,7 @@ class LoopSettings:
             print(f"Training network on buffer with size {len(train_sampler)}")
             train_start = time.perf_counter()
 
-            for bi in range(self.train_steps_per_gen):
+            for bi in range(batch_count_per_gen):
                 if bi != 0:
                     logger.start_batch()
 
@@ -175,7 +217,7 @@ class LoopSettings:
 
     def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module, str]:
         game = self.fixed_settings.game
-        buffer = LoopBuffer(game, self.target_buffer_size)
+        buffer = LoopBuffer(game, self.max_buffer_size)
 
         for gi in itertools.count():
             gen = Generation.from_gi(self, gi)
@@ -256,23 +298,26 @@ class LoopBuffer:
         self.pool = ThreadPool(2)
         self.target_positions = target_positions
 
-        self.current_positions = 0
+        self.position_count = 0
+        self.game_count = 0
         self.files: List[DataFile] = []
 
     def append(self, logger: Optional[Logger], file: DataFile):
-        self.files.append(file)
-        self.current_positions += len(file)
+        assert file.info.game == self.game, f"Expected game {self.game.name}, got game {file.info.game.name}"
 
-        while self.current_positions - len(self.files[0]) > self.target_positions:
-            self.current_positions -= len(self.files[0])
+        self.files.append(file)
+        self.position_count += len(file)
+        self.game_count += file.info.game_count
+
+        while self.position_count - len(self.files[0]) > self.target_positions:
+            self.position_count -= len(self.files[0])
+            self.game_count -= self.files[0].info.game_count
             del self.files[0]
 
         if logger:
-            total_games = sum(f.info.game_count for f in self.files)
-
             logger.log("buffer", "gens", len(self.files))
-            logger.log("buffer", "games", total_games)
-            logger.log("buffer", "positions", self.current_positions)
+            logger.log("buffer", "games", self.game_count)
+            logger.log("buffer", "positions", self.position_count)
 
             info = file.info
 
