@@ -130,7 +130,7 @@ class LoopSettings:
 
         if self.gui:
             app = qt_app()
-            plotter = LogPlotter()
+            plotter = LogPlotter("loop", False)
             plotter.update(logger)
         else:
             app = None

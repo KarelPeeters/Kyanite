@@ -94,7 +94,7 @@ def main():
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
     schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [900, 2_000]))
 
-    plotter = LogPlotter()
+    plotter = LogPlotter(f"supervised {output_folder}", True)
     plotter.update(logger)
 
     def thread_main():

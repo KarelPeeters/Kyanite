@@ -6,7 +6,7 @@ def show_log(path: str):
     logger = Logger.load(path)
 
     app = qt_app()
-    plotter = LogPlotter()
+    plotter = LogPlotter(f"log {path}", False)
     plotter.update(logger)
     app.exec()
 

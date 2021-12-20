@@ -18,7 +18,7 @@ class LogPlotter(QObject):
     update_logger_slot = pyqtSignal(object)
     update_control_slot = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, title: str, can_pause: bool):
         super().__init__()
 
         self.prev_data = None
@@ -30,7 +30,7 @@ class LogPlotter(QObject):
         # noinspection PyUnresolvedReferences
         self.update_control_slot.connect(self.on_update_control)
 
-        self.create_window()
+        self.create_window(title, can_pause)
 
         self.plot_widgets: Dict[str, PlotWidget] = {}
         self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
@@ -41,11 +41,11 @@ class LogPlotter(QObject):
         # noinspection PyUnresolvedReferences
         self.update_logger_slot.emit(logger.finished_data())
 
-    def create_window(self):
+    def create_window(self, title: str, can_pause: bool):
         set_pg_defaults()
 
         self.window = QMainWindow()
-        self.window.setWindowTitle("kZero training progress")
+        self.window.setWindowTitle(f"kZero: {title}")
         self.window.setWindowFlag(Qt.WindowCloseButtonHint, False)
 
         self.window.resize(800, 500)
@@ -61,6 +61,7 @@ class LogPlotter(QObject):
 
         self.pauseButton = QPushButton("Pause")
         control_layout.addWidget(self.pauseButton)
+        self.pauseButton.setEnabled(can_pause)
         self.pauseButton.pressed.connect(self.on_pause_pressed)
 
         autoRangeButton = QPushButton("Reset view")
