@@ -47,7 +47,10 @@ class FixedSelfplaySettings:
 class LoopSettings:
     gui: bool
     root_path: str
+
     initial_network: Callable[[], nn.Module]
+    initial_data_files: List[DataFile]
+
     only_generate: bool
 
     min_buffer_size: int
@@ -219,6 +222,9 @@ class LoopSettings:
         game = self.fixed_settings.game
         buffer = LoopBuffer(game, self.max_buffer_size)
 
+        for file in self.initial_data_files:
+            buffer.append(None, file)
+
         for gi in itertools.count():
             gen = Generation.from_gi(self, gi)
             prev = gen.prev
@@ -310,9 +316,12 @@ class LoopBuffer:
         self.game_count += file.info.game_count
 
         while self.position_count - len(self.files[0]) > self.target_positions:
-            self.position_count -= len(self.files[0])
-            self.game_count -= self.files[0].info.game_count
+            old_file = self.files[0]
             del self.files[0]
+
+            self.position_count -= len(old_file)
+            self.game_count -= old_file.info.game_count
+            old_file.close()
 
         if logger:
             logger.log("buffer", "gens", len(self.files))

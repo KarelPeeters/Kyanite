@@ -1,8 +1,10 @@
+import glob
 import sys
 
 import torch
 from torch.optim import SGD
 
+from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.selfplay_client import SelfplaySettings
@@ -49,11 +51,16 @@ def main():
     def initial_network():
         return torch.jit.load("data/large_att_cs_continue_1_network_8320.pb")
 
+    initial_files_pattern = ""
+
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
         root_path=f"data/loop/{game.name}/continue",
+
         initial_network=initial_network,
+        initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
+
         only_generate=True,
 
         min_buffer_size=500_000,
