@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import Enum, auto
 
 import numpy as np
 import torch
@@ -15,16 +14,25 @@ from lib.logger import Logger
 from lib.util import calc_gradient_norms
 
 
-class ValueTarget(Enum):
-    Final = auto()
-    Zero = auto()
+class ValueTarget:
+    Final: 'ValueTarget'
+    Zero: 'ValueTarget'
+
+    def __init__(self, final: float):
+        assert 0.0 <= final <= 1.0
+        self.final = final
 
     def pick(self, final, zero):
-        if self == ValueTarget.Final:
+        if self.final == 1.0:
             return final
-        if self == ValueTarget.Zero:
+        if self.final == 0.0:
             return zero
-        assert False, self
+
+        return self.final * final + (1.0 - self.final) * zero
+
+
+ValueTarget.Final = ValueTarget(1.0)
+ValueTarget.Zero = ValueTarget(0.0)
 
 
 @dataclass
