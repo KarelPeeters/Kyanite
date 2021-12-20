@@ -11,7 +11,7 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import PostActNetwork, PostActValueHead, PostActConvPolicyHead, PostActAttentionPolicyHead
+from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
 from lib.plotter import LogPlotter, qt_app
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
@@ -35,9 +35,9 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 def main():
     app = qt_app()
 
-    train_pattern = f"../../data/lichess/*.json"
-    test_pattern = f"../../data/lichess/*.json"
-    output_folder = "../../data/supervised/att_repro/"
+    train_pattern = ""
+    test_pattern = ""
+    output_folder = ""
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -49,12 +49,12 @@ def main():
 
     settings = TrainSettings(
         game=game,
-        value_target=ValueTarget.Zero,
-        wdl_weight=0.5,
-        value_weight=0.5,
+        value_target=ValueTarget.Final,
+        wdl_weight=0.9,
+        value_weight=0.1,
         policy_weight=1.0,
         clip_norm=100,
-        train_in_eval_mode=True,
+        train_in_eval_mode=False,
     )
 
     train_files = [DataFile.open(game, path) for path in glob.glob(train_pattern)]
@@ -92,7 +92,7 @@ def main():
     print_param_count(network)
 
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
-    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [1_000, 1_000]))
+    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [900, 2_000]))
 
     plotter = LogPlotter()
     plotter.update(logger)
@@ -105,7 +105,7 @@ def main():
             test_steps, save_steps,
         )
 
-        # currently these never trigger (since the loop never stops), but that may change in the future
+        # currently, these never trigger (since the loop never stops), but that may change in the future
         train_sampler.close()
         test_sampler.close()
 
