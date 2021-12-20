@@ -23,11 +23,11 @@ class Position:
         played_mv_float = scalars.pop("played_mv", None)
         self.played_mv = int(played_mv_float) if played_mv_float is not None else None
 
-        self.kdl_policy = scalars.pop("kdl_policy")
+        self.kdl_policy = float(scalars.pop("kdl_policy"))
 
-        self.final_v = scalars.pop("final_v")
-        self.zero_v = scalars.pop("zero_v")
-        self.net_v = scalars.pop("net_v")
+        self.final_v = float(scalars.pop("final_v"))
+        self.zero_v = float(scalars.pop("zero_v"))
+        self.net_v = float(scalars.pop("net_v"))
 
         self.final_wdl = np.array([scalars.pop("final_wdl_w"), scalars.pop("final_wdl_d"), scalars.pop("final_wdl_l")])
         self.zero_wdl = np.array([scalars.pop("zero_wdl_w"), scalars.pop("zero_wdl_d"), scalars.pop("zero_wdl_l")])
@@ -69,9 +69,9 @@ class PositionBatch:
             all_wdls[i, 0:3] = torch.from_numpy(p.final_wdl)
             all_wdls[i, 3:6] = torch.from_numpy(p.zero_wdl)
             all_wdls[i, 6:9] = torch.from_numpy(p.net_wdl)
-            all_values[i, 0] = torch.from_numpy(p.final_v)
-            all_values[i, 1] = torch.from_numpy(p.zero_v)
-            all_values[i, 2] = torch.from_numpy(p.net_v)
+            all_values[i, 0] = p.final_v
+            all_values[i, 1] = p.zero_v
+            all_values[i, 2] = p.net_v
 
             policy_indices[i, :p.available_mv_count] = torch.from_numpy(p.policy_indices.copy())
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
