@@ -269,18 +269,18 @@ impl<B: Board> GameState<B> {
         let settings = ctx.settings;
 
         let tree = &self.search.tree;
-        let policy = tree.policy().collect_vec();
+
+        // extract both evaluations
+        let net_evaluation = self.search.root_net_eval.take().unwrap();
+        let zero_evaluation = tree.eval();
 
         //pick a move to play
         let move_selector = MoveSelector::new(settings.temperature, settings.zero_temp_move_count);
-        let picked_index = move_selector.select(self.positions.len() as u32, policy.iter().copied(), ctx.rng);
+        let picked_index = move_selector.select(self.positions.len() as u32, zero_evaluation.policy.as_ref(), ctx.rng);
         let picked_child = tree[0].children.unwrap().get(picked_index);
         let picked_move = tree[picked_child].last_move.unwrap();
 
-        //store this position
-        let net_evaluation = self.search.root_net_eval.take().unwrap();
-        let zero_evaluation = ZeroEvaluation { values: tree.values(), policy: Cow::Owned(policy) };
-
+        // store this position
         self.positions.push(Position {
             board: tree.root_board().inner().clone(),
             should_store: self.search.is_full_search,

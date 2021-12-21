@@ -50,7 +50,7 @@ impl ZeroEvaluation<'_> {
 pub trait Network<B: Board>: Debug {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>>;
 
-    fn evaluate(&mut self, board: &B) -> ZeroEvaluation {
+    fn evaluate(&mut self, board: &B) -> ZeroEvaluation<'static> {
         let mut result = self.evaluate_batch(&[board]);
         assert_eq!(result.len(), 1);
         result.pop().unwrap()

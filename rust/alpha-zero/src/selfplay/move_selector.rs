@@ -30,22 +30,20 @@ impl MoveSelector {
 }
 
 impl MoveSelector {
-    pub fn select(&self, move_count: u32, policy: impl IntoIterator<Item=f32>, rng: &mut impl Rng) -> usize {
+    pub fn select(&self, move_count: u32, policy: &[f32], rng: &mut impl Rng) -> usize {
         let temperature = if move_count >= self.zero_temp_move_count { 0.0 } else { self.temperature };
         assert!(temperature >= 0.0);
-
-        let policy = policy.into_iter();
 
         // we handle the extreme cases separately, in theory that would not be necessary but they're degenerate
         if temperature == 0.0 {
             // pick the best move
-            policy.map(N32::from).position_max().unwrap()
+            policy.iter().copied().map(N32::from).position_max().unwrap()
         } else if temperature == f32::INFINITY {
             // pick a random move
-            rng.gen_range(0..policy.count())
+            rng.gen_range(0..policy.len())
         } else {
             // pick according to `policy ** (1/temperature)`
-            let policy_temp = policy.map(|p| p.powf(1.0 / temperature));
+            let policy_temp = policy.iter().map(|p| p.powf(1.0 / temperature));
             let distr = WeightedIndex::new(policy_temp).unwrap();
             rng.sample(distr)
         }

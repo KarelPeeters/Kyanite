@@ -6,6 +6,7 @@ use board_game::board::{Board, Outcome};
 use board_game::wdl::OutcomeWDL;
 use itertools::Itertools;
 
+use crate::network::ZeroEvaluation;
 use crate::util::display_option;
 use crate::zero::node::{Node, ZeroValues};
 use crate::zero::range::IdxRange;
@@ -92,6 +93,13 @@ impl<B: Board> Tree<B> {
         self[0].children.unwrap().iter().map(move |c| {
             (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32)
         })
+    }
+
+    pub fn eval(&self) -> ZeroEvaluation<'static> {
+        ZeroEvaluation {
+            values: self.values(),
+            policy: self.policy().collect(),
+        }
     }
 
     /// Return a new tree containing the nodes that are still relevant after playing the given move.
