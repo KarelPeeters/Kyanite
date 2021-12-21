@@ -1,5 +1,6 @@
 use board_game::board::Board;
 use board_game::wdl::{Flip, OutcomeWDL, POV};
+use decorum::N32;
 use internal_iterator::InternalIterator;
 
 use crate::network::ZeroEvaluation;
@@ -87,7 +88,9 @@ pub fn zero_step_gather<B: Board>(
         let parent_total_visits = tree[curr_node].total_visits();
 
         let selected = children.iter().max_by_key(|&child| {
-            tree[child].uct(parent_total_visits, fpu_mode.select(fpu), exploration_weight, use_value)
+            let x = tree[child].uct(parent_total_visits, fpu_mode.select(fpu), use_value)
+                .total(exploration_weight);
+            N32::from_inner(x)
         }).expect("Board is not done, this node should have a child");
 
         curr_node = selected;

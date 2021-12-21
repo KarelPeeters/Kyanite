@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 
 use board_game::wdl::{Flip, OutcomeWDL, WDL};
-use decorum::N32;
 
 use crate::zero::range::IdxRange;
 
@@ -36,6 +35,18 @@ pub struct Node<M> {
     pub net_values: Option<ZeroValues>,
     /// The policy/prior probability as evaluated by the network when the parent node was expanded.
     pub net_policy: f32,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct UCT {
+    pub q: f32,
+    pub u: f32,
+}
+
+impl UCT {
+    pub fn total(self, exploration_weight: f32) -> f32 {
+        self.q + exploration_weight * self.u
+    }
 }
 
 impl<N> Node<N> {
@@ -87,7 +98,7 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, exploration_weight: f32, use_value: bool) -> N32 {
+    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> UCT {
         let total_visits = self.total_visits();
 
         let data = if total_visits == 0 {
@@ -105,7 +116,7 @@ impl<N> Node<N> {
         let q = (v + 1.0) / 2.0;
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
 
-        N32::from(q + exploration_weight * u)
+        UCT { q, u }
     }
 }
 
