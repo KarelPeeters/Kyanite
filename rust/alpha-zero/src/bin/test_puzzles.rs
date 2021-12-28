@@ -78,7 +78,7 @@ fn main() {
                 let net_mv = tree[net_best_child].last_move.unwrap();
                 let net_mv_policy = tree[net_best_child].net_policy;
 
-                let zero_mv = tree.best_move();
+                let zero_mv = tree.best_move().unwrap();
                 let zero_best_child = tree[0].children.unwrap().iter().find(|&c| tree[c].last_move == Some(zero_mv)).unwrap();
                 let zero_mv_policy = tree[zero_best_child].complete_visits as f32 / (tree[0].complete_visits - 1) as f32;
 

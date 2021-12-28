@@ -107,7 +107,7 @@ impl<B: Board, N: Network<B>, O: Oracle<B>> Bot<B> for ZeroBot<B, N, O> {
             return eval.best_move.unwrap();
         }
 
-        self.build_tree(board).best_move()
+        self.build_tree(board).best_move().unwrap()
     }
 }
 

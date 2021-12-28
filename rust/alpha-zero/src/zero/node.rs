@@ -44,6 +44,10 @@ pub struct UCT {
 }
 
 impl UCT {
+    pub fn nan() -> UCT {
+        UCT { q: f32::NAN, u: f32::NAN }
+    }
+
     pub fn total(self, exploration_weight: f32) -> f32 {
         self.q + exploration_weight * self.u
     }
@@ -102,6 +106,10 @@ impl<N> Node<N> {
     }
 
     pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> UCT {
+        if parent_total_visits == 0 {
+            return UCT::nan();
+        }
+
         let total_visits = self.total_visits();
 
         let data = if total_visits == 0 {

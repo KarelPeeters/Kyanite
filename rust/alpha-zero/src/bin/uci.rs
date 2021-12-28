@@ -116,7 +116,7 @@ fn main() -> std::io::Result<()> {
 
                     if let Some(tree) = &tree {
                         let best_move = if tree.root_visits() > 0 {
-                            tree.best_move()
+                            tree.best_move().unwrap()
                         } else {
                             let moves: Vec<_> = tree.root_board().available_moves().collect();
                             *moves.choose(&mut thread_rng()).unwrap()

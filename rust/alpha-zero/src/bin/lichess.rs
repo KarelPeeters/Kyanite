@@ -118,7 +118,7 @@ async fn make_move(
     });
 
     println!("{}", tree.display(3, true, 5));
-    let mv = tree.best_move();
+    let mv = tree.best_move().unwrap();
 
     if let Err(e) = lichess.make_a_bot_move(&game.game_id, &mv.to_string(), false).await {
         // can happen when the other player resigns or aborts the game

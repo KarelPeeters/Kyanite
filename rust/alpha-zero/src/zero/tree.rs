@@ -35,19 +35,19 @@ impl<B: Board> Tree<B> {
     }
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
-        let best_child = self[node].children?.iter().max_by_key(|&child| {
-            (
-                self[child].complete_visits,
-                decorum::Total::from(self[child].net_policy),
-            )
-        }).unwrap();
-        Some(best_child)
+        self[node].children.map(|children| {
+            children.iter().max_by_key(|&child| {
+                (
+                    self[child].complete_visits,
+                    decorum::Total::from(self[child].net_policy),
+                )
+            }).unwrap()
+        })
     }
 
     //TODO this doesn't really work for oracle moves any more
-    pub fn best_move(&self) -> B::Move {
-        assert!(self.len() > 1, "Must have run for at least 1 iteration");
-        self[self.best_child(0).unwrap()].last_move.unwrap()
+    pub fn best_move(&self) -> Option<B::Move> {
+        self.best_child(0).map(|c| self[c].last_move.unwrap())
     }
 
     pub fn principal_variation(&self, max_len: usize) -> Vec<B::Move> {
@@ -175,10 +175,11 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
 
         if self.curr_depth == 0 {
             let data = tree.values();
+
             writeln!(
                 f,
                 "values: {}, best_move: {}, depth: {:?}",
-                data, tree.best_move(), tree.depth_range(0)
+                data, display_option(tree.best_move()), tree.depth_range(0)
             )?;
             writeln!(f, "[move: terminal visits zero(v, w/d/l, policy) net(v, w/d/l, policy), uct(q, u)]")?;
         }
@@ -209,7 +210,12 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let parent_total_visits = parent.map_or(node.total_visits(), |p| p.total_visits());
         let parent_fpu = parent.map_or(ZeroValues::nan(), |p| p.values().flip());
 
-        let zero_policy = (node.complete_visits as f32) / ((parent_complete_visits - 1) as f32);
+        let zero_policy = if parent_complete_visits > 0 {
+            (node.complete_visits as f32) / ((parent_complete_visits - 1) as f32)
+        } else {
+            f32::NAN
+        };
+
         // TODO use the settings actually used to build the tree here
         let uct = node.uct(parent_total_visits, parent_fpu, false);
 
