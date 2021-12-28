@@ -53,9 +53,11 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
 }
 
 pub fn softmax_in_place(slice: &mut [f32]) {
+    let max = slice.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+
     let mut sum = 0.0;
     for v in slice.iter_mut() {
-        *v = v.exp();
+        *v = (*v - max).exp();
         sum += *v;
     }
     assert!(sum > 0.0, "Softmax input sum must be strictly positive, was {}", sum);

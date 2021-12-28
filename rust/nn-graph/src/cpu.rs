@@ -151,6 +151,7 @@ pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
         D: ndarray::RemoveAxis,
         S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
 {
+    //TODO use a more numerically stable implementation, see softmax_in_place
     let mut result = array.to_owned();
     result.map_inplace(|x: &mut f32| *x = x.exp());
     let sum = result.sum_axis(axis).insert_axis(axis);
