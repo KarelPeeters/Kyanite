@@ -1,14 +1,11 @@
 from lib.logger import Logger
-from lib.plotter import qt_app, LogPlotter
+from lib.plotter import run_with_plotter
 
 
 def show_log(path: str):
     logger = Logger.load(path)
 
-    app = qt_app()
-    plotter = LogPlotter(f"log {path}", False)
-    plotter.update(logger)
-    app.exec()
+    run_with_plotter(lambda plotter: plotter.update(logger))
 
 
 if __name__ == '__main__':

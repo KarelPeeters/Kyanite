@@ -24,7 +24,7 @@ def supervised_loop(
         test_steps: int, save_steps: int,
 ):
     for bi in itertools.count(start_bi):
-        plotter.running.wait()
+        plotter.block_while_paused()
 
         print(f"Starting batch {bi}")
         logger.start_batch()

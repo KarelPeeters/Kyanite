@@ -1,5 +1,6 @@
-from threading import Event
-from typing import Dict, Tuple
+import time
+from threading import Event, Lock, Thread
+from typing import Dict, Tuple, Callable, Optional
 
 import darkdetect
 import numpy as np
@@ -7,8 +8,8 @@ import pyqtgraph as pg
 import scipy.signal
 from PyQt5.QtCore import pyqtSignal, QObject, Qt
 from PyQt5.QtGui import QColor, QColorConstants
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
-    QSlider, QLabel
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
+    QSlider, QLabel, QApplication
 from pyqtgraph import PlotWidget
 
 from lib.logger import Logger, LoggerData
@@ -18,7 +19,7 @@ class LogPlotter(QObject):
     update_logger_slot = pyqtSignal(object)
     update_control_slot = pyqtSignal()
 
-    def __init__(self, title: str, can_pause: bool):
+    def __init__(self):
         super().__init__()
 
         self.prev_data = None
@@ -30,22 +31,27 @@ class LogPlotter(QObject):
         # noinspection PyUnresolvedReferences
         self.update_control_slot.connect(self.on_update_control)
 
-        self.create_window(title, can_pause)
+        self.create_window()
 
         self.plot_widgets: Dict[str, PlotWidget] = {}
         self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
 
         self.on_update_control()
 
+    def set_title(self, title: str):
+        self.window.setWindowTitle(f"kZero: {title}")
+
+    def set_can_pause(self, can_pause: bool):
+        self.pauseButton.setEnabled(can_pause)
+
     def update(self, logger: Logger):
         # noinspection PyUnresolvedReferences
         self.update_logger_slot.emit(logger.finished_data())
 
-    def create_window(self, title: str, can_pause: bool):
+    def create_window(self):
         set_pg_defaults()
 
         self.window = QMainWindow()
-        self.window.setWindowTitle(f"kZero: {title}")
         self.window.setWindowFlag(Qt.WindowCloseButtonHint, False)
 
         self.window.resize(800, 500)
@@ -61,7 +67,7 @@ class LogPlotter(QObject):
 
         self.pauseButton = QPushButton("Pause")
         control_layout.addWidget(self.pauseButton)
-        self.pauseButton.setEnabled(can_pause)
+        self.pauseButton.setEnabled(False)
         self.pauseButton.pressed.connect(self.on_pause_pressed)
 
         autoRangeButton = QPushButton("Reset view")
@@ -99,6 +105,9 @@ class LogPlotter(QObject):
         else:
             self.running.set()
             self.pauseButton.setText("Pause")
+
+    def block_while_paused(self):
+        self.running.wait()
 
     def widget_for_group(self, g: str):
         if g in self.plot_widgets:
@@ -163,11 +172,6 @@ def clean_data(axis, values, window_size: int):
     return axis, clean_values
 
 
-def qt_app():
-    app = QApplication([])
-    return app
-
-
 def generate_distinct_colors(s: float, v: float, n: int):
     return [QColor.fromHsvF(h, s, v) for h in np.linspace(0, 1, num=n, endpoint=False)]
 
@@ -180,3 +184,40 @@ def set_pg_defaults():
         pg.setConfigOption('background', QColorConstants.LightGray.lighter())
         pg.setConfigOption('foreground', QColorConstants.Black)
     pg.setConfigOption('antialias', True)
+
+
+def run_with_plotter(target: Callable[[LogPlotter], None]):
+    """
+    Run the given function with a newly constructed `LogPlotter`.
+    This ensures the QApplication and GUI elements are created on a new thread, which then becomes the QT event loop.
+    If a KeyboardInterrupt exception is thrown the QT event loop is also stopped allowing the program to fully exit.
+    """
+
+    plotter: Optional[LogPlotter] = None
+    lock = Lock()
+    lock.acquire()
+
+    def gui_main():
+        nonlocal plotter
+        app = QApplication([])
+
+        plotter = LogPlotter()
+        lock.release()
+
+        app.exec()
+
+    gui_thread = Thread(target=gui_main)
+
+    try:
+        gui_thread.start()
+        lock.acquire()
+
+        target(plotter)
+
+        # if target finishes, we still need to keep this thread alive to detect KeyboardInterrupt
+        while True:
+            time.sleep(1000.0)
+
+    except KeyboardInterrupt as e:
+        QApplication.quit()
+        raise e

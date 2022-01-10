@@ -4,7 +4,6 @@ import time
 from dataclasses import dataclass
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-from threading import Thread
 from typing import Callable, Optional, Tuple, Iterator, List
 
 import torch
@@ -15,7 +14,7 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.plotter import LogPlotter, qt_app
+from lib.plotter import LogPlotter, run_with_plotter
 from lib.save_onnx import save_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings
@@ -131,24 +130,19 @@ class LoopSettings:
         start_gen, buffer, logger, network, network_path_onnx = self.load_start_state()
         print_param_count(network)
 
-        if self.gui:
-            app = qt_app()
-            plotter = LogPlotter("loop", False)
-            plotter.update(logger)
-        else:
-            app = None
-            plotter = None
+        def target(plotter: Optional[LogPlotter]):
+            if plotter is not None:
+                plotter.set_title(f"loop: {self.root_path}")
+                plotter.set_can_pause(False)
 
-        args = (start_gen, buffer, logger, plotter, network, network_path_onnx)
+            self.run_loop_inner(start_gen, buffer, logger, plotter, network, network_path_onnx)
 
         if self.gui:
-            thread = Thread(target=self.run_loop_thread, args=args)
-            thread.start()
-            app.exec()
+            run_with_plotter(target)
         else:
-            self.run_loop_thread(*args)
+            target(None)
 
-    def run_loop_thread(
+    def run_loop_inner(
             self,
             start_gen: 'Generation', buffer: 'LoopBuffer',
             logger: Logger, plotter: Optional[LogPlotter],

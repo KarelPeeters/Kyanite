@@ -1,7 +1,6 @@
 import glob
 import os
 import re
-from threading import Thread
 from typing import Optional
 
 import torch
@@ -12,7 +11,7 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
-from lib.plotter import LogPlotter, qt_app
+from lib.plotter import LogPlotter, run_with_plotter
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
 from lib.train import TrainSettings, ValueTarget
@@ -32,12 +31,10 @@ def find_last_finished_batch(path: str) -> Optional[int]:
     return last_finished if last_finished >= 0 else None
 
 
-def main():
-    app = qt_app()
-
-    train_pattern = ""
-    test_pattern = ""
-    output_folder = ""
+def main(plotter: LogPlotter):
+    train_pattern = "../../data/lichess/09.json"
+    test_pattern = "../../data/lichess/09.json"
+    output_folder = "../../data/supervised/derp"
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -49,7 +46,7 @@ def main():
 
     settings = TrainSettings(
         game=game,
-        value_target=ValueTarget.Final,
+        value_target=ValueTarget.Zero,
         wdl_weight=0.9,
         value_weight=0.1,
         policy_weight=1.0,
@@ -94,26 +91,21 @@ def main():
     optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
     schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [900, 2_000]))
 
-    plotter = LogPlotter(f"supervised {output_folder}", True)
+    plotter.set_title(f"supervised {output_folder}")
+    plotter.set_can_pause(True)
     plotter.update(logger)
 
-    def thread_main():
-        supervised_loop(
-            settings, schedule, optimizer,
-            start_bi, output_folder, logger, plotter,
-            network, train_sampler, test_sampler,
-            test_steps, save_steps,
-        )
+    supervised_loop(
+        settings, schedule, optimizer,
+        start_bi, output_folder, logger, plotter,
+        network, train_sampler, test_sampler,
+        test_steps, save_steps,
+    )
 
-        # currently, these never trigger (since the loop never stops), but that may change in the future
-        train_sampler.close()
-        test_sampler.close()
-
-    thread = Thread(target=thread_main, daemon=True)
-    thread.start()
-
-    app.exec()
+    # currently, these never trigger (since the loop never stops), but that may change in the future
+    train_sampler.close()
+    test_sampler.close()
 
 
 if __name__ == '__main__':
-    main()
+    run_with_plotter(main)
