@@ -190,7 +190,7 @@ def run_with_plotter(target: Callable[[LogPlotter], None]):
     """
     Run the given function with a newly constructed `LogPlotter`.
     This ensures the QApplication and GUI elements are created on a new thread, which then becomes the QT event loop.
-    If a KeyboardInterrupt exception is thrown the QT event loop is also stopped allowing the program to fully exit.
+    If an exception is thrown the QT event loop is also stopped allowing the program to fully exit.
     """
 
     plotter: Optional[LogPlotter] = None
@@ -218,6 +218,6 @@ def run_with_plotter(target: Callable[[LogPlotter], None]):
         while True:
             time.sleep(1000.0)
 
-    except KeyboardInterrupt as e:
+    except BaseException as e:
         QApplication.quit()
         raise e
