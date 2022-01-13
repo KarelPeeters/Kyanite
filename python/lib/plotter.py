@@ -15,6 +15,14 @@ from pyqtgraph import PlotWidget
 from lib.logger import Logger, LoggerData
 
 
+class DummyLogPlotter:
+    def update(self, _):
+        pass
+
+    def block_while_paused(self):
+        return
+
+
 class LogPlotter(QObject):
     update_logger_slot = pyqtSignal(object)
     update_control_slot = pyqtSignal()
@@ -213,6 +221,7 @@ def run_with_plotter(target: Callable[[LogPlotter], None]):
         lock.acquire()
 
         target(plotter)
+        print("Main thread finished")
 
         # if target finishes, we still need to keep this thread alive to detect KeyboardInterrupt
         while True:
