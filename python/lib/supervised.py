@@ -68,9 +68,10 @@ def supervised_loop(
             plotter.update(logger)
 
         if bi % save_steps == 0:
+            print("Saving log")
+            logger.save(os.path.join(output_folder, "log.npz"))
+
+            # do this last so we can look for onnx files to continue training
             print("Saving network")
             save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
             torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pb"))
-
-            print("Saving log")
-            logger.save(os.path.join(output_folder, "log.npz"))
