@@ -1,4 +1,5 @@
 import itertools
+import json
 import os
 from typing import Optional
 
@@ -23,6 +24,9 @@ def supervised_loop(
         train_sampler: FileListSampler, test_sampler: FileListSampler,
         test_steps: int, save_steps: int,
 ):
+    with open(os.path.join(output_folder, f"settings_{start_bi}.json"), "w") as settings_f:
+        json.dump(settings, settings_f, default=lambda o: o.__dict__, indent=2)
+
     for bi in itertools.count(start_bi):
         plotter.block_while_paused()
 
