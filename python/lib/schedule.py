@@ -46,8 +46,7 @@ class LinearSchedule(Schedule):
         self.steps = steps
 
     def __call__(self, bi: int) -> float:
-        t = np.clip(bi / self.steps, 0, 1)
-        return (1 - t) * self.initial + t * self.final
+        return lerp_clipped(self.initial, self.final, bi / self.steps)
 
 
 class ExpSchedule(Schedule):
@@ -59,3 +58,20 @@ class ExpSchedule(Schedule):
     def __call__(self, bi: int) -> float:
         t = np.clip(bi / self.steps, 0, 1)
         return self.initial * (self.final / self.initial) ** t
+
+
+class TriSchedule(Schedule):
+    def __init__(self, min: float, max: float, cycle_steps: int):
+        self.min = min
+        self.max = max
+        self.cycle_steps = cycle_steps
+
+    def __call__(self, bi: int) -> float:
+        t = (bi / self.cycle_steps) % 1.0
+        p = min(2 * t, 2 - 2 * t)
+        return lerp_clipped(self.min, self.max, p)
+
+
+def lerp_clipped(a, b, t):
+    t = np.clip(t, 0, 1)
+    return (1 - t) * a + t * b
