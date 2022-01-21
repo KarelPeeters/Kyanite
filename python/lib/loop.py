@@ -132,7 +132,8 @@ class LoopSettings:
 
         def target(plotter: Optional[LogPlotter]):
             if plotter is not None:
-                plotter.set_title(f"loop: {self.root_path}")
+                # TODO why does this crash the plotter?
+                # plotter.set_title(f"loop: {self.root_path}")
                 plotter.set_can_pause(False)
 
             self.run_loop_inner(start_gen, buffer, logger, plotter, network, network_path_onnx)
@@ -163,6 +164,10 @@ class LoopSettings:
         client.send_new_network(network_path_onnx)
 
         for gi in itertools.count(start_gen.gi):
+            if plotter is not None:
+                plotter.update(logger)
+            plotter.block_while_paused()
+
             logger.start_batch()
             logger.log("info", "gen", gi)
 
@@ -176,17 +181,17 @@ class LoopSettings:
                 print("Not training new network, we're only generating data")
                 continue
 
+            gen = Generation.from_gi(self, gi)
+            os.makedirs(gen.train_path, exist_ok=True)
+
+            buffer.append(logger, DataFile.open(game, gen.games_path))
+
             if buffer.position_count < self.min_buffer_size:
                 print(
                     f"Not training new network yet, only got {buffer.position_count}/{self.min_buffer_size} positions")
                 continue
 
             client.send_wait_for_new_network()
-
-            gen = Generation.from_gi(self, gi)
-            os.makedirs(gen.train_path, exist_ok=True)
-
-            buffer.append(logger, DataFile.open(game, gen.games_path))
             self.evaluate_network(buffer, logger, network)
 
             train_sampler = buffer.sampler_full(self.train_batch_size)
@@ -209,9 +214,6 @@ class LoopSettings:
             logger.save(self.log_path)
             Path(gen.finished_path).touch()
 
-            if plotter is not None:
-                plotter.update(logger)
-
     def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module, str]:
         game = self.fixed_settings.game
         buffer = LoopBuffer(game, self.max_buffer_size)
@@ -229,7 +231,14 @@ class LoopSettings:
                     print("Starting new run")
                     logger = Logger()
 
-                    network = torch.jit.script(self.initial_network())
+                    # test if the network actually even works
+                    network_raw = self.initial_network()
+                    network_raw.to(DEVICE)
+                    network_raw(torch.randn(CHECK_BATCH_SIZE, *game.full_input_shape, device=DEVICE))
+                    torch.cuda.synchronize()
+
+                    # convert and save the network
+                    network = torch.jit.script(network_raw)
                     network.to(DEVICE)
 
                     prev_network_path_onnx = self.initial_network_path_onnx

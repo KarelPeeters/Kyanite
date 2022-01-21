@@ -14,5 +14,5 @@ def load_file_lines_to_tensor(name: str):
     return torch.tensor(data, device=DEVICE, dtype=torch.int64)
 
 
-FLAT_TO_CONV = load_file_lines_to_tensor("flat_to_conv.txt")
-FLAT_TO_ATT = load_file_lines_to_tensor("flat_to_att.txt")
+CHESS_FLAT_TO_CONV = load_file_lines_to_tensor("chess_flat_to_conv.txt")
+CHESS_FLAT_TO_ATT = load_file_lines_to_tensor("chess_flat_to_att.txt")

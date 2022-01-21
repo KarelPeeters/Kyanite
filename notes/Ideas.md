@@ -24,6 +24,7 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 
 * add available moves as output for regularization
 * add available moves as input for value head improvement
+* add move and repetition counters (to all games, not just chess)
 
 ### Tower
 
@@ -47,9 +48,9 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 ### Policy head
 
 * more compact policy representations
-    * see LC0 discord for a couple suggestions
+  * see LC0 discord for a couple suggestions
 * attention policy head
-    * with and without separated queen moves
+  * with and without separated queen moves
 * try flat policy head
 
 ## Network inference performance
@@ -58,7 +59,7 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 
 * check whether we're actually using the full capacity of the GPU right now, try with smaller IO data to make sure
 
-## Training 
+## Training
 
 * stochastic weight averaging
 * learning rate schedule
@@ -71,7 +72,7 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 ## Loop infrastructure
 
 * estimate Elo during loop, and only switch network if it actually turns out to be better?
-    * this involves writing a bot vs bot tool that can actually batch GPU requests
+  * this involves writing a bot vs bot tool that can actually batch GPU requests
 * increase network size over time
 * allow selfplay and training to run on different computers over the real internet
 * allow interactive parameter updates without having to restart, maybe with a config file
@@ -86,7 +87,6 @@ This file contains a bunch of ideas that might be interesting to try in the futu
 * look into removing rust dependencies, the alphazero crate is getting heavy
   * it's getting worse and worse ...
 * properly implement cross-platform cudnn header finding (with env var)
-
 
 ## Other projects to "borrow" ideas from:
 

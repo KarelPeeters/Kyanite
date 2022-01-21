@@ -30,23 +30,31 @@ class Game:
 
     @classmethod
     def find(cls, name: str):
+        if name == "ataxx":
+            name = "ataxx-7"
+
         for game in GAMES:
             if game.name == name:
                 return game
         raise KeyError("Game '{}' not found", name)
 
 
-# TODO add repetition and n-move rule counters to board inputs?
-GAMES = [
-    Game(
-        name="ataxx",
-        board_size=7,
+def _ataxx_game(size: int):
+    assert 2 <= size <= 8
+    return Game(
+        name=f"ataxx-{size}",
+        board_size=size,
         input_bool_channels=3,
         input_scalar_channels=0,
-        policy_shape=(17, 7, 7),
+        policy_shape=(17, size, size),
         policy_conv_channels=17,
-        estimate_moves_per_game=150,
-    ),
+        # estimated from fully random games
+        estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
+    )
+
+
+GAMES = [
+    *(_ataxx_game(size) for size in range(2, 9)),
     Game(
         name="chess",
         board_size=8,

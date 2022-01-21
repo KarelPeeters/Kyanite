@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from lib.chess_mapping.chess_mapping import FLAT_TO_ATT, FLAT_TO_CONV
+from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_ATT, CHESS_FLAT_TO_CONV
 from lib.games import Game
 
 
@@ -32,12 +32,16 @@ class PostActConvPolicyHead(nn.Module):
             conv2d(channels, game.policy_conv_channels, 1),
         )
 
-        self.FLAT_TO_CONV = FLAT_TO_CONV
+        self.flatten_indices = CHESS_FLAT_TO_CONV if game.name == "chess" else None
 
     def forward(self, common):
         policy = self.seq(common)
-        flat_policy = policy.flatten(1)[:, self.FLAT_TO_CONV]
-        return flat_policy
+
+        if self.flatten_indices is None:
+            return policy
+        else:
+            flat_policy = policy.flatten(1)[:, self.flatten_indices]
+            return flat_policy
 
 
 class PostActAttentionPolicyHead(nn.Module):
@@ -49,7 +53,7 @@ class PostActAttentionPolicyHead(nn.Module):
         self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
         self.conv_under = conv2d(channels, 3 * query_channels, 1)
 
-        self.FLAT_TO_ATT = FLAT_TO_ATT
+        self.FLAT_TO_ATT = CHESS_FLAT_TO_ATT
 
     def forward(self, common):
         bulk = self.conv_bulk(common)
