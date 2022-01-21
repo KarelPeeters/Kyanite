@@ -137,7 +137,8 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             assert_eq!((self.mapper.input_bool_len() + 7) / 8, board_bools.storage().len());
 
             // policy
-            let mut got_none = false;
+            //TODO get rid of this "forced pass" concept and just map it to a separate move index
+            let mut forced_pass = false;
             let mut available_mv_count = 0;
             board.available_moves().for_each(|mv: B::Move| {
                 available_mv_count += 1;
@@ -146,14 +147,14 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                         policy_indices.push(index as u32);
                     }
                     None => {
-                        got_none = true
+                        forced_pass = true
                     }
                 }
             });
             let played_mv_index = self.mapper.move_to_index(board, played_mv);
 
             // check that everything makes sense
-            assert!(!got_none || available_mv_count == 1);
+            assert!(!forced_pass || available_mv_count == 1);
             assert_eq!(available_mv_count, zero_evaluation.policy.len());
             assert_eq!(available_mv_count, net_evaluation.policy.len());
             zero_evaluation.assert_normalized_or_nan();
@@ -164,7 +165,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             scalars.push(pos_index as f32);
             scalars.push(game_length as f32);
             scalars.push(zero_visits as f32);
-            scalars.push(available_mv_count as f32);
+            scalars.push(if forced_pass { 0 } else { available_mv_count } as f32);
             scalars.push(played_mv_index.map_or(-1.0, |i| i as f32));
 
             scalars.push(kdl_divergence(&zero_evaluation.policy, &net_evaluation.policy));
@@ -189,7 +190,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 transmute_to_bytes(board_bools.storage()),
                 transmute_to_bytes(&board_scalars),
                 transmute_to_bytes(&policy_indices),
-                transmute_to_bytes(&zero_evaluation.policy),
+                transmute_to_bytes(if !forced_pass { &zero_evaluation.policy } else { &[] }),
             ];
             for data in data_to_write {
                 self.bin_write.write_all(data)?;

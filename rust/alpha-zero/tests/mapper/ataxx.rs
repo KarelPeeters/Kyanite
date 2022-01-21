@@ -10,3 +10,9 @@ fn sizes_start() {
         test_valid_mapping(AtaxxStdMapper::new(size), &AtaxxBoard::diagonal(size))
     }
 }
+
+#[test]
+fn forced_pass_5() {
+    let board = AtaxxBoard::from_fen("xoooo/xoo2/ooooo/ooooo/xxooo x 0 0").unwrap();
+    test_valid_mapping(AtaxxStdMapper::new(5), &board);
+}
