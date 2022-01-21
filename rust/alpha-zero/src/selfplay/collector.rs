@@ -152,7 +152,7 @@ impl ThroughputEstimator {
             }).collect_vec();
 
             println!(
-                "Thoughput: {:.2} evals/s, {:.2} cached evals/s, {:.2} moves/s => {} moves {:.2} games/s => {} games",
+                "Throughput: {:.2} gpu evals/s, {:.2} cached evals/s, {:.2} moves/s => {} moves {:.2} games/s => {} games",
                 real_eval_throughput, cached_eval_throughput, move_throughput, self.total_moves, game_throughput, self.total_games
             );
             println!("   cache hit rate: {}", cached_eval_throughput / (cached_eval_throughput + real_eval_throughput));
