@@ -68,7 +68,7 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(start: &B, count:
         let simulation = Simulation { outcome, positions };
         bin.append(simulation)?;
 
-        pt.update(1);
+        pt.update_delta(1);
     }
 
     Ok(())

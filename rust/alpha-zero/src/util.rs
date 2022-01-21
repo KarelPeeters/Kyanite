@@ -147,7 +147,7 @@ impl PrintThroughput {
         self.total_count
     }
 
-    pub fn update(&mut self, count: u64) -> bool {
+    pub fn update_delta(&mut self, count: u64) -> bool {
         self.delta_count += count;
         self.total_count += count;
         self.update_count += 1;
@@ -167,5 +167,10 @@ impl PrintThroughput {
         } else {
             false
         }
+    }
+
+    pub fn update_total(&mut self, count: u64) -> bool {
+        assert!(count >= self.total_count, "Count must be increasing");
+        self.update_delta(count - self.total_count)
     }
 }
