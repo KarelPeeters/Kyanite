@@ -69,6 +69,8 @@ pub fn generator_main<B: Board>(
                 let loaded_graph = load_graph_from_onnx_path(path);
                 let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
                 network = Some(CudnnNetwork::new(mapper, graph, batch_size, device));
+
+                state.clear_caches();
             }
         }
 
@@ -138,6 +140,12 @@ impl<B: Board> GeneratorState<B> {
             games: vec![],
             responses: vec![],
             batch_size,
+        }
+    }
+
+    fn clear_caches(&mut self) {
+        for game in &mut self.games {
+            game.cache.clear();
         }
     }
 
