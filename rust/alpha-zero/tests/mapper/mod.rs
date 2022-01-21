@@ -6,11 +6,14 @@ use internal_iterator::InternalIterator;
 use alpha_zero::mapping::PolicyMapper;
 use alpha_zero::util::display_option;
 
+mod ataxx;
 mod chess_manual_conv;
 mod chess_random;
 mod chess_flat_gen;
 
 pub fn test_valid_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
+    println!("Testing {:?} on {:?}", mapper, board);
+
     assert!(!board.is_done());
 
     test_move_to_index(mapper, board);

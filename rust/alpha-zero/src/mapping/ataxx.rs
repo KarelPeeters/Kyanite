@@ -56,7 +56,7 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
                 }).unwrap();
                 let to_index = (to.y() * size + to.x()) as usize;
 
-                Some((1 + from_index) * 7 * 7 + to_index)
+                Some((1 + from_index) * (size * size) as usize + to_index)
             }
         };
 
@@ -84,7 +84,7 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
             let fx = to.x() as i32 + dx as i32;
             let fy = to.y() as i32 + dy as i32;
 
-            if (0..7).contains(&fx) && (0..7).contains(&fy) {
+            if (0..size as i32).contains(&fx) && (0..size as i32).contains(&fy) {
                 let from = Coord::from_xy(fx as u8, fy as u8);
                 Some(Move::Jump { from, to })
             } else {
