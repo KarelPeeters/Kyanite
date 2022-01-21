@@ -65,12 +65,7 @@ fn mapper_main(
 ) {
     let output_folder = output_folder.as_ref();
 
-    loop {
-        let (path, data) = match receiver.recv() {
-            Ok(content) => content,
-            Err(_) => break,
-        };
-
+    while let Ok((path, data)) = receiver.recv() {
         let mut output_path = output_folder.join(&path);
         output_path.set_extension("");
 

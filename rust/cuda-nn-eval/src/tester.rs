@@ -12,7 +12,7 @@ use crate::executor::CudnnExecutor;
 /// which typically comes from a `.bin` file next to the `.onnx` file.
 pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8], use_graph: bool) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
-    let outputs = eval_cudnn(&graph, batch_size, &inputs, false, use_graph);
+    let outputs = eval_cudnn(graph, batch_size, &inputs, false, use_graph);
     assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
@@ -68,7 +68,7 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bo
 
 /// Load the check data into `(batch_size, inputs, expected_outputs)`.
 pub fn load_check_data(graph: &Graph, check_data_bytes: &[u8]) -> (usize, Vec<Tensor>, Vec<Tensor>) {
-    assert!(check_data_bytes.len() >= 1, "Check data must have at least one byte, the batch size");
+    assert!(!check_data_bytes.is_empty(), "Check data must have at least one byte, the batch size");
     let batch_size = check_data_bytes[0] as usize;
 
     assert_eq!(

@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::graph::Graph;
 use crate::onnx::load::{load_model_proto, onnx_proto_to_graph};
 
+#[allow(warnings)]
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/onnx.rs"));
 }

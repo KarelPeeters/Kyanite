@@ -224,7 +224,6 @@ impl ConvolutionDescriptor {
 pub struct ActivationDescriptor {
     inner: cudnnActivationDescriptor_t,
     mode: cudnnActivationMode_t,
-    coef: f32,
 }
 
 impl Drop for ActivationDescriptor {
@@ -247,7 +246,7 @@ impl ActivationDescriptor {
                 cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
                 coef as f64,
             ).unwrap();
-            ActivationDescriptor { inner, mode, coef }
+            ActivationDescriptor { inner, mode }
         }
     }
 
@@ -260,6 +259,7 @@ impl ActivationDescriptor {
     }
 }
 
+#[derive(Debug)]
 pub struct PoolingDescriptor(cudnnPoolingDescriptor_t);
 
 impl Drop for PoolingDescriptor {
@@ -319,7 +319,6 @@ impl PoolingDescriptor {
 #[derive(Debug)]
 pub struct TensorOpDescriptor {
     inner: cudnnOpTensorDescriptor_t,
-    operation: cudnnOpTensorOp_t,
 }
 
 impl Drop for TensorOpDescriptor {
@@ -342,7 +341,7 @@ impl TensorOpDescriptor {
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
             ).unwrap();
 
-            TensorOpDescriptor { inner, operation }
+            TensorOpDescriptor { inner }
         }
     }
 

@@ -29,6 +29,7 @@ pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
     optimizer.new_graph
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for OptimizerSettings {
     fn default() -> Self {
         OptimizerSettings { force_bias_through_conv: false }

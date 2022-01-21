@@ -11,8 +11,8 @@ pub struct Attributes<'a> {
 }
 
 impl<'a> Attributes<'a> {
-    pub fn from(vec: &'a Vec<AttributeProto>) -> Self {
-        let inner: HashMap<&str, &AttributeProto> = vec
+    pub fn from(attrs: &'a [AttributeProto]) -> Self {
+        let inner: HashMap<&str, &AttributeProto> = attrs
             .iter()
             .map(|a| (&*a.name, a))
             .collect();

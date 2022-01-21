@@ -10,38 +10,38 @@ fn read(input: &str) -> PgnReader<Memory<()>> {
 
 #[test]
 fn empty() {
-    assert_eq!(read("").next().unwrap(), None);
+    assert_eq!(read("").next_game().unwrap(), None);
 }
 
 #[test]
 fn short() {
     let mut reader = read("[Test \"test\"]\n1. e4 1/2-1/2\n");
 
-    let game = reader.next().unwrap().unwrap();
+    let game = reader.next_game().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
     assert_eq!(game.move_iter().collect::<Vec<_>>(), vec![PgnMove { mv: "e4", comment: None }]);
     assert_eq!(game.result(), PgnResult::Draw);
 
-    assert_eq!(reader.next().unwrap(), None);
+    assert_eq!(reader.next_game().unwrap(), None);
 }
 
 #[test]
 fn multi_digit() {
     let mut reader = read("[Test \"test\"]\n10. e4 1/2-1/2\n");
 
-    let game = reader.next().unwrap().unwrap();
+    let game = reader.next_game().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
     assert_eq!(game.move_iter().collect::<Vec<_>>(), vec![PgnMove { mv: "e4", comment: None }]);
     assert_eq!(game.result(), PgnResult::Draw);
 
-    assert_eq!(reader.next().unwrap(), None);
+    assert_eq!(reader.next_game().unwrap(), None);
 }
 
 #[test]
 fn multiple_moves_per_turn() {
     let mut reader = read("[Test \"test\"]\n1. e4 e5 2. d4 d5 1-0\n");
 
-    let game = reader.next().unwrap().unwrap();
+    let game = reader.next_game().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
     assert_eq!(
         game.move_iter().collect::<Vec<_>>(),
@@ -54,14 +54,14 @@ fn multiple_moves_per_turn() {
     );
     assert_eq!(game.result(), PgnResult::WinWhite);
 
-    assert_eq!(reader.next().unwrap(), None);
+    assert_eq!(reader.next_game().unwrap(), None);
 }
 
 #[test]
 fn variation() {
     let mut reader = read("[Test \"test\"]\n1. e4 { d5 6d d8 } 1... d5 { [%clk 0:02:55] } { foo {  dsf  } { 0-1 } } a6 1-0\n");
 
-    let game = reader.next().unwrap().unwrap();
+    let game = reader.next_game().unwrap().unwrap();
     assert_eq!(game.header("Test"), Some("test"));
     assert_eq!(
         game.move_iter().collect::<Vec<_>>(),
@@ -73,7 +73,7 @@ fn variation() {
     );
     assert_eq!(game.result(), PgnResult::WinWhite);
 
-    assert_eq!(reader.next().unwrap(), None);
+    assert_eq!(reader.next_game().unwrap(), None);
 }
 
 #[test]

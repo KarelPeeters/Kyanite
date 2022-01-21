@@ -15,7 +15,7 @@ pub struct LichessPuzzle<'a> {
 
 impl<'a> LichessPuzzle<'a> {
     fn from_str(s: &'a str) -> Result<Self, ()> {
-        let mut iter = s.split(",");
+        let mut iter = s.split(',');
         let puzzle = LichessPuzzle {
             puzzle_id: iter.next().ok_or(())?,
             fen: iter.next().ok_or(())?,
@@ -33,7 +33,7 @@ impl<'a> LichessPuzzle<'a> {
     }
 }
 
-pub fn for_each_lichess_puzzle(mut read: impl BufRead, mut f: impl FnMut(LichessPuzzle) -> ()) {
+pub fn for_each_lichess_puzzle(mut read: impl BufRead, mut f: impl FnMut(LichessPuzzle)) {
     let mut buf = String::new();
 
     loop {
@@ -42,7 +42,7 @@ pub fn for_each_lichess_puzzle(mut read: impl BufRead, mut f: impl FnMut(Lichess
         if result == 0 { break; }
 
         let line = buf.trim();
-        if line.len() > 0 {
+        if !line.is_empty() {
             let puzzle = LichessPuzzle::from_str(line).expect("Failed to parse puzzle");
             f(puzzle)
         }

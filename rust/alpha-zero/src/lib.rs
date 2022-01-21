@@ -1,5 +1,10 @@
 #![warn(missing_debug_implementations)]
 
+#![allow(clippy::len_without_is_empty)]
+#![allow(clippy::let_and_return)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::upper_case_acronyms)]
+
 pub mod zero;
 
 pub mod network;

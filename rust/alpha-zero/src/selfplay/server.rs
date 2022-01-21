@@ -68,7 +68,7 @@ pub fn selfplay_server_main() {
         Some(Game::Chess) => {
             selfplay_start(
                 startup_settings,
-                || ChessBoard::default(),
+                ChessBoard::default,
                 ChessStdMapper,
                 reader, writer,
             )
@@ -145,8 +145,8 @@ impl Game {
         };
 
         let start = "ataxx-";
-        if str.starts_with(start) {
-            let size: u8 = str[start.len()..].parse().ok()?;
+        if let Some(size) = str.strip_prefix(start) {
+            let size: u8 = size.parse().ok()?;
             return Some(Game::Ataxx { size });
         }
 

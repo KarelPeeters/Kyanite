@@ -75,7 +75,7 @@ pub fn generator_main<B: Board>(
         // advance generator
         if let Some(settings) = &settings {
             if let Some(network) = &mut network {
-                let mut ctx = Context { thread_id, next_index, settings: &settings, rng: &mut rng };
+                let mut ctx = Context { thread_id, next_index, settings, rng: &mut rng };
                 state.step(&mut ctx, &start_pos, network, &sender)?;
                 next_index = ctx.next_index;
             }

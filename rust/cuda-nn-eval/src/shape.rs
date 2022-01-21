@@ -37,7 +37,7 @@ impl StridedShape {
         self.has_simple_strides
     }
 
-    pub fn visit_strided_indices(&self, mut f: impl FnMut(usize) -> ()) {
+    pub fn visit_strided_indices(&self, mut f: impl FnMut(usize)) {
         visit_strided_indices_impl(0, &self.shape, &self.strides, &mut f)
     }
 
@@ -168,7 +168,7 @@ fn simple_strides(shape: &[usize]) -> Vec<usize> {
     result
 }
 
-fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], f: &mut impl FnMut(usize) -> ()) {
+fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], f: &mut impl FnMut(usize)) {
     match shape {
         [] => f(start),
         [size_curr, size_rest @ ..] => {

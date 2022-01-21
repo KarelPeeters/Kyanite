@@ -1,3 +1,7 @@
+#![warn(missing_debug_implementations)]
+
+#![allow(clippy::new_without_default)]
+
 pub use ndarray;
 
 pub mod graph;

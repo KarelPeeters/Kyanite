@@ -36,8 +36,8 @@ impl Optimizer<'_> {
     }
 
     fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> Option<Value> {
-        match operation {
-            &Operation::Conv { input, filter, details } => {
+        match *operation {
+            Operation::Conv { input, filter, details } => {
                 if let Some(filter) = self.follow_const(filter) {
                     if builder.conv.is_none() && details.keeps_spatial_shape() {
                         builder.set_conv(ConvOperation { details, filter: filter.to_owned() });
@@ -49,7 +49,7 @@ impl Optimizer<'_> {
                     None
                 }
             }
-            &Operation::Element {
+            Operation::Element {
                 left, right,
                 op: op @ (ElementOp::Add | ElementOp::Sub | ElementOp::Mul | ElementOp::Div)
             } => {
@@ -234,18 +234,16 @@ fn pull_bias_through_conv(settings: OptimizerSettings, details: ConvDetails, bef
                 .map(|c| filter.slice(s![k, c, .., ..]).sum() * before_shaped[(0, c, 0, 0)])
                 .sum()
         }))
+    } else if settings.force_bias_through_conv {
+        // the bias will be different for the edges, so it needs to be full-sized
+        let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
+
+        let before_broadcast = before_shaped
+            .broadcast((1, details.input_channels, details.input_h, details.input_w)).unwrap();
+
+        Ok(convolution(details, before_broadcast, filter.view()))
     } else {
-        if settings.force_bias_through_conv {
-            let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
-
-            // the bias will be different for the edges, so it needs to be full-sized
-            let before_broadcast = before_shaped
-                .broadcast((1, details.input_channels, details.input_h, details.input_w)).unwrap();
-
-            Ok(convolution(details, before_broadcast, filter.view()))
-        } else {
-            Err(before)
-        }
+        Err(before)
     }
 }
 
@@ -258,7 +256,7 @@ impl ScaleBias {
     fn apply(self, graph: &mut Graph, input: Value) -> Value {
         let const_shape = shape![1, self.scale.len(), 1, 1];
         let scale = graph.constant(const_shape.clone(), self.scale.to_vec());
-        let bias = graph.constant(const_shape.clone(), self.bias.to_vec());
+        let bias = graph.constant(const_shape, self.bias.to_vec());
 
         let mut curr = input;
         curr = graph.ele(ElementOp::Mul, curr, scale);
@@ -302,6 +300,7 @@ struct ConvOperation {
     filter: Vec<f32>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct AffineShape {
     batch: Size,

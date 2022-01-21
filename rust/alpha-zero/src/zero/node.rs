@@ -49,6 +49,9 @@ impl UCT {
     }
 }
 
+#[derive(Debug)]
+pub struct NotYetVisited;
+
 impl<N> Node<N> {
     pub(super) fn new(parent: Option<usize>, last_move: Option<N>, p: f32) -> Self {
         Node {
@@ -61,7 +64,7 @@ impl<N> Node<N> {
             sum_values: ZeroValues::default(),
 
             net_values: None,
-            net_policy: p.into(),
+            net_policy: p,
         }
     }
 
@@ -81,17 +84,17 @@ impl<N> Node<N> {
     }
 
     /// Get the outcome of this node if it's terminal.
-    /// * `Err(())` means we don't know yet because this node has not been visited yet,
+    /// * `Err(NotYetVisited)` means we don't know yet because this node has not been visited yet,
     /// * `Ok(None)` means this node is not terminal.
     /// * `Ok(Some(outcome))` is the outcome of this node
-    pub fn outcome(&self) -> Result<Option<OutcomeWDL>, ()> {
+    pub fn outcome(&self) -> Result<Option<OutcomeWDL>, NotYetVisited> {
         if self.children.is_none() {
             if self.total_visits() > 0 {
                 let outcome = self.total_data().wdl.try_to_outcome_wdl()
                     .unwrap_or_else(|| panic!("Unexpected wdl {:?} for terminal node", self.total_data().wdl));
                 Ok(Some(outcome))
             } else {
-                Err(())
+                Err(NotYetVisited)
             }
         } else {
             Ok(None)

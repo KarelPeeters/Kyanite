@@ -98,17 +98,13 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> ComposedMapper<B, I, P> {
     }
 }
 
+impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Copy for ComposedMapper<B, I, P> {}
+
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Clone for ComposedMapper<B, I, P> {
     fn clone(&self) -> Self {
-        ComposedMapper {
-            input_mapper: self.input_mapper.clone(),
-            policy_mapper: self.policy_mapper.clone(),
-            ph: PhantomData,
-        }
+        *self
     }
 }
-
-impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> Copy for ComposedMapper<B, I, P> {}
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> InputMapper<B> for ComposedMapper<B, I, P> {
     fn input_bool_shape(&self) -> [usize; 3] {

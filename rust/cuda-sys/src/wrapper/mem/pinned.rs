@@ -5,6 +5,7 @@ use std::slice;
 use crate::bindings::{cudaFreeHost, cudaHostAlloc, cudaHostAllocDefault, cudaHostAllocWriteCombined};
 use crate::wrapper::status::Status;
 
+#[derive(Debug)]
 pub struct PinnedMem {
     ptr: *mut c_void,
     size_bytes: usize,

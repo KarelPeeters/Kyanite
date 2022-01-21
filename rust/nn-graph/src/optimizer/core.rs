@@ -154,7 +154,7 @@ impl<'a> Optimizer<'a> {
                 break;
             }
 
-            if let Some(next) = next(&self.old_graph, curr, &self.old_graph[curr].operation) {
+            if let Some(next) = next(self.old_graph, curr, &self.old_graph[curr].operation) {
                 curr = next;
             } else {
                 break;

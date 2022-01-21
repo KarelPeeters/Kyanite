@@ -175,7 +175,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
         }
     });
 
-    return !has_dummy_user;
+    !has_dummy_user
 }
 
 fn is_effectively_constant(graph: &Graph, value: Value) -> bool {

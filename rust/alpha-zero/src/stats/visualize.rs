@@ -9,7 +9,7 @@ use crate::mapping::BoardMapper;
 use crate::network::cpu::CPUNetwork;
 use crate::util::IndexOf;
 
-pub fn visualize_network_activations_split<'a, B: Board, M: BoardMapper<B>>(
+pub fn visualize_network_activations_split<B: Board, M: BoardMapper<B>>(
     network: &mut CPUNetwork<B, M>,
     boards: &[B],
     max_images: Option<usize>,
@@ -44,7 +44,7 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
     boards: &[B],
     max_images: Option<usize>,
 ) -> Vec<Image> {
-    let exec = network.evaluate_batch_exec(&boards);
+    let exec = network.evaluate_batch_exec(boards);
 
     let graph = network.graph();
     let mapper = network.mapper();
@@ -76,5 +76,5 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
         }
     };
 
-    visualize_graph_activations(&graph, &exec, post_process, max_images)
+    visualize_graph_activations(graph, &exec, post_process, max_images)
 }

@@ -108,21 +108,6 @@ pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI> where
     left.zip(right)
 }
 
-/// Return the index where `sub_slice` starts in `slice`, or none of it the start is not contained within `slice`.
-///
-/// If `Some(x)` is returned, `slice[x..x+sub_slice.len()] == sub_slice` holds.
-///
-/// **Safety**: both slices must be _derived from_ the same pointer, see the  `std::ptr::offset_from` docs.
-pub unsafe fn subslice_start<T>(slice: &[T], sub_slice: &[T]) -> Option<usize> {
-    if slice.as_ptr_range().contains(&sub_slice.as_ptr()) {
-        // safety: we just asserted that the subslice starts within the main slice, 
-        //   so most of the safety constraints are already satified
-        Some(sub_slice.as_ptr().offset_from(slice.as_ptr()) as usize)
-    } else {
-        None
-    }
-}
-
 #[derive(Debug)]
 pub struct PrintThroughput {
     name: String,

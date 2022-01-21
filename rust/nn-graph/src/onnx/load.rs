@@ -16,10 +16,8 @@ use crate::shape;
 use crate::shape::{Shape, Size};
 
 pub fn load_model_proto(buf: &[u8]) -> ModelProto {
-    let mut buf: &[u8] = &buf;
-    let model = ModelProto::decode(&mut buf)
-        .unwrap();
-    model
+    let mut buf: &[u8] = buf;
+    ModelProto::decode(&mut buf).unwrap()
 }
 
 pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
@@ -32,7 +30,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
     for input in &model_graph.input {
         // initializers are allowed to re-appear in the inputs, so we skip them the second time
-        if nodes.contains(&&*input.name) {
+        if nodes.contains(&*input.name) {
             continue;
         }
 
@@ -96,7 +94,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "Clip" => {
-                assert!(inputs.len() >= 1);
+                assert!(!inputs.is_empty());
                 let input = inputs[0].unwrap_float();
 
                 let (min, max) = match inputs.len() {
@@ -370,7 +368,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Concat" => {
-                assert!(inputs.len() > 0, "Must concatenate at least one value");
+                assert!(!inputs.is_empty(), "Must concatenate at least one value");
                 let rank = inputs[0].shape(&graph).rank();
 
                 let rel_axis = attrs.take_int("axis");
@@ -425,7 +423,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
         };
 
         // register operation output as node
-        nodes.define(&output_name, value);
+        nodes.define(output_name, value);
         assert!(attrs.is_done(), "Leftover attributes: {:?}", attrs);
     }
 
@@ -506,7 +504,7 @@ fn resolve_float_tensor_shape(ty: &TypeProto) -> Shape {
             let dims = tensor.shape.as_ref()
                 .expect("Tensor does not have shape set")
                 .dim.iter()
-                .map(|d| resolve_tensor_dim(d))
+                .map(resolve_tensor_dim)
                 .collect_vec();
             Shape::new(dims)
         }

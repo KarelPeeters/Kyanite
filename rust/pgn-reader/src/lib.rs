@@ -142,8 +142,7 @@ impl<'a> InternalIterator for MoveIterator<'a> {
 
             // outcome?
             for &(_, outcome_str) in RESULT_STR {
-                if left.starts_with(outcome_str) {
-                    let rest = &left[outcome_str.len()..];
+                if let Some(rest) = left.strip_prefix(outcome_str) {
                     assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
                     return ControlFlow::Continue(());
                 }
@@ -154,7 +153,7 @@ impl<'a> InternalIterator for MoveIterator<'a> {
             let len = left[start..].find(' ').unwrap();
 
             const MOVE_SUFFIX_CHARS: &[char] = &['?', '!'];
-            curr_mv = Some(&left[start..start + len].trim_end_matches(MOVE_SUFFIX_CHARS));
+            curr_mv = Some(left[start..start + len].trim_end_matches(MOVE_SUFFIX_CHARS));
             left = &left[start + len..];
         }
     }
@@ -169,7 +168,7 @@ impl<'a> PgnMove<'a> {
                 .find(|s| s.starts_with(key))
                 .map(|s| {
                     let s = s[key.len()..].trim();
-                    let end = s.find("]").unwrap();
+                    let end = s.find(']').unwrap();
                     &s[..end]
                 })
         })
@@ -184,11 +183,11 @@ impl FromStr for PgnResult {
             if cand_str == s { return Ok(cand); }
         }
 
-        return Err(());
+        Err(())
     }
 }
 
-const RESULT_STR: &[(PgnResult, &'static str)] = &[
+const RESULT_STR: &[(PgnResult, &str)] = &[
     (PgnResult::WinWhite, "1-0"),
     (PgnResult::WinBlack, "0-1"),
     (PgnResult::Draw, "1/2-1/2"),
@@ -218,8 +217,9 @@ fn variation_length(left: &str) -> usize {
     count
 }
 
+// we cannot implement Iterator here since the PgnGame has a lifetime dependant on self
 impl<R: BufferedReader<()>> PgnReader<R> {
-    pub fn next(&mut self) -> Result<Option<PgnGame>, Error> {
+    pub fn next_game(&mut self) -> Result<Option<PgnGame>, Error> {
         self.input.consume(self.prev_game_length);
         if self.input.eof() { return Ok(None); }
 
@@ -281,8 +281,8 @@ const EVAL_PAWNS_TANH_DIV: f32 = 4.0;
 
 impl PgnEval {
     pub fn parse(eval: &str) -> PgnEval {
-        if eval.starts_with('#') {
-            PgnEval::MateIn(eval[1..].parse::<i32>().unwrap())
+        if let Some(n) = eval.strip_prefix('#') {
+            PgnEval::MateIn(n.parse::<i32>().unwrap())
         } else {
             PgnEval::Pawns(eval.parse::<f32>().unwrap())
         }

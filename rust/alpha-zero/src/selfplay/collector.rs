@@ -76,7 +76,7 @@ pub fn collector_main<B: Board>(
 
                         let message = ServerUpdate::FinishedFile { index: prev_i };
                         writer.write_all(serde_json::to_string(&message).unwrap().as_bytes()).unwrap();
-                        writer.write(&[b'\n']).unwrap();
+                        writer.write_all(&[b'\n']).unwrap();
                         writer.flush().unwrap();
                     }
                 }
@@ -88,7 +88,7 @@ pub fn collector_main<B: Board>(
     }
 
     writer.write_all(serde_json::to_string(&ServerUpdate::Stopped).unwrap().as_bytes()).unwrap();
-    writer.write(&[b'\n']).unwrap();
+    writer.write_all(&[b'\n']).unwrap();
     writer.flush().unwrap()
 }
 

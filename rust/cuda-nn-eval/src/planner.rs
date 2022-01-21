@@ -205,39 +205,34 @@ impl<'a> Planner<'a> {
         let mut bias = None;
         let mut res = None;
 
-        loop {
-            // TODO it should be relatively easy to allow subtract here as well
-            if let &Operation::Element { left, right, op: ElementOp::Add } = &graph[curr].operation {
-                if !self.single_use.contains(&left) {
-                    return None;
-                }
+        while let &Operation::Element { left, right, op: ElementOp::Add } = &graph[curr].operation {
+            if !self.single_use.contains(&left) {
+                return None;
+            }
 
-                //TODO check that left != conv input
-                //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
-                //TODO try visiting both left and right for the continuation
+            //TODO check that left != conv input
+            //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
+            //TODO try visiting both left and right for the continuation
 
-                if graph[left].shape == graph[right].shape {
-                    // has to be res
-                    if res.is_none() {
-                        res = Some(right);
-                    } else {
-                        return None;
-                    }
-                } else if graph[left].shape.all_ones_except(1) == graph[right].shape {
-                    // has to be bias
-                    if bias.is_none() {
-                        bias = Some(right);
-                    } else {
-                        return None;
-                    }
+            if graph[left].shape == graph[right].shape {
+                // has to be res
+                if res.is_none() {
+                    res = Some(right);
                 } else {
                     return None;
                 }
-
-                curr = left;
+            } else if graph[left].shape.all_ones_except(1) == graph[right].shape {
+                // has to be bias
+                if bias.is_none() {
+                    bias = Some(right);
+                } else {
+                    return None;
+                }
             } else {
-                break;
+                return None;
             }
+
+            curr = left;
         }
 
         if let &Operation::Conv { input, filter, details } = &graph[curr].operation {

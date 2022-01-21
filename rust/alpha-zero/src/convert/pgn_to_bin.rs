@@ -41,7 +41,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
     let mut prev = Instant::now();
 
     let mut input = PgnReader::new(input_pgn);
-    while let Some(game) = input.next()? {
+    while let Some(game) = input.next_game()? {
         let mut skip = filter.should_skip(&game);
 
         time_input += time_since(&mut prev);

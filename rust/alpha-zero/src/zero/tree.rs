@@ -193,7 +193,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             Ok(Some(OutcomeWDL::Win)) => "W",
             Ok(Some(OutcomeWDL::Draw)) => "D",
             Ok(Some(OutcomeWDL::Loss)) => "L",
-            Err(()) => "?",
+            Err(_) => "?",
         };
 
         let virtual_visits = if node.virtual_visits != 0 {
@@ -203,7 +203,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         };
 
         let node_values = node.values();
-        let net_values = node.net_values.unwrap_or(ZeroValues::nan()).parent();
+        let net_values = node.net_values.unwrap_or_else(ZeroValues::nan).parent();
 
         let parent_complete_visits = parent.map_or(node.complete_visits, |p| p.complete_visits);
         let parent_total_visits = parent.map_or(node.total_visits(), |p| p.total_visits());

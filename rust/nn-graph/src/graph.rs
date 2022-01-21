@@ -355,7 +355,7 @@ impl Graph {
     /// Concatenate values along an axis.
     #[must_use]
     pub fn concat(&mut self, inputs: Vec<Value>, axis: usize) -> Value {
-        assert!(inputs.len() > 0, "Must concatenate at least one value");
+        assert!(!inputs.is_empty(), "Must concatenate at least one value");
 
         let base_shape = self[inputs[0]].shape.with_one_at(axis);
 
@@ -364,7 +364,7 @@ impl Graph {
             self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
         }).sum::<usize>();
 
-        let mut result_shape = base_shape.clone();
+        let mut result_shape = base_shape;
         result_shape[axis] = Size::fixed(size_along_axis);
 
         self.push(result_shape, Operation::Concat { inputs, axis })
@@ -471,7 +471,7 @@ impl Graph {
         }
 
         if min != f32::INFINITY {
-            let min_value = self.constant(right_shape.clone(), vec![min]);
+            let min_value = self.constant(right_shape, vec![min]);
             curr = self.ele(ElementOp::Max, curr, min_value);
         }
 
