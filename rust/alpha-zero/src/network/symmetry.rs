@@ -60,7 +60,7 @@ fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eva
     let mapped_moves: Vec<B::Move> = mapped_board.available_moves().collect();
 
     let policy = board.available_moves().map(|mv| {
-        let mapped_mv = B::map_move(sym, mv);
+        let mapped_mv = board.map_move(sym, mv);
         let index = mapped_moves.iter().index_of(&mapped_mv).unwrap();
         mapped_eval.policy[index]
     }).collect();

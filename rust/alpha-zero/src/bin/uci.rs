@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::io::Write;
 use std::time::Instant;
 
-use board_game::board::{Board, BoardAvailableMoves};
+use board_game::board::{Board, BoardMoves};
 use board_game::games::chess::{ChessBoard, Rules};
 use board_game::wdl::WDL;
 use crossbeam::channel::{Receiver, RecvError, Sender, TryRecvError};

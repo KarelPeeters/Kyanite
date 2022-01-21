@@ -11,7 +11,7 @@ cuda = ["cuda-nn-eval"]
 [dependencies]
 
 # core crates
-board-game = { version = "0.3.6", path = "../../../board-game-rs" }
+board-game = { version = "0.4.1", path = "../../../board-game-rs" }
 nn-graph = { path = "../nn-graph" }
 cuda-nn-eval = { path = "../cuda-nn-eval", optional = true }
 pgn-reader = { path = "../pgn-reader" }
@@ -33,7 +33,7 @@ rayon = "1.5.1"
 
 # util
 itertools = "0.10.1"
-internal-iterator = "0.1.2"
+internal-iterator = "0.2.0"
 
 tokio = { version = "1.1.0", features = ["macros"] }
 tokio-stream = { version = "0.1.2" }

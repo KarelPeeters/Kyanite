@@ -88,7 +88,7 @@ impl<N> Node<N> {
         if self.children.is_none() {
             if self.total_visits() > 0 {
                 let outcome = self.total_data().wdl.try_to_outcome_wdl()
-                    .unwrap_or_else(|()| panic!("Unexpected wdl {:?} for terminal node", self.total_data().wdl));
+                    .unwrap_or_else(|| panic!("Unexpected wdl {:?} for terminal node", self.total_data().wdl));
                 Ok(Some(outcome))
             } else {
                 Err(())

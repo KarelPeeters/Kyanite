@@ -52,8 +52,8 @@ pub fn selfplay_server_main() {
         "ataxx" => {
             selfplay_start(
                 startup_settings,
-                AtaxxBoard::default,
-                AtaxxStdMapper,
+                || AtaxxBoard::diagonal(7),
+                AtaxxStdMapper::new(7),
                 reader, writer,
             )
         }

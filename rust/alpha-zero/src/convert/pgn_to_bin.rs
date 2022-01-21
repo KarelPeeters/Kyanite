@@ -1,9 +1,9 @@
 use std::borrow::Cow;
+use std::ops::ControlFlow;
 use std::time::Instant;
 
-use board_game::board::{Board, BoardAvailableMoves, Outcome, Player};
+use board_game::board::{Board, BoardMoves, Outcome, Player};
 use board_game::games::chess::{ChessBoard, Rules};
-use board_game::util::internal_ext::{Control, InternalIteratorExt};
 use board_game::wdl::WDL;
 use chess::ChessMove;
 use internal_iterator::InternalIterator;
@@ -58,18 +58,20 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
             };
 
-            let missing_eval = game.move_iter().for_each_control(|mv| {
+            let missing_eval_result = game.move_iter().try_for_each(|mv| {
                 let eval = mv.field("eval").map(PgnEval::parse);
                 if filter.require_eval && eval.is_none() {
-                    Control::Break(())
+                    ControlFlow::Break(())
                 } else {
                     let mv = board.parse_move(mv.mv).unwrap();
                     positions.push(build_position(&board, mv, eval));
                     board.play(mv);
 
-                    Control::Continue
+                    ControlFlow::Continue(())
                 }
-            }).is_some();
+            });
+            //TODO `is_break` is not yet stable.
+            let missing_eval = matches!(missing_eval_result, ControlFlow::Break(()));
 
             time_moves += time_since(&mut prev);
 

@@ -1,7 +1,7 @@
 use std::fs::{File, read_to_string};
 use std::io::BufReader;
 
-use board_game::board::{Board, BoardAvailableMoves, Outcome};
+use board_game::board::{Board, BoardMoves, Outcome};
 use board_game::games::chess::{ChessBoard, Rules};
 use chess::ChessMove;
 use decorum::Total;

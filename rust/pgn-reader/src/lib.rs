@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::io::Read;
+use std::ops::ControlFlow;
 use std::str::FromStr;
 
 pub use buffered_reader;
@@ -110,7 +111,7 @@ pub struct MoveIterator<'a>(&'a str);
 impl<'a> InternalIterator for MoveIterator<'a> {
     type Item = PgnMove<'a>;
 
-    fn find_map<R, F>(self, mut f: F) -> Option<R> where F: FnMut(Self::Item) -> Option<R> {
+    fn try_for_each<R, F>(self, mut f: F) -> ControlFlow<R> where F: FnMut(Self::Item) -> ControlFlow<R> {
         let mut left = self.0;
         let mut curr_mv = None;
 
@@ -125,9 +126,7 @@ impl<'a> InternalIterator for MoveIterator<'a> {
                 // report this comment together with the previously parsed move
                 if let Some(mv) = curr_mv {
                     let comment = left[1..skip - 1].trim();
-                    if let Some(result) = f(PgnMove { mv, comment: Some(comment) }) {
-                        return Some(result);
-                    }
+                    f(PgnMove { mv, comment: Some(comment) })?;
                     curr_mv = None;
                 }
 
@@ -136,9 +135,7 @@ impl<'a> InternalIterator for MoveIterator<'a> {
             } else {
                 // report the previously parsed move without any comment
                 if let Some(mv) = curr_mv.take() {
-                    if let Some(result) = f(PgnMove { mv, comment: None }) {
-                        return Some(result);
-                    }
+                    f(PgnMove { mv, comment: None })?;
                 }
             }
             assert!(curr_mv.is_none());
@@ -148,7 +145,7 @@ impl<'a> InternalIterator for MoveIterator<'a> {
                 if left.starts_with(outcome_str) {
                     let rest = &left[outcome_str.len()..];
                     assert!(rest.is_empty(), "Leftover stuff after outcome: '{}'", rest);
-                    return None;
+                    return ControlFlow::Continue(());
                 }
             }
 
