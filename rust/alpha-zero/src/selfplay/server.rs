@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -40,41 +41,45 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
-    match Game::parse(&startup_settings.game) {
-        Some(Game::TTT) => {
+    let game = Game::parse(&startup_settings.game)
+        .unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
+
+    match game {
+        Game::TTT => {
             selfplay_start(
+                game,
                 startup_settings,
                 TTTBoard::default,
                 TTTStdMapper,
                 reader, writer,
             )
         }
-        Some(Game::STTT) => {
+        Game::STTT => {
             selfplay_start(
+                game,
                 startup_settings,
                 STTTBoard::default,
                 STTTStdMapper,
                 reader, writer,
             )
         }
-        Some(Game::Ataxx { size }) => {
+        Game::Ataxx { size } => {
             selfplay_start(
+                game,
                 startup_settings,
                 || AtaxxBoard::diagonal(size),
                 AtaxxStdMapper::new(size),
                 reader, writer,
             )
         }
-        Some(Game::Chess) => {
+        Game::Chess => {
             selfplay_start(
+                game,
                 startup_settings,
                 ChessBoard::default,
                 ChessStdMapper,
                 reader, writer,
             )
-        }
-        None => {
-            panic!("Unknown game '{}'", startup_settings.game);
         }
     }
 }
@@ -89,6 +94,7 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
 }
 
 fn selfplay_start<B: Board>(
+    game: Game,
     startup: StartupSettings,
     start_pos: impl Fn() -> B + Sync,
     mapper: impl BoardMapper<B>,
@@ -118,7 +124,7 @@ fn selfplay_start<B: Board>(
 
         s.builder().name("collector".to_string()).spawn(move |_| {
             collector_main(
-                &startup.game,
+                &game.to_string(),
                 writer,
                 startup.games_per_gen,
                 startup.first_gen,
@@ -141,7 +147,7 @@ impl Game {
             "sttt" => return Some(Game::STTT),
             "chess" => return Some(Game::Chess),
             "ataxx" => return Some(Game::Ataxx { size: 7 }),
-            _ => {},
+            _ => {}
         };
 
         let start = "ataxx-";
@@ -151,5 +157,16 @@ impl Game {
         }
 
         None
+    }
+}
+
+impl Display for Game {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Game::TTT => write!(f, "ttt"),
+            Game::STTT => write!(f, "sttt"),
+            Game::Chess => write!(f, "chess"),
+            Game::Ataxx { size } => write!(f, "ataxx-{}", size),
+        }
     }
 }
