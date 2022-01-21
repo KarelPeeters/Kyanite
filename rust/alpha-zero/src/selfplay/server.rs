@@ -21,6 +21,14 @@ use crate::selfplay::commander::{commander_main, read_command};
 use crate::selfplay::generator::generator_main;
 use crate::selfplay::protocol::{Command, StartupSettings};
 
+#[derive(Debug, Copy, Clone)]
+enum Game {
+    TTT,
+    STTT,
+    Chess,
+    Ataxx { size: u8 },
+}
+
 pub fn selfplay_server_main() {
     let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap()
         .accept().unwrap();
@@ -32,8 +40,8 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
-    match &*startup_settings.game {
-        "ttt" => {
+    match Game::parse(&startup_settings.game) {
+        Some(Game::TTT) => {
             selfplay_start(
                 startup_settings,
                 TTTBoard::default,
@@ -41,7 +49,7 @@ pub fn selfplay_server_main() {
                 reader, writer,
             )
         }
-        "sttt" => {
+        Some(Game::STTT) => {
             selfplay_start(
                 startup_settings,
                 STTTBoard::default,
@@ -49,15 +57,15 @@ pub fn selfplay_server_main() {
                 reader, writer,
             )
         }
-        "ataxx" => {
+        Some(Game::Ataxx { size }) => {
             selfplay_start(
                 startup_settings,
-                || AtaxxBoard::diagonal(7),
-                AtaxxStdMapper::new(7),
+                || AtaxxBoard::diagonal(size),
+                AtaxxStdMapper::new(size),
                 reader, writer,
             )
         }
-        "chess" => {
+        Some(Game::Chess) => {
             selfplay_start(
                 startup_settings,
                 || ChessBoard::default(),
@@ -65,8 +73,8 @@ pub fn selfplay_server_main() {
                 reader, writer,
             )
         }
-        game => {
-            panic!("Unknown game '{}'", game);
+        None => {
+            panic!("Unknown game '{}'", startup_settings.game);
         }
     }
 }
@@ -124,4 +132,24 @@ fn selfplay_start<B: Board>(
 
         commander_main(reader, cmd_senders, update_sender);
     }).unwrap();
+}
+
+impl Game {
+    fn parse(str: &str) -> Option<Game> {
+        match str {
+            "ttt" => return Some(Game::TTT),
+            "sttt" => return Some(Game::STTT),
+            "chess" => return Some(Game::Chess),
+            "ataxx" => return Some(Game::Ataxx { size: 7 }),
+            _ => {},
+        };
+
+        let start = "ataxx-";
+        if str.starts_with(start) {
+            let size: u8 = str[start.len()..].parse().ok()?;
+            return Some(Game::Ataxx { size });
+        }
+
+        None
+    }
 }
