@@ -41,11 +41,13 @@ async fn main_async() {
 }
 
 async fn main_inner() -> LichessResult<()> {
+    println!("Loading graph & constructing network");
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
     let settings = ZeroSettings::new(64, 4.0, false, FpuMode::Parent);
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
+    println!("Connecting to lichess");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
     let lichess = Lichess::new(token);
 
