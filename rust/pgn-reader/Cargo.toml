@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-buffered-reader = "1.1.0"
+buffered-reader = "1.1.2"
 memchr = "2.4.1"
 internal-iterator = "0.2.0"

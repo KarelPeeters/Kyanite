@@ -20,42 +20,42 @@ pgn-reader = { path = "../pgn-reader" }
 chess = "3.2.0"
 vampirc-uci = { version = "0.11.0", features = ["chess"] }
 licoricedev = { path = "../licorice" }
-shakmaty-syzygy = "0.17.0"
-shakmaty = "0.20.2"
+shakmaty-syzygy = "0.18.0"
+shakmaty = "0.20.4"
 
 # data processing
 # onnxruntime = { version = "0.0.14", optional = true }
-ndarray = "0.15.1"
+ndarray = "0.15.4"
 
 # concurrency
 crossbeam = "0.8.1"
 rayon = "1.5.1"
 
 # util
-itertools = "0.10.1"
+itertools = "0.10.3"
 internal-iterator = "0.2.0"
 
-tokio = { version = "1.1.0", features = ["macros"] }
-tokio-stream = { version = "0.1.2" }
-tokio-util = { version = "0.6.2" }
+tokio = { version = "1.15.0", features = ["macros"] }
+tokio-stream = "0.1.8"
+tokio-util = "0.6.9"
 
 rand = "0.8.4"
-rand_distr = "0.4.1"
+rand_distr = "0.4.3"
 
 lazy_static = "1.4.0"
 unwrap-match = "0.1.0"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
-self_cell = "0.10.0"
-lru = "0.7.0"
+self_cell = "0.10.2"
+lru = "0.7.2"
 
 # io
-serde = { version = "1.0.126", features = ["derive"] }
-serde_json = "1.0.64"
-clap = "3.0.0-beta.5"
+serde = { version = "1.0.134", features = ["derive"] }
+serde_json = "1.0.75"
+clap = { version = "3.0.10", features = ["derive"] }
 safe-transmute = "0.11.2"
 image = { version = "0.23.14", default-features = false, features = ["png"] }
 
-tar = "0.4.37"
+tar = "0.4.38"
 bzip2 = "0.4.3"
 
 # other
