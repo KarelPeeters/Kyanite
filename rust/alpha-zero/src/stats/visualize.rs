@@ -16,12 +16,14 @@ pub fn visualize_network_activations_split<B: Board, M: BoardMapper<B>>(
     boards: &[B],
     max_images: Option<usize>,
     show_variance: bool,
+    print_details: bool,
 ) -> (Vec<Image>, Vec<Image>) {
     let (boards_a, boards_b) = split_player(boards);
 
     (
-        visualize_network_activations(network, &boards_a, max_images, show_variance),
-        visualize_network_activations(network, &boards_b, max_images, show_variance),
+        // (only print the details once)
+        visualize_network_activations(network, &boards_a, max_images, show_variance, print_details),
+        visualize_network_activations(network, &boards_b, max_images, show_variance, false),
     )
 }
 
@@ -47,6 +49,7 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
     boards: &[B],
     max_images: Option<usize>,
     show_variance: bool,
+    print_details: bool,
 ) -> Vec<Image> {
     let exec = network.evaluate_batch_exec(boards);
 
@@ -100,5 +103,5 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
         }
     };
 
-    visualize_graph_activations(graph, &exec, post_process, max_images, show_variance)
+    visualize_graph_activations(graph, &exec, post_process, max_images, show_variance, print_details)
 }

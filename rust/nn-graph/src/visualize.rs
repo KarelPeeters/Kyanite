@@ -22,12 +22,20 @@ pub struct VisTensor {
     pub tensor: Tensor,
 }
 
+#[derive(Debug)]
+pub struct RenderTensor {
+    value: Value,
+    original: bool,
+    vis_tensor: VisTensor,
+}
+
 pub fn visualize_graph_activations(
     graph: &Graph,
     execution: &ExecutionInfo,
     post_process_value: impl Fn(Value, Tensor) -> Option<VisTensor>,
     max_images: Option<usize>,
     show_variance: bool,
+    print_details: bool,
 ) -> Vec<Image> {
     let batch_size = execution.batch_size;
     let image_count = max_images.map_or(batch_size, |max_images| max(max_images, batch_size));
@@ -61,14 +69,17 @@ pub fn visualize_graph_activations(
 
         let data = value.tensor.to_shared();
 
-        to_render.push((Some(value.value), VisTensor { normalize: true, tensor: data.to_shared() }));
-        if let Some(extra) = post_process_value(value.value, data) {
-            to_render.push((None, extra));
+        let vis_tensor = VisTensor { normalize: true, tensor: data.to_shared() };
+        to_render.push(RenderTensor { value: value.value, original: true, vis_tensor });
+
+        if let Some(extra_vis_tensor) = post_process_value(value.value, data) {
+            to_render.push(RenderTensor { value: value.value, original: false, vis_tensor: extra_vis_tensor });
         }
     }
 
     let mut all_details = vec![];
-    for (value, vis_tensor) in to_render {
+    for render_tensor in to_render {
+        let RenderTensor { value, original, vis_tensor } = render_tensor;
         let VisTensor { normalize, tensor: data } = vis_tensor;
         let size = data.len();
 
@@ -102,7 +113,7 @@ pub fn visualize_graph_activations(
 
         total_width = max(total_width, HORIZONTAL_PADDING + view_width);
 
-        let details = Details { value, start_y, normalize, data };
+        let details = Details { value, original, start_y, normalize, data };
         all_details.push(details)
     }
 
@@ -117,15 +128,18 @@ pub fn visualize_graph_activations(
         .collect_vec();
 
     for details in all_details.iter() {
+        if print_details {
+            println!("{:?}", details);
+        }
+
         let data = &details.data;
         let (_, channels, height, width) = data.dim();
 
-        //TODO scale what by what exactly?
-
         if data.iter().any(|x| !x.is_finite()) {
-            eprintln!("Warning: encountered non-finite value in {:?} with rendered shape {:?}", details.value, data.shape());
+            eprintln!("Warning: encountered non-finite value in {:?}", details);
         }
 
+        // TODO it's still not clear what the best way to normalize/scale/clamp/represent this stuff is
         let mean = data.mean().unwrap();
         let std = data.std(1.0);
         let data_norm = (data - mean) / std;
@@ -226,7 +240,8 @@ impl VisTensor {
 }
 
 struct Details {
-    value: Option<Value>,
+    value: Value,
+    original: bool,
     start_y: usize,
 
     normalize: bool,
@@ -237,6 +252,7 @@ impl Debug for Details {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Details")
             .field("value", &self.value)
+            .field("original", &self.original)
             .field("start_y", &self.start_y)
             .field("shape", &self.data.dim())
             .finish()
