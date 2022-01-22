@@ -189,27 +189,26 @@ class LoopSettings:
             if buffer.position_count < self.min_buffer_size:
                 print(
                     f"Not training new network yet, only got {buffer.position_count}/{self.min_buffer_size} positions")
-                continue
+            else:
+                client.send_wait_for_new_network()
+                self.evaluate_network(buffer, logger, network)
 
-            client.send_wait_for_new_network()
-            self.evaluate_network(buffer, logger, network)
+                train_sampler = buffer.sampler_full(self.train_batch_size)
+                print(f"Training network on buffer with size {len(train_sampler)}")
+                train_start = time.perf_counter()
 
-            train_sampler = buffer.sampler_full(self.train_batch_size)
-            print(f"Training network on buffer with size {len(train_sampler)}")
-            train_start = time.perf_counter()
+                for bi in range(batch_count_per_gen):
+                    if bi != 0:
+                        logger.start_batch()
 
-            for bi in range(batch_count_per_gen):
-                if bi != 0:
-                    logger.start_batch()
+                    self.train_settings.train_step(train_sampler, network, optimizer, logger)
+                train_sampler.close()
 
-                self.train_settings.train_step(train_sampler, network, optimizer, logger)
-            train_sampler.close()
+                logger.log("time", "train", time.perf_counter() - train_start)
 
-            logger.log("time", "train", time.perf_counter() - train_start)
-
-            torch.jit.save(network, gen.network_path_pt)
-            save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
-            client.send_new_network(gen.network_path_onnx)
+                torch.jit.save(network, gen.network_path_pt)
+                save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
+                client.send_new_network(gen.network_path_onnx)
 
             logger.save(self.log_path)
             Path(gen.finished_path).touch()
