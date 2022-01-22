@@ -175,7 +175,7 @@ def clean_data(axis, values, window_size: int):
     if window_size == 1:
         clean_values = values
     else:
-        clean_values = scipy.signal.savgol_filter(values, window_size, polyorder=2, mode="nearest")
+        clean_values = scipy.signal.savgol_filter(values, window_size, polyorder=1, mode="nearest")
 
     return axis, clean_values
 

@@ -67,9 +67,10 @@ pub fn visualize_graph_activations(
             continue;
         }
 
+        let is_input = matches!(&info.operation, Operation::Input { .. });
         let data = value.tensor.to_shared();
 
-        let vis_tensor = VisTensor { normalize: true, tensor: data.to_shared() };
+        let vis_tensor = VisTensor { normalize: !is_input, tensor: data.to_shared() };
         to_render.push(RenderTensor { value: value.value, original: true, vis_tensor });
 
         if let Some(extra_vis_tensor) = post_process_value(value.value, data) {
@@ -129,7 +130,7 @@ pub fn visualize_graph_activations(
 
     for details in all_details.iter() {
         if print_details {
-            println!("{:?}", details);
+            println!("{:?} {:?}", details, graph[details.value]);
         }
 
         let data = &details.data;
