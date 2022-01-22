@@ -257,6 +257,9 @@ impl<B: Board> GameState<B> {
                     if let Some(eval) = self.cache.get(&request.board) {
                         counter.cache_hits += 1;
                         // TODO we could do a shallow clone here instead but the compiler can't figure out the lifetimes
+                        // TODO by doing things this way we're overrepresenting games with more cache hits.
+                        //   additionally, they will always run ahead of non-cache hitting games
+                        //   this means the loop process explores a lot less than expected
                         response = Some(request.respond(eval.clone()));
                         continue;
                     }
