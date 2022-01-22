@@ -22,7 +22,7 @@ pub trait Oracle<B: Board>: Debug {
 }
 
 /// An oracle without any knowledge, meaning that it only returns evaluations for terminal positions.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct DummyOracle;
 
 impl<B: Board> Oracle<B> for DummyOracle {
