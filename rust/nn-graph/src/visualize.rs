@@ -16,19 +16,31 @@ type Tensor4 = ArcArray<f32, Ix4>;
 const VERTICAL_PADDING: usize = 5;
 const HORIZONTAL_PADDING: usize = 5;
 
+#[derive(Debug)]
+pub struct VisTensor {
+    pub normalize: bool,
+    pub tensor: Tensor,
+}
+
 pub fn visualize_graph_activations(
     graph: &Graph,
     execution: &ExecutionInfo,
-    post_process_value: impl Fn(Value, Tensor) -> Option<Tensor>,
+    post_process_value: impl Fn(Value, Tensor) -> Option<VisTensor>,
     max_images: Option<usize>,
+    show_variance: bool,
 ) -> Vec<Image> {
     let batch_size = execution.batch_size;
     let image_count = max_images.map_or(batch_size, |max_images| max(max_images, batch_size));
 
+    // prevent divide by zero issues later
+    if image_count == 0 {
+        return vec![];
+    }
+
     let mut total_width = HORIZONTAL_PADDING;
     let mut total_height = VERTICAL_PADDING;
 
-    let mut selected = vec![];
+    let mut to_render = vec![];
 
     for value in execution.values.values() {
         let info = &graph[value.value];
@@ -49,14 +61,15 @@ pub fn visualize_graph_activations(
 
         let data = value.tensor.to_shared();
 
-        selected.push((Some(value.value), data.to_shared()));
+        to_render.push((Some(value.value), VisTensor { normalize: true, tensor: data.to_shared() }));
         if let Some(extra) = post_process_value(value.value, data) {
-            selected.push((None, extra));
+            to_render.push((None, extra));
         }
     }
 
     let mut all_details = vec![];
-    for (value, data) in selected {
+    for (value, vis_tensor) in to_render {
+        let VisTensor { normalize, tensor: data } = vis_tensor;
         let size = data.len();
 
         let data: Tensor4 = match data.ndim() {
@@ -89,7 +102,7 @@ pub fn visualize_graph_activations(
 
         total_width = max(total_width, HORIZONTAL_PADDING + view_width);
 
-        let details = Details { value, data, start_y };
+        let details = Details { value, start_y, normalize, data };
         all_details.push(details)
     }
 
@@ -109,6 +122,10 @@ pub fn visualize_graph_activations(
 
         //TODO scale what by what exactly?
 
+        if data.iter().any(|x| !x.is_finite()) {
+            eprintln!("Warning: encountered non-finite value in {:?} with rendered shape {:?}", details.value, data.shape());
+        }
+
         let mean = data.mean().unwrap();
         let std = data.std(1.0);
         let data_norm = (data - mean) / std;
@@ -127,10 +144,16 @@ pub fn visualize_graph_activations(
                         let s = (std_ele[(c, h, w)] - std_ele_mean) / std_ele_std;
                         let s_norm = ((s + 1.0) / 2.0).clamp(0.0, 1.0);
 
-                        let f = data_norm[(image_i, c, h, w)];
-                        let f_norm = ((f + 1.0) / 2.0).clamp(0.0, 1.0);
+                        let gb = if details.normalize {
+                            let f = data_norm[(image_i, c, h, w)];
+                            let f_norm = ((f + 1.0) / 2.0).clamp(0.0, 1.0);
+                            f_norm
+                        } else {
+                            data[(image_i, c, h, w)].clamp(0.0, 1.0)
+                        };
+                        let r = if show_variance { s_norm } else { gb };
 
-                        let color = Srgb::from(LinSrgb::new(s_norm, f_norm, f_norm));
+                        let color = Srgb::from(LinSrgb::new(r, gb, gb));
                         let p = Rgb([color.red, color.green, color.blue]);
                         image.put_pixel(x as u32, y as u32, p);
                     }
@@ -192,9 +215,21 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
     }
 }
 
+impl VisTensor {
+    pub fn abs(tensor: Tensor) -> VisTensor {
+        VisTensor { normalize: false, tensor }
+    }
+
+    pub fn norm(tensor: Tensor) -> VisTensor {
+        VisTensor { normalize: true, tensor }
+    }
+}
+
 struct Details {
     value: Option<Value>,
     start_y: usize,
+
+    normalize: bool,
     data: Tensor4,
 }
 
