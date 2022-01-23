@@ -19,6 +19,10 @@ impl Drop for TensorDescriptor {
 
 impl TensorDescriptor {
     pub fn new(shape: Vec<i32>, strides: Vec<i32>) -> Self {
+        Self::new_with_type(shape, strides, cudnnDataType_t::CUDNN_DATA_FLOAT)
+    }
+
+    pub fn new_with_type(shape: Vec<i32>, strides: Vec<i32>, data_type: cudnnDataType_t) -> Self {
         assert!(shape.len() >= 4, "Tensors must be at least 4d, got shape {:?} strides {:?}", shape, strides);
 
         let rank = shape.len();
@@ -35,7 +39,7 @@ impl TensorDescriptor {
             cudnnCreateTensorDescriptor(&mut inner as *mut _).unwrap();
             cudnnSetTensorNdDescriptor(
                 inner,
-                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                data_type,
                 rank as i32,
                 shape.as_ptr(),
                 strides.as_ptr(),
@@ -85,21 +89,29 @@ impl Drop for FilterDescriptor {
 }
 
 impl FilterDescriptor {
-    /// * `k`: output channels
-    /// * `c`: input channels
-    /// * `(h, w)`: kernel size
-    pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
+    pub fn new_with_type_format(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t) -> Self {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
             cudnnSetFilter4dDescriptor(
                 inner,
-                cudnnDataType_t::CUDNN_DATA_FLOAT,
-                cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+                data_type,
+                format,
                 k, c, h, w,
             ).unwrap();
             FilterDescriptor { inner, shape: [k, c, h, w] }
         }
+    }
+
+    /// * `k`: output channels
+    /// * `c`: input channels
+    /// * `(h, w)`: kernel size
+    pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
+        Self::new_with_type_format(
+            k, c, h, w,
+            cudnnDataType_t::CUDNN_DATA_FLOAT,
+            cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
+        )
     }
 
     pub unsafe fn inner(&self) -> cudnnFilterDescriptor_t {
