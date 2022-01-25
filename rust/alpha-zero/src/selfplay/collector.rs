@@ -61,7 +61,7 @@ pub fn collector_main<B: Board>(
                     let item = heaps[thread_id].pop().unwrap();
                     *next_index += 1;
 
-                    curr_output.append(item.simulation)
+                    curr_output.append(&item.simulation)
                         .expect("Error during simulation appending");
                     curr_game_count += 1;
 

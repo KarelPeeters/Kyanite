@@ -58,12 +58,14 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         let outputs = self.executor.evaluate(&[&self.input]);
 
         // decode the relevant part of the output
+        // the number and shape of outputs has been checked already
         decode_output(
             self.mapper,
             boards,
             &outputs[0][0..batch_size],
             &outputs[1][0..batch_size * 3],
             &outputs[2][0..batch_size * self.mapper.policy_len()],
+            outputs.get(3).map(|x| &x[0..batch_size]),
         )
     }
 }

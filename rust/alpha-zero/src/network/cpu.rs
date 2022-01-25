@@ -62,19 +62,19 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let outputs = self.evaluate_batch_exec(boards).output_tensors();
 
-        // decode the output
-        assert_eq!(outputs.len(), 3);
-        let output_value_logit = &outputs[0];
-        let output_wdl_logit = &outputs[1];
-        let output_policy_logit = &outputs[2];
+        // the number and shape of outputs has been checked already
+        let output_value_logit = outputs[0].as_slice().unwrap();
+        let output_wdl_logit = outputs[1].as_slice().unwrap();
+        let output_policy_logit = outputs[2].as_slice().unwrap();
+        let output_moves_left = outputs.get(3).map(|t| t.as_slice().unwrap());
 
-        // decode the relevant part of the output
         decode_output(
             self.mapper,
             boards,
-            output_value_logit.as_slice().unwrap(),
-            output_wdl_logit.as_slice().unwrap(),
-            output_policy_logit.as_slice().unwrap(),
+            output_value_logit,
+            output_wdl_logit,
+            output_policy_logit,
+            output_moves_left,
         )
     }
 }

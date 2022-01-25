@@ -77,6 +77,7 @@ fn uniform_values() -> ZeroValues {
     ZeroValues {
         value: 0.0,
         wdl: WDL { win: 1.0 / 3.0, draw: 1.0 / 3.0, loss: 1.0 / 3.0 },
+        moves_left: 0.0,
     }
 }
 

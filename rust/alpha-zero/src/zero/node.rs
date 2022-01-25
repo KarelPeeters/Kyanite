@@ -9,6 +9,7 @@ use crate::zero::range::IdxRange;
 pub struct ZeroValues {
     pub value: f32,
     pub wdl: WDL<f32>,
+    pub moves_left: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -132,28 +133,30 @@ impl<N> Node<N> {
 }
 
 impl ZeroValues {
-    pub fn from_outcome(outcome: OutcomeWDL) -> Self {
+    pub fn from_outcome(outcome: OutcomeWDL, moves_left: f32) -> Self {
         ZeroValues {
             value: outcome.sign(),
             wdl: outcome.to_wdl(),
+            moves_left,
         }
     }
 
     pub fn nan() -> Self {
-        ZeroValues { value: f32::NAN, wdl: WDL::nan() }
+        ZeroValues { value: f32::NAN, wdl: WDL::nan(), moves_left: f32::NAN }
     }
 
     /// The value that should be accumulated in the parent node of this value.
-    /// This is similar to [WDL::flip] but in the future will also do things like increment the _moves left counter_.
     pub fn parent(&self) -> Self {
-        ZeroValues { value: -self.value, wdl: self.wdl.flip() }
+        ZeroValues { value: -self.value, wdl: self.wdl.flip(), moves_left: self.moves_left + 1.0 }
     }
 
     pub fn add_virtual(&self, virtual_visits: u64) -> Self {
         let virtual_visits = virtual_visits as f32;
         ZeroValues {
-            value: self.value + virtual_visits,
+            value: self.value - virtual_visits,
             wdl: self.wdl + WDL::new(0.0, 0.0, virtual_visits),
+            //TODO make sure this behaves correctly in the full impl
+            moves_left: self.moves_left,
         }
     }
 }
@@ -162,7 +165,7 @@ impl std::ops::Add<Self> for ZeroValues {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        ZeroValues { value: self.value + rhs.value, wdl: self.wdl + rhs.wdl }
+        ZeroValues { value: self.value + rhs.value, wdl: self.wdl + rhs.wdl, moves_left: self.moves_left + rhs.moves_left }
     }
 }
 
@@ -176,21 +179,23 @@ impl std::ops::Div<f32> for ZeroValues {
     type Output = ZeroValues;
 
     fn div(self, rhs: f32) -> Self::Output {
-        ZeroValues { value: self.value / rhs, wdl: self.wdl / rhs }
+        ZeroValues { value: self.value / rhs, wdl: self.wdl / rhs, moves_left: self.moves_left / rhs }
     }
 }
 
 impl Display for ZeroValues {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.3}, {:.3}/{:.3}/{:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss)
+        write!(f, "{:.3}, {:.3}/{:.3}/{:.3}, {:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss, self.moves_left)
     }
 }
 
+//TODO maybe remove this in favour of "parent" and "child"?
 impl Flip for ZeroValues {
     fn flip(self) -> Self {
         ZeroValues {
             value: -self.value,
             wdl: self.wdl.flip(),
+            moves_left: self.moves_left
         }
     }
 }

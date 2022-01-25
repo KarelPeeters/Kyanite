@@ -14,6 +14,7 @@ use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::BoardMapper;
 use crate::selfplay::simulation::{Position, Simulation};
 use crate::util::kdl_divergence;
+use crate::zero::node::ZeroValues;
 
 #[derive(Serialize)]
 struct MetaData<'a> {
@@ -61,9 +62,9 @@ type Result<T> = std::io::Result<T>;
 const SCALAR_NAMES: &[&str] = &[
     "game_id", "pos_index", "game_length", "zero_visits", "available_mv_count", "played_mv",
     "kdl_policy",
-    "final_v", "final_wdl_w", "final_wdl_d", "final_wdl_l",
-    "zero_v", "zero_wdl_w", "zero_wdl_d", "zero_wdl_l",
-    "net_v", "net_wdl_w", "net_wdl_d", "net_wdl_l",
+    "final_v", "final_wdl_w", "final_wdl_d", "final_wdl_l", "final_moves_left",
+    "zero_v", "zero_wdl_w", "zero_wdl_d", "zero_wdl_l", "zero_moves_left",
+    "net_v", "net_wdl_w", "net_wdl_d", "net_wdl_l", "net_moves_left",
 ];
 
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
@@ -100,34 +101,37 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         })
     }
 
-    pub fn append(&mut self, simulation: Simulation<B>) -> Result<()> {
-        assert!(!simulation.positions.is_empty(), "Simulation cannot be empty");
+    pub fn append(&mut self, simulation: &Simulation<B>) -> Result<()> {
+        let Simulation { outcome, positions } = simulation;
+        assert!(!positions.is_empty(), "Simulation cannot be empty");
 
         // collect metadata statistics
         let game_id = self.game_count;
-        let game_length = simulation.positions.len();
+        let game_length = positions.len();
 
         self.game_count += 1;
         self.position_count += game_length;
 
         self.max_game_length = Some(max(game_length as i32, self.max_game_length.unwrap_or(-1)));
         self.min_game_length = Some(min(game_length as i32, self.min_game_length.unwrap_or(i32::MAX)));
-        self.total_root_wdl += simulation.outcome.pov(simulation.positions[0].board.next_player()).to_wdl();
+        self.total_root_wdl += outcome.pov(positions[0].board.next_player()).to_wdl();
 
         let mut scalars: Vec<f32> = vec![];
         let mut board_bools = BitBuffer::new(self.mapper.input_bool_len());
         let mut board_scalars: Vec<f32> = vec![];
         let mut policy_indices: Vec<u32> = vec![];
 
-        for (pos_index, _pos) in simulation.positions.iter().enumerate() {
+        for (pos_index, position) in positions.iter().enumerate() {
             let &Position {
                 ref board, should_store, played_mv, zero_visits,
                 ref zero_evaluation, ref net_evaluation
-            } = _pos;
+            } = position;
 
             if !should_store { continue; }
 
             let player = board.next_player();
+            let moves_left = (positions.len() - pos_index) as f32;
+            let final_values = ZeroValues::from_outcome(outcome.pov(player), moves_left);
 
             // board
             self.mapper.encode(&mut board_bools, &mut board_scalars, board);
@@ -170,12 +174,9 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
             scalars.push(kdl_divergence(&zero_evaluation.policy, &net_evaluation.policy));
 
-            scalars.push(simulation.outcome.pov(player).sign::<f32>());
-            scalars.extend_from_slice(&simulation.outcome.pov(player).to_wdl().to_slice());
-            scalars.push(zero_evaluation.values.value);
-            scalars.extend_from_slice(&zero_evaluation.values.wdl.to_slice());
-            scalars.push(net_evaluation.values.value);
-            scalars.extend_from_slice(&net_evaluation.values.wdl.to_slice());
+            push_values(&mut scalars, final_values);
+            push_values(&mut scalars, zero_evaluation.values);
+            push_values(&mut scalars, net_evaluation.values);
 
             assert_eq!(SCALAR_NAMES.len(), scalars.len());
 
@@ -240,6 +241,14 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn game_count(&self) -> usize {
         self.game_count
     }
+}
+
+fn push_values(scalars: &mut Vec<f32>, values: ZeroValues) {
+    let ZeroValues { value, wdl, moves_left } = values;
+
+    scalars.push(value);
+    scalars.extend_from_slice(&wdl.to_slice());
+    scalars.push(moves_left);
 }
 
 #[cfg(test)]

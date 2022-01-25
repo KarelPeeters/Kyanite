@@ -47,7 +47,10 @@ pub fn zero_step_gather<B: Board>(
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
 
-    let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw);
+    //TODO what moves_left to pass here? does it matter?
+    //  it's probably better to just switch to q-only fpu
+    //  also this while propagating concept may just overcomplicating things
+    let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0);
 
     loop {
         // count each node as visited
@@ -56,7 +59,7 @@ pub fn zero_step_gather<B: Board>(
         // if the board is done backpropagate the real value
         if let Some(outcome) = oracle.best_outcome(&curr_board) {
             let outcome = outcome.pov(curr_board.next_player());
-            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome));
+            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome, 0.0));
             return None;
         }
 
@@ -82,6 +85,7 @@ pub fn zero_step_gather<B: Board>(
         if tree[curr_node].complete_visits > 0 {
             fpu = tree[curr_node].values();
         }
+        //TODO should this be flip or parent? or maybe child?
         fpu = fpu.flip();
 
         // continue selecting, pick the best child

@@ -25,6 +25,8 @@ pub struct Filter {
     pub require_eval: bool,
 }
 
+// TODO the filtering removes resigned games, which may introduce bias.
+//   Maybe we should keep games where the engine eval agrees with the resignation?
 pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
     input_pgn: impl BufferedReader<()>,
     binary_output: &mut BinaryOutput<ChessBoard, M>,
@@ -58,13 +60,15 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
             };
 
-            let missing_eval_result = game.move_iter().try_for_each(|mv| {
+            let move_count = game.move_iter().count();
+
+            let missing_eval_result = game.move_iter().enumerate().try_for_each(|(i, mv)| {
                 let eval = mv.field("eval").map(PgnEval::parse);
                 if filter.require_eval && eval.is_none() {
                     ControlFlow::Break(())
                 } else {
                     let mv = board.parse_move(mv.mv).unwrap();
-                    positions.push(build_position(&board, mv, eval));
+                    positions.push(build_position(&board, mv, eval, (move_count - i) as f32));
                     board.play(mv);
 
                     ControlFlow::Continue(())
@@ -79,7 +83,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 skip = true;
             } else {
                 position_count = positions.len();
-                binary_output.append(Simulation { outcome, positions })?;
+                binary_output.append(&Simulation { outcome, positions })?;
             }
 
             time_output += time_since(&mut prev);
@@ -202,7 +206,7 @@ impl Logger {
     }
 }
 
-fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>) -> Position<ChessBoard> {
+fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, moves_left: f32) -> Position<ChessBoard> {
     let policy: Vec<f32> = board.available_moves()
         .map(|cand| (cand == mv) as u8 as f32)
         .collect();
@@ -216,6 +220,7 @@ fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>) -> P
         ZeroValues {
             value: win * 2.0 - 1.0,
             wdl: WDL::new(win, 0.0, 1.0 - win),
+            moves_left: moves_left as f32,
         }
     });
 
