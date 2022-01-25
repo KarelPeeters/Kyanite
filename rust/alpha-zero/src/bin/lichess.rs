@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use board_game::board::Board;
-use board_game::games::chess::ChessBoard;
+use board_game::games::chess::{ChessBoard, Rules};
 use itertools::Itertools;
 use tokio_stream::StreamExt;
 
@@ -23,16 +23,25 @@ const MAX_VISITS: u64 = 100_000;
 const MAX_FRACTION_TIME_USED: f32 = 1.0 / 30.0;
 
 fn main() {
+    // TODO why this high exploration weight?
+    let settings = ZeroSettings::new(64, 4.0, false, FpuMode::Parent);
+    println!("Using {:?}", settings);
+
+    println!("Loading graph & constructing network");
+    let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
+    let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
+    let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
+
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async { main_async().await })
+        .block_on(async { main_async(settings, &mut network).await })
 }
 
-async fn main_async() {
+async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoard>) {
     loop {
-        if let Err(e) = main_inner().await {
+        if let Err(e) = main_inner(settings, network).await {
             println!("Got error {:?}", e);
         }
 
@@ -40,13 +49,7 @@ async fn main_async() {
     }
 }
 
-async fn main_inner() -> LichessResult<()> {
-    println!("Loading graph & constructing network");
-    let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
-    let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
-    let settings = ZeroSettings::new(64, 4.0, false, FpuMode::Parent);
-    let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
-
+async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoard>) -> LichessResult<()> {
     println!("Connecting to lichess");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
     let lichess = Lichess::new(token);
@@ -86,7 +89,7 @@ async fn main_inner() -> LichessResult<()> {
                     }
                     BoardState::GameFull(state) => {
                         let print = info_game_ids.contains(&state.id);
-                        make_move(&lichess, &game, &state, print, settings, &mut network).await?;
+                        make_move(&lichess, &game, &state, print, settings, network).await?;
                     }
                 }
             }
@@ -107,7 +110,7 @@ async fn make_move(
     settings: ZeroSettings,
     network: &mut impl Network<ChessBoard>,
 ) -> LichessResult<()> {
-    let board = board_from_moves(&state.state.moves);
+    let board = board_from_state(state);
     println!("{}", board);
 
     let start = Instant::now();
@@ -146,13 +149,12 @@ async fn make_move(
     Ok(())
 }
 
-fn board_from_moves(moves: &str) -> ChessBoard {
-    let mut board = ChessBoard::default();
+fn board_from_state(game: &GameFull) -> ChessBoard {
+    let mut board = ChessBoard::new_without_history_fen(&game.initial_fen, Rules::default());
 
-    if !moves.is_empty() {
-        for mv in moves.split(' ') {
-            let mv = board.parse_move(mv)
-                .unwrap_or_else(|e| panic!("Failed to parse move '{}' with error {:?}", mv, e));
+    if !game.state.moves.is_empty() {
+        for mv in game.state.moves.split(' ') {
+            let mv = board.parse_move(mv).unwrap();
             board.play(mv)
         }
     }

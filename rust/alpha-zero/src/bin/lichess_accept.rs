@@ -29,7 +29,8 @@ async fn main_impl() -> LichessResult<()> {
                 println!("  variant: {:?}", challenge.variant);
                 println!("  fen:     {:?}", challenge.initial_fen);
 
-                if challenge.variant.key != "standard" {
+                // TODO reject Chess960 starting positions somehow
+                if challenge.variant.key != "standard" && challenge.variant.key != "fromPosition" {
                     println!("Declined");
                     if let Err(e) = lichess.challenge_decline(&challenge.id, Some("This bot does not play variants")).await {
                         println!("Error: {:?}", e)
