@@ -6,36 +6,36 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import PostActNetwork, PostActValueHead, PostActConvPolicyHead
+from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
 from lib.selfplay_client import SelfplaySettings
 from lib.train import TrainSettings, ValueTarget
 
 
 def main():
-    game = Game.find("ataxx-5")
+    game = Game.find("chess")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=128,
-        games_per_gen=100,
+        batch_size=512,
+        games_per_gen=200,
         reorder_games=False,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        zero_temp_move_count=30,
+        zero_temp_move_count=10,
         use_value=False,
         max_game_length=300,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=600,
+        full_iterations=200,
         part_iterations=20,
         exploration_weight=1.0,
         random_symmetries=True,
-        cache_size=600,
+        cache_size=200,
     )
 
     train_settings = TrainSettings(
@@ -51,9 +51,9 @@ def main():
     def initial_network():
         channels = 32
         return PostActNetwork(
-            game, 4, channels,
-            PostActValueHead(game, channels, 4, channels),
-            PostActConvPolicyHead(game, channels),
+            game, 8, channels,
+            PostActValueHead(game, channels, 4, 32),
+            PostActAttentionPolicyHead(game, channels, channels),
         )
 
     initial_files_pattern = ""
@@ -61,7 +61,7 @@ def main():
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop/{game.name}/initial/",
+        root_path=f"data/loop/{game.name}/simple_unbalanced/",
 
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
@@ -69,10 +69,10 @@ def main():
         only_generate=False,
 
         min_buffer_size=10_000,
-        max_buffer_size=50_000,
+        max_buffer_size=2_000_000,
 
         train_batch_size=128,
-        samples_per_position=0.1,
+        samples_per_position=0.5,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 
