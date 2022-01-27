@@ -331,6 +331,8 @@ impl PoolingDescriptor {
 #[derive(Debug)]
 pub struct TensorOpDescriptor {
     inner: cudnnOpTensorDescriptor_t,
+    #[allow(dead_code)]
+    operation: cudnnOpTensorOp_t,
 }
 
 impl Drop for TensorOpDescriptor {
@@ -353,7 +355,7 @@ impl TensorOpDescriptor {
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
             ).unwrap();
 
-            TensorOpDescriptor { inner }
+            TensorOpDescriptor { inner, operation }
         }
     }
 
