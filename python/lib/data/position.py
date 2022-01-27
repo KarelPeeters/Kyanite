@@ -55,6 +55,7 @@ class PositionBatch:
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
         all_values = torch.empty(len(positions), 3, pin_memory=pin_memory)
+        moves_left = torch.empty(len(positions), pin_memory=pin_memory)
 
         policy_indices = torch.zeros(len(positions), self.max_available_moves, dtype=torch.int64, pin_memory=pin_memory)
         policy_values = torch.empty(len(positions), self.max_available_moves, pin_memory=pin_memory)
@@ -73,6 +74,9 @@ class PositionBatch:
             all_values[i, 1] = p.zero_v
             all_values[i, 2] = p.net_v
 
+            # TODO this should actually load all of them from the position like wdl and values
+            moves_left[i] = p.game_length - p.pos_index
+
             policy_indices[i, :p.available_mv_count] = torch.from_numpy(p.policy_indices.copy())
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
@@ -88,6 +92,8 @@ class PositionBatch:
         self.v_final = self.all_values[:, 0]
         self.v_zero = self.all_values[:, 1]
         self.v_net = self.all_values[:, 2]
+
+        self.moves_left = moves_left.to(DEVICE)
 
     def __len__(self):
         return len(self.input_full)

@@ -14,9 +14,9 @@ from lib.logger import Logger
 from lib.util import calc_gradient_norms
 
 
-class ValueTarget:
-    Final: 'ValueTarget'
-    Zero: 'ValueTarget'
+class ScalarTarget:
+    Final: 'ScalarTarget'
+    Zero: 'ScalarTarget'
 
     def __init__(self, final: float):
         assert 0.0 <= final <= 1.0
@@ -31,17 +31,19 @@ class ValueTarget:
         return self.final * final + (1.0 - self.final) * zero
 
 
-ValueTarget.Final = ValueTarget(1.0)
-ValueTarget.Zero = ValueTarget(0.0)
+ScalarTarget.Final = ScalarTarget(1.0)
+ScalarTarget.Zero = ScalarTarget(0.0)
 
 
 @dataclass
 class TrainSettings:
     game: Game
-    value_target: ValueTarget
+    value_target: ScalarTarget
 
-    wdl_weight: float
     value_weight: float
+    wdl_weight: float
+    moves_left_weight: float
+    moves_left_delta: float
     policy_weight: float
 
     train_in_eval_mode: bool
@@ -77,28 +79,28 @@ class TrainSettings:
             self, network: nn.Module,
             log_prefix: str, logger: Logger,
             batch: PositionBatch,
-            value_target: ValueTarget
+            scalar_target: ScalarTarget
     ):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
-        value_logit, wdl_logit, policy_logit = network(batch.input_full)
+        scalars, policy_logit = network(batch.input_full)
 
-        value = torch.tanh(value_logit)
-        wdl = nnf.softmax(wdl_logit, -1)
+        value = torch.tanh(scalars[:, 0])
+        wdl = nnf.softmax(scalars[:, 1:4], -1)
+        moves_left = torch.relu(scalars[:, 4])
 
-        batch_value = value_target.pick(final=batch.v_final, zero=batch.v_zero)
-        batch_wdl = value_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
+        batch_value = scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
+        batch_wdl = scalar_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
+        # TODO this should be replaced with the same pick construct as the other ones
+        batch_moves_left = batch.moves_left
 
         # losses
-        loss_wdl = nnf.mse_loss(wdl, batch_wdl)
         loss_value = nnf.mse_loss(value, batch_value)
+        loss_wdl = nnf.mse_loss(wdl, batch_wdl)
+        loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
         loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logit, batch.policy_indices, batch.policy_values)
-        loss_total = self.wdl_weight * loss_wdl + self.value_weight * loss_value + self.policy_weight * loss_policy
 
-        logger.log("loss-wdl", f"{log_prefix} wdl", loss_wdl)
-        logger.log("loss-value", f"{log_prefix} value", loss_value)
-        logger.log("loss-policy", f"{log_prefix} policy", loss_policy)
-        logger.log("loss-total", f"{log_prefix} total", loss_total)
+        loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left, loss_policy)
 
         # accuracies
         # TODO check that all of this calculates the correct values in the presence of pass moves
@@ -106,12 +108,36 @@ class TrainSettings:
         batch_size = len(batch)
 
         acc_value = torch.eq(value.sign(), batch_value.sign()).sum() / (batch_value != 0).sum()
-        acc_wdl = torch.eq(wdl_logit.argmax(dim=-1), batch_wdl.argmax(dim=-1)).sum() / batch_size
+        acc_wdl = torch.eq(wdl.argmax(dim=-1), batch_wdl.argmax(dim=-1)).sum() / batch_size
 
         logger.log("acc-value", f"{log_prefix} value", acc_value)
         logger.log("acc-value", f"{log_prefix} wdl", acc_wdl)
         logger.log("acc-policy", f"{log_prefix} acc", acc_policy)
         logger.log("acc-policy", f"{log_prefix} captured", cap_policy)
+
+        return loss_total
+
+    def combine_losses(
+            self, log_prefix: str, logger: Logger,
+            value, wdl, moves_left, policy
+    ):
+        value_weighed = self.value_weight * value
+        wdl_weighed = self.wdl_weight * wdl
+        moves_left_weighed = self.moves_left_weight * moves_left
+        policy_weighed = self.policy_weight * policy
+
+        loss_total = value_weighed + wdl_weighed + moves_left_weighed + policy_weighed
+
+        logger.log("loss-wdl", f"{log_prefix} wdl", wdl)
+        logger.log("loss-value", f"{log_prefix} value", value)
+        logger.log("loss-policy", f"{log_prefix} policy", policy)
+        logger.log("loss-moves-left", f"{log_prefix} moves-left", moves_left)
+
+        logger.log("loss-total", f"{log_prefix} total", loss_total)
+        logger.log("loss-part", f"{log_prefix} value", value_weighed)
+        logger.log("loss-part", f"{log_prefix} wdl", wdl_weighed)
+        logger.log("loss-part", f"{log_prefix} moves_left", moves_left_weighed)
+        logger.log("loss-part", f"{log_prefix} policy", policy_weighed)
 
         return loss_total
 

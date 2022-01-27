@@ -5,16 +5,16 @@ from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_ATT, CHESS_FLAT_TO_CON
 from lib.games import Game
 
 
-class PostActValueHead(nn.Module):
-    def __init__(self, game: Game, channels: int, value_channels: int, value_hidden: int):
+class PostActScalarHead(nn.Module):
+    def __init__(self, game: Game, channels: int, hidden_channels: int, hidden_size: int):
         super().__init__()
         self.seq = nn.Sequential(
-            conv2d(channels, value_channels, 1),
+            conv2d(channels, hidden_channels, 1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(value_channels * game.board_size * game.board_size, value_hidden),
+            nn.Linear(hidden_channels * game.board_size * game.board_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(value_hidden, 4)
+            nn.Linear(hidden_size, 1 + 3 + 1)
         )
 
     def forward(self, common):
@@ -73,7 +73,7 @@ class PostActAttentionPolicyHead(nn.Module):
 
 
 class PostActNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int, value_head: nn.Module, policy_head: nn.Module):
+    def __init__(self, game: Game, depth: int, channels: int, scalar_head: nn.Module, policy_head: nn.Module):
         super().__init__()
 
         self.tower = nn.Sequential(
@@ -82,19 +82,16 @@ class PostActNetwork(nn.Module):
             nn.BatchNorm2d(channels),
         )
 
-        self.value_head = value_head
+        self.scalar_head = scalar_head
         self.policy_head = policy_head
 
     def forward(self, input):
         common = self.tower(input)
 
-        value_wdl = self.value_head(common)
+        scalars = self.scalar_head(common)
         policy = self.policy_head(common)
 
-        value = value_wdl[:, 0]
-        wdl = value_wdl[:, 1:4]
-
-        return value, wdl, policy
+        return scalars, policy
 
 
 class Block(nn.Module):

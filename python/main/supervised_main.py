@@ -10,11 +10,11 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
+from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
 from lib.plotter import LogPlotter, run_with_plotter
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
-from lib.train import TrainSettings, ValueTarget
+from lib.train import TrainSettings, ScalarTarget
 from lib.util import DEVICE, print_param_count
 
 
@@ -32,32 +32,67 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 
 
 def main(plotter: LogPlotter):
-    train_pattern = "../../data/lichess/09.json"
-    test_pattern = "../../data/lichess/09.json"
-    output_folder = "../../data/supervised/derp"
+    output_folder = "../../data/supervised/moves_left/added"
+
+    train_pattern = "../../data/loop/chess/simple_unbalanced/selfplay/*.json"
+    test_pattern = "../../data/loop/chess/simple_unbalanced/selfplay/*.json"
+    limit_file_count = 100
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
+    allow_resume = False
 
-    batch_size = 1024
+    batch_size = 128
 
     test_steps = 16
     save_steps = 128
 
     settings = TrainSettings(
         game=game,
-        value_target=ValueTarget.Zero,
-        wdl_weight=0.9,
         value_weight=0.1,
+        wdl_weight=1.0,
         policy_weight=1.0,
-        clip_norm=100,
+        moves_left_delta=20,
+        moves_left_weight=0.0001,
+        clip_norm=20.0,
+        value_target=ScalarTarget.Final,
         train_in_eval_mode=False,
     )
 
-    train_files = [DataFile.open(game, path) for path in glob.glob(train_pattern)]
-    train_sampler = FileListSampler(game, train_files, batch_size)
+    def initial_network():
+        old_network = torch.jit.load(
+            "C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/simple_unbalanced/training/gen_462/network.pt")
+        channels = 32
+        new_network = PostActNetwork(
+            game, 8, channels,
+            PostActScalarHead(game, channels, 4, 32),
+            PostActAttentionPolicyHead(game, channels, channels),
+        )
 
-    test_files = [DataFile.open(game, path) for path in glob.glob(test_pattern)]
+        old_params = list(old_network.named_parameters())
+        new_params = list(new_network.named_parameters())
+        assert len(old_params) == len(new_params)
+
+        for (new_name, new_param), (old_name, old_param) in zip(new_params, old_params):
+            old_name = old_name.replace("value_head", "scalar_head")
+            assert new_name == old_name, f"Name mismatch: {new_name} vs {old_name}"
+
+            if new_name == old_name:
+                if new_param.shape == old_param.shape:
+                    new_param.data.copy_(old_param)
+                else:
+                    print(f"Skipping shape mismatch {new_name}: new {new_param.shape} old {old_param.shape}")
+
+        return new_network
+
+    train_files = sorted((DataFile.open(game, p) for p in glob.glob(train_pattern)), key=lambda f: f.info.timestamp)
+    test_files = sorted((DataFile.open(game, p) for p in glob.glob(test_pattern)), key=lambda f: f.info.timestamp)
+
+    if limit_file_count is not None:
+        train_files = train_files[-min(limit_file_count, len(train_files)):]
+        test_files = test_files[-min(limit_file_count, len(train_files)):]
+
+    train_sampler = FileListSampler(game, train_files, batch_size)
     test_sampler = FileListSampler(game, test_files, batch_size)
 
     print(f"Train file count: {len(train_files)}")
@@ -73,14 +108,10 @@ def main(plotter: LogPlotter):
     if last_bi is None:
         logger = Logger()
         start_bi = 0
-
-        channels = 128
-        network = PostActNetwork(
-            game, 8, channels,
-            PostActValueHead(game, channels, 16, 128),
-            PostActAttentionPolicyHead(game, channels, 64),
-        )
+        network = initial_network()
     else:
+        assert allow_resume, f"Not allowed to resume, but found existing batch {last_bi}"
+
         logger = Logger.load(os.path.join(output_folder, "log.npz"))
         start_bi = last_bi + 1
         network = torch.jit.load(os.path.join(output_folder, f"network_{last_bi}.pb"))

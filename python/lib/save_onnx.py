@@ -40,8 +40,8 @@ def save_onnx(game: Game, path_onnx: str, network: nn.Module, check_batch_size: 
         f=path_onnx,
         example_outputs=check_outputs,
         input_names=["input"],
-        output_names=["value", "wdl", "policy"],
-        dynamic_axes={"input": batch_axis, "value": batch_axis, "wdl": batch_axis, "policy": batch_axis},
+        output_names=["scalars", "policy"],
+        dynamic_axes={"input": batch_axis, "scalars": batch_axis, "policy": batch_axis},
         opset_version=7,
     )
 

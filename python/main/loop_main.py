@@ -6,9 +6,9 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import PostActNetwork, PostActValueHead, PostActAttentionPolicyHead
+from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
 from lib.selfplay_client import SelfplaySettings
-from lib.train import TrainSettings, ValueTarget
+from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
@@ -43,8 +43,10 @@ def main():
         value_weight=0.1,
         wdl_weight=1.0,
         policy_weight=1.0,
+        moves_left_delta=20,
+        moves_left_weight=0.0001,
         clip_norm=20.0,
-        value_target=ValueTarget.Final,
+        value_target=ScalarTarget.Final,
         train_in_eval_mode=False,
     )
 
@@ -52,7 +54,7 @@ def main():
         channels = 32
         return PostActNetwork(
             game, 8, channels,
-            PostActValueHead(game, channels, 4, 32),
+            PostActScalarHead(game, channels, 4, 32),
             PostActAttentionPolicyHead(game, channels, channels),
         )
 
@@ -82,7 +84,7 @@ def main():
     )
 
     settings.calc_batch_count_per_gen()
-    settings.run_loop()
+    # settings.run_loop()
 
 
 if __name__ == '__main__':
