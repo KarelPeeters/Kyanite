@@ -10,7 +10,7 @@ OFFSET_SIZE_IN_BYTES = 8
 
 
 class DataFileInfo:
-    def __init__(self, game: Game, meta: dict, bin_path: Path, off_path: Path, final_offset: int):
+    def __init__(self, game: Game, meta: dict, bin_path: Path, off_path: Path, final_offset: int, timestamp: float):
         assert meta["game"] == game.name
         assert meta["input_bool_shape"] == list(game.input_bool_shape)
         assert meta["input_scalar_count"] == game.input_scalar_channels
@@ -21,6 +21,7 @@ class DataFileInfo:
         self.bin_path = bin_path
         self.off_path = off_path
         self.final_offset = final_offset
+        self.timestamp = timestamp
 
         self.position_count = meta["position_count"]
         self.game_count = meta["game_count"]
@@ -52,6 +53,7 @@ class DataFile:
 
         with open(json_path, "r") as json_f:
             meta = json.loads(json_f.read())
+        timestamp = os.path.getmtime(json_path)
 
         bin_handle = random_access_handle(bin_path)
 
@@ -64,7 +66,7 @@ class DataFile:
         final_offset = bin_handle.tell()
 
         # wrap everything up
-        info = DataFileInfo(game, meta, bin_path, off_path, final_offset)
+        info = DataFileInfo(game, meta, bin_path, off_path, final_offset, timestamp)
         assert info.position_count == offset_count, "Mismatch between offset and position counts"
         return DataFile(info, bin_handle, off_handle)
 
