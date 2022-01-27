@@ -7,7 +7,7 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
-from lib.selfplay_client import SelfplaySettings
+from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
@@ -33,7 +33,7 @@ def main():
         full_search_prob=1.0,
         full_iterations=200,
         part_iterations=20,
-        exploration_weight=1.0,
+        weights=UctWeights.default(),
         random_symmetries=True,
         cache_size=200,
     )
@@ -83,8 +83,8 @@ def main():
         train_settings=train_settings,
     )
 
-    settings.calc_batch_count_per_gen()
-    # settings.run_loop()
+    # settings.calc_batch_count_per_gen()
+    settings.run_loop()
 
 
 if __name__ == '__main__':

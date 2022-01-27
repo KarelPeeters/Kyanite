@@ -51,11 +51,11 @@ pub struct Uct {
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct UctWeights {
-    exploration_weight: f32,
+    pub exploration_weight: f32,
 
-    moves_left_weight: f32,
-    moves_left_clip: f32,
-    moves_left_factor: f32,
+    pub moves_left_weight: f32,
+    pub moves_left_clip: f32,
+    pub moves_left_sharpness: f32,
 }
 
 impl Default for UctWeights {
@@ -64,7 +64,7 @@ impl Default for UctWeights {
             exploration_weight: 2.0,
             moves_left_weight: 0.03,
             moves_left_clip: 20.0,
-            moves_left_factor: 0.5,
+            moves_left_sharpness: 0.5,
         }
     }
 }
@@ -77,8 +77,14 @@ impl Uct {
     pub fn total(self, weights: UctWeights) -> f32 {
         let Uct { v, u, m } = self;
 
-        let m_clipped = m.clamp(-weights.moves_left_clip, weights.moves_left_clip);
-        let m_unit = (weights.moves_left_factor * m_clipped * -v).clamp(-1.0, 1.0);
+        let m_unit = if weights.moves_left_weight == 0.0 {
+            0.0
+        } else {
+            assert!(m.is_finite(), "Invalid moves_left value {}", m);
+
+            let m_clipped = m.clamp(-weights.moves_left_clip, weights.moves_left_clip);
+            (weights.moves_left_sharpness * m_clipped * -v).clamp(-1.0, 1.0)
+        };
 
         v + weights.exploration_weight * u + weights.moves_left_weight * m_unit
     }

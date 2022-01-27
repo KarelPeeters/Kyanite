@@ -58,7 +58,7 @@ pub enum ServerUpdate {
 pub struct Settings {
     // self-play game affecting settings
     pub max_game_length: i64,
-    pub weights: UctWeights,
+    pub weights: Weights,
     pub use_value: bool,
 
     pub random_symmetries: bool,
@@ -76,4 +76,24 @@ pub struct Settings {
 
     // performance
     pub cache_size: usize,
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct Weights {
+    pub exploration_weight: Option<f32>,
+    pub moves_left_weight: Option<f32>,
+    pub moves_left_clip: Option<f32>,
+    pub moves_left_sharpness: Option<f32>,
+}
+
+impl Weights {
+    pub fn to_uct(&self) -> UctWeights {
+        let default = UctWeights::default();
+        UctWeights {
+            exploration_weight: self.exploration_weight.unwrap_or(default.exploration_weight),
+            moves_left_weight: self.moves_left_weight.unwrap_or(default.moves_left_weight),
+            moves_left_clip: self.moves_left_clip.unwrap_or(default.moves_left_clip),
+            moves_left_sharpness: self.moves_left_sharpness.unwrap_or(default.moves_left_sharpness),
+        }
+    }
 }

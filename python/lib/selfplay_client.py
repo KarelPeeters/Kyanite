@@ -4,7 +4,7 @@ import os
 import socket
 import time
 from dataclasses import dataclass
-from typing import Union
+from typing import Union, Optional
 
 
 @dataclass
@@ -23,9 +23,27 @@ class StartupSettings:
 
 
 @dataclass
+class UctWeights:
+    exploration_weight: Optional[float]
+    moves_left_weight: Optional[float]
+    moves_left_clip: Optional[float]
+    moves_left_sharpness: Optional[float]
+
+    @staticmethod
+    def default():
+        return UctWeights(
+            exploration_weight=None, moves_left_weight=None,
+            moves_left_clip=None, moves_left_sharpness=None
+        )
+
+    def as_dict(self):
+        return dataclasses.asdict(self)
+
+
+@dataclass
 class SelfplaySettings:
     max_game_length: int
-    exploration_weight: float
+    weights: UctWeights
     use_value: bool
     random_symmetries: bool
     keep_tree: bool
@@ -87,6 +105,13 @@ class SelfplayClient:
         self.send("Stop")
 
     def wait_for_file(self) -> int:
-        message = json.loads(self.f.readline())
+        line = self.f.readline()
+        if not line.endswith("\n"):
+            raise IOError("Connection closed")
+
+        message = json.loads(line)
+        if message == "Stopped":
+            raise RuntimeError("Selfplay server stopped")
+
         print(f"Received message {message}")
         return message["FinishedFile"]["index"]

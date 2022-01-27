@@ -361,7 +361,7 @@ impl<B: Board> SearchState<B> {
             }
 
             //TODO use an oracle here (based on a boolean or maybe path setting)
-            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.weights, settings.use_value, FpuMode::Parent) {
+            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.weights.to_uct(), settings.use_value, FpuMode::Parent) {
                 return StepResult::Request(request);
             }
         }
