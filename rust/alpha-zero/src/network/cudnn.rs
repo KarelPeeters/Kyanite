@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
 use board_game::board::Board;
+use itertools::Itertools;
 
 use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
@@ -57,15 +58,17 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         // run the actual computation
         let outputs = self.executor.evaluate(&[&self.input]);
 
+        let relevant_outputs = outputs.iter().map(|x| {
+            let other_size = x.len() / max_batch_size;
+            &x[0..batch_size * other_size]
+        }).collect_vec();
+
         // decode the relevant part of the output
         // the number and shape of outputs has been checked already
         decode_output(
             self.mapper,
             boards,
-            &outputs[0][0..batch_size],
-            &outputs[1][0..batch_size * 3],
-            &outputs[2][0..batch_size * self.mapper.policy_len()],
-            outputs.get(3).map(|x| &x[0..batch_size]),
+            &relevant_outputs,
         )
     }
 }

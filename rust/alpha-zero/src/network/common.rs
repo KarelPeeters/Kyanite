@@ -3,6 +3,7 @@ use std::borrow::{Borrow, Cow};
 use board_game::board::Board;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
+use ndarray::{ArrayView1, ArrayView2, s};
 
 use nn_graph::graph::Graph;
 use nn_graph::shape;
@@ -15,40 +16,54 @@ use crate::zero::node::ZeroValues;
 pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     policy_mapper: P,
     boards: &[impl Borrow<B>],
-    batch_value_logit: &[f32],
-    batch_wdl_logit: &[f32],
-    batch_policy_logit: &[f32],
-    batch_moves_left: Option<&[f32]>,
+    outputs: &[&[f32]],
 ) -> Vec<ZeroEvaluation<'static>> {
     let batch_size = boards.len();
     let policy_len = policy_mapper.policy_len();
 
-    assert_eq!(batch_size, batch_value_logit.len());
-    assert_eq!(batch_size * 3, batch_wdl_logit.len());
-    assert_eq!(batch_size * policy_len, batch_policy_logit.len());
+    // stack storage for some intermediate values
+    let scalars;
+    const NAN_SLICE: &[f32] = &[f32::NAN];
+    let nan_array = ArrayView1::from(NAN_SLICE);
+
+    // interpret outputs
+    let (batch_value_logit, batch_wdl_logit, batch_moves_left, batch_policy_logit) =
+        match outputs.len() {
+            2 => {
+                scalars = ArrayView2::from_shape((batch_size, 5), outputs[0]).unwrap();
+                let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[1]).unwrap();
+
+                (scalars.slice(s![.., 0]), scalars.slice(s![.., 1..4]), scalars.slice(s![.., 4]), policy)
+            }
+            3 => {
+                let value = ArrayView1::from_shape(batch_size, outputs[0]).unwrap();
+                let wdl = ArrayView2::from_shape((batch_size, 3), outputs[1]).unwrap();
+                let moves_left = nan_array.broadcast(batch_size).unwrap();
+                let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[2]).unwrap();
+
+                (value, wdl, moves_left, policy)
+            }
+            _ => unreachable!("Output count should have been checked already")
+        };
 
     boards.iter().enumerate().map(|(bi, board)| {
         let board = board.borrow();
 
-        // value
+        // simple scalars
         let value = batch_value_logit[bi].tanh();
+        let moves_left = batch_moves_left[bi];
 
         // wdl
-        let wdl_left = &batch_wdl_logit[3 * bi..];
-        let mut wdl = [wdl_left[0], wdl_left[1], wdl_left[2]];
+        let mut wdl = [batch_wdl_logit[(bi, 0)], batch_wdl_logit[(bi, 1)], batch_wdl_logit[(bi, 2)]];
         softmax_in_place(&mut wdl);
         let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
 
         // policy
-        let policy_logit = &batch_policy_logit[policy_len * bi..(policy_len * bi) + policy_len];
         let mut policy: Vec<f32> = board.available_moves().map(|mv| {
             policy_mapper.move_to_index(board, mv)
-                .map_or(1.0, |index| policy_logit[index])
+                .map_or(1.0, |index| batch_policy_logit[(bi, index)])
         }).collect();
         softmax_in_place(&mut policy);
-
-        // moves left
-        let moves_left = batch_moves_left.map_or(f32::NAN, |b| b[bi]);
 
         // combine everything
         let values = ZeroValues { value, wdl, moves_left };
@@ -81,18 +96,20 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
 
     // outputs
     let outputs = graph.outputs();
-    assert!(
-        outputs.len() == 3 || outputs.len() == 4,
-        "Wrong number of outputs, expected value, wdl, policy and optionally moves_left, got {}",
-        outputs.len(),
-    );
-
     let expected_policy_shape = shape![Size::BATCH].concat(&Shape::fixed(mapper.policy_shape()));
 
-    assert_eq!(&graph[outputs[0]].shape, &shape![Size::BATCH], "Wrong value shape");
-    assert_eq!(&graph[outputs[1]].shape, &shape![Size::BATCH, 3], "Wrong wdl shape");
-    assert_eq!(&graph[outputs[2]].shape, &expected_policy_shape, "Wrong policy shape");
-    if let Some(&moves_left) = outputs.get(2) {
-        assert_eq!(&graph[moves_left].shape, &shape![Size::BATCH], "Wrong moves_left shape");
+    match outputs.len() {
+        2 => {
+            assert_eq!(&graph[outputs[0]].shape, &shape![Size::BATCH, 5], "Wrong scalars shape");
+            assert_eq!(&graph[outputs[1]].shape, &expected_policy_shape, "Wrong policy shape");
+        }
+        3 => {
+            assert_eq!(&graph[outputs[0]].shape, &shape![Size::BATCH], "Wrong value shape");
+            assert_eq!(&graph[outputs[1]].shape, &shape![Size::BATCH, 3], "Wrong wdl shape");
+            assert_eq!(&graph[outputs[2]].shape, &expected_policy_shape, "Wrong policy shape");
+        }
+        len => {
+            panic!("Wrong number of outputs, expected either (value, wdl, policy) or (scalars, policy), got {}", len);
+        }
     }
 }

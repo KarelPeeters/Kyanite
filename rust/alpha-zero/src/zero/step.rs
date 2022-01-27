@@ -6,7 +6,7 @@ use internal_iterator::InternalIterator;
 use crate::network::ZeroEvaluation;
 use crate::oracle::Oracle;
 use crate::util::zip_eq_exact;
-use crate::zero::node::{Node, ZeroValues};
+use crate::zero::node::{Node, UctWeights, ZeroValues};
 use crate::zero::range::IdxRange;
 use crate::zero::tree::Tree;
 
@@ -40,7 +40,7 @@ pub enum FpuMode {
 pub fn zero_step_gather<B: Board>(
     tree: &mut Tree<B>,
     oracle: &impl Oracle<B>,
-    exploration_weight: f32,
+    weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
 ) -> Option<ZeroRequest<B>> {
@@ -93,7 +93,7 @@ pub fn zero_step_gather<B: Board>(
 
         let selected = children.iter().max_by_key(|&child| {
             let x = tree[child].uct(parent_total_visits, fpu_mode.select(fpu), use_value)
-                .total(exploration_weight);
+                .total(weights);
             N32::from_inner(x)
         }).expect("Board is not done, this node should have a child");
 
@@ -124,11 +124,10 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) 
 
 /// Propagate the given `wdl` up to the root.
 fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: ZeroValues) {
+    values = values.flip();
     let mut curr_index = node;
 
     loop {
-        values = values.parent();
-
         let curr_node = &mut tree[curr_index];
         assert!(curr_node.virtual_visits > 0);
 
@@ -140,6 +139,8 @@ fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: 
             Some(parent) => parent,
             None => break,
         };
+
+        values = values.parent();
     }
 }
 

@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use board_game::wdl::{Flip, OutcomeWDL, WDL};
+use serde::{Deserialize, Serialize};
 
 use crate::zero::range::IdxRange;
 
@@ -39,18 +40,47 @@ pub struct Node<M> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct UCT {
-    pub q: f32,
+pub struct Uct {
+    // value, range -1..1
+    pub v: f32,
+    // exploration term, range 0..inf
     pub u: f32,
+    // moves left term, range -inf..inf
+    pub m: f32,
 }
 
-impl UCT {
-    pub fn nan() -> UCT {
-        UCT { q: f32::NAN, u: f32::NAN }
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct UctWeights {
+    exploration_weight: f32,
+
+    moves_left_weight: f32,
+    moves_left_clip: f32,
+    moves_left_factor: f32,
+}
+
+impl Default for UctWeights {
+    fn default() -> Self {
+        UctWeights {
+            exploration_weight: 2.0,
+            moves_left_weight: 0.03,
+            moves_left_clip: 20.0,
+            moves_left_factor: 0.5,
+        }
+    }
+}
+
+impl Uct {
+    pub fn nan() -> Uct {
+        Uct { v: f32::NAN, u: f32::NAN, m: f32::NAN }
     }
 
-    pub fn total(self, exploration_weight: f32) -> f32 {
-        self.q + exploration_weight * self.u
+    pub fn total(self, weights: UctWeights) -> f32 {
+        let Uct { v, u, m } = self;
+
+        let m_clipped = m.clamp(-weights.moves_left_clip, weights.moves_left_clip);
+        let m_unit = (weights.moves_left_factor * m_clipped * -v).clamp(-1.0, 1.0);
+
+        v + weights.exploration_weight * u + weights.moves_left_weight * m_unit
     }
 }
 
@@ -106,9 +136,9 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> UCT {
+    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> Uct {
         if parent_total_visits == 0 {
-            return UCT::nan();
+            return Uct::nan();
         }
 
         let total_visits = self.total_visits();
@@ -125,10 +155,10 @@ impl<N> Node<N> {
             data.wdl.value()
         };
 
-        let q = (v + 1.0) / 2.0;
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
+        let m = data.moves_left - fpu.moves_left;
 
-        UCT { q, u }
+        Uct { v, u, m }
     }
 }
 
@@ -183,6 +213,10 @@ impl std::ops::Div<f32> for ZeroValues {
     }
 }
 
+impl ZeroValues {
+    pub const FORMAT_SUMMARY: &'static str = "v w/d/l ml";
+}
+
 impl Display for ZeroValues {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.3}, {:.3}/{:.3}/{:.3}, {:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss, self.moves_left)
@@ -195,7 +229,7 @@ impl Flip for ZeroValues {
         ZeroValues {
             value: -self.value,
             wdl: self.wdl.flip(),
-            moves_left: self.moves_left
+            moves_left: self.moves_left,
         }
     }
 }

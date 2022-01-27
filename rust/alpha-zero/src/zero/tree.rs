@@ -181,7 +181,11 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                 "values: {}, best_move: {}, depth: {:?}",
                 data, display_option(tree.best_move()), tree.depth_range(0)
             )?;
-            writeln!(f, "[move: terminal visits zero(v, w/d/l, policy) net(v, w/d/l, policy), uct(q, u)]")?;
+            writeln!(
+                f,
+                "[move: terminal visits zero({}, p) net(v{}, p), uct(q, u)]",
+                ZeroValues::FORMAT_SUMMARY, ZeroValues::FORMAT_SUMMARY
+            )?;
         }
 
         for _ in 0..self.curr_depth { write!(f, "  ")? }
@@ -227,10 +231,9 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
 
         writeln!(
             f,
-            "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4}) uct({:.4}, {:.4})",
+            "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
             player.to_char(), display_option(node.last_move), terminal, node.complete_visits, virtual_visits,
-            node_values, zero_policy, net_values, node.net_policy,
-            uct.q, uct.u,
+            node_values, zero_policy, net_values, node.net_policy, uct,
         )?;
 
         if self.curr_depth == self.max_depth { return Ok(()); }

@@ -8,20 +8,21 @@ use itertools::Itertools;
 use crate::network::Network;
 use crate::oracle::Oracle;
 use crate::util::zip_eq_exact;
+use crate::zero::node::UctWeights;
 use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
     pub batch_size: usize,
-    pub exploration_weight: f32,
+    pub weights: UctWeights,
     pub use_value: bool,
     pub fpu_mode: FpuMode,
 }
 
 impl ZeroSettings {
-    pub fn new(batch_size: usize, exploration_weight: f32, use_value: bool, fpu_mode: FpuMode) -> Self {
-        ZeroSettings { batch_size, exploration_weight, use_value, fpu_mode }
+    pub fn new(batch_size: usize, weights: UctWeights, use_value: bool, fpu_mode: FpuMode) -> Self {
+        ZeroSettings { batch_size, weights, use_value, fpu_mode }
     }
 }
 
@@ -55,7 +56,7 @@ impl ZeroSettings {
             let mut terminal_gathers = 0;
 
             while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
-                match zero_step_gather(tree, oracle, self.exploration_weight, self.use_value, self.fpu_mode) {
+                match zero_step_gather(tree, oracle, self.weights, self.use_value, self.fpu_mode) {
                     Some(request) => {
                         requests.push(request);
                     }

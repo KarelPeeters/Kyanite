@@ -2,6 +2,7 @@ use board_game::board::Board;
 use serde::{Deserialize, Serialize};
 
 use crate::selfplay::simulation::Simulation;
+use crate::zero::node::UctWeights;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartupSettings {
@@ -57,7 +58,7 @@ pub enum ServerUpdate {
 pub struct Settings {
     // self-play game affecting settings
     pub max_game_length: i64,
-    pub exploration_weight: f32,
+    pub weights: UctWeights,
     pub use_value: bool,
 
     pub random_symmetries: bool,

@@ -12,6 +12,7 @@ use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::oracle::DummyOracle;
 use alpha_zero::stats::lichess_puzzle::for_each_lichess_puzzle;
+use alpha_zero::zero::node::UctWeights;
 use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
@@ -23,7 +24,7 @@ fn main() {
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
 
-    let settings = ZeroSettings::new(100, 2.0, false, FpuMode::Parent);
+    let settings = ZeroSettings::new(100, UctWeights::default(), false, FpuMode::Parent);
     let visits = 10_000;
 
     let mapper = ChessStdMapper;

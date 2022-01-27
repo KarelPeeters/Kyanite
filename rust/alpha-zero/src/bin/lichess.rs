@@ -10,6 +10,7 @@ use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::Network;
 use alpha_zero::oracle::DummyOracle;
+use alpha_zero::zero::node::UctWeights;
 use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
@@ -24,7 +25,7 @@ const MAX_FRACTION_TIME_USED: f32 = 1.0 / 30.0;
 
 fn main() {
     // TODO why this high exploration weight?
-    let settings = ZeroSettings::new(64, 4.0, false, FpuMode::Parent);
+    let settings = ZeroSettings::new(64, UctWeights::default(), false, FpuMode::Parent);
     println!("Using {:?}", settings);
 
     println!("Loading graph & constructing network");

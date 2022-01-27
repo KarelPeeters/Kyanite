@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
 use board_game::board::Board;
+use itertools::Itertools;
 
 use nn_graph::cpu::{cpu_execute_graph, ExecutionInfo, Tensor};
 use nn_graph::graph::Graph;
@@ -61,21 +62,9 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
 impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let outputs = self.evaluate_batch_exec(boards).output_tensors();
+        let batch_outputs = outputs.iter().map(|t| t.as_slice().unwrap()).collect_vec();
 
-        // the number and shape of outputs has been checked already
-        let output_value_logit = outputs[0].as_slice().unwrap();
-        let output_wdl_logit = outputs[1].as_slice().unwrap();
-        let output_policy_logit = outputs[2].as_slice().unwrap();
-        let output_moves_left = outputs.get(3).map(|t| t.as_slice().unwrap());
-
-        decode_output(
-            self.mapper,
-            boards,
-            output_value_logit,
-            output_wdl_logit,
-            output_policy_logit,
-            output_moves_left,
-        )
+        decode_output(self.mapper, boards, &batch_outputs)
     }
 }
 
