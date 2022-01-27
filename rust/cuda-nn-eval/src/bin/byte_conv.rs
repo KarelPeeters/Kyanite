@@ -4,7 +4,6 @@ use cuda_sys::bindings::{cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cud
 use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DeviceMem;
-use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use cuda_sys::wrapper::status::Status;
 
 // baseline: 100k evals/s
@@ -16,7 +15,7 @@ use cuda_sys::wrapper::status::Status;
 
 unsafe fn main_inner() {
     let device = Device::new(0);
-    let mut handle = CudnnHandle::new(device);
+    let handle = CudnnHandle::new(device);
 
     //TODO also try different strides for input/output and filter
     let data_type = cudnnDataType_t::CUDNN_DATA_INT8;
