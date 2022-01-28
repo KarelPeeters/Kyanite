@@ -74,4 +74,4 @@ def supervised_loop(
             # do this last so we can look for onnx files to continue training
             print("Saving network")
             save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
-            torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pb"))
+            torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
