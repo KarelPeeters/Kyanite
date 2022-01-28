@@ -31,6 +31,7 @@ enum Game {
 }
 
 pub fn selfplay_server_main() {
+    println!("Waiting for connection");
     let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap()
         .accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
@@ -44,6 +45,9 @@ pub fn selfplay_server_main() {
     let game = Game::parse(&startup_settings.game)
         .unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
 
+    //TODO static dispatch this early means we're generating a lot of code 4 times
+    //  is it actually that much? -> investigate with objdump or similar
+    //  would it be relatively easy to this dispatch some more?
     match game {
         Game::TTT => {
             selfplay_start(
