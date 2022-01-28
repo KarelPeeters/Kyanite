@@ -151,7 +151,11 @@ async fn make_move(
 }
 
 fn board_from_state(game: &GameFull) -> ChessBoard {
-    let mut board = ChessBoard::new_without_history_fen(&game.initial_fen, Rules::default());
+    let mut board = if game.initial_fen == "startpos" {
+        ChessBoard::default()
+    } else {
+        ChessBoard::new_without_history_fen(&game.initial_fen, Rules::default())
+    };
 
     if !game.state.moves.is_empty() {
         for mv in game.state.moves.split(' ') {
