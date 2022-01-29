@@ -32,7 +32,7 @@ pub struct RenderTensor {
 pub fn visualize_graph_activations(
     graph: &Graph,
     execution: &ExecutionInfo,
-    post_process_value: impl Fn(Value, Tensor) -> Option<VisTensor>,
+    post_process_value: impl Fn(Value, Tensor) -> Vec<VisTensor>,
     max_images: Option<usize>,
     show_variance: bool,
     print_details: bool,
@@ -73,7 +73,7 @@ pub fn visualize_graph_activations(
         let vis_tensor = VisTensor { normalize: !is_input, tensor: data.to_shared() };
         to_render.push(RenderTensor { value: value.value, original: true, vis_tensor });
 
-        if let Some(extra_vis_tensor) = post_process_value(value.value, data) {
+        for extra_vis_tensor in post_process_value(value.value, data) {
             to_render.push(RenderTensor { value: value.value, original: false, vis_tensor: extra_vis_tensor });
         }
     }

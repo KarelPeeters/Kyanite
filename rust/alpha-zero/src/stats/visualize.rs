@@ -1,15 +1,16 @@
 use board_game::board::{Board, Player};
-use ndarray::{ArrayView1, s};
+use ndarray::{ArrayView1, s, Slice};
 
 use nn_graph::cpu::{softmax, Tensor};
 use nn_graph::graph::Value;
 use nn_graph::ndarray::{Array2, Axis};
+use nn_graph::shape;
+use nn_graph::shape::Size;
 use nn_graph::visualize::{Image, VisTensor, visualize_graph_activations};
 
 use crate::mapping::BoardMapper;
 use crate::network::common::softmax_in_place;
 use crate::network::cpu::CPUNetwork;
-use crate::util::IndexOf;
 
 pub fn visualize_network_activations_split<B: Board, M: BoardMapper<B>>(
     network: &mut CPUNetwork<B, M>,
@@ -55,51 +56,73 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
 
     let graph = network.graph();
     let mapper = network.mapper();
-    assert_eq!(graph.outputs().len(), 3);
+
+    let output_count = graph.outputs().len();
+    assert!(
+        output_count == 2 || output_count == 3,
+        "Expected either (value, wdl, policy) or (scalars, policy) as output, got {}", output_count
+    );
 
     let post_process = move |value: Value, tensor: Tensor| {
-        match graph.outputs().iter().index_of(&value) {
-            None => None,
-            // tanh(value_logit), mapped to [0..1]
-            Some(0) => Some(VisTensor::abs(tensor.mapv(|x| (x.tanh() + 1.0 / 2.0)).to_shared())),
+        if !graph.outputs().contains(&value) {
+            return vec![];
+        }
+
+        let value_shape = shape![Size::BATCH];
+        let wdl_shape = shape![Size::BATCH, 3];
+        let scalar_shape = shape![Size::BATCH, 5];
+        let policy_shape = shape![Size::BATCH, mapper.policy_len()];
+
+        let shape = &graph[value].shape;
+
+        if shape == &value_shape {
+            // tanh(value_logit) -> 0..1
+            vec![VisTensor::abs(tensor.mapv(|x| (x.tanh() + 1.0 / 2.0)).to_shared())]
+        } else if shape == &wdl_shape {
             // softmax(wdl_logits)
-            Some(1) => Some(VisTensor::abs(softmax(tensor, Axis(1)).to_shared())),
-            // softmax(available_mask * policy_logits)
-            Some(2) => {
-                let flat_shape = (boards.len(), mapper.policy_len());
-                let full_shape = [&[boards.len()][..], mapper.policy_shape()].concat();
+            vec![VisTensor::abs(softmax(tensor, Axis(1)).to_shared())]
+        } else if shape == &scalar_shape {
+            // tanh(value_logit) -> 0..1, softmax(wdl_logits), moves_left
+            vec![
+                VisTensor::abs(tensor.index_axis(Axis(1), 0).mapv(|x| (x.tanh() + 1.0 / 2.0)).to_shared()),
+                VisTensor::abs(softmax(tensor.slice_axis(Axis(1), Slice::from(1..4)), Axis(1)).to_shared()),
+                VisTensor::norm(tensor.index_axis(Axis(1), 4).to_shared()),
+            ]
+        } else if shape == &policy_shape {
+            let flat_shape = (boards.len(), mapper.policy_len());
+            let full_shape = [&[boards.len()][..], mapper.policy_shape()].concat();
 
-                let flat_logits = tensor.reshape(flat_shape);
-                let mut flat_result: Array2<f32> = Array2::zeros(flat_shape);
+            let flat_logits = tensor.reshape(flat_shape);
+            let mut flat_result: Array2<f32> = Array2::zeros(flat_shape);
 
-                let mut buffer = vec![];
+            let mut buffer = vec![];
 
-                for (bi, board) in boards.iter().enumerate() {
-                    let mut any_available = false;
-                    buffer.clear();
+            for (bi, board) in boards.iter().enumerate() {
+                let mut any_available = false;
+                buffer.clear();
 
-                    for i in 0..mapper.policy_len() {
-                        let is_available = mapper.index_to_move(board, i)
-                            .map_or(false, |mv| board.is_available_move(mv));
+                for i in 0..mapper.policy_len() {
+                    let is_available = mapper.index_to_move(board, i)
+                        .map_or(false, |mv| board.is_available_move(mv));
 
-                        any_available |= is_available;
-                        if is_available {
-                            buffer.push(flat_logits[(bi, i)]);
-                        } else {
-                            buffer.push(f32::NEG_INFINITY);
-                        }
+                    any_available |= is_available;
+                    if is_available {
+                        buffer.push(flat_logits[(bi, i)]);
+                    } else {
+                        buffer.push(f32::NEG_INFINITY);
                     }
-
-                    if any_available {
-                        softmax_in_place(&mut buffer);
-                        flat_result.slice_mut(s![bi, ..]).assign(&ArrayView1::from(&buffer));
-                    }
-                    // otherwise leave result as zero
                 }
-                let result = flat_result.into_shape(full_shape).unwrap().to_shared();
-                Some(VisTensor::abs(result))
+
+                if any_available {
+                    softmax_in_place(&mut buffer);
+                    flat_result.slice_mut(s![bi, ..]).assign(&ArrayView1::from(&buffer));
+                }
+                // otherwise leave result as zero
             }
-            _ => unreachable!(),
+            let result = flat_result.into_shape(full_shape).unwrap().to_shared();
+            vec![VisTensor::abs(result)]
+        } else {
+            panic!("Unexpected output shape {}", shape);
         }
     };
 
