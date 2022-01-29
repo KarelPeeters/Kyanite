@@ -92,7 +92,7 @@ class TrainSettings:
         batch_value = scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
         batch_wdl = scalar_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
         # TODO this should be replaced with the same pick construct as the other ones
-        batch_moves_left = batch.moves_left
+        batch_moves_left = batch.moves_left_final
 
         # losses
         loss_value = nnf.mse_loss(value, batch_value)

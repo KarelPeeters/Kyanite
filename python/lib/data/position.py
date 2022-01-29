@@ -33,6 +33,10 @@ class Position:
         self.zero_wdl = np.array([scalars.pop("zero_wdl_w"), scalars.pop("zero_wdl_d"), scalars.pop("zero_wdl_l")])
         self.net_wdl = np.array([scalars.pop("net_wdl_w"), scalars.pop("net_wdl_d"), scalars.pop("net_wdl_l")])
 
+        self.final_moves_left = float(scalars.pop("final_moves_left", self.game_length - self.pos_index))
+        self.zero_moves_left = float(scalars.pop("zero_moves_left", np.nan))
+        self.net_moves_left = float(scalars.pop("net_moves_left", np.nan))
+
         if len(scalars):
             print(f"Leftover scalars: {list(scalars.keys())}")
 
@@ -55,7 +59,7 @@ class PositionBatch:
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
         all_values = torch.empty(len(positions), 3, pin_memory=pin_memory)
-        moves_left = torch.empty(len(positions), pin_memory=pin_memory)
+        all_moves_left = torch.empty(len(positions), 3, pin_memory=pin_memory)
 
         policy_indices = torch.zeros(len(positions), self.max_available_moves, dtype=torch.int64, pin_memory=pin_memory)
         policy_values = torch.empty(len(positions), self.max_available_moves, pin_memory=pin_memory)
@@ -73,9 +77,9 @@ class PositionBatch:
             all_values[i, 0] = p.final_v
             all_values[i, 1] = p.zero_v
             all_values[i, 2] = p.net_v
-
-            # TODO this should actually load all of them from the position like wdl and values
-            moves_left[i] = p.game_length - p.pos_index
+            all_moves_left[i, 0] = p.final_moves_left
+            all_moves_left[i, 1] = p.zero_moves_left
+            all_moves_left[i, 2] = p.net_moves_left
 
             policy_indices[i, :p.available_mv_count] = torch.from_numpy(p.policy_indices.copy())
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
@@ -86,14 +90,17 @@ class PositionBatch:
 
         self.all_wdls = all_wdls.to(DEVICE)
         self.all_values = all_values.to(DEVICE)
+        self.all_moves_left = all_moves_left.to(DEVICE)
+
         self.wdl_final = self.all_wdls[:, 0:3]
         self.wdl_zero = self.all_wdls[:, 3:6]
         self.wdl_net = self.all_wdls[:, 6:9]
         self.v_final = self.all_values[:, 0]
         self.v_zero = self.all_values[:, 1]
         self.v_net = self.all_values[:, 2]
-
-        self.moves_left = moves_left.to(DEVICE)
+        self.moves_left_final = self.all_moves_left[:, 0]
+        self.moves_left_zero = self.all_moves_left[:, 1]
+        self.moves_left_net = self.all_moves_left[:, 2]
 
     def __len__(self):
         return len(self.input_full)
