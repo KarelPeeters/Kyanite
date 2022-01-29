@@ -158,7 +158,7 @@ impl CudnnExecutor {
                     Step::CopyOutput { .. } => &mut profile.copy_to_host,
                 } += time;
 
-                profile.steps.push(format!("{: >4} time {:.4} ms, step {:?}", i, time, step));
+                profile.steps.push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step));
             }
 
             let overhead_end = Instant::now();
@@ -318,16 +318,16 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        writeln!(f, "  Conv:      {:.4} ms", self.conv)?;
-        writeln!(f, "  Matmul:    {:.4} ms", self.mat_mul)?;
-        writeln!(f, "  Tensor op: {:.4} ms", self.tensor_op)?;
-        writeln!(f, "  Gather:    {:.4} ms", self.gather)?;
-        writeln!(f, "  Copy ->:   {:.4} ms", self.copy_to_device)?;
-        writeln!(f, "  Copy <-:   {:.4} ms", self.copy_to_host)?;
+        writeln!(f, "  Conv:      {:>10.4} ms", self.conv * 1e3)?;
+        writeln!(f, "  Matmul:    {:>10.4} ms", self.mat_mul * 1e3)?;
+        writeln!(f, "  Tensor op: {:>10.4} ms", self.tensor_op * 1e3)?;
+        writeln!(f, "  Gather:    {:>10.4} ms", self.gather * 1e3)?;
+        writeln!(f, "  Copy ->:   {:>10.4} ms", self.copy_to_device * 1e3)?;
+        writeln!(f, "  Copy <-:   {:>10.4} ms", self.copy_to_host * 1e3)?;
         writeln!(f, "  ================")?;
-        writeln!(f, "  Total GPU: {:.4} ms", self.total_gpu)?;
-        writeln!(f, "  Total CPU: {:.4} ms", self.total_cpu)?;
-        writeln!(f, "  Overhead:  {:.4} ms", self.timing_overhead)?;
+        writeln!(f, "  Total GPU: {:>10.4} ms", self.total_gpu * 1e3)?;
+        writeln!(f, "  Total CPU: {:>10.4} ms", self.total_cpu * 1e3)?;
+        writeln!(f, "  Overhead:  {:>10.4} ms", self.timing_overhead * 1e3)?;
 
         writeln!(f, "}}")?;
 
