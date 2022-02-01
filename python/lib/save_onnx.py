@@ -47,3 +47,21 @@ def save_onnx(game: Game, path_onnx: str, network: nn.Module, check_batch_size: 
 
     # return the network to the original device
     network.to(guessed_device)
+
+
+# Based on https://github.com/microsoft/onnxruntime/blob/master/tools/python/remove_initializer_from_input.py
+def remove_initializers_from_input(model):
+    if model.ir_version < 4:
+        print(
+            'Model with ir_version below 4 requires to include initilizer in graph input'
+        )
+        return
+
+    inputs = model.graph.input
+    name_to_input = {}
+    for input in inputs:
+        name_to_input[input.name] = input
+
+    for initializer in model.graph.initializer:
+        if initializer.name in name_to_input:
+            inputs.remove(name_to_input[initializer.name])
