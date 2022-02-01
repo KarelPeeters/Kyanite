@@ -47,6 +47,7 @@ class LoopSettings:
     gui: bool
     root_path: str
 
+    dummy_network: Optional[Callable[[], nn.Module]]
     initial_network: Callable[[], nn.Module]
     initial_data_files: List[DataFile]
 
@@ -69,6 +70,10 @@ class LoopSettings:
     train_settings: TrainSettings
 
     # TODO compact these properties somehow
+    @property
+    def dummy_network_path_onnx(self):
+        return os.path.join(self.root_path, "dummy_network.onnx")
+
     @property
     def initial_network_path_onnx(self):
         return os.path.join(self.root_path, "initial_network.onnx")
@@ -161,7 +166,11 @@ class LoopSettings:
         client = SelfplayClient()
         client.send_startup_settings(startup_settings)
         client.send_new_settings(self.selfplay_settings)
-        client.send_new_network(network_path_onnx)
+
+        if self.dummy_network is not None and network_path_onnx == self.initial_network_path_onnx:
+            client.send_new_network(self.dummy_network_path_onnx)
+        else:
+            client.send_new_network(network_path_onnx)
 
         for gi in itertools.count(start_gen.gi):
             if plotter is not None:
@@ -242,6 +251,11 @@ class LoopSettings:
 
                     prev_network_path_onnx = self.initial_network_path_onnx
                     save_onnx(game, prev_network_path_onnx, network, CHECK_BATCH_SIZE)
+
+                    # save the dummy network too if there is one
+                    if self.dummy_network is not None:
+                        dummy_network = self.dummy_network()
+                        save_onnx(game, self.dummy_network_path_onnx, dummy_network, CHECK_BATCH_SIZE)
                 else:
                     print(f"Continuing run, first gen {gi}")
                     logger = Logger.load(self.log_path)

@@ -17,14 +17,14 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game,
         threads_per_device=2,
-        batch_size=512,
+        batch_size=256,
         games_per_gen=200,
         reorder_games=False,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
-        zero_temp_move_count=10,
+        zero_temp_move_count=30,
         use_value=False,
         max_game_length=300,
         keep_tree=False,
@@ -50,11 +50,18 @@ def main():
         train_in_eval_mode=False,
     )
 
+    def dummy_network():
+        return PostActNetwork(
+            game, 1, 8,
+            PostActScalarHead(game, 8, 2, 16),
+            PostActAttentionPolicyHead(game, 8, 4),
+        )
+
     def initial_network():
-        channels = 32
+        channels = 64
         return PostActNetwork(
             game, 8, channels,
-            PostActScalarHead(game, channels, 4, 32),
+            PostActScalarHead(game, channels, 4, 64),
             PostActAttentionPolicyHead(game, channels, channels),
         )
 
@@ -63,18 +70,19 @@ def main():
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop/{game.name}/simple_unbalanced/",
+        root_path=f"data/loop/{game.name}/real-64-re/",
 
+        dummy_network=dummy_network,
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
         only_generate=False,
 
-        min_buffer_size=10_000,
+        min_buffer_size=1_500_000,
         max_buffer_size=2_000_000,
 
         train_batch_size=128,
-        samples_per_position=0.5,
+        samples_per_position=0.3,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 
@@ -83,7 +91,7 @@ def main():
         train_settings=train_settings,
     )
 
-    # settings.calc_batch_count_per_gen()
+    settings.calc_batch_count_per_gen()
     settings.run_loop()
 
 
