@@ -62,7 +62,7 @@ GAMES = [
         input_scalar_channels=8,
         policy_shape=(1880,),
         policy_conv_channels=73,
-        estimate_moves_per_game=100,
+        estimate_moves_per_game=150,
     ),
     Game(
         name="sttt",
