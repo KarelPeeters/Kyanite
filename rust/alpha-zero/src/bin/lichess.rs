@@ -21,7 +21,7 @@ use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 const MAX_VISITS: u64 = 100_000;
-const MAX_FRACTION_TIME_USED: f32 = 1.0 / 30.0;
+const MAX_FRACTION_TIME_USED: f32 = 1.2 / 30.0;
 
 fn main() {
     // TODO why this high exploration weight?
@@ -78,6 +78,8 @@ async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoar
                         println!("Received partial state {:?}", state);
                     }
                     BoardState::ChatLine(line) => {
+                        println!("Received {:?}", line);
+
                         match &*line.text {
                             "info start" => {
                                 info_game_ids.insert(game.game_id.clone());
