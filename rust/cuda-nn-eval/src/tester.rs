@@ -16,28 +16,34 @@ pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8], use_graph: bool) {
     assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
-const ERROR_TOLERANCE: f32 = 0.001;
+const ERROR_ABS_TOLERANCE: f32 = 0.001;
+const ERROR_REL_TOLERANCE: f32 = 0.001;
 
 pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor], outputs: &[Tensor], print: bool) {
     assert_eq!(expected_outputs.len(), outputs.len(), "Wrong number of outputs");
 
-    let mut max_error = 0.0;
+    let mut max_abs_error = 0.0;
+    let mut max_rel_error = 0.0;
 
     for (i, (expected_output, output)) in zip_eq(expected_outputs, outputs).enumerate() {
         assert_eq!(expected_output.shape(), output.shape(), "Wrong output shape for output {}", i);
 
         for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
-            let error = (expected_value - value).abs();
-            max_error = f32::max(max_error, error);
+            let abs_error = (expected_value - value).abs();
+            let rel_error = abs_error / expected_value.abs();
+
+            max_abs_error = f32::max(max_abs_error, abs_error);
+            max_rel_error = f32::max(max_rel_error, rel_error);
+
             assert!(
-                error < ERROR_TOLERANCE,
+                (abs_error < ERROR_ABS_TOLERANCE) || (rel_error < ERROR_REL_TOLERANCE),
                 "Wrong output value {}, expected {} at indices {:?} in output {} (value {:?})",
                 value, expected_value, indices.slice(), i, output_values[i],
             )
         }
 
         if print {
-            println!("Output {} matched, max error {}", i, max_error);
+            println!("Output {} matched, max error: abs {}, rel {}", i, max_abs_error, max_rel_error);
         }
     }
 }
