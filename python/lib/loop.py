@@ -175,7 +175,7 @@ class LoopSettings:
         for gi in itertools.count(start_gen.gi):
             if plotter is not None:
                 plotter.update(logger)
-            plotter.block_while_paused()
+                plotter.block_while_paused()
 
             logger.start_batch()
             logger.log("info", "gen", gi)
