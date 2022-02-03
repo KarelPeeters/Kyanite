@@ -268,7 +268,10 @@ class LoopSettings:
                 return gen, buffer, logger, network, prev_network_path_onnx
 
             print(f"Found finished generation {gi}")
-            buffer.append(None, DataFile.open(game, gen.games_path))
+            try:
+                buffer.append(None, DataFile.open(game, gen.games_path))
+            except FileNotFoundError:
+                print(f"Could not find games file for gen {gi}, skipping")
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
         setups = [

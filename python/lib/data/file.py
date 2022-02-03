@@ -49,7 +49,8 @@ class DataFile:
         off_path = path.with_suffix(".off").absolute()
 
         for p in [json_path, off_path, bin_path]:
-            assert p.exists(), f"{p} does not exist"
+            if not p.exists():
+                raise FileNotFoundError(f"{p} does not exist")
 
         with open(json_path, "r") as json_f:
             meta = json.loads(json_f.read())
