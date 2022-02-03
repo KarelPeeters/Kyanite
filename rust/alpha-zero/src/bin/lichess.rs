@@ -20,12 +20,13 @@ use licoricedev::models::game::UserGame;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
-const MAX_VISITS: u64 = 100_000;
-const MAX_FRACTION_TIME_USED: f32 = 1.2 / 30.0;
+const MAX_VISITS: u64 = 10_000_000;
+const MAX_TIME: f32 = 60.0;
+const MAX_TIME_FRACTION: f32 = 1.2 / 30.0;
 
 fn main() {
     // TODO why this high exploration weight?
-    let settings = ZeroSettings::new(64, UctWeights::default(), false, FpuMode::Parent);
+    let settings = ZeroSettings::new(128, UctWeights::default(), false, FpuMode::Parent);
     println!("Using {:?}", settings);
 
     println!("Loading graph & constructing network");
@@ -118,10 +119,15 @@ async fn make_move(
 
     let start = Instant::now();
     let tree = settings.build_tree(&board, network, &DummyOracle, |tree| {
-        let fraction_time_used = (Instant::now() - start).as_secs_f32() / game.seconds_left as f32;
+        let time_used = (Instant::now() - start).as_secs_f32();
+        let fraction_time_used = time_used / game.seconds_left as f32;
         let visits = tree.root_visits();
-        visits > 0 && (visits >= MAX_VISITS || fraction_time_used >= MAX_FRACTION_TIME_USED)
+        visits > 0 && (visits >= MAX_VISITS || time_used >= MAX_TIME || fraction_time_used >= MAX_TIME_FRACTION)
     });
+
+    let time_used = Instant::now() - start;
+    println!("Took {:?}", (time_used));
+    println!("GPU throughput: {:.2} evals.s", tree.root_visits() as f32 / time_used.as_secs_f32());
 
     println!("{}", tree.display(3, true, 5));
     let mv = tree.best_move().unwrap();
