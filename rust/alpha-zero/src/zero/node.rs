@@ -162,7 +162,7 @@ impl<N> Node<N> {
         };
 
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
-        let m = data.moves_left - fpu.moves_left;
+        let m = data.moves_left - (fpu.moves_left - 1.0);
 
         Uct { v, u, m }
     }
