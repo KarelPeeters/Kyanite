@@ -108,7 +108,7 @@ fn main() {
 
                 if !zero_is_correct {
                     println!();
-                    println!("{}", tree.display(2, true, usize::MAX));
+                    println!("{}", tree.display(2, true, usize::MAX, false));
                 }
             }
 

@@ -142,8 +142,8 @@ impl<B: Board> Tree<B> {
     }
 
     #[must_use]
-    pub fn display(&self, max_depth: usize, sort: bool, max_children: usize) -> TreeDisplay<B> {
-        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, max_children, sort }
+    pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> TreeDisplay<B> {
+        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, max_children, sort, expand_all }
     }
 }
 
@@ -155,6 +155,7 @@ pub struct TreeDisplay<'a, B: Board> {
     max_depth: usize,
     max_children: usize,
     sort: bool,
+    expand_all: bool,
 }
 
 struct PolicyDisplay(f32);
@@ -259,7 +260,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     break;
                 }
 
-                let next_max_depth = if child == best_child {
+                let next_max_depth = if self.expand_all || child == best_child {
                     self.max_depth
                 } else {
                     self.curr_depth + 1
@@ -272,6 +273,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     max_depth: next_max_depth,
                     max_children: self.max_children,
                     sort: self.sort,
+                    expand_all: self.expand_all
                 };
                 write!(f, "{}", child_display)?;
             }

@@ -26,5 +26,5 @@ fn empty_tree_display() {
     let board = STTTBoard::default();
     let tree = Tree::new(board);
 
-    println!("{}", tree.display(100, false, 100));
+    println!("{}", tree.display(100, false, 100, true));
 }

@@ -129,7 +129,7 @@ async fn make_move(
     println!("Took {:?}", (time_used));
     println!("GPU throughput: {:.2} evals.s", tree.root_visits() as f32 / time_used.as_secs_f32());
 
-    println!("{}", tree.display(3, true, 5));
+    println!("{}", tree.display(3, true, 5, false));
     let mv = tree.best_move().unwrap();
 
     if let Err(e) = lichess.make_a_bot_move(&game.game_id, &mv.to_string(), false).await {

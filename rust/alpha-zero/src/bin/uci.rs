@@ -72,7 +72,6 @@ fn main() -> std::io::Result<()> {
                             )
                         }
 
-                        // writeln!(log, "{}", tree.display(1, true)).unwrap();
                         prev_send = now;
                     }
 
