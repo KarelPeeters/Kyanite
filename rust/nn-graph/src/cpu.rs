@@ -13,7 +13,7 @@ use crate::ndarray::{Array, ArrayBase, Axis};
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
 
-pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[&Tensor]) -> ExecutionInfo {
+pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> ExecutionInfo {
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
 
     let mut map: IndexMap<Value, CalculatedValue> = IndexMap::default();

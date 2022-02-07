@@ -3,9 +3,11 @@ use std::time::Instant;
 
 use clap::Parser;
 use itertools::{Itertools, izip};
+use ndarray::IxDyn;
 
 use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
+use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
@@ -20,6 +22,8 @@ struct Args {
     graph: bool,
     #[clap(short, long)]
     print: bool,
+    #[clap(short, long)]
+    cpu: bool,
 
     #[clap(long)]
     n: Option<usize>,
@@ -33,14 +37,18 @@ const TEST_BATCH_ITERATIONS: &[usize] = &[100, 100, 100, 100, 100, 100, 100, 100
 const DEFAULT_ITERATIONS: usize = 100;
 
 fn main() {
-    let Args { batch_size, optimize, graph: use_graph, print, n, path } = Args::parse();
+    let Args { batch_size, optimize, graph: use_graph, print, n, path, cpu } = Args::parse();
     let n = n.unwrap_or(DEFAULT_ITERATIONS);
 
     if cfg!(debug_assertions) {
         println!("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
     }
-    if !use_graph {
-        println!("Warning: not using cuda graph mode");
+
+    if cpu && use_graph {
+        println!("Warning: ignoring graph mode when using CPU");
+    }
+    if !cpu && use_graph {
+        println!("Warning: not using cuda graph (recording) mode");
     }
 
     let abs_path = std::fs::canonicalize(path).unwrap();
@@ -60,9 +68,17 @@ fn main() {
     }
 
     if batch_size < 1 {
-        profile_different_batch_sizes(&graph, use_graph);
+        if cpu {
+            profile_different_batch_sizes(&graph, use_graph);
+        } else {
+            println!("Error: profiling different batch sizes for CPU not yet implemented");
+        }
     } else {
-        profile_single_batch_size(&graph, use_graph, batch_size as usize, n);
+        if cpu {
+            profile_single_batch_size_cpu(&graph, batch_size as usize, n)
+        } else {
+            profile_single_batch_size_cudnn(&graph, use_graph, batch_size as usize, n);
+        }
     }
 }
 
@@ -74,7 +90,7 @@ fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
 
         let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
         let inputs = dummy_inputs(&graph, batch_size);
-        let inputs = inputs.iter().map(|v| &**v).collect_vec();
+        let inputs = inputs.iter().map(|v| v.as_slice().unwrap()).collect_vec();
 
         for _ in 0..max(1, iterations / 10) {
             executor.evaluate(&inputs);
@@ -94,11 +110,11 @@ fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
     println!("{:?}", result);
 }
 
-fn profile_single_batch_size(graph: &Graph, use_graph: bool, batch_size: usize, n: usize) {
+fn profile_single_batch_size_cudnn(graph: &Graph, use_graph: bool, batch_size: usize, n: usize) {
     let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
 
     let inputs = dummy_inputs(&graph, batch_size);
-    let inputs = inputs.iter().map(|v| &**v).collect_vec();
+    let inputs = inputs.iter().map(|v| v.as_slice().unwrap()).collect_vec();
 
     println!("Warmup");
     for _ in 0..max(1, n / 10) {
@@ -122,8 +138,26 @@ fn profile_single_batch_size(graph: &Graph, use_graph: bool, batch_size: usize, 
     println!("Throughput: {} evals/s", throughput);
 }
 
-fn dummy_inputs(graph: &Graph, batch_size: usize) -> Vec<Vec<f32>> {
+fn profile_single_batch_size_cpu(graph: &Graph, batch_size: usize, n: usize) {
+    let inputs = dummy_inputs(&graph, batch_size);
+
+    println!("Warmup");
+    for _ in 0..max(1, n / 10) {
+        cpu_execute_graph(graph, batch_size, &inputs);
+    }
+
+    println!("Throughput test");
+    let start = Instant::now();
+    for _ in 0..n {
+        cpu_execute_graph(graph, batch_size, &inputs);
+    }
+    let delta = (Instant::now() - start).as_secs_f32();
+    let throughput = (batch_size * n) as f32 / delta;
+    println!("Throughput: {} evals/s", throughput);
+}
+
+fn dummy_inputs(graph: &Graph, batch_size: usize) -> Vec<Tensor> {
     graph.inputs().iter().map(|&v| {
-        vec![0f32; graph[v].shape.size().eval(batch_size)]
+        Tensor::zeros(IxDyn(&graph[v].shape.eval(batch_size).dims))
     }).collect_vec()
 }

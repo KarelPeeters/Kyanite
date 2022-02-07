@@ -47,7 +47,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
             .unwrap_or_else(|_| panic!("Incompatible shapes: ({}) -> {:?}", input_len, input_shape));
 
         // evaluate the graph
-        cpu_execute_graph(&self.graph, batch_size, &[&input])
+        cpu_execute_graph(&self.graph, batch_size, &[input])
     }
 
     pub fn mapper(&self) -> M {
