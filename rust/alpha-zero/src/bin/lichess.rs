@@ -127,7 +127,7 @@ async fn make_move(
 
     let time_used = Instant::now() - start;
     println!("Took {:?}", (time_used));
-    println!("GPU throughput: {:.2} evals.s", tree.root_visits() as f32 / time_used.as_secs_f32());
+    println!("GPU throughput: {:.2} evals/s", tree.root_visits() as f32 / time_used.as_secs_f32());
 
     println!("{}", tree.display(3, true, 5, false));
     let mv = tree.best_move().unwrap();
