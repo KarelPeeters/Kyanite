@@ -87,6 +87,19 @@ pub fn display_option<T: Display>(value: Option<T>) -> impl Display {
     Wrapper(value)
 }
 
+pub fn display_option_empty<T: Display>(value: Option<T>) -> impl Display {
+    struct Wrapper<T>(Option<T>);
+    impl<T: Display> Display for Wrapper<T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match &self.0 {
+                None => write!(f, ""),
+                Some(value) => write!(f, "{}", value),
+            }
+        }
+    }
+    Wrapper(value)
+}
+
 /// Calculates `D_KDL(P || Q)`, read as _the divergence of P from Q_,
 /// a measure of how different two probability distributions are.
 /// See https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence.
