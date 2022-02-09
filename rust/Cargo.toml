@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "tree-vis",
     "alpha-zero",
     "nn-graph",
     "cuda-sys",
