@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::cmp::{max, min, Reverse};
 use std::collections::HashSet;
 
 use board_game::board::Board;
@@ -11,10 +11,12 @@ use itertools::Itertools;
 use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
-use tui::style::{Modifier, Style};
+use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::Widget;
 
+use alpha_zero::mapping::chess::ChessStdMapper;
+use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::dummy::DummyNetwork;
 use alpha_zero::oracle::DummyOracle;
 use alpha_zero::util::display_option_empty;
@@ -22,6 +24,9 @@ use alpha_zero::zero::node::{Uct, UctWeights, ZeroValues};
 use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;
+use cuda_nn_eval::Device;
+use nn_graph::onnx::load_graph_from_onnx_path;
+use nn_graph::optimizer::optimize_graph;
 
 #[derive(Debug)]
 struct State<B: Board> {
@@ -44,17 +49,13 @@ struct RenderNode {
 fn main() -> std::io::Result<()> {
     let mut state = State {
         prev_nodes: vec![],
-        tree: build_tree(),
+        tree: build_tree(true),
         expanded_nodes: HashSet::default(),
         selected_node: 0,
         view_offset: 0,
     };
 
-    // println!("{}", state.tree.display(2, true, 200, false));
-    // return Ok(());
-
     state.expanded_nodes.insert(0);
-    state.expanded_nodes.insert(1);
 
     // setup terminal
     enable_raw_mode()?;
@@ -102,8 +103,10 @@ impl<B: Board> State<B> {
         result.push(RenderNode { depth, node: curr });
 
         if self.expanded_nodes.contains(&curr) {
-            for c in self.tree[curr].children.iter().flat_map(|r| r.iter()) {
-                self.append_nodes(c, depth + 1, result);
+            if let Some(children) = self.tree[curr].children {
+                for c in children.iter().sorted_by_key(|&c| Reverse(self.tree[c].total_visits())) {
+                    self.append_nodes(c, depth + 1, result);
+                }
             }
         }
     }
@@ -119,7 +122,7 @@ impl<B: Board> State<B> {
         let selected = self.selected_index();
         let margin = min(OFFSET_MARGIN, ((area.height - 1) / 2) as usize);
         let offset = (self.view_offset as i32).clamp(
-            selected as i32 - area.height as i32 + margin as i32 + 1,
+            selected as i32 - (area.height as i32 - HEADER_SIZE as i32) + margin as i32,
             selected.saturating_sub(margin) as i32,
         );
 
@@ -177,10 +180,10 @@ impl<B: Board> State<B> {
     }
 
     fn compute_col_starts(&self, area: Rect) -> (Vec<u16>, Vec<u16>) {
-        let mut col_sizes = vec![0; 1 + COLUMN_NAMES.len()];
+        let mut col_sizes = vec![0; 1 + COLUMN_INFO.len()];
         col_sizes[0] = 20;
 
-        for (i, (n1, n2, _)) in COLUMN_NAMES.iter().enumerate() {
+        for (i, (n1, n2, _, _)) in COLUMN_INFO.iter().enumerate() {
             col_sizes[i] = max(col_sizes[i], max(n1.len(), n2.len()) as u16);
         }
 
@@ -231,42 +234,44 @@ impl<B: Board> State<B> {
         {
             let zero = node.values();
             let net = node.net_values.unwrap_or(ZeroValues::nan());
-            let uct = if let Some(parent) = node.parent {
+            let (uct, zero_policy) = if let Some(parent) = node.parent {
                 let parent = &self.tree[parent];
-                node.uct(parent.total_visits(), parent.values().flip(), false)
+                let uct = node.uct(parent.total_visits(), parent.values().flip(), false);
+                let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0);
+                (uct, zero_policy)
             } else {
-                Uct::nan()
+                (Uct::nan(), f32::NAN)
             };
 
             let values = [
-                zero.wdl.win, zero.wdl.draw, zero.wdl.loss, zero.moves_left,
-                net.wdl.win, net.wdl.draw, net.wdl.loss, net.moves_left,
+                zero.wdl.win, zero.wdl.draw, zero.wdl.loss, zero.moves_left, zero_policy,
+                net.wdl.win, net.wdl.draw, net.wdl.loss, net.moves_left, node.net_policy,
                 uct.v, uct.u, uct.m,
             ];
             result.extend(values.iter().map(|v| if v.is_nan() { "".to_owned() } else { format!("{:.3}", v) }));
         }
 
-        assert_eq!(result.len(), COLUMN_NAMES.len());
+        assert_eq!(result.len(), COLUMN_INFO.len());
         result
     }
 }
 
-const COLUMN_NAMES: &[(&str, &str, bool)] = &[
-    ("Node", "", false), ("Move", "", false), ("T", "", false), ("Visits", "", true),
-    ("Zero", "W", true), ("Zero", "D", true), ("Zero", "L", true), ("Zero", "M", true),
-    ("Net", "W", true), ("Net", "D", true), ("Net", "L", true), ("Net", "M", true),
-    ("Uct", "V", true), ("Uct", "U", true), ("Uct", "M", true),
+const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
+    ("Node", "", false, Color::Gray), ("Move", "", false, Color::Gray), ("T", "", false, Color::Gray), ("Visits", "", true, Color::Gray),
+    ("Zero", "W", true, Color::Green), ("Zero", "D", true, Color::DarkGray), ("Zero", "L", true, Color::Red), ("Zero", "M", true, Color::Yellow), ("Zero", "P", true, Color::Blue),
+    ("Net", "W", true, Color::Green), ("Net", "D", true, Color::DarkGray), ("Net", "L", true, Color::Red), ("Net", "M", true, Color::Yellow), ("Net", "P", true, Color::Blue),
+    ("Uct", "V", true, Color::Green), ("Uct", "U", true, Color::Blue), ("Uct", "M", true, Color::Yellow),
 ];
 
 impl<B: Board> Widget for &State<B> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let (col_sizes, col_starts) = self.compute_col_starts(area);
 
-        for (i, &(n1, n2, _)) in COLUMN_NAMES.iter().enumerate() {
-            if i == 0 || COLUMN_NAMES[i - 1].0 != n1 {
-                buf.set_string(col_starts[i], area.y, n1, Style::default());
+        for (i, &(n1, n2, _, color)) in COLUMN_INFO.iter().enumerate() {
+            if i == 0 || COLUMN_INFO[i - 1].0 != n1 {
+                buf.set_string(col_starts[i], area.y, n1, Style::default().fg(color));
             }
-            buf.set_string(col_starts[i], area.y + 1, n2, Style::default());
+            buf.set_string(col_starts[i], area.y + 1, n2, Style::default().fg(color));
         }
 
         for y in 0..area.height - HEADER_SIZE {
@@ -281,7 +286,8 @@ impl<B: Board> Widget for &State<B> {
                 }
 
                 for (i, v) in self.column_values(node, depth).iter().enumerate() {
-                    let just_right = COLUMN_NAMES[i].2;
+                    let just_right = COLUMN_INFO[i].2;
+                    let color = COLUMN_INFO[i].3;
 
                     let x = if just_right {
                         col_starts[i] + (col_sizes[i] - v.len() as u16)
@@ -289,24 +295,26 @@ impl<B: Board> Widget for &State<B> {
                         col_starts[i]
                     };
 
-                    buf.set_string(x, full_y, v, Style::default());
+                    buf.set_string(x, full_y, v, Style::default().fg(color));
                 }
             }
         }
     }
 }
 
-fn build_tree() -> Tree<ChessBoard> {
-    let settings = ZeroSettings::new(128, UctWeights::default(), false, FpuMode::Parent);
-    let visits = 1_000;
+fn build_tree(real: bool) -> Tree<ChessBoard> {
+    let settings = ZeroSettings::new(256, UctWeights::default(), false, FpuMode::Parent);
+    let visits = 100_000;
 
-    // let path = "C:/Documents/Programming/STTT/AlphaZero/data/networks/chess_real_1859.onnx";
-    // let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
-    // let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
-    let mut network = DummyNetwork;
+    let board = ChessBoard::new_without_history_fen("1r1q1r1k/1b1np1bp/p2p1pp1/3Q4/3N4/2N1B3/PPP2PPP/R3R1K1 w - - 0 1", Default::default());
+    let stop = |tree: &Tree<ChessBoard>| tree.root_visits() >= visits;
 
-    let board = ChessBoard::default();
-    let tree = settings.build_tree(&board, &mut network, &DummyOracle, |tree| tree.root_visits() >= visits);
-
-    tree
+    if real {
+        let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/training/gen_2128/network.onnx";
+        let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
+        let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
+        settings.build_tree(&board, &mut network, &DummyOracle, stop)
+    } else {
+        settings.build_tree(&board, &mut DummyNetwork, &DummyOracle, stop)
+    }
 }

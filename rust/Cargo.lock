@@ -2676,7 +2676,9 @@ dependencies = [
  "alpha-zero",
  "board-game",
  "crossterm",
+ "cuda-nn-eval",
  "itertools",
+ "nn-graph",
  "tui",
 ]
 

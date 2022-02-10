@@ -5,6 +5,8 @@ edition = "2018"
 
 [dependencies]
 alpha-zero = { path = "../alpha-zero" }
+cuda-nn-eval = { path = "../cuda-nn-eval" }
+nn-graph = { path = "../nn-graph" }
 board-game = { version = "0.4.1", path = "../../../board-game-rs" }
 
 tui = "0.17.0"
