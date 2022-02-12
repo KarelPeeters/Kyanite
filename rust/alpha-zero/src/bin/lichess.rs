@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
+use board_game::util::pathfind::pathfind_exact_length;
 use itertools::Itertools;
 use tokio_stream::StreamExt;
 
@@ -12,6 +13,7 @@ use alpha_zero::network::Network;
 use alpha_zero::oracle::DummyOracle;
 use alpha_zero::zero::node::UctWeights;
 use alpha_zero::zero::step::FpuMode;
+use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;
 use cuda_nn_eval::Device;
 use licoricedev::client::{Lichess, LichessResult};
@@ -23,10 +25,13 @@ use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 const MAX_VISITS: u64 = 10_000_000;
 const MAX_TIME: f32 = 60.0;
 const MAX_TIME_FRACTION: f32 = 1.2 / 30.0;
+const MAX_CACHE_SIZE: usize = 10;
+
+type Cache = VecDeque<Tree<ChessBoard>>;
 
 fn main() {
     // TODO why this high exploration weight?
-    let settings = ZeroSettings::new(128, UctWeights::default(), false, FpuMode::Parent);
+    let settings = ZeroSettings::new(64, UctWeights::default(), false, FpuMode::Parent);
     println!("Using {:?}", settings);
 
     println!("Loading graph & constructing network");
@@ -34,24 +39,26 @@ fn main() {
     let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
     let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
 
+    let mut cache = Cache::default();
+
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async { main_async(settings, &mut network).await })
+        .block_on(async { main_async(settings, &mut network, &mut cache).await })
 }
 
-async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoard>) {
+async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoard>, cache: &mut Cache) {
     loop {
-        if let Err(e) = main_inner(settings, network).await {
+        if let Err(e) = main_inner(settings, network, cache).await {
             println!("Got error {:?}", e);
         }
 
-        std::thread::sleep(Duration::from_secs(10));
+        std::thread::sleep(Duration::from_secs(5));
     }
 }
 
-async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoard>) -> LichessResult<()> {
+async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoard>, cache: &mut Cache) -> LichessResult<()> {
     println!("Connecting to lichess");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
     let lichess = Lichess::new(token);
@@ -93,7 +100,7 @@ async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoar
                     }
                     BoardState::GameFull(state) => {
                         let print = info_game_ids.contains(&state.id);
-                        make_move(&lichess, &game, &state, print, settings, network).await?;
+                        make_move(&lichess, &game, &state, print, settings, network, cache).await?;
                     }
                 }
             }
@@ -106,6 +113,19 @@ async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoar
     }
 }
 
+fn pop_cache_match(board: &ChessBoard, cache: &mut Cache) -> Option<Tree<ChessBoard>> {
+    for (i, old_tree) in cache.iter().enumerate() {
+        if let Some(moves) = pathfind_exact_length(old_tree.root_board(), board, 2) {
+            if let Ok(new_tree) = old_tree.keep_moves(&moves) {
+                cache.remove(i);
+                return Some(new_tree);
+            }
+        }
+    }
+
+    None
+}
+
 async fn make_move(
     lichess: &Lichess,
     game: &UserGame,
@@ -113,12 +133,24 @@ async fn make_move(
     info: bool,
     settings: ZeroSettings,
     network: &mut impl Network<ChessBoard>,
+    cache: &mut Cache,
 ) -> LichessResult<()> {
     let board = board_from_state(state);
     println!("{}", board);
 
+    let mut tree = match pop_cache_match(&board, cache) {
+        Some(tree) => {
+            println!("Reusing tree with {} nodes", tree.root_visits());
+            tree
+        },
+        None => {
+            println!("Starting new tree");
+            Tree::new(board)
+        },
+    };
+
     let start = Instant::now();
-    let tree = settings.build_tree(&board, network, &DummyOracle, |tree| {
+    settings.expand_tree(&mut tree, network, &DummyOracle, |tree| {
         let time_used = (Instant::now() - start).as_secs_f32();
         let fraction_time_used = time_used / game.seconds_left as f32;
         let visits = tree.root_visits();
@@ -153,6 +185,11 @@ async fn make_move(
         );
         println!("Sending {:?}", message);
         lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
+    }
+
+    cache.push_back(tree);
+    while cache.len() > MAX_CACHE_SIZE {
+        cache.pop_front();
     }
 
     Ok(())
