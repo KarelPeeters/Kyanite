@@ -319,7 +319,7 @@ impl<B: Board> GameState<B> {
             //continue playing this game, either by keeping part of the tree or starting a new one on the next board
             let next_tree = if settings.keep_tree {
                 // we already know the next board is not done
-                tree.keep_move(picked_move).unwrap()
+                tree.keep_moves(&[picked_move]).unwrap()
             } else {
                 Tree::new(next_board)
             };

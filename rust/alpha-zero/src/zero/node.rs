@@ -17,6 +17,8 @@ pub struct ZeroValues {
 // TODO look at the size of this struct and think about making it smaller
 //   (but first try padding it so see if that makes it slower)
 pub struct Node<M> {
+    // Potentially update Tree::keep_moves when this struct gets new fields.<
+
     /// The parent node.
     pub parent: Option<usize>,
     /// The move that was just made to get to this node. Is `None` only for the root node.
@@ -142,7 +144,7 @@ impl<N> Node<N> {
         }
     }
 
-    pub(super) fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> Uct {
+    pub fn uct(&self, parent_total_visits: u64, fpu: ZeroValues, use_value: bool) -> Uct {
         if parent_total_visits == 0 {
             return Uct::nan();
         }
@@ -162,6 +164,7 @@ impl<N> Node<N> {
         };
 
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
+        //TODO make sure to remove this -1 if we ever split ZeroValues.flip() into child() and parent()
         let m = data.moves_left - (fpu.moves_left - 1.0);
 
         Uct { v, u, m }

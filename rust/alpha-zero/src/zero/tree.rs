@@ -18,6 +18,12 @@ pub struct Tree<B: Board> {
     pub(super) nodes: Vec<Node<B::Move>>,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum KeepMoveError {
+    Outcome { depth: u32, outcome: Outcome },
+    NotVisitedYet { depth: u32 },
+}
+
 impl<B: Board> Tree<B> {
     pub fn new(root_board: B) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
@@ -102,24 +108,35 @@ impl<B: Board> Tree<B> {
         }
     }
 
-    /// Return a new tree containing the nodes that are still relevant after playing the given move.
+    /// Return a new tree containing the nodes that are still relevant after playing the given `moves`.
     /// Effectively this copies the part of the tree starting from the selected child.
-    pub fn keep_move(&self, mv: B::Move) -> Result<Tree<B>, Outcome> {
-        //TODO test this function
-        assert!(self.len() > 1, "Must have run for at least 1 iteration");
-
+    pub fn keep_moves(&self, moves: &[B::Move]) -> Result<Tree<B>, KeepMoveError> {
+        // apply moves and find new root node
         let mut new_root_board = self.root_board.clone();
-        new_root_board.play(mv);
-        if let Some(outcome) = new_root_board.outcome() {
-            return Err(outcome);
+        let mut old_new_root = 0;
+        for (depth, &mv) in moves.iter().enumerate() {
+            let depth = depth as u32;
+
+            if let Some(outcome) = new_root_board.outcome() {
+                return Err(KeepMoveError::Outcome { depth, outcome });
+            }
+            new_root_board.play(mv);
+
+            old_new_root = self[old_new_root].children
+                .ok_or(KeepMoveError::NotVisitedYet { depth })?
+                .iter()
+                .find(|&c| self[c].last_move.unwrap() == mv)
+                .unwrap();
         }
 
-        let picked_child = self[0].children.unwrap().iter()
-            .find(|&c| self[c].last_move.unwrap() == mv)
-            .unwrap_or_else(|| panic!("Child for move {:?} not found", mv));
-
+        // map over existing nodes
         let old_nodes = &self.nodes;
-        let mut new_nodes = vec![old_nodes[picked_child].clone()];
+        let mut new_nodes = vec![old_nodes[old_new_root].clone()];
+
+        //fix up root node
+        new_nodes[0].parent = None;
+        new_nodes[0].last_move = None;
+        new_nodes[0].net_policy = f32::NAN;
 
         let mut i = 0;
 
@@ -128,8 +145,15 @@ impl<B: Board> Tree<B> {
                 None => {}
                 Some(old_children) => {
                     let new_start = new_nodes.len();
-                    new_nodes.extend(old_children.iter().map(|c| old_nodes[c].clone()));
+                    new_nodes.extend(old_children.iter().map(|c| {
+                        let mut new_node = old_nodes[c].clone();
+                        // fix up parent
+                        new_node.parent = Some(i);
+                        new_node
+                    }));
                     let new_end = new_nodes.len();
+
+                    // fix up children
                     new_nodes[i].children = Some(IdxRange::new(new_start, new_end));
                 }
             }
@@ -137,8 +161,11 @@ impl<B: Board> Tree<B> {
             i += 1;
         }
 
-        let tree = Tree { root_board: new_root_board, nodes: new_nodes };
-        Ok(tree)
+        let new_tree = Tree {
+            root_board: new_root_board,
+            nodes: new_nodes,
+        };
+        Ok(new_tree)
     }
 
     #[must_use]
@@ -254,6 +281,8 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             };
 
             for (i, &child) in children.iter().enumerate() {
+                assert_eq!(tree[child].parent, Some(self.node));
+
                 if i == self.max_children {
                     for _ in 0..(self.curr_depth + 1) { write!(f, "  ")? }
                     writeln!(f, "...")?;
@@ -273,7 +302,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     max_depth: next_max_depth,
                     max_children: self.max_children,
                     sort: self.sort,
-                    expand_all: self.expand_all
+                    expand_all: self.expand_all,
                 };
                 write!(f, "{}", child_display)?;
             }
