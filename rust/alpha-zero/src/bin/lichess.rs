@@ -30,8 +30,9 @@ const MAX_CACHE_SIZE: usize = 10;
 type Cache = VecDeque<Tree<ChessBoard>>;
 
 fn main() {
-    // TODO why this high exploration weight?
-    let settings = ZeroSettings::new(64, UctWeights::default(), false, FpuMode::Parent);
+    let batch_size = (MAX_VISITS / 10).clamp(1, 128) as usize;
+
+    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent);
     println!("Using {:?}", settings);
 
     println!("Loading graph & constructing network");
@@ -150,6 +151,8 @@ async fn make_move(
     };
 
     let start = Instant::now();
+    let start_visits = tree.root_visits();
+
     settings.expand_tree(&mut tree, network, &DummyOracle, |tree| {
         let time_used = (Instant::now() - start).as_secs_f32();
         let fraction_time_used = time_used / game.seconds_left as f32;
@@ -159,7 +162,7 @@ async fn make_move(
 
     let time_used = Instant::now() - start;
     println!("Took {:?}", (time_used));
-    println!("GPU throughput: {:.2} evals/s", tree.root_visits() as f32 / time_used.as_secs_f32());
+    println!("GPU throughput: {:.2} evals/s", (tree.root_visits() - start_visits) as f32 / time_used.as_secs_f32());
 
     println!("{}", tree.display(3, true, 5, false));
     let mv = tree.best_move().unwrap();
