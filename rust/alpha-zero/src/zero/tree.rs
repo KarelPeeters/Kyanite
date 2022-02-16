@@ -238,12 +238,12 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let node_values = node.values();
         let net_values = node.net_values.unwrap_or_else(ZeroValues::nan).parent();
 
-        let parent_complete_visits = parent.map_or(node.complete_visits, |p| p.complete_visits);
+        let parent_complete_visits = parent.map_or(f32::NAN, |p| p.complete_visits as f32);
         let parent_total_visits = parent.map_or(node.total_visits(), |p| p.total_visits());
         let parent_fpu = parent.map_or(ZeroValues::nan(), |p| p.values().flip());
 
-        let zero_policy = if parent_complete_visits > 0 {
-            (node.complete_visits as f32) / ((parent_complete_visits - 1) as f32)
+        let zero_policy = if parent_complete_visits > 0.0 {
+            (node.complete_visits as f32) / (parent_complete_visits - 1.0)
         } else {
             f32::NAN
         };
