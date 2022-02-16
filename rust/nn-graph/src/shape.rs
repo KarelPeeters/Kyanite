@@ -264,3 +264,18 @@ impl Display for Size {
         }
     }
 }
+
+impl Display for ConcreteShape {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        for i in 0..self.rank() {
+            if i != 0 {
+                write!(f, " x ")?;
+            }
+
+            write!(f, "{}", self.dims[i])?;
+        }
+        write!(f, ")")?;
+        Ok(())
+    }
+}

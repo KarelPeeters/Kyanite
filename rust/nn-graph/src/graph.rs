@@ -570,3 +570,9 @@ impl Deref for ConstantData {
         &self.0
     }
 }
+
+impl Value {
+    pub fn id(self) -> usize {
+        self.0
+    }
+}
