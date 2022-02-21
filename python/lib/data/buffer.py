@@ -50,7 +50,7 @@ class FileListSampler:
         (fi, pi) = self.split_index(i)
         return self.files[fi][pi]
 
-    def next_batch(self):
+    def next_batch(self) -> PositionBatch:
         return self.queue.pop_blocking()
 
 
