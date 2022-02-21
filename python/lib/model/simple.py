@@ -17,7 +17,7 @@ class DenseNetwork(nn.Module):
             *[DenseBlock(size, res) for _ in range(depth)],
             nn.BatchNorm1d(size),
             nn.ReLU(),
-            nn.Linear(size, 4 + prod(game.policy_shape))
+            nn.Linear(size, 5 + prod(game.policy_shape))
         ]
 
         self.seq = nn.Sequential(*layers)
@@ -25,11 +25,10 @@ class DenseNetwork(nn.Module):
     def forward(self, input):
         output = self.seq(input)
 
-        value = output[:, 0]
-        wdl = output[:, 1:4]
-        policy = output[:, 4:].view(-1, *self.policy_shape)
+        scalars = output[:, :5]
+        policy = output[:, 5:].view(-1, *self.policy_shape)
 
-        return value, wdl, policy
+        return scalars, policy
 
 
 class DenseBlock(nn.Module):
