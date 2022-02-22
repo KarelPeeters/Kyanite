@@ -149,6 +149,11 @@ def evaluate_policy(logits, indices, values):
     assert len(logits) == len(indices)
     (batch_size, max_mv_count) = indices.shape
 
+    if max_mv_count == 0:
+        zero = torch.tensor(0.0).to(logits.device)
+        one = torch.tensor(1.0).to(logits.device)
+        return zero, one, one
+
     logits = logits.flatten(1)
 
     selected_logits = torch.gather(logits, 1, indices)
@@ -156,13 +161,16 @@ def evaluate_policy(logits, indices, values):
 
     loss = values * torch.log_softmax(selected_logits, 1)
 
-    masked_moves = loss.isinf()
+    # -inf for non-available moves, nan when there are no moves available at all
+    masked_moves = ~loss.isfinite()
     loss[masked_moves] = 0
     total_loss = -loss.sum(axis=1).mean(axis=0)
+
+    empty_count = (values == -1).all(axis=1).sum().float()
 
     # accuracy (top move matches) and captured (policy of net top move)
     selected_argmax = selected_logits.argmax(dim=1, keepdim=True)
     acc = torch.sum(torch.eq(selected_argmax, values.argmax(dim=1, keepdim=True))) / batch_size
-    cap = torch.gather(values, 1, selected_argmax).mean()
+    cap = torch.gather(values, 1, selected_argmax).mean() + 2 * (empty_count / batch_size)
 
     return total_loss, acc, cap
