@@ -704,6 +704,8 @@ checksum = "281759d3c8a14f5c3f0c49363be56810fcd7f910422f97f2db850c2920fde5cf"
 dependencies = [
  "approx 0.3.2",
  "num-traits",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -2621,6 +2623,7 @@ dependencies = [
  "board-game",
  "crossterm",
  "cuda-nn-eval",
+ "decorum",
  "itertools",
  "nn-graph",
  "tui",

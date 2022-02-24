@@ -2,11 +2,13 @@ use std::cmp::{max, min, Reverse};
 use std::collections::HashSet;
 
 use board_game::board::Board;
+use board_game::games::ataxx::{AtaxxBoard, Coord};
 use board_game::games::chess::ChessBoard;
 use board_game::wdl::{Flip, OutcomeWDL};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use decorum::N32;
 use itertools::Itertools;
 use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
@@ -15,12 +17,13 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::Widget;
 
+use alpha_zero::mapping::ataxx::AtaxxStdMapper;
 use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::dummy::DummyNetwork;
 use alpha_zero::oracle::DummyOracle;
 use alpha_zero::util::display_option_empty;
-use alpha_zero::zero::node::{Uct, UctWeights, ZeroValues};
+use alpha_zero::zero::node::{Node, Uct, UctWeights, ZeroValues};
 use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;
@@ -104,7 +107,11 @@ impl<B: Board> State<B> {
 
         if self.expanded_nodes.contains(&curr) {
             if let Some(children) = self.tree[curr].children {
-                for c in children.iter().sorted_by_key(|&c| Reverse(self.tree[c].total_visits())) {
+                let sorted_children = children.iter()
+                    .sorted_by_key(|&c| {
+                        Reverse((self.tree[c].total_visits(), N32::from(self.tree[c].net_policy)))
+                    });
+                for c in sorted_children {
                     self.append_nodes(c, depth + 1, result);
                 }
             }
@@ -233,7 +240,7 @@ impl<B: Board> State<B> {
 
         {
             let zero = node.values();
-            let net = node.net_values.unwrap_or(ZeroValues::nan());
+            let net = node.net_values.unwrap_or(ZeroValues::nan()).flip();
             let (uct, zero_policy) = if let Some(parent) = node.parent {
                 let parent = &self.tree[parent];
                 let uct = node.uct(parent.total_visits(), parent.values().flip(), false);
@@ -258,9 +265,9 @@ impl<B: Board> State<B> {
 
 const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Node", "", false, Color::Gray), ("Move", "", false, Color::Gray), ("T", "", false, Color::Gray), ("Visits", "", true, Color::Gray),
-    ("Zero", "W", true, Color::Green), ("Zero", "D", true, Color::DarkGray), ("Zero", "L", true, Color::Red), ("Zero", "M", true, Color::Yellow), ("Zero", "P", true, Color::Blue),
-    ("Net", "W", true, Color::Green), ("Net", "D", true, Color::DarkGray), ("Net", "L", true, Color::Red), ("Net", "M", true, Color::Yellow), ("Net", "P", true, Color::Blue),
-    ("Uct", "V", true, Color::Green), ("Uct", "U", true, Color::Blue), ("Uct", "M", true, Color::Yellow),
+    ("Zero", "W", true, Color::Green), ("Zero", "D", true, Color::DarkGray), ("Zero", "L", true, Color::Red), ("Zero", "M", true, Color::Yellow), ("Zero", "P", true, Color::LightBlue),
+    ("Net", "W", true, Color::Green), ("Net", "D", true, Color::DarkGray), ("Net", "L", true, Color::Red), ("Net", "M", true, Color::Yellow), ("Net", "P", true, Color::LightBlue),
+    ("Uct", "V", true, Color::Green), ("Uct", "U", true, Color::LightBlue), ("Uct", "M", true, Color::Yellow),
 ];
 
 impl<B: Board> Widget for &State<B> {
@@ -304,15 +311,20 @@ impl<B: Board> Widget for &State<B> {
 
 fn build_tree(real: bool) -> Tree<ChessBoard> {
     let settings = ZeroSettings::new(256, UctWeights::default(), false, FpuMode::Parent);
-    let visits = 100_000;
+    let visits = 20_000;
 
-    let board = ChessBoard::new_without_history_fen("1r1q1r1k/1b1np1bp/p2p1pp1/3Q4/3N4/2N1B3/PPP2PPP/R3R1K1 w - - 0 1", Default::default());
-    let stop = |tree: &Tree<ChessBoard>| tree.root_visits() >= visits;
+    let board = ChessBoard::new_without_history_fen("2r3rk/1b3p1p/pp2pPn1/2qp2RQ/8/2N3P1/PPP3BP/1K2R3 b - - 0 1", Default::default());
+    let path = "C:/Documents/Programming/STTT/AlphaZero/data/networks/chess_16x128_gen3634.onnx";
+    let mapper = ChessStdMapper;
 
+    // let board = AtaxxBoard::default();
+    // let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/ataxx-7/16x128/training/gen_661/network.onnx";
+    // let mapper = AtaxxStdMapper::new(board.size());
+
+    let stop = |tree: &Tree<_>| tree.root_visits() >= visits;
     if real {
-        let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/training/gen_2128/network.onnx";
         let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
-        let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
+        let mut network = CudnnNetwork::new(mapper, graph, settings.batch_size, Device::new(0));
         settings.build_tree(&board, &mut network, &DummyOracle, stop)
     } else {
         settings.build_tree(&board, &mut DummyNetwork, &DummyOracle, stop)
