@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio_stream::StreamExt;
 
 use licoricedev::client::{Lichess, LichessResult};
-use licoricedev::models::board::Event;
+use licoricedev::models::board::{Challenge, Event};
 
 fn main() -> LichessResult<()> {
     tokio::runtime::Builder::new_current_thread()
@@ -29,23 +29,33 @@ async fn main_impl() -> LichessResult<()> {
                 println!("  variant: {:?}", challenge.variant);
                 println!("  fen:     {:?}", challenge.initial_fen);
 
-                // TODO reject Chess960 starting positions somehow
-                if challenge.variant.key != "standard" && challenge.variant.key != "fromPosition" {
+                if let Some(reason) = decline_reason(&challenge) {
                     println!("Declined");
-                    if let Err(e) = lichess.challenge_decline(&challenge.id, Some("This bot does not play variants")).await {
+                    if let Err(e) = lichess.challenge_decline(&challenge.id, Some(reason)).await {
                         println!("Error: {:?}", e)
                     }
-
-                    continue;
-                }
-
-                println!("Accepted");
-                if let Err(e) = lichess.challenge_accept(&challenge.id).await {
-                    println!("Error: {:?}", e)
+                } else {
+                    println!("Accepted");
+                    if let Err(e) = lichess.challenge_accept(&challenge.id).await {
+                        println!("Error: {:?}", e)
+                    }
                 }
             }
         }
 
         std::thread::sleep(Duration::from_secs(10));
     }
+}
+
+fn decline_reason(challenge: &Challenge) -> Option<&str> {
+    // TODO reject Chess960 starting positions somehow
+    if challenge.variant.key != "standard" && challenge.variant.key != "fromPosition" {
+        return Some("This bot does not play variants");
+    }
+
+    if challenge.time_control.increment.unwrap_or(0) == 0 {
+        return Some("This bot only works with nonzero increment")
+    }
+
+    None
 }
