@@ -38,7 +38,7 @@ impl Oracle<ChessBoard> for SyzygyOracle {
 
         let pos: Chess = board.inner().to_string()
             .parse::<Fen>().unwrap()
-            .position(CastlingMode::Standard).unwrap();
+            .into_position(CastlingMode::Standard).unwrap();
 
         match self.tables.best_move(&pos) {
             Ok(Some((best_move, dtz))) => {

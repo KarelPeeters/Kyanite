@@ -9,13 +9,13 @@ nn-graph = { path = "../nn-graph" }
 
 bytemuck = "1.7.3"
 itertools = "0.10.3"
-rand = "0.8.4"
+rand = "0.8.5"
 
 [dev-dependencies]
 criterion = "0.3.5"
 
 [build-dependencies]
-cc = "1.0.72"
+cc = "1.0.73"
 
 [[bench]]
 name = "memory"

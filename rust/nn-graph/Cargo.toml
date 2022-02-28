@@ -15,10 +15,10 @@ unwrap-match = "0.1.0"
 num-traits = "0.2.14"
 
 ndarray = "0.15.4"
-convolutions-rs = "0.2.1"
+convolutions-rs = "0.2.2"
 indexmap = "1.8.0"
 
-image = { version = "0.23.14", default-features = false, features = ["png"] }
+image = { version = "0.24.1", default-features = false, features = ["png"] }
 palette = { version = "0.6.0", default-features = false, features = ["std"] }
 
 rayon = "1.5.1"

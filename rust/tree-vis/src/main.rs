@@ -2,7 +2,6 @@ use std::cmp::{max, min, Reverse};
 use std::collections::HashSet;
 
 use board_game::board::Board;
-use board_game::games::ataxx::{AtaxxBoard, Coord};
 use board_game::games::chess::ChessBoard;
 use board_game::wdl::{Flip, OutcomeWDL};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
@@ -17,13 +16,12 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::Widget;
 
-use alpha_zero::mapping::ataxx::AtaxxStdMapper;
 use alpha_zero::mapping::chess::ChessStdMapper;
 use alpha_zero::network::cudnn::CudnnNetwork;
 use alpha_zero::network::dummy::DummyNetwork;
 use alpha_zero::oracle::DummyOracle;
 use alpha_zero::util::display_option_empty;
-use alpha_zero::zero::node::{Node, Uct, UctWeights, ZeroValues};
+use alpha_zero::zero::node::{Uct, UctWeights, ZeroValues};
 use alpha_zero::zero::step::FpuMode;
 use alpha_zero::zero::tree::Tree;
 use alpha_zero::zero::wrapper::ZeroSettings;

@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::fmt::format;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
-use image::{image_dimensions, ImageBuffer, Rgb};
-use ndarray::{ArrayView2, ArrayView4};
+use image::{ImageBuffer, Rgb};
+use ndarray::ArrayView4;
 use palette::{LinSrgb, Srgb};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -25,7 +24,7 @@ fn main() {
 
         let graph = load_graph_from_onnx_path(network_path);
 
-        for (i, &v) in ordered_values(&graph).iter().enumerate() {
+        for (_, &v) in ordered_values(&graph).iter().enumerate() {
             if let Some(data) = graph.as_const(v) {
                 let shape = graph[v].shape.unwrap_fixed("constant shape");
 
