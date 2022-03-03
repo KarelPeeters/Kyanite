@@ -1,0 +1,31 @@
+[package]
+name = "licoricedev"
+version = "0.1.2"
+authors = ["icp <pangolin@vivaldi.net>", "hyperchessbot <hyperchessbot@gmail.com>"]
+edition = "2018"
+keywords = ["lichess", "api", "dev"]
+description = "Lichess API. Development version."
+license = "AGPL-3.0-only"
+repository = "https://gitlab.com/hyperchessbotauthor/licorice"
+homepage = "https://gitlab.com/hyperchessbotauthor/licorice"
+documentation = "https://docs.rs/licoricedev/0.1.2"
+readme = "ReadMe.md"
+
+[dependencies]
+bytes = "1.0.1"
+chrono = { version = "0.4.19", features = ["serde"] }
+futures-util = "0.3.12"
+reqwest = { version = "0.11.0", features = ["json", "stream"] }
+serde = { version = "1.0.120", features = ["derive"] }
+serde_json = "1.0.61"
+serde_with = { version = "1.6.0", features = ["chrono"] }
+thiserror = "1.0.23"
+tokio = "1.1.0"
+tokio-stream = { version = "0.1.2", features = ["io-util"] }
+tokio-util = { version = "0.6.2", features = ["io"] }
+
+[dev-dependencies]
+anyhow = "1.0.38"
+shakmaty = "0.17.2"
+structopt = "0.3.21"
+tokio = { version = "1.1.0", features = ["macros", "rt-multi-thread"] }

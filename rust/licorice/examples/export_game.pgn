@@ -1,0 +1,15 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2020.09.26"]
+[Round "?"]
+[White "england_board_4"]
+[Black "MarsoK"]
+[Result "1-0"]
+[ECO "A45"]
+[WhiteElo "1388"]
+[BlackElo "1345"]
+[TimeControl "180+2"]
+[EndTime "12:00:11 PDT"]
+[Termination "england_board_4 won by resignation"]
+
+1. d4 Nf6 2. Bg5 d5 3. Bxf6 exf6 4. c4 Bg4 5. cxd5 Qxd5 6. Nc3 Qb5 7. Nxb5 1-0
