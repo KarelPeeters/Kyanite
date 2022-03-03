@@ -10,7 +10,14 @@ fn main() {
     }
 }
 
-fn profile_conv(batch_size: usize, input_channels: usize, output_channels: usize, io_size: usize, kernel_size: usize, use_graph: bool) -> f32 {
+fn profile_conv(
+    batch_size: usize,
+    input_channels: usize,
+    output_channels: usize,
+    io_size: usize,
+    kernel_size: usize,
+    use_graph: bool,
+) -> f32 {
     let input_shape = shape![Size::BATCH, input_channels, io_size, io_size];
     let kernel_shape = shape![output_channels, input_channels, kernel_size, kernel_size];
 
@@ -35,10 +42,12 @@ fn profile_conv(batch_size: usize, input_channels: usize, output_channels: usize
 
     //actual profiling
     exec.set_profile(true);
-    let total = (0..samples).map(|_| {
-        exec.evaluate(&[&input]);
-        exec.last_profile().unwrap().conv
-    }).sum::<f32>();
+    let total = (0..samples)
+        .map(|_| {
+            exec.evaluate(&[&input]);
+            exec.last_profile().unwrap().conv
+        })
+        .sum::<f32>();
 
     total / samples as f32
 }

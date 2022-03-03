@@ -74,7 +74,7 @@ impl Index<usize> for BitBuffer {
 }
 
 impl Extend<bool> for BitBuffer {
-    fn extend<T: IntoIterator<Item=bool>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = bool>>(&mut self, iter: T) {
         iter.into_iter().for_each(|b| self.push(b))
     }
 }
@@ -131,7 +131,9 @@ mod test {
     #[should_panic]
     fn overflow() {
         let mut buf = BitBuffer::new(32);
-        for _ in 0..33 { buf.push(false); }
+        for _ in 0..33 {
+            buf.push(false);
+        }
     }
 
     #[test]

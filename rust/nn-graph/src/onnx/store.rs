@@ -25,13 +25,14 @@ impl<'a, T> Index<&str> for Store<'a, T> {
     type Output = T;
 
     fn index(&self, key: &str) -> &T {
-        self.inner.get(key)
-            .unwrap_or_else(|| panic!("Key {} not found", key))
+        self.inner.get(key).unwrap_or_else(|| panic!("Key {} not found", key))
     }
 }
 
 impl<'a, T> Default for Store<'a, T> {
     fn default() -> Self {
-        Store { inner: Default::default() }
+        Store {
+            inner: Default::default(),
+        }
     }
 }

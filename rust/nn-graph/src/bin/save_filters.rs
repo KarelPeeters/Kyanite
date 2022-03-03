@@ -17,8 +17,13 @@ fn main() {
     let range = 15..3634;
 
     range.into_par_iter().for_each(|ei| {
-        let network_path = format!("C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/training/gen_{}/network.onnx", ei);
-        if !Path::new(&network_path).exists() { return; }
+        let network_path = format!(
+            "C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/training/gen_{}/network.onnx",
+            ei
+        );
+        if !Path::new(&network_path).exists() {
+            return;
+        }
 
         println!("Saving filters for network {}", ei);
 
@@ -28,7 +33,9 @@ fn main() {
             if let Some(data) = graph.as_const(v) {
                 let shape = graph[v].shape.unwrap_fixed("constant shape");
 
-                if shape.size() <= 1 { continue; };
+                if shape.size() <= 1 {
+                    continue;
+                };
 
                 let (k, c, h, w) = match &*shape.dims {
                     &[k, c, h, w] => (k, c, h, w),
@@ -36,9 +43,16 @@ fn main() {
                     _ => continue,
                 };
 
-                let image_path = PathBuf::from(format!("D:/Documents/A0/filters/16x128/{}_{}/{}.png", v.id(), shape, ei));
+                let image_path = PathBuf::from(format!(
+                    "D:/Documents/A0/filters/16x128/{}_{}/{}.png",
+                    v.id(),
+                    shape,
+                    ei
+                ));
                 create_dir_all(image_path.parent().unwrap()).unwrap();
-                if image_path.exists() { continue; }
+                if image_path.exists() {
+                    continue;
+                }
 
                 println!("Saving filters for layer {}_{}", v.id(), shape);
 
@@ -98,7 +112,9 @@ fn ordered_values(graph: &Graph) -> Vec<Value> {
 }
 
 fn ordered_values_impl(graph: &Graph, result: &mut Vec<Value>, visited: &mut HashSet<Value>, curr: Value) {
-    if !visited.insert(curr) { return; }
+    if !visited.insert(curr) {
+        return;
+    }
 
     for input in graph[curr].operation.inputs() {
         ordered_values_impl(graph, result, visited, input)

@@ -27,8 +27,7 @@ pub fn commander_main<B: Board>(
                 let loaded_graph = load_graph_from_onnx_path(path);
                 let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
 
-                let check_data = std::fs::read(path_bin)
-                    .expect("Failed to read check data");
+                let check_data = std::fs::read(path_bin).expect("Failed to read check data");
                 check_cudnn(&graph, &check_data, false);
             }
         }

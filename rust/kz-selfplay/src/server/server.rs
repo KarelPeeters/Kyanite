@@ -12,10 +12,10 @@ use itertools::Itertools;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
-use kz_core::mapping::BoardMapper;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::sttt::STTTStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
+use kz_core::mapping::BoardMapper;
 
 use crate::server::collector::collector_main;
 use crate::server::commander::{commander_main, read_command};
@@ -32,8 +32,7 @@ enum Game {
 
 pub fn selfplay_server_main() {
     println!("Waiting for connection");
-    let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap()
-        .accept().unwrap();
+    let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap().accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
 
     let writer = BufWriter::new(&stream);
@@ -42,58 +41,48 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
-    let game = Game::parse(&startup_settings.game)
-        .unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
+    let game =
+        Game::parse(&startup_settings.game).unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
 
     //TODO static dispatch this early means we're generating a lot of code 4 times
     //  is it actually that much? -> investigate with objdump or similar
     //  would it be relatively easy to this dispatch some more?
     match game {
-        Game::TTT => {
-            selfplay_start(
-                game,
-                startup_settings,
-                TTTBoard::default,
-                TTTStdMapper,
-                reader, writer,
-            )
-        }
-        Game::STTT => {
-            selfplay_start(
-                game,
-                startup_settings,
-                STTTBoard::default,
-                STTTStdMapper,
-                reader, writer,
-            )
-        }
-        Game::Ataxx { size } => {
-            selfplay_start(
-                game,
-                startup_settings,
-                || AtaxxBoard::diagonal(size),
-                AtaxxStdMapper::new(size),
-                reader, writer,
-            )
-        }
-        Game::Chess => {
-            selfplay_start(
-                game,
-                startup_settings,
-                ChessBoard::default,
-                ChessStdMapper,
-                reader, writer,
-            )
-        }
+        Game::TTT => selfplay_start(game, startup_settings, TTTBoard::default, TTTStdMapper, reader, writer),
+        Game::STTT => selfplay_start(
+            game,
+            startup_settings,
+            STTTBoard::default,
+            STTTStdMapper,
+            reader,
+            writer,
+        ),
+        Game::Ataxx { size } => selfplay_start(
+            game,
+            startup_settings,
+            || AtaxxBoard::diagonal(size),
+            AtaxxStdMapper::new(size),
+            reader,
+            writer,
+        ),
+        Game::Chess => selfplay_start(
+            game,
+            startup_settings,
+            ChessBoard::default,
+            ChessStdMapper,
+            reader,
+            writer,
+        ),
     }
 }
 
 fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSettings {
     match read_command(reader) {
-        Command::StartupSettings(startup) =>
-            startup,
-        command =>
-            panic!("Must receive startup settings before any other command, got {:?}", command),
+        Command::StartupSettings(startup) => startup,
+        command => panic!(
+            "Must receive startup settings before any other command, got {:?}",
+            command
+        ),
     }
 }
 
@@ -120,28 +109,43 @@ fn selfplay_start<B: Board>(
 
                 let start_pos = &start_pos;
                 let batch_size = startup.batch_size;
-                s.builder().name(format!("generator-d{}-{}", device.inner(), thread_id)).spawn(move |_| {
-                    generator_main(thread_id, mapper, start_pos, device, batch_size, cmd_receiver, update_sender)
-                }).unwrap();
+                s.builder()
+                    .name(format!("generator-d{}-{}", device.inner(), thread_id))
+                    .spawn(move |_| {
+                        generator_main(
+                            thread_id,
+                            mapper,
+                            start_pos,
+                            device,
+                            batch_size,
+                            cmd_receiver,
+                            update_sender,
+                        )
+                    })
+                    .unwrap();
             }
         }
 
-        s.builder().name("collector".to_string()).spawn(move |_| {
-            collector_main(
-                &game.to_string(),
-                writer,
-                startup.games_per_gen,
-                startup.first_gen,
-                &startup.output_folder,
-                mapper,
-                update_receiver,
-                thread_count,
-                startup.reorder_games,
-            )
-        }).unwrap();
+        s.builder()
+            .name("collector".to_string())
+            .spawn(move |_| {
+                collector_main(
+                    &game.to_string(),
+                    writer,
+                    startup.games_per_gen,
+                    startup.first_gen,
+                    &startup.output_folder,
+                    mapper,
+                    update_receiver,
+                    thread_count,
+                    startup.reorder_games,
+                )
+            })
+            .unwrap();
 
         commander_main(reader, cmd_senders, update_sender);
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 impl Game {

@@ -50,9 +50,10 @@ fn keep_tree() {
     let actual_string = actual_child_tree.display(100, true, 200, true).to_string();
     println!("{}", actual_string);
 
-    let expected_child_tree = settings.build_tree(&board.clone_and_play(mv), &mut DummyNetwork, &mut DummyOracle, |tree| {
-        tree.root_visits() >= actual_child_tree.root_visits()
-    });
+    let expected_child_tree =
+        settings.build_tree(&board.clone_and_play(mv), &mut DummyNetwork, &mut DummyOracle, |tree| {
+            tree.root_visits() >= actual_child_tree.root_visits()
+        });
 
     let expected_string = expected_child_tree.display(100, true, 200, true).to_string();
     println!("{}", expected_string);

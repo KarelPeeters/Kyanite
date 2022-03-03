@@ -1,5 +1,7 @@
 use crate::bindings::{cublasOperation_t, cublasSgemmStridedBatched, cudnnConvolutionFwdAlgo_t};
-use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor};
+use crate::wrapper::descriptor::{
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor,
+};
 use crate::wrapper::handle::{CublasHandle, CudnnHandle};
 use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::operation::{run_conv_bias_res_activation, run_tensor_op};
@@ -109,7 +111,9 @@ impl BatchedMatMulArgs {
             handle.inner(),
             self.a.trans,
             self.b.trans,
-            self.m, self.n, self.k,
+            self.m,
+            self.n,
+            self.k,
             &(self.alpha) as *const f32,
             self.a.mem.ptr() as *const f32,
             self.a.ld,
@@ -122,6 +126,7 @@ impl BatchedMatMulArgs {
             self.c.ld,
             self.c.stride,
             self.batch_count,
-        ).unwrap()
+        )
+        .unwrap()
     }
 }

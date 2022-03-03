@@ -1,6 +1,6 @@
 //! Objects for making human moves through the API
 
-use chrono::{DateTime, serde::ts_milliseconds, Utc};
+use chrono::{serde::ts_milliseconds, DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 

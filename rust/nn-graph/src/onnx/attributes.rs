@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
-use crate::onnx::proto::{AttributeProto, TensorProto};
 use crate::onnx::proto::attribute_proto::AttributeType;
+use crate::onnx::proto::{AttributeProto, TensorProto};
 
 #[derive(Debug)]
 pub struct Attributes<'a> {
@@ -12,19 +12,15 @@ pub struct Attributes<'a> {
 
 impl<'a> Attributes<'a> {
     pub fn from(attrs: &'a [AttributeProto]) -> Self {
-        let inner: HashMap<&str, &AttributeProto> = attrs
-            .iter()
-            .map(|a| (&*a.name, a))
-            .collect();
+        let inner: HashMap<&str, &AttributeProto> = attrs.iter().map(|a| (&*a.name, a)).collect();
         Attributes { inner }
     }
 
     pub fn take(&mut self, key: &str, ty: AttributeType) -> &'a AttributeProto {
-        let attribute = self.inner.remove(key)
-            .unwrap_or_else(|| {
-                let available = self.inner.keys().collect_vec();
-                panic!("Missing attribute {}, available: {:?}", key, available)
-            });
+        let attribute = self.inner.remove(key).unwrap_or_else(|| {
+            let available = self.inner.keys().collect_vec();
+            panic!("Missing attribute {}, available: {:?}", key, available)
+        });
         assert_eq!(ty, attribute.r#type(), "Expected type {:?}", ty);
         attribute
     }

@@ -1,9 +1,9 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
-use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 
-use cuda_nn_eval::{Device, kernels};
+use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;
 use cuda_sys::wrapper::mem::device::DeviceMem;
@@ -39,9 +39,13 @@ fn strided_copy() {
                 stream.inner(),
                 rank,
                 size,
-                input_strides.as_ptr(), output_strides.as_ptr(), dense_strides.as_ptr(),
-                input.ptr() as *const f32, output.ptr() as *mut f32,
-            ).unwrap();
+                input_strides.as_ptr(),
+                output_strides.as_ptr(),
+                dense_strides.as_ptr(),
+                input.ptr() as *const f32,
+                output.ptr() as *mut f32,
+            )
+            .unwrap();
         }
         stream.record_event(&end_event);
 
@@ -71,9 +75,13 @@ fn gather() {
         indices.copy_from_host(cast_slice(&indices_data));
 
         kernels::gatherFloat(
-            stream.inner(), indices_data.len() as i32,
-            indices.ptr() as *const _, input.ptr() as *const _, output.ptr() as *mut _,
-        ).unwrap();
+            stream.inner(),
+            indices_data.len() as i32,
+            indices.ptr() as *const _,
+            input.ptr() as *const _,
+            output.ptr() as *mut _,
+        )
+        .unwrap();
 
         output.copy_to_host(cast_slice_mut(&mut output_data));
     }
@@ -108,7 +116,9 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
     let input_data: Vec<f32> = (0..batch_size * input_size).map(|x| -(x as f32)).collect_vec();
 
     let mut index_rng = SmallRng::seed_from_u64(1);
-    let indices_data: Vec<f32> = (0..index_count).map(|_| index_rng.gen_range(0..input_size) as f32).collect_vec();
+    let indices_data: Vec<f32> = (0..index_count)
+        .map(|_| index_rng.gen_range(0..input_size) as f32)
+        .collect_vec();
 
     let mut output_data: Vec<f32> = vec![0f32; batch_size * indices_data.len()];
 
@@ -124,11 +134,16 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
 
         kernels::gather2dAxis1FloatFloat(
             stream.inner(),
-            batch_size as i32, input_size as i32,
-            input_size as i32, 1,
+            batch_size as i32,
+            input_size as i32,
+            input_size as i32,
+            1,
             indices_data.len() as i32,
-            input.ptr() as *const f32, indices.ptr() as *const f32, output.ptr() as *mut f32,
-        ).unwrap();
+            input.ptr() as *const f32,
+            indices.ptr() as *const f32,
+            output.ptr() as *mut f32,
+        )
+        .unwrap();
 
         let after = stream.record_new_event();
         stream.synchronize();
@@ -137,9 +152,14 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
         output.copy_to_host(cast_slice_mut(&mut output_data));
     }
 
-    let expected_output_data = (0..batch_size).flat_map(|n| {
-        indices_data.iter().map(|&i| input_data[n * input_size + i as usize]).collect_vec()
-    }).collect_vec();
+    let expected_output_data = (0..batch_size)
+        .flat_map(|n| {
+            indices_data
+                .iter()
+                .map(|&i| input_data[n * input_size + i as usize])
+                .collect_vec()
+        })
+        .collect_vec();
 
     if output_data != expected_output_data {
         eprintln!("{:?}", output_data);
@@ -152,7 +172,10 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
                 let actual = output_data[i];
                 let expected = expected_output_data[i];
                 if actual != expected {
-                    println!("({}, {}) -> [{}] : actual {}, expected {}", n, q, index, actual, expected)
+                    println!(
+                        "({}, {}) -> [{}] : actual {}, expected {}",
+                        n, q, index, actual, expected
+                    )
                 }
             }
         }

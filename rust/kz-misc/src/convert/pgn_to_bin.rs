@@ -13,8 +13,8 @@ use kz_core::network::ZeroEvaluation;
 use kz_core::zero::node::ZeroValues;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::simulation::{Position, Simulation};
-use pgn_reader::{PgnEval, PgnGame, PgnReader, PgnResult};
 use pgn_reader::buffered_reader::BufferedReader;
+use pgn_reader::{PgnEval, PgnGame, PgnReader, PgnResult};
 
 #[derive(Debug)]
 pub struct Filter {
@@ -56,7 +56,9 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 PgnResult::WinWhite => Outcome::WonBy(Player::A),
                 PgnResult::WinBlack => Outcome::WonBy(Player::B),
                 PgnResult::Draw => Outcome::Draw,
-                PgnResult::Star => unreachable!("Got * outcome, this game should already have been filtered out"),
+                PgnResult::Star => {
+                    unreachable!("Got * outcome, this game should already have been filtered out")
+                }
             };
 
             let move_count = game.move_iter().count();
@@ -107,13 +109,8 @@ fn time_since(prev: &mut Instant) -> f32 {
 impl Filter {
     pub fn accept_elo(&self, elo: Option<u32>) -> bool {
         match elo {
-            Some(elo) => {
-                self.min_elo.map_or(true, |min| min <= elo) &&
-                    self.max_elo.map_or(true, |max| elo < max)
-            }
-            None => {
-                self.min_elo.is_none() && self.max_elo.is_none()
-            }
+            Some(elo) => self.min_elo.map_or(true, |min| min <= elo) && self.max_elo.map_or(true, |max| elo < max),
+            None => self.min_elo.is_none() && self.max_elo.is_none(),
         }
     }
 
@@ -121,11 +118,9 @@ impl Filter {
         match (self.min_start_time, time_control) {
             (None, _) => true,
             (Some(_), None) => false,
-            (Some(min_start_time), Some(time_control)) => {
-                time_control.find('+').map_or(false, |i| {
-                    time_control[..i].parse::<u32>().unwrap() >= min_start_time
-                })
-            }
+            (Some(min_start_time), Some(time_control)) => time_control
+                .find('+')
+                .map_or(false, |i| time_control[..i].parse::<u32>().unwrap() >= min_start_time),
         }
     }
 
@@ -141,12 +136,14 @@ impl Filter {
         if self.min_elo.is_some() || self.max_elo.is_some() {
             let while_elo = game.header("WhiteElo").map(|x| x.parse::<u32>().unwrap());
 
-            if !self.accept_elo(while_elo) { return true; }
+            if !self.accept_elo(while_elo) {
+                return true;
+            }
         }
 
         // termination & result
-        !accept_termination(game.header("Termination")) ||
-            game.header("Result").unwrap().parse::<PgnResult>().unwrap() == PgnResult::Star
+        !accept_termination(game.header("Termination"))
+            || game.header("Result").unwrap().parse::<PgnResult>().unwrap() == PgnResult::Star
     }
 }
 
@@ -206,9 +203,7 @@ impl Logger {
 }
 
 fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, moves_left: f32) -> Position<ChessBoard> {
-    let policy: Vec<f32> = board.available_moves()
-        .map(|cand| (cand == mv) as u8 as f32)
-        .collect();
+    let policy: Vec<f32> = board.available_moves().map(|cand| (cand == mv) as u8 as f32).collect();
 
     let zero_values = eval.map_or(ZeroValues::nan(), |eval| {
         let win = match board.next_player() {
@@ -228,7 +223,13 @@ fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, move
         should_store: true,
         played_mv: mv,
         zero_visits: 0,
-        net_evaluation: ZeroEvaluation { values: ZeroValues::nan(), policy: Cow::Owned(vec![f32::NAN; policy.len()]) },
-        zero_evaluation: ZeroEvaluation { values: zero_values, policy: Cow::Owned(policy) },
+        net_evaluation: ZeroEvaluation {
+            values: ZeroValues::nan(),
+            policy: Cow::Owned(vec![f32::NAN; policy.len()]),
+        },
+        zero_evaluation: ZeroEvaluation {
+            values: zero_values,
+            policy: Cow::Owned(policy),
+        },
     }
 }

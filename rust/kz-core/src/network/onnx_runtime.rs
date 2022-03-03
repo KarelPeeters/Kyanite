@@ -5,17 +5,17 @@ use std::path::{Path, PathBuf};
 
 use board_game::board::Board;
 
-use onnxruntime::{GraphOptimizationLevel, LoggingLevel};
 use onnxruntime::environment::Environment;
 use onnxruntime::ndarray::Array;
 use onnxruntime::ndarray::IxDyn;
 use onnxruntime::session::Session;
 use onnxruntime::tensor::OrtOwnedTensor;
+use onnxruntime::{GraphOptimizationLevel, LoggingLevel};
 use self_cell::self_cell;
 
 use crate::mapping::BoardMapper;
-use crate::network::{Network, ZeroEvaluation};
 use crate::network::common::decode_output;
+use crate::network::{Network, ZeroEvaluation};
 
 pub struct OnnxNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
@@ -63,7 +63,12 @@ impl<B: Board, M: BoardMapper<B>> OnnxNetwork<B, M> {
                 .expect("Failed to build session")
         });
 
-        OnnxNetwork { mapper, path, inner, ph: PhantomData }
+        OnnxNetwork {
+            mapper,
+            path,
+            inner,
+            ph: PhantomData,
+        }
     }
 }
 
@@ -76,17 +81,20 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for OnnxNetwork<B, M> {
             self.mapper.encode_full(&mut input, board.borrow())
         }
 
-        let input_shape = (batch_size, M::INPUT_FULL_PLANES, M::INPUT_BOARD_SIZE, M::INPUT_BOARD_SIZE);
+        let input_shape = (
+            batch_size,
+            M::INPUT_FULL_PLANES,
+            M::INPUT_BOARD_SIZE,
+            M::INPUT_BOARD_SIZE,
+        );
         let policy_shape = [batch_size, M::POLICY_PLANES, M::POLICY_PLANES, M::POLICY_PLANES];
 
-        let input = Array::from_shape_vec(input_shape, input)
-            .expect("Dimension mismatch");
+        let input = Array::from_shape_vec(input_shape, input).expect("Dimension mismatch");
         let input = vec![input];
 
         let mapper = self.mapper;
         self.inner.with_dependent_mut(|_, session: &mut Session| {
-            let outputs: Vec<OrtOwnedTensor<f32, _>> = session.run(input)
-                .expect("Session run failed");
+            let outputs: Vec<OrtOwnedTensor<f32, _>> = session.run(input).expect("Session run failed");
 
             assert_eq!(3, outputs.len());
             let value = &outputs[0];
@@ -105,4 +113,3 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for OnnxNetwork<B, M> {
         })
     }
 }
-

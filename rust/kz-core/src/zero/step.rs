@@ -77,7 +77,10 @@ pub fn zero_step_gather<B: Board>(
                 tree[curr_node].net_values = None;
 
                 // return the request
-                return Some(ZeroRequest { board: curr_board, node: curr_node });
+                return Some(ZeroRequest {
+                    board: curr_board,
+                    node: curr_node,
+                });
             }
             Some(children) => children,
         };
@@ -92,11 +95,15 @@ pub fn zero_step_gather<B: Board>(
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].total_visits();
 
-        let selected = children.iter().max_by_key(|&child| {
-            let x = tree[child].uct(parent_total_visits, fpu_mode.select(fpu), use_value)
-                .total(weights);
-            N32::from_inner(x)
-        }).expect("Board is not done, this node should have a child");
+        let selected = children
+            .iter()
+            .max_by_key(|&child| {
+                let x = tree[child]
+                    .uct(parent_total_visits, fpu_mode.select(fpu), use_value)
+                    .total(weights);
+                N32::from_inner(x)
+            })
+            .expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
@@ -108,15 +115,25 @@ pub fn zero_step_gather<B: Board>(
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
 pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) {
     // we don't explicitly assert that we're expecting this node since wdl already checks for net_wdl and virtual_visits
-    let ZeroResponse { node: curr_node, board: _, eval } = response;
+    let ZeroResponse {
+        node: curr_node,
+        board: _,
+        eval,
+    } = response;
 
     // wdl
-    assert!(tree[curr_node].net_values.is_none(), "Node {} was already evaluated by the network", curr_node);
+    assert!(
+        tree[curr_node].net_values.is_none(),
+        "Node {} was already evaluated by the network",
+        curr_node
+    );
     tree[curr_node].net_values = Some(eval.values);
     tree_propagate_values(tree, curr_node, eval.values);
 
     // policy
-    let children = tree[curr_node].children.expect("Applied node should have initialized children");
+    let children = tree[curr_node]
+        .children
+        .expect("Applied node should have initialized children");
     assert_eq!(children.length as usize, eval.policy.len(), "Wrong children length");
     for (c, &p) in zip_eq_exact(children, eval.policy.as_ref()) {
         tree[c].net_policy = p;
@@ -156,6 +173,10 @@ impl FpuMode {
 
 impl<B> ZeroRequest<B> {
     pub fn respond(self, eval: ZeroEvaluation) -> ZeroResponse<B> {
-        ZeroResponse { node: self.node, board: self.board, eval }
+        ZeroResponse {
+            node: self.node,
+            board: self.board,
+            eval,
+        }
     }
 }

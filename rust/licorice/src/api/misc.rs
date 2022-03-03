@@ -23,11 +23,7 @@ impl Lichess {
         self.to_raw_str(builder).await
     }
 
-    pub async fn study_full_pgn(
-        &self,
-        study_id: &str,
-        query_params: Option<&[(&str, &str)]>,
-    ) -> LichessResult<String> {
+    pub async fn study_full_pgn(&self, study_id: &str, query_params: Option<&[(&str, &str)]>) -> LichessResult<String> {
         let url = format!("{}/study/{}.pgn", self.base, study_id);
         let mut builder = self.client.get(&url);
         if let Some(params) = query_params {
@@ -44,12 +40,7 @@ impl Lichess {
         Ok(())
     }
 
-    pub async fn get_cloud_eval(
-        &self,
-        fen: &str,
-        multi_pv: u8,
-        variant: Option<&str>,
-    ) -> LichessResult<Eval> {
+    pub async fn get_cloud_eval(&self, fen: &str, multi_pv: u8, variant: Option<&str>) -> LichessResult<Eval> {
         let url = format!("{}/api/cloud-eval", self.base);
         let builder = self.client.get(&url).query(&[
             ("fen", fen),

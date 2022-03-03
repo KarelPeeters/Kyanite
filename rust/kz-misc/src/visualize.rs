@@ -1,5 +1,5 @@
 use board_game::board::{Board, Player};
-use ndarray::{ArrayView1, s, Slice};
+use ndarray::{s, ArrayView1, Slice};
 
 use kz_core::mapping::BoardMapper;
 use kz_core::network::common::softmax_in_place;
@@ -9,7 +9,7 @@ use nn_graph::graph::Value;
 use nn_graph::ndarray::{Array2, Axis};
 use nn_graph::shape;
 use nn_graph::shape::Size;
-use nn_graph::visualize::{Image, VisTensor, visualize_graph_activations};
+use nn_graph::visualize::{visualize_graph_activations, Image, VisTensor};
 
 pub fn visualize_network_activations_split<B: Board, M: BoardMapper<B>>(
     network: &mut CPUNetwork<B, M>,
@@ -33,8 +33,8 @@ fn split_player<B: Board>(boards: &[B]) -> (Vec<B>, Vec<B>) {
 
     for board in boards {
         match board.next_player() {
-            Player::A => { result_a.push(board.clone()) }
-            Player::B => { result_b.push(board.clone()) }
+            Player::A => result_a.push(board.clone()),
+            Player::B => result_b.push(board.clone()),
         }
     }
 
@@ -59,7 +59,8 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
     let output_count = graph.outputs().len();
     assert!(
         output_count == 2 || output_count == 3,
-        "Expected either (value, wdl, policy) or (scalars, policy) as output, got {}", output_count
+        "Expected either (value, wdl, policy) or (scalars, policy) as output, got {}",
+        output_count
     );
 
     let post_process = move |value: Value, tensor: Tensor| {
@@ -83,7 +84,12 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
         } else if shape == &scalar_shape {
             // tanh(value_logit) -> 0..1, softmax(wdl_logits), moves_left
             vec![
-                VisTensor::abs(tensor.index_axis(Axis(1), 0).mapv(|x| (x.tanh() + 1.0 / 2.0)).to_shared()),
+                VisTensor::abs(
+                    tensor
+                        .index_axis(Axis(1), 0)
+                        .mapv(|x| (x.tanh() + 1.0 / 2.0))
+                        .to_shared(),
+                ),
                 VisTensor::abs(softmax(tensor.slice_axis(Axis(1), Slice::from(1..4)), Axis(1)).to_shared()),
                 VisTensor::norm(tensor.index_axis(Axis(1), 4).to_shared()),
             ]
@@ -101,7 +107,8 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
                 buffer.clear();
 
                 for i in 0..mapper.policy_len() {
-                    let is_available = mapper.index_to_move(board, i)
+                    let is_available = mapper
+                        .index_to_move(board, i)
                         .map_or(false, |mv| board.is_available_move(mv));
 
                     any_available |= is_available;

@@ -22,8 +22,7 @@ pub fn pgn_archive_to_bin(
     max_games_per_entry: Option<u64>,
 ) {
     let output_folder = output_folder.as_ref();
-    std::fs::create_dir_all(output_folder)
-        .expect("Failed to create output folder");
+    std::fs::create_dir_all(output_folder).expect("Failed to create output folder");
 
     let (sender, receiver) = crossbeam::channel::bounded(thread_count);
 
@@ -31,9 +30,19 @@ pub fn pgn_archive_to_bin(
         s.spawn(|_| loader_main(input, sender, max_entries));
 
         for _ in 0..thread_count {
-            s.spawn(|_| mapper_main(output_folder, &receiver, mapper, filter, skip_existing, max_games_per_entry));
+            s.spawn(|_| {
+                mapper_main(
+                    output_folder,
+                    &receiver,
+                    mapper,
+                    filter,
+                    skip_existing,
+                    max_games_per_entry,
+                )
+            });
         }
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 fn loader_main(input: impl Read, sender: Sender<(String, Vec<u8>)>, max_entries: Option<usize>) {
@@ -69,10 +78,8 @@ fn mapper_main(
         let mut output_path = output_folder.join(&path);
         output_path.set_extension("");
 
-        let parent = output_path.parent()
-            .expect("No parent folder for file");
-        std::fs::create_dir_all(parent)
-            .expect("Error while creating output dirs");
+        let parent = output_path.parent().expect("No parent folder for file");
+        std::fs::create_dir_all(parent).expect("Error while creating output dirs");
 
         let output_path_json = output_path.with_extension("json");
 
@@ -84,13 +91,12 @@ fn mapper_main(
         println!("Mapping {:?} to {:?}", path, output_path);
 
         let input = Memory::new(&*data);
-        let mut binary_output = BinaryOutput::new(&output_path, "chess", mapper)
-            .expect("Error white opening output files");
+        let mut binary_output =
+            BinaryOutput::new(&output_path, "chess", mapper).expect("Error white opening output files");
 
         append_pgn_to_bin(input, &mut binary_output, filter, max_games_per_entry, false)
             .expect("Error while writing to bin");
-        binary_output.finish()
-            .expect("Error while finishing output");
+        binary_output.finish().expect("Error while finishing output");
 
         println!("Finished mapping {:?} to {:?}", path, output_path);
     }

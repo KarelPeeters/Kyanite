@@ -2,8 +2,8 @@ use std::env;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 //TODO rewrite this thing again to find cuda automatically (env Var & default location),
 // and verify that cudnn is installed
@@ -72,7 +72,6 @@ fn main() {
         // input
         .header("wrapper.h")
         .parse_callbacks(Box::new(CustomParseCallBacks))
-
         // settings
         .size_t_is_usize(true)
         //TODO correctly handle this non-exhaustiveness in FFI
@@ -81,7 +80,6 @@ fn main() {
         .must_use_type("cudnnStatus_t")
         .must_use_type("cublasStatus_t")
         .layout_tests(false)
-
         // output
         .generate()
         .expect("Unable to generate bindings")

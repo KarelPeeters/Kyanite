@@ -27,11 +27,19 @@ impl TypedValue {
             TypedValue::Shape(shape) => shape.clone(),
             &TypedValue::IntTensor(inner) => {
                 let shape_shape = &graph[inner].shape;
-                assert_eq!(shape_shape.rank(), 1, "Shape tensor must have rank 1, got shape {:?}", shape_shape);
+                assert_eq!(
+                    shape_shape.rank(),
+                    1,
+                    "Shape tensor must have rank 1, got shape {:?}",
+                    shape_shape
+                );
 
                 let dims_f = graph.as_const(inner).expect("Shape tensor must be constant");
-                dims_f.iter().copied()
-                    .map(float_to_i64_exact).map(SizeOrInt::Int)
+                dims_f
+                    .iter()
+                    .copied()
+                    .map(float_to_i64_exact)
+                    .map(SizeOrInt::Int)
                     .collect_vec()
             }
             TypedValue::FloatTensor(_) => panic!("Float tensor cannot be used as shape"),
@@ -49,7 +57,7 @@ impl TypedValue {
     pub fn unwrap_tensor(&self) -> Value {
         match self {
             TypedValue::Shape(_) => panic!("Expected tensor, got {:?}", self),
-            &TypedValue::FloatTensor(inner) | &TypedValue::IntTensor(inner) => inner
+            &TypedValue::FloatTensor(inner) | &TypedValue::IntTensor(inner) => inner,
         }
     }
 
@@ -64,8 +72,7 @@ impl TypedValue {
     pub fn shape(&self, graph: &Graph) -> Shape {
         match self {
             TypedValue::Shape(shape) => shape![shape.len()],
-            &TypedValue::FloatTensor(tensor) | &TypedValue::IntTensor(tensor) =>
-                graph[tensor].shape.clone()
+            &TypedValue::FloatTensor(tensor) | &TypedValue::IntTensor(tensor) => graph[tensor].shape.clone(),
         }
     }
 }

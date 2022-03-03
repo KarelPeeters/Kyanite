@@ -1,6 +1,9 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaGraph_t, cudaGraphCreate, cudaGraphDestroy, cudaGraphExec_t, cudaGraphExecDestroy, cudaGraphInstantiate, cudaGraphLaunch};
+use crate::bindings::{
+    cudaGraphCreate, cudaGraphDestroy, cudaGraphExecDestroy, cudaGraphExec_t, cudaGraphInstantiate, cudaGraphLaunch,
+    cudaGraph_t,
+};
 use crate::wrapper::handle::CudaStream;
 use crate::wrapper::status::Status;
 
@@ -11,9 +14,7 @@ pub struct CudaGraph {
 
 impl Drop for CudaGraph {
     fn drop(&mut self) {
-        unsafe {
-            cudaGraphDestroy(self.inner).unwrap_in_drop()
-        }
+        unsafe { cudaGraphDestroy(self.inner).unwrap_in_drop() }
     }
 }
 
@@ -49,9 +50,7 @@ pub struct CudaGraphExec {
 
 impl Drop for CudaGraphExec {
     fn drop(&mut self) {
-        unsafe {
-            cudaGraphExecDestroy(self.inner).unwrap_in_drop()
-        }
+        unsafe { cudaGraphExecDestroy(self.inner).unwrap_in_drop() }
     }
 }
 

@@ -128,11 +128,7 @@ where
             E: serde::de::Error,
         {
             // let dt = DateTime::parse_from_rfc3339(val)?;
-            Ok(Some(
-                DateTime::parse_from_rfc3339(val)
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ))
+            Ok(Some(DateTime::parse_from_rfc3339(val).unwrap().with_timezone(&Utc)))
         }
     }
     deserializer.deserialize_any(TimeVisitor)
@@ -269,10 +265,7 @@ impl<'de> de::Visitor<'de> for ScoreDeserializer {
     {
         let value = value as u8;
         let part_of_streak = None;
-        Ok(Score {
-            value,
-            part_of_streak,
-        })
+        Ok(Score { value, part_of_streak })
     }
 
     fn visit_seq<S>(self, mut visitor: S) -> Result<Self::Value, S::Error>
@@ -282,10 +275,7 @@ impl<'de> de::Visitor<'de> for ScoreDeserializer {
         let value = visitor.next_element::<u8>()?.unwrap();
         let part_of_streak = visitor.next_element::<u8>()?;
 
-        Ok(Score {
-            value,
-            part_of_streak,
-        })
+        Ok(Score { value, part_of_streak })
     }
 }
 

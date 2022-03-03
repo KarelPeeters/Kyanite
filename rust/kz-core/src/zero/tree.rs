@@ -30,7 +30,10 @@ impl<B: Board> Tree<B> {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
 
         let root = Node::new(None, None, f32::NAN);
-        Tree { root_board, nodes: vec![root] }
+        Tree {
+            root_board,
+            nodes: vec![root],
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -43,12 +46,15 @@ impl<B: Board> Tree<B> {
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
         self[node].children.map(|children| {
-            children.iter().max_by_key(|&child| {
-                (
-                    self[child].complete_visits,
-                    decorum::Total::from(self[child].net_policy),
-                )
-            }).unwrap()
+            children
+                .iter()
+                .max_by_key(|&child| {
+                    (
+                        self[child].complete_visits,
+                        decorum::Total::from(self[child].net_policy),
+                    )
+                })
+                .unwrap()
         })
     }
 
@@ -59,7 +65,8 @@ impl<B: Board> Tree<B> {
 
     pub fn principal_variation(&self, max_len: usize) -> Vec<B::Move> {
         std::iter::successors(Some(0), |&n| self.best_child(n))
-            .skip(1).take(max_len)
+            .skip(1)
+            .take(max_len)
             .map(|n| self[n].last_move.unwrap())
             .collect()
     }
@@ -94,12 +101,14 @@ impl<B: Board> Tree<B> {
     }
 
     /// Return the policy vector for the root node.
-    pub fn policy(&self) -> impl Iterator<Item=f32> + '_ {
+    pub fn policy(&self) -> impl Iterator<Item = f32> + '_ {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
-        self[0].children.unwrap().iter().map(move |c| {
-            (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32)
-        })
+        self[0]
+            .children
+            .unwrap()
+            .iter()
+            .map(move |c| (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32))
     }
 
     pub fn eval(&self) -> ZeroEvaluation<'static> {
@@ -123,7 +132,8 @@ impl<B: Board> Tree<B> {
             }
             new_root_board.play(mv);
 
-            old_new_root = self[old_new_root].children
+            old_new_root = self[old_new_root]
+                .children
                 .ok_or(KeepMoveError::NotVisitedYet { depth })?
                 .iter()
                 .find(|&c| self[c].last_move.unwrap() == mv)
@@ -171,7 +181,15 @@ impl<B: Board> Tree<B> {
 
     #[must_use]
     pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> TreeDisplay<B> {
-        TreeDisplay { tree: self, node: 0, curr_depth: 0, max_depth, max_children, sort, expand_all }
+        TreeDisplay {
+            tree: self,
+            node: 0,
+            curr_depth: 0,
+            max_depth,
+            max_children,
+            sort,
+            expand_all,
+        }
     }
 }
 
@@ -208,16 +226,21 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             writeln!(
                 f,
                 "values: {}, best_move: {}, depth: {:?}",
-                data, display_option(tree.best_move()), tree.depth_range(0)
+                data,
+                display_option(tree.best_move()),
+                tree.depth_range(0)
             )?;
             writeln!(
                 f,
                 "[move: terminal visits zero({}, p) net(v{}, p), uct(q, u)]",
-                ZeroValues::FORMAT_SUMMARY, ZeroValues::FORMAT_SUMMARY
+                ZeroValues::FORMAT_SUMMARY,
+                ZeroValues::FORMAT_SUMMARY
             )?;
         }
 
-        for _ in 0..self.curr_depth { write!(f, "  ")? }
+        for _ in 0..self.curr_depth {
+            write!(f, "  ")?
+        }
 
         let node = &self.tree[self.node];
         let parent = node.parent.map(|p| &self.tree[p]);
@@ -261,31 +284,49 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         writeln!(
             f,
             "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
-            player.to_char(), display_option(node.last_move), terminal, node.complete_visits, virtual_visits,
-            node_values, zero_policy, net_values, node.net_policy, uct,
+            player.to_char(),
+            display_option(node.last_move),
+            terminal,
+            node.complete_visits,
+            virtual_visits,
+            node_values,
+            zero_policy,
+            net_values,
+            node.net_policy,
+            uct,
         )?;
 
-        if self.curr_depth == self.max_depth { return Ok(()); }
+        if self.curr_depth == self.max_depth {
+            return Ok(());
+        }
 
         if let Some(children) = node.children {
             let mut children = children.iter().collect_vec();
             let best_child = if self.sort {
                 // sort by visits first, then by policy
-                children.sort_by_key(|&c| (
-                    self.tree[c].complete_visits,
-                    decorum::Total::from(self.tree[c].net_policy)
-                ));
+                children.sort_by_key(|&c| {
+                    (
+                        self.tree[c].complete_visits,
+                        decorum::Total::from(self.tree[c].net_policy),
+                    )
+                });
                 children.reverse();
                 children[0]
             } else {
-                children.iter().copied().max_by_key(|&c| self.tree[c].complete_visits).unwrap()
+                children
+                    .iter()
+                    .copied()
+                    .max_by_key(|&c| self.tree[c].complete_visits)
+                    .unwrap()
             };
 
             for (i, &child) in children.iter().enumerate() {
                 assert_eq!(tree[child].parent, Some(self.node));
 
                 if i == self.max_children {
-                    for _ in 0..(self.curr_depth + 1) { write!(f, "  ")? }
+                    for _ in 0..(self.curr_depth + 1) {
+                        write!(f, "  ")?
+                    }
                     writeln!(f, "...")?;
                     break;
                 }
@@ -326,4 +367,3 @@ impl<B: Board> IndexMut<usize> for Tree<B> {
         &mut self.nodes[index]
     }
 }
-

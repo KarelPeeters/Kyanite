@@ -32,7 +32,7 @@ impl RngCore for PanicRng {
 /// Similar to [rand::seq::IteratorRandom::choose] but will only pick items with the maximum key.
 /// Equivalent to first finding the max key, then filtering items matching that key and then choosing a random element,
 /// but implemented in a single pass over the iterator.
-pub fn choose_max_by_key<T, I: IntoIterator<Item=T>, K: Ord, F: FnMut(&T) -> K>(
+pub fn choose_max_by_key<T, I: IntoIterator<Item = T>, K: Ord, F: FnMut(&T) -> K>(
     iter: I,
     mut key: F,
     rng: &mut impl Rng,
@@ -68,7 +68,7 @@ pub trait IndexOf<T> {
     fn index_of(self, element: T) -> Option<usize>;
 }
 
-impl<T: PartialEq, I: Iterator<Item=T>> IndexOf<T> for I {
+impl<T: PartialEq, I: Iterator<Item = T>> IndexOf<T> for I {
     fn index_of(mut self, element: I::Item) -> Option<usize> {
         self.position(|cand| cand == element)
     }
@@ -106,14 +106,15 @@ pub fn display_option_empty<T: Display>(value: Option<T>) -> impl Display {
 pub fn kdl_divergence(p: &[f32], q: &[f32]) -> f32 {
     assert_eq!(p.len(), q.len());
 
-    zip(p, q)
-        .map(|(&p, &q)| p * (p / q).ln())
-        .sum()
+    zip(p, q).map(|(&p, &q)| p * (p / q).ln()).sum()
 }
 
-pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI> where
-    L: IntoIterator<IntoIter=LI>, R: IntoIterator<IntoIter=RI>,
-    LI: ExactSizeIterator, RI: ExactSizeIterator,
+pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI>
+where
+    L: IntoIterator<IntoIter = LI>,
+    R: IntoIterator<IntoIter = RI>,
+    LI: ExactSizeIterator,
+    RI: ExactSizeIterator,
 {
     let left = left.into_iter();
     let right = right.into_iter();
@@ -155,7 +156,10 @@ impl PrintThroughput {
 
         if delta.as_secs() >= 1 && self.update_count >= 10 {
             let throughput = self.delta_count as f32 / delta.as_secs_f32();
-            println!("{:.3} {}/s => {:.3} {}", throughput, self.name, self.total_count, self.name);
+            println!(
+                "{:.3} {}/s => {:.3} {}",
+                throughput, self.name, self.total_count, self.name
+            );
 
             self.last_print = now;
             self.delta_count = 0;

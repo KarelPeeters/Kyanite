@@ -28,7 +28,12 @@ pub struct ProbDistrStats {
 }
 
 pub fn network_accuracy<B: Board>(network: &mut impl Network<B>, challenges: &[Challenge<B>]) {
-    for Challenge { board, solution, is_optimal } in challenges {
+    for Challenge {
+        board,
+        solution,
+        is_optimal,
+    } in challenges
+    {
         println!("{}", board);
         println!("Number of available moves: {}", board.available_moves().count());
 
@@ -73,7 +78,5 @@ fn prob_distr_stats(actual: &[f32], solution: &[f32]) -> ProbDistrStats {
 }
 
 fn argmax(data: &[f32]) -> usize {
-    data.iter()
-        .position_max_by_key(|&&f| N32::from_inner(f))
-        .unwrap()
+    data.iter().position_max_by_key(|&&f| N32::from_inner(f)).unwrap()
 }

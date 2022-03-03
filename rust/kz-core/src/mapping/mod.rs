@@ -6,11 +6,11 @@ use board_game::board::Board;
 
 use crate::mapping::bit_buffer::BitBuffer;
 
-pub mod ttt;
-pub mod sttt;
 pub mod ataxx;
-pub mod chess;
 pub mod bit_buffer;
+pub mod chess;
+pub mod sttt;
+pub mod ttt;
 
 /// A way to encode a board as a tensor.
 pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
@@ -92,7 +92,11 @@ pub struct ComposedMapper<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> {
 
 impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> ComposedMapper<B, I, P> {
     pub fn new(input_mapper: I, policy_mapper: P) -> Self {
-        ComposedMapper { input_mapper, policy_mapper, ph: PhantomData }
+        ComposedMapper {
+            input_mapper,
+            policy_mapper,
+            ph: PhantomData,
+        }
     }
 }
 

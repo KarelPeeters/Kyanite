@@ -44,7 +44,10 @@ impl<'a> Planner<'a> {
 
     pub fn copy_output(&mut self, index: usize, value: Value) -> Tensor {
         let tensor = self.map.get(&value).unwrap();
-        self.plan.push(Step::CopyOutput { index, tensor: tensor.view() });
+        self.plan.push(Step::CopyOutput {
+            index,
+            tensor: tensor.view(),
+        });
         tensor.view()
     }
 
@@ -69,7 +72,10 @@ impl<'a> Planner<'a> {
         let result: Tensor = match &result_info.operation {
             &Operation::Input { index } => {
                 let result = self.alloc_tensor(result_shape);
-                self.plan.push(Step::CopyInput { index, mem: result.mem.view() });
+                self.plan.push(Step::CopyInput {
+                    index,
+                    mem: result.mem.view(),
+                });
                 result
             }
             Operation::Constant { data } => {
@@ -82,7 +88,9 @@ impl<'a> Planner<'a> {
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
 
-                let new_shape = input_tensor.shape.view(result_shape.dims.clone())
+                let new_shape = input_tensor
+                    .shape
+                    .view(result_shape.dims.clone())
                     .unwrap_or_else(|| panic!("Cannot view shape {:?} as {:?}", input_tensor.shape, result_shape));
 
                 Tensor::new(input_tensor.mem.view(), new_shape)
@@ -91,7 +99,12 @@ impl<'a> Planner<'a> {
                 let input_tensor = self.visit(input);
                 input_tensor.permute(permutation)
             }
-            &Operation::Slice { input, axis, start, end } => {
+            &Operation::Slice {
+                input,
+                axis,
+                start,
+                end,
+            } => {
                 let input_tensor = self.visit(input);
                 input_tensor.slice(axis, start, end)
             }
@@ -101,7 +114,12 @@ impl<'a> Planner<'a> {
 
                 let output = self.alloc_tensor(result_shape);
 
-                self.plan.push(Step::Gather { input, axis, indices, output: output.view() });
+                self.plan.push(Step::Gather {
+                    input,
+                    axis,
+                    indices,
+                    output: output.view(),
+                });
                 output
             }
             &Operation::Concat { ref inputs, axis } => {
@@ -134,8 +152,9 @@ impl<'a> Planner<'a> {
 
                 result
             }
-            &Operation::Conv { .. } =>
-                unreachable!("conv should have been handled earlier by the fuser"),
+            &Operation::Conv { .. } => {
+                unreachable!("conv should have been handled earlier by the fuser")
+            }
             &Operation::MatMul { left, right } => {
                 let left = self.visit(left);
                 let right = self.visit(right);
@@ -180,7 +199,11 @@ impl<'a> Planner<'a> {
             }
         };
 
-        assert_eq!(result.shape.shape(), result_info.shape.eval(self.batch_size).dims, "Got wrong result shape");
+        assert_eq!(
+            result.shape.shape(),
+            result_info.shape.eval(self.batch_size).dims,
+            "Got wrong result shape"
+        );
         let prev = self.map.insert(value, result.view());
         assert!(prev.is_none());
 
@@ -192,7 +215,12 @@ impl<'a> Planner<'a> {
         let graph = self.graph;
 
         // relu(curr)?
-        let act_mode = if let &Operation::Element { left, right, op: ElementOp::Max } = &graph[curr].operation {
+        let act_mode = if let &Operation::Element {
+            left,
+            right,
+            op: ElementOp::Max,
+        } = &graph[curr].operation
+        {
             if !self.single_use.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
                 return None;
             }
@@ -205,7 +233,12 @@ impl<'a> Planner<'a> {
         let mut bias = None;
         let mut res = None;
 
-        while let &Operation::Element { left, right, op: ElementOp::Add } = &graph[curr].operation {
+        while let &Operation::Element {
+            left,
+            right,
+            op: ElementOp::Add,
+        } = &graph[curr].operation
+        {
             if !self.single_use.contains(&left) {
                 return None;
             }
@@ -249,7 +282,10 @@ impl<'a> Planner<'a> {
 
             if let Some(res) = &res {
                 //TODO this should be checked before we actually start fusing
-                assert_eq!(res.shape, input.shape, "Input and res shapes and strides (!) must match.", );
+                assert_eq!(
+                    res.shape, input.shape,
+                    "Input and res shapes and strides (!) must match.",
+                );
             }
 
             let bias = bias.unwrap_or_else(|| {
@@ -264,13 +300,11 @@ impl<'a> Planner<'a> {
             let output_desc = output.descriptor();
             let filter_desc = filter.filter_descriptor();
 
-            let conv_desc = ConvolutionDescriptor::new(
-                details.padding_y as i32, details.padding_x as i32,
-                1, 1, 1, 1,
-            );
+            let conv_desc = ConvolutionDescriptor::new(details.padding_y as i32, details.padding_x as i32, 1, 1, 1, 1);
 
             let algo = STANDARD_CONV_ALGO;
-            let work_size_bytes = conv_desc.workspace_size(&self.handles.cudnn, algo, &input_desc, &filter_desc, &output_desc);
+            let work_size_bytes =
+                conv_desc.workspace_size(&self.handles.cudnn, algo, &input_desc, &filter_desc, &output_desc);
             let work_mem = DeviceMem::alloc(work_size_bytes, self.handles.cudnn.device());
 
             let act_desc = ActivationDescriptor::new(act_mode, 0.0);
@@ -298,7 +332,14 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn visit_op(&mut self, result_shape: ConcreteShape, left: Value, right: Value, op: cudnnOpTensorOp_t, negate_right: bool) -> Tensor {
+    fn visit_op(
+        &mut self,
+        result_shape: ConcreteShape,
+        left: Value,
+        right: Value,
+        op: cudnnOpTensorOp_t,
+        negate_right: bool,
+    ) -> Tensor {
         let op_desc = TensorOpDescriptor::new(op);
         let alpha_2 = if negate_right { -1.0 } else { 1.0 };
 
@@ -345,10 +386,7 @@ impl<'a> Planner<'a> {
 fn to_mat_mul_arg(tensor: &Tensor) -> MatMulArg {
     assert_eq!(tensor.shape.rank(), 3);
 
-    let inner_shape = StridedShape::new(
-        tensor.shape.shape()[1..].to_vec(),
-        tensor.shape.strides()[1..].to_vec(),
-    );
+    let inner_shape = StridedShape::new(tensor.shape.shape()[1..].to_vec(), tensor.shape.strides()[1..].to_vec());
 
     // whether the strides are col-major (true) or row-major (false)
     let col_major = if inner_shape.has_simple_strides() {
@@ -356,14 +394,21 @@ fn to_mat_mul_arg(tensor: &Tensor) -> MatMulArg {
     } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
         true
     } else {
-        panic!("For now GPU matmul operand must be either col- or row-major, got {:?}", tensor)
+        panic!(
+            "For now GPU matmul operand must be either col- or row-major, got {:?}",
+            tensor
+        )
     };
 
     let lead_axis = if col_major { 1 } else { 2 };
 
     MatMulArg {
         mem: tensor.mem.view(),
-        trans: if col_major { cublasOperation_t::CUBLAS_OP_N } else { cublasOperation_t::CUBLAS_OP_T },
+        trans: if col_major {
+            cublasOperation_t::CUBLAS_OP_N
+        } else {
+            cublasOperation_t::CUBLAS_OP_T
+        },
         ld: tensor.shape.shape()[lead_axis] as i32,
         stride: tensor.shape.strides()[0] as i64,
     }

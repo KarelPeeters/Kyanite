@@ -71,7 +71,9 @@ impl DeviceMem {
         assert!(
             start < self.len && start + len <= self.len,
             "Slice indices must be in bounds, got start {} len {} for mem of len {}",
-            start, len, self.len,
+            start,
+            len,
+            self.len,
         );
 
         DeviceMem {
@@ -99,7 +101,8 @@ impl DeviceMem {
             self.len,
             cudaMemcpyKind::cudaMemcpyHostToDevice,
             stream.inner(),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub unsafe fn copy_to_host_async(&self, buffer: &mut [u8], stream: &mut CudaStream) {
@@ -112,7 +115,8 @@ impl DeviceMem {
             self.len,
             cudaMemcpyKind::cudaMemcpyDeviceToHost,
             stream.inner(),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub unsafe fn copy_from_host(&self, buffer: &[u8]) {
@@ -124,7 +128,8 @@ impl DeviceMem {
             buffer.as_ptr() as *const c_void,
             self.len,
             cudaMemcpyKind::cudaMemcpyHostToDevice,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub unsafe fn copy_to_host(&self, buffer: &mut [u8]) {
@@ -136,12 +141,16 @@ impl DeviceMem {
             self.ptr(),
             self.len,
             cudaMemcpyKind::cudaMemcpyDeviceToHost,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub unsafe fn copy_from_device(&self, other: &DeviceMem) {
         assert_eq!(self.len, other.len, "Buffer size mismatch");
-        assert_eq!(self.inner.device, other.inner.device, "Buffers are on different devices");
+        assert_eq!(
+            self.inner.device, other.inner.device,
+            "Buffers are on different devices"
+        );
 
         self.inner.device.switch_to();
         cudaMemcpy(
@@ -149,6 +158,7 @@ impl DeviceMem {
             other.ptr(),
             self.len,
             cudaMemcpyKind::cudaMemcpyDeviceToDevice,
-        ).unwrap()
+        )
+        .unwrap()
     }
 }

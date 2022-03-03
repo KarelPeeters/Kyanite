@@ -17,39 +17,23 @@ impl Lichess {
     pub async fn stream_bot_game_state(
         &self,
         game_id: &str,
-    ) -> LichessResult<impl Stream<Item=LichessResult<BoardState>>> {
+    ) -> LichessResult<impl Stream<Item = LichessResult<BoardState>>> {
         let url = format!("{}/api/bot/game/stream/{}", self.base, game_id);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await
     }
 
-    pub async fn make_a_bot_move(
-        &self,
-        game_id: &str,
-        r#move: &str,
-        offering_draw: bool,
-    ) -> LichessResult<()> {
+    pub async fn make_a_bot_move(&self, game_id: &str, r#move: &str, offering_draw: bool) -> LichessResult<()> {
         let url = format!("{}/api/bot/game/{}/move/{}", self.base, game_id, r#move);
-        let builder = self
-            .client
-            .post(&url)
-            .query(&[("offeringDraw", offering_draw)]);
+        let builder = self.client.post(&url).query(&[("offeringDraw", offering_draw)]);
         let ok_json = self.to_model_full::<Value>(builder);
         assert!(from_value::<bool>(ok_json.await?["ok"].take())?);
         Ok(())
     }
 
-    pub async fn write_in_bot_chat(
-        &self,
-        game_id: &str,
-        room: &str,
-        text: &str,
-    ) -> LichessResult<()> {
+    pub async fn write_in_bot_chat(&self, game_id: &str, room: &str, text: &str) -> LichessResult<()> {
         let url = format!("{}/api/bot/game/{}/chat", self.base, game_id);
-        let builder = self
-            .client
-            .post(&url)
-            .form(&[("room", room), ("text", text)]);
+        let builder = self.client.post(&url).form(&[("room", room), ("text", text)]);
         let ok_json = self.to_model_full::<Value>(builder);
         assert!(from_value::<bool>(ok_json.await?["ok"].take())?);
         Ok(())
@@ -79,7 +63,7 @@ impl Lichess {
     //     Ok(())
     // }
 
-    pub async fn get_online_bots(&self) -> LichessResult<impl Stream<Item=LichessResult<OnlineBot>>> {
+    pub async fn get_online_bots(&self) -> LichessResult<impl Stream<Item = LichessResult<OnlineBot>>> {
         let url = format!("{}/api/bot/online", self.base);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await

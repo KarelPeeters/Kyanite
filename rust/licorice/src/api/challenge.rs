@@ -57,10 +57,7 @@ impl Lichess {
         self.to_model_full(builder).await
     }
 
-    pub async fn challenge_open(
-        &self,
-        form_params: Option<&[(&str, &str)]>,
-    ) -> LichessResult<EntityChallenge> {
+    pub async fn challenge_open(&self, form_params: Option<&[(&str, &str)]>) -> LichessResult<EntityChallenge> {
         let url = format!("{}/api/challenge/open", self.base);
         let mut builder = self.client.post(&url);
         if let Some(params) = form_params {
@@ -69,17 +66,9 @@ impl Lichess {
         self.to_model_full(builder).await
     }
 
-    pub async fn start_game_clocks(
-        &self,
-        game_id: &str,
-        token1: &str,
-        token2: &str,
-    ) -> LichessResult<()> {
+    pub async fn start_game_clocks(&self, game_id: &str, token1: &str, token2: &str) -> LichessResult<()> {
         let url = format!("{}/api/challenge/{}/start-clocks", self.base, game_id);
-        let builder = self
-            .client
-            .post(&url)
-            .query(&[("token1", token1), ("token2", token2)]);
+        let builder = self.client.post(&url).query(&[("token1", token1), ("token2", token2)]);
         let ok_json = self.to_model_full::<Value>(builder);
         assert!(from_value::<bool>(ok_json.await?["ok"].take())?);
         Ok(())

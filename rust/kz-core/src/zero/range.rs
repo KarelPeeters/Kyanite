@@ -21,7 +21,12 @@ impl IdxRange {
     }
 
     pub fn get(&self, index: usize) -> usize {
-        assert!(index < self.length as usize, "Index {} out of bounds for {:?}", index, self);
+        assert!(
+            index < self.length as usize,
+            "Index {} out of bounds for {:?}",
+            index,
+            self
+        );
         self.start.get() + index
     }
 }

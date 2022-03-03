@@ -1,6 +1,13 @@
-pub use crate::bindings::{cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm, cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t};
+pub use crate::bindings::{
+    cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward,
+    cudnnConvolutionFwdAlgoPerf_t, cudnnConvolutionFwdAlgo_t, cudnnFindConvolutionForwardAlgorithm,
+    cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t,
+};
 use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward};
-use crate::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor, TensorOpDescriptor};
+use crate::wrapper::descriptor::{
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor,
+    TensorOpDescriptor,
+};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::device::DeviceMem;
 use crate::wrapper::status::Status;
@@ -32,7 +39,8 @@ pub fn find_conv_algorithms(
             max_algo_count,
             &mut algo_count as *mut _,
             result.as_mut_ptr(),
-        ).unwrap();
+        )
+        .unwrap();
 
         result.set_len(algo_count as usize);
 
@@ -84,7 +92,8 @@ pub unsafe fn run_conv(
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
@@ -106,7 +115,8 @@ pub unsafe fn run_add_tensor(
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Run `output = act(input)`.
@@ -130,7 +140,8 @@ pub unsafe fn run_activation(
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Runs `output = act(output)`.
@@ -152,7 +163,8 @@ pub unsafe fn run_activation_in_place(
         &beta as *const _ as *const _,
         data_desc.inner(),
         data_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Runs `output = act(conv(input, filter) + res + bias)`.
@@ -188,17 +200,25 @@ pub unsafe fn run_conv_bias_res_activation(
     assert_ne!(input_mem.ptr(), bias_mem.ptr(), "input and bias must be distinct");
     assert_ne!(input_mem.ptr(), res_ptr, "input and res must be distinct");
     assert_eq!(bias_desc.shape()[0], 1, "bias first dim must be 1");
-    assert_eq!(bias_desc.shape()[1], output_desc.shape()[1], "bias channels must match output channels");
+    assert_eq!(
+        bias_desc.shape()[1],
+        output_desc.shape()[1],
+        "bias channels must match output channels"
+    );
     assert_eq!(bias_desc.strides()[1], 1, "bias second stride must be one");
-    assert_eq!(&conv_desc.output_shape(input_desc, filter_desc), output_desc.shape(), "output shape mismatch");
+    assert_eq!(
+        &conv_desc.output_shape(input_desc, filter_desc),
+        output_desc.shape(),
+        "output shape mismatch"
+    );
 
     assert_eq!(input_desc.rank(), 4, "input desc wrong rank");
     assert_eq!(output_desc.rank(), 4, "output desc wrong rank");
     assert_eq!(bias_desc.rank(), 4, "bias desc wrong rank");
 
     assert!(
-        activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_RELU ||
-            activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
+        activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_RELU
+            || activation_desc.mode() == cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY,
         "unsupported activation mode"
     );
 
@@ -221,7 +241,8 @@ pub unsafe fn run_conv_bias_res_activation(
         activation_desc.inner(),
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Runs `output = pool(input)`.
@@ -245,7 +266,8 @@ pub unsafe fn run_pooling(
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 /// Runs `output = op(alpha_1 * input_1, alpha_2 * input_2) + b * output`
@@ -274,5 +296,6 @@ pub unsafe fn run_tensor_op(
         &beta as *const _ as *const _,
         output_desc.inner(),
         output_mem.ptr(),
-    ).unwrap();
+    )
+    .unwrap();
 }

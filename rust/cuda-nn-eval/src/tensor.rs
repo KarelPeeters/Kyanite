@@ -13,7 +13,12 @@ pub struct Tensor {
 
 impl Tensor {
     pub fn new(mem: DeviceMem, shape: StridedShape) -> Self {
-        assert_eq!(shape.strided_size() * 4, mem.len_bytes(), "Buffer has wrong len for shape {:?}", shape);
+        assert_eq!(
+            shape.strided_size() * 4,
+            mem.len_bytes(),
+            "Buffer has wrong len for shape {:?}",
+            shape
+        );
         Tensor { mem, shape }
     }
 
@@ -28,10 +33,7 @@ impl Tensor {
             strides.push(1);
         }
 
-        TensorDescriptor::new(
-            shape,
-            strides,
-        )
+        TensorDescriptor::new(shape, strides)
     }
 
     pub fn filter_descriptor(&self) -> FilterDescriptor {
@@ -39,9 +41,7 @@ impl Tensor {
         assert!(self.shape.has_simple_strides(), "Filter must have simple strides");
 
         let dims = self.shape.shape();
-        FilterDescriptor::new(
-            dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32,
-        )
+        FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
     }
 
     /// Returns a (shallow) clone of this tensor, pointing to the same memory.
@@ -53,10 +53,7 @@ impl Tensor {
     }
 
     pub fn permute(&self, permutation: &[usize]) -> Tensor {
-        Tensor::new(
-            self.mem.view(),
-            self.shape.permute(permutation),
-        )
+        Tensor::new(self.mem.view(), self.shape.permute(permutation))
     }
 
     pub fn slice(&self, axis: usize, start: usize, end: usize) -> Tensor {

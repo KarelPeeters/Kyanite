@@ -7,7 +7,7 @@ use std::unreachable;
 use board_game::games::chess::ChessBoard;
 use chess::{Piece, Square};
 
-use kz_core::mapping::chess::{ChessLegacyConvPolicyMapper, generate_all_flat_moves_pov};
+use kz_core::mapping::chess::{generate_all_flat_moves_pov, ChessLegacyConvPolicyMapper};
 use kz_core::mapping::PolicyMapper;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -63,7 +63,12 @@ fn main() {
 
         let att_i = att_from * (64 + 8 * 3) + att_to;
 
-        writeln!(output, "{}, {}, {}, {}, {}, {},", mv_pov, flat_i, conv_i, att_from, att_to, att_i).unwrap();
+        writeln!(
+            output,
+            "{}, {}, {}, {}, {}, {},",
+            mv_pov, flat_i, conv_i, att_from, att_to, att_i
+        )
+        .unwrap();
 
         flat_to_conv.push(conv_i);
         flat_to_att.push(att_i);
@@ -72,12 +77,14 @@ fn main() {
     write_lines(
         File::create("ignored/chess_mapping/flat_to_conv.txt").unwrap(),
         &flat_to_conv,
-    ).unwrap();
+    )
+    .unwrap();
 
     write_lines(
         File::create("ignored/chess_mapping/flat_to_att.txt").unwrap(),
         &flat_to_att,
-    ).unwrap();
+    )
+    .unwrap();
 
     println!("Found {} different full moves", moves.len());
     println!("LC0 move count: 1858");

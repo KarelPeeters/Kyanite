@@ -7,9 +7,9 @@ use kz_core::mapping::PolicyMapper;
 use kz_util::display_option;
 
 mod ataxx;
+mod chess_flat_gen;
 mod chess_manual_conv;
 mod chess_random;
-mod chess_flat_gen;
 
 pub fn test_valid_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     println!("Testing {:?} on {:?}", mapper, board);
@@ -29,9 +29,12 @@ pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
                 //check that roundtrip works out
                 let remapped_move = mapper.index_to_move(board, index);
                 assert_eq!(
-                    Some(mv), remapped_move,
+                    Some(mv),
+                    remapped_move,
                     "Failed move roundtrip: {} -> {} -> {}",
-                    mv, index, display_option(remapped_move)
+                    mv,
+                    index,
+                    display_option(remapped_move)
                 );
 
                 // keep the move so we can report duplicate indices later
@@ -58,7 +61,7 @@ pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
 
 pub fn test_index_to_move<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     for index in 0..mapper.policy_len() {
-        let mv = std::panic::catch_unwind(|| { mapper.index_to_move(board, index) });
+        let mv = std::panic::catch_unwind(|| mapper.index_to_move(board, index));
 
         match mv {
             Err(e) => {
@@ -71,7 +74,10 @@ pub fn test_index_to_move<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
                     match available {
                         Ok(_) => {}
                         Err(e) => {
-                            eprintln!("Panic while using move {} from index {} to move on board\n  {}", mv, index, board);
+                            eprintln!(
+                                "Panic while using move {} from index {} to move on board\n  {}",
+                                mv, index, board
+                            );
                             resume_unwind(e);
                         }
                     }

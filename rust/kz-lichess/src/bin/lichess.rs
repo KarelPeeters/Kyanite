@@ -59,7 +59,11 @@ async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoar
     }
 }
 
-async fn main_inner(settings: ZeroSettings, network: &mut impl Network<ChessBoard>, cache: &mut Cache) -> LichessResult<()> {
+async fn main_inner(
+    settings: ZeroSettings,
+    network: &mut impl Network<ChessBoard>,
+    cache: &mut Cache,
+) -> LichessResult<()> {
     println!("Connecting to lichess");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
     let lichess = Lichess::new(token);
@@ -162,7 +166,10 @@ async fn make_move(
 
     let time_used = Instant::now() - start;
     println!("Took {:?}", (time_used));
-    println!("GPU throughput: {:.2} evals/s", (tree.root_visits() - start_visits) as f32 / time_used.as_secs_f32());
+    println!(
+        "GPU throughput: {:.2} evals/s",
+        (tree.root_visits() - start_visits) as f32 / time_used.as_secs_f32()
+    );
 
     println!("{}", tree.display(3, true, 5, false));
     let mv = tree.best_move().unwrap();
@@ -177,14 +184,17 @@ async fn make_move(
 
         let message = format!(
             "visits: {}, depth: {:?}, pv: {}",
-            tree.root_visits(), tree.depth_range(0), pv,
+            tree.root_visits(),
+            tree.depth_range(0),
+            pv,
         );
         println!("Sending {:?}", message);
         lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
 
         let message = format!(
             "zero: {:.2?}, net: {:.2?}",
-            tree.values().wdl.to_slice(), tree[0].net_values.unwrap().wdl.to_slice(),
+            tree.values().wdl.to_slice(),
+            tree[0].net_values.unwrap().wdl.to_slice(),
         );
         println!("Sending {:?}", message);
         lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;

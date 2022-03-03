@@ -24,8 +24,7 @@ impl Lichess {
         let url = format!("{}/api/team/all", self.base);
         let builder = self.client.get(&url).query(&[("page", page.unwrap_or(1))]);
         let current_page_results_json = self.to_model_full::<Value>(builder);
-        from_value(current_page_results_json.await?["currentPageResults"].take())
-            .map_err(Into::into)
+        from_value(current_page_results_json.await?["currentPageResults"].take()).map_err(Into::into)
     }
 
     pub async fn teams_of_a_player(&self, username: &str) -> LichessResult<Vec<Team>> {
@@ -41,8 +40,7 @@ impl Lichess {
             .get(&url)
             .query(&[("text", text), ("page", &page.unwrap_or(1).to_string())]);
         let current_page_results_json = self.to_model_full::<Value>(builder);
-        from_value(current_page_results_json.await?["currentPageResults"].take())
-            .map_err(Into::into)
+        from_value(current_page_results_json.await?["currentPageResults"].take()).map_err(Into::into)
     }
 
     pub async fn get_team_arena_tournaments(

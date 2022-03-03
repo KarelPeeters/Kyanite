@@ -2,11 +2,11 @@ use std::cmp::max;
 use std::time::Instant;
 
 use clap::Parser;
-use itertools::{Itertools, izip};
+use itertools::{izip, Itertools};
 use ndarray::IxDyn;
 
-use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::Device;
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
@@ -37,7 +37,15 @@ const TEST_BATCH_ITERATIONS: &[usize] = &[100, 100, 100, 100, 100, 100, 100, 100
 const DEFAULT_ITERATIONS: usize = 100;
 
 fn main() {
-    let Args { batch_size, optimize, graph: use_graph, print, n, path, cpu } = Args::parse();
+    let Args {
+        batch_size,
+        optimize,
+        graph: use_graph,
+        print,
+        n,
+        path,
+        cpu,
+    } = Args::parse();
     let n = n.unwrap_or(DEFAULT_ITERATIONS);
 
     if cfg!(debug_assertions) {
@@ -157,7 +165,9 @@ fn profile_single_batch_size_cpu(graph: &Graph, batch_size: usize, n: usize) {
 }
 
 fn dummy_inputs(graph: &Graph, batch_size: usize) -> Vec<Tensor> {
-    graph.inputs().iter().map(|&v| {
-        Tensor::zeros(IxDyn(&graph[v].shape.eval(batch_size).dims))
-    }).collect_vec()
+    graph
+        .inputs()
+        .iter()
+        .map(|&v| Tensor::zeros(IxDyn(&graph[v].shape.eval(batch_size).dims)))
+        .collect_vec()
 }

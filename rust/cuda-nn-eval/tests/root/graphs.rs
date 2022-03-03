@@ -71,10 +71,7 @@ fn gather() {
 
     let expected_result = manual_tensor((2, 4), vec![0.0, 2.0, 1.0, 0.0, 3.0, 5.0, 4.0, 3.0]);
 
-    test_all(
-        &graph, 0, &[],
-        Some(&[expected_result]),
-    )
+    test_all(&graph, 0, &[], Some(&[expected_result]))
 }
 
 #[test]
@@ -112,14 +109,26 @@ fn mat_mul() {
             let mut shape_a = shape![4, 5, 6];
             let mut shape_b = shape![4, 6, 3];
 
-            if transpose_a { shape_a.dims.swap(1, 2); }
-            if transpose_b { shape_b.dims.swap(1, 2); }
+            if transpose_a {
+                shape_a.dims.swap(1, 2);
+            }
+            if transpose_b {
+                shape_b.dims.swap(1, 2);
+            }
 
             let a_orig = graph.constant(shape_a, linspace_vec(4 * 5 * 6));
             let b_orig = graph.constant(shape_b, linspace_vec(4 * 6 * 3));
 
-            let a = if transpose_a { graph.permute(a_orig, vec![0, 2, 1]) } else { a_orig };
-            let b = if transpose_b { graph.permute(b_orig, vec![0, 2, 1]) } else { b_orig };
+            let a = if transpose_a {
+                graph.permute(a_orig, vec![0, 2, 1])
+            } else {
+                a_orig
+            };
+            let b = if transpose_b {
+                graph.permute(b_orig, vec![0, 2, 1])
+            } else {
+                b_orig
+            };
 
             let result = graph.mat_mul(a, b);
             assert_eq!(graph[result].shape, shape![4, 5, 3]);
@@ -182,7 +191,13 @@ fn fuse_clamp() {
 #[test]
 fn ele_broadcast() {
     // don't test division, since the GPU doesn't support it yet
-    for op in [ElementOp::Add, ElementOp::Sub, ElementOp::Mul, ElementOp::Min, ElementOp::Max] {
+    for op in [
+        ElementOp::Add,
+        ElementOp::Sub,
+        ElementOp::Mul,
+        ElementOp::Min,
+        ElementOp::Max,
+    ] {
         println!("Testing operation {:?}", op);
 
         let mut graph = Graph::new();
@@ -239,12 +254,7 @@ fn affine_single_element() {
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
 
-    test_all(
-        &graph,
-        0,
-        &[input_data],
-        Some(&[output_data]),
-    )
+    test_all(&graph, 0, &[input_data], Some(&[output_data]))
 }
 
 #[test]
@@ -288,12 +298,7 @@ fn affine_multiple_channels() {
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
 
-    test_all(
-        &graph,
-        0,
-        &[input_data],
-        None,
-    )
+    test_all(&graph, 0, &[input_data], None)
 }
 
 #[test]
@@ -313,12 +318,7 @@ fn affine_padding() {
     curr = graph.add(curr, bias_1);
     graph.output(curr);
 
-    test_all(
-        &graph,
-        0,
-        &[input_data],
-        None,
-    )
+    test_all(&graph, 0, &[input_data], None)
 }
 
 #[test]
@@ -347,12 +347,7 @@ fn pre_act_resnet() {
     graph.output(tower);
     graph.output(policy);
 
-    test_all(
-        &graph,
-        0,
-        &[input_data],
-        None,
-    )
+    test_all(&graph, 0, &[input_data], None)
 }
 
 fn channel_batchnorm(graph: &mut Graph, input: Value) -> Value {
@@ -389,10 +384,11 @@ fn fuse_res() {
     graph.output(curr);
 
     test_all(
-        &graph, 0,
+        &graph,
+        0,
         &[
             linspace_tensor((10, 4, 8, 8)).into_dyn(),
-            linspace_tensor((10, 4, 8, 8)).into_dyn() + 1.0
+            linspace_tensor((10, 4, 8, 8)).into_dyn() + 1.0,
         ],
         None,
     );

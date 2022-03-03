@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::{Debug, Formatter};
 
 use image::{ImageBuffer, Rgb};
-use itertools::{Itertools, zip};
+use itertools::{zip, Itertools};
 use ndarray::{ArcArray, Axis, Ix4};
 use palette::{LinSrgb, Srgb};
 
@@ -58,10 +58,9 @@ pub fn visualize_graph_activations(
         }
 
         // check whether this is the typical intermediate shape: [B, fixed*]
-        let is_intermediate_shape =
-            info.shape.rank() > 0 &&
-                info.shape[0] == Size::BATCH &&
-                info.shape.dims[1..].iter().all(|d| d.try_unwrap_fixed().is_some());
+        let is_intermediate_shape = info.shape.rank() > 0
+            && info.shape[0] == Size::BATCH
+            && info.shape.dims[1..].iter().all(|d| d.try_unwrap_fixed().is_some());
         if !is_intermediate_shape {
             println!("Skipping value with shape {:?}", info.shape);
             continue;
@@ -70,18 +69,36 @@ pub fn visualize_graph_activations(
         let is_input = matches!(&info.operation, Operation::Input { .. });
         let data = value.tensor.to_shared();
 
-        let vis_tensor = VisTensor { normalize: !is_input, tensor: data.to_shared() };
-        to_render.push(RenderTensor { value: value.value, original: true, vis_tensor });
+        let vis_tensor = VisTensor {
+            normalize: !is_input,
+            tensor: data.to_shared(),
+        };
+        to_render.push(RenderTensor {
+            value: value.value,
+            original: true,
+            vis_tensor,
+        });
 
         for extra_vis_tensor in post_process_value(value.value, data) {
-            to_render.push(RenderTensor { value: value.value, original: false, vis_tensor: extra_vis_tensor });
+            to_render.push(RenderTensor {
+                value: value.value,
+                original: false,
+                vis_tensor: extra_vis_tensor,
+            });
         }
     }
 
     let mut all_details = vec![];
     for render_tensor in to_render {
-        let RenderTensor { value, original, vis_tensor } = render_tensor;
-        let VisTensor { normalize, tensor: data } = vis_tensor;
+        let RenderTensor {
+            value,
+            original,
+            vis_tensor,
+        } = render_tensor;
+        let VisTensor {
+            normalize,
+            tensor: data,
+        } = vis_tensor;
         let size = data.len();
 
         let data: Tensor4 = match data.ndim() {
@@ -114,7 +131,13 @@ pub fn visualize_graph_activations(
 
         total_width = max(total_width, HORIZONTAL_PADDING + view_width);
 
-        let details = Details { value, original, start_y, normalize, data };
+        let details = Details {
+            value,
+            original,
+            start_y,
+            normalize,
+            data,
+        };
         all_details.push(details)
     }
 
@@ -194,19 +217,18 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
 
         if other_operation.inputs().contains(&value) {
             match other_operation {
-                Operation::Input { .. } | Operation::Constant { .. } =>
-                    unreachable!(),
+                Operation::Input { .. } | Operation::Constant { .. } => unreachable!(),
                 &Operation::View { input } => {
                     // check if all commons dims at the start match, which implies the only different is trailing 1s
-                    zip(&graph[input].shape.dims, &graph[other].shape.dims)
-                        .all(|(l, r)| l == r)
+                    zip(&graph[input].shape.dims, &graph[other].shape.dims).all(|(l, r)| l == r)
                 }
                 Operation::Permute { .. }
-                | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
-                | Operation::Conv { .. } | Operation::MatMul { .. } =>
-                    false,
-                &Operation::Element { left, right, op: _ } =>
-                    graph[left].shape != graph[right].shape
+                | Operation::Slice { .. }
+                | Operation::Gather { .. }
+                | Operation::Concat { .. }
+                | Operation::Conv { .. }
+                | Operation::MatMul { .. } => false,
+                &Operation::Element { left, right, op: _ } => graph[left].shape != graph[right].shape,
             }
         } else {
             false
@@ -221,22 +243,30 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
     match operation {
         Operation::Input { .. } => false,
         Operation::Constant { .. } => true,
-        Operation::View { .. } | Operation::Permute { .. }
-        | Operation::Slice { .. } | Operation::Gather { .. } | Operation::Concat { .. }
-        | Operation::Conv { .. } | Operation::MatMul { .. }
-        | Operation::Element { .. } => {
-            operation.inputs().iter().all(|&v| is_effectively_constant(graph, v))
-        }
+        Operation::View { .. }
+        | Operation::Permute { .. }
+        | Operation::Slice { .. }
+        | Operation::Gather { .. }
+        | Operation::Concat { .. }
+        | Operation::Conv { .. }
+        | Operation::MatMul { .. }
+        | Operation::Element { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
     }
 }
 
 impl VisTensor {
     pub fn abs(tensor: Tensor) -> VisTensor {
-        VisTensor { normalize: false, tensor }
+        VisTensor {
+            normalize: false,
+            tensor,
+        }
     }
 
     pub fn norm(tensor: Tensor) -> VisTensor {
-        VisTensor { normalize: true, tensor }
+        VisTensor {
+            normalize: true,
+            tensor,
+        }
     }
 }
 

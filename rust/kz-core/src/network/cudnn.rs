@@ -5,13 +5,13 @@ use std::marker::PhantomData;
 use board_game::board::Board;
 use itertools::Itertools;
 
-use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::Device;
 use nn_graph::graph::Graph;
 
 use crate::mapping::BoardMapper;
-use crate::network::{Network, ZeroEvaluation};
 use crate::network::common::{check_graph_shapes, decode_output};
+use crate::network::{Network, ZeroEvaluation};
 
 pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
@@ -32,7 +32,13 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
 
         let input = vec![0.0; max_batch_size * mapper.input_full_len()];
 
-        CudnnNetwork { max_batch_size, mapper, executor, input, ph: PhantomData }
+        CudnnNetwork {
+            max_batch_size,
+            mapper,
+            executor,
+            input,
+            ph: PhantomData,
+        }
     }
 
     pub fn executor(&mut self) -> &mut CudnnExecutor {
@@ -53,23 +59,23 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         }
 
         // pad the rest of input with nans
-        self.input.resize(max_batch_size * self.mapper.input_full_len(), f32::NAN);
+        self.input
+            .resize(max_batch_size * self.mapper.input_full_len(), f32::NAN);
 
         // run the actual computation
         let outputs = self.executor.evaluate(&[&self.input]);
 
-        let relevant_outputs = outputs.iter().map(|x| {
-            let other_size = x.len() / max_batch_size;
-            &x[0..batch_size * other_size]
-        }).collect_vec();
+        let relevant_outputs = outputs
+            .iter()
+            .map(|x| {
+                let other_size = x.len() / max_batch_size;
+                &x[0..batch_size * other_size]
+            })
+            .collect_vec();
 
         // decode the relevant part of the output
         // the number and shape of outputs has been checked already
-        decode_output(
-            self.mapper,
-            boards,
-            &relevant_outputs,
-        )
+        decode_output(self.mapper, boards, &relevant_outputs)
     }
 }
 

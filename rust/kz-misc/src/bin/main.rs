@@ -4,7 +4,9 @@ use std::collections::HashSet;
 use board_game::board::Board;
 use board_game::games::chess::ChessBoard;
 use board_game::wdl::{Flip, OutcomeWDL};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
+use crossterm::event::{
+    DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use decorum::N32;
@@ -13,8 +15,8 @@ use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
 use tui::style::{Color, Modifier, Style};
-use tui::Terminal;
 use tui::widgets::Widget;
+use tui::Terminal;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
@@ -69,7 +71,10 @@ fn main() -> std::io::Result<()> {
         let mut prev_area = None;
 
         terminal.draw(|f| {
-            let area = f.size().inner(&Margin { horizontal: 2, vertical: 2 });
+            let area = f.size().inner(&Margin {
+                horizontal: 2,
+                vertical: 2,
+            });
 
             if area.area() > 0 {
                 state.prepare_render(area);
@@ -89,7 +94,7 @@ fn main() -> std::io::Result<()> {
 
     // restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(),LeaveAlternateScreen,DisableMouseCapture)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
     Ok(())
@@ -105,10 +110,9 @@ impl<B: Board> State<B> {
 
         if self.expanded_nodes.contains(&curr) {
             if let Some(children) = self.tree[curr].children {
-                let sorted_children = children.iter()
-                    .sorted_by_key(|&c| {
-                        Reverse((self.tree[c].total_visits(), N32::from(self.tree[c].net_policy)))
-                    });
+                let sorted_children = children
+                    .iter()
+                    .sorted_by_key(|&c| Reverse((self.tree[c].total_visits(), N32::from(self.tree[c].net_policy))));
                 for c in sorted_children {
                     self.append_nodes(c, depth + 1, result);
                 }
@@ -136,39 +140,42 @@ impl<B: Board> State<B> {
     }
 
     fn selected_index(&self) -> usize {
-        self.prev_nodes.iter().position(|n| n.node == self.selected_node).unwrap()
+        self.prev_nodes
+            .iter()
+            .position(|n| n.node == self.selected_node)
+            .unwrap()
     }
 
     fn handle_event(&mut self, area: Rect, event: Event) {
         match event {
-            Event::Key(key) => {
-                match key.code {
-                    KeyCode::Up => {
-                        let index = self.selected_index();
-                        if index != 0 {
-                            self.selected_node = self.prev_nodes[index - 1].node;
-                        }
+            Event::Key(key) => match key.code {
+                KeyCode::Up => {
+                    let index = self.selected_index();
+                    if index != 0 {
+                        self.selected_node = self.prev_nodes[index - 1].node;
                     }
-                    KeyCode::Down => {
-                        self.selected_node = self.prev_nodes.get(self.selected_index() + 1)
-                            .map_or(self.selected_node, |n| n.node);
-                    }
-                    KeyCode::Right => {
-                        self.expanded_nodes.insert(self.selected_node);
-                    }
-                    KeyCode::Left => {
-                        if self.expanded_nodes.contains(&self.selected_node) {
-                            self.expanded_nodes.remove(&self.selected_node);
-                        } else {
-                            if let Some(parent) = self.tree[self.selected_node].parent {
-                                self.selected_node = parent;
-                                self.expanded_nodes.remove(&parent);
-                            }
-                        }
-                    }
-                    _ => (),
                 }
-            }
+                KeyCode::Down => {
+                    self.selected_node = self
+                        .prev_nodes
+                        .get(self.selected_index() + 1)
+                        .map_or(self.selected_node, |n| n.node);
+                }
+                KeyCode::Right => {
+                    self.expanded_nodes.insert(self.selected_node);
+                }
+                KeyCode::Left => {
+                    if self.expanded_nodes.contains(&self.selected_node) {
+                        self.expanded_nodes.remove(&self.selected_node);
+                    } else {
+                        if let Some(parent) = self.tree[self.selected_node].parent {
+                            self.selected_node = parent;
+                            self.expanded_nodes.remove(&parent);
+                        }
+                    }
+                }
+                _ => (),
+            },
             Event::Mouse(mouse) => {
                 if mouse.kind == MouseEventKind::Up(MouseButton::Left) {
                     let i = mouse.row as i32 + self.view_offset as i32 - area.y as i32 - HEADER_SIZE as i32;
@@ -198,10 +205,13 @@ impl<B: Board> State<B> {
             }
         }
 
-        let col_starts = col_sizes.iter().scan(area.x, |curr, &size| {
-            *curr += size + COL_SPACING;
-            Some(*curr - size - COL_SPACING)
-        }).collect_vec();
+        let col_starts = col_sizes
+            .iter()
+            .scan(area.x, |curr, &size| {
+                *curr += size + COL_SPACING;
+                Some(*curr - size - COL_SPACING)
+            })
+            .collect_vec();
 
         (col_sizes, col_starts)
     }
@@ -249,11 +259,25 @@ impl<B: Board> State<B> {
             };
 
             let values = [
-                zero.wdl.win, zero.wdl.draw, zero.wdl.loss, zero.moves_left, zero_policy,
-                net.wdl.win, net.wdl.draw, net.wdl.loss, net.moves_left, node.net_policy,
-                uct.v, uct.u, uct.m,
+                zero.wdl.win,
+                zero.wdl.draw,
+                zero.wdl.loss,
+                zero.moves_left,
+                zero_policy,
+                net.wdl.win,
+                net.wdl.draw,
+                net.wdl.loss,
+                net.moves_left,
+                node.net_policy,
+                uct.v,
+                uct.u,
+                uct.m,
             ];
-            result.extend(values.iter().map(|v| if v.is_nan() { "".to_owned() } else { format!("{:.3}", v) }));
+            result.extend(
+                values
+                    .iter()
+                    .map(|v| if v.is_nan() { "".to_owned() } else { format!("{:.3}", v) }),
+            );
         }
 
         assert_eq!(result.len(), COLUMN_INFO.len());
@@ -262,10 +286,23 @@ impl<B: Board> State<B> {
 }
 
 const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
-    ("Node", "", false, Color::Gray), ("Move", "", false, Color::Gray), ("T", "", false, Color::Gray), ("Visits", "", true, Color::Gray),
-    ("Zero", "W", true, Color::Green), ("Zero", "D", true, Color::DarkGray), ("Zero", "L", true, Color::Red), ("Zero", "M", true, Color::Yellow), ("Zero", "P", true, Color::LightBlue),
-    ("Net", "W", true, Color::Green), ("Net", "D", true, Color::DarkGray), ("Net", "L", true, Color::Red), ("Net", "M", true, Color::Yellow), ("Net", "P", true, Color::LightBlue),
-    ("Uct", "V", true, Color::Green), ("Uct", "U", true, Color::LightBlue), ("Uct", "M", true, Color::Yellow),
+    ("Node", "", false, Color::Gray),
+    ("Move", "", false, Color::Gray),
+    ("T", "", false, Color::Gray),
+    ("Visits", "", true, Color::Gray),
+    ("Zero", "W", true, Color::Green),
+    ("Zero", "D", true, Color::DarkGray),
+    ("Zero", "L", true, Color::Red),
+    ("Zero", "M", true, Color::Yellow),
+    ("Zero", "P", true, Color::LightBlue),
+    ("Net", "W", true, Color::Green),
+    ("Net", "D", true, Color::DarkGray),
+    ("Net", "L", true, Color::Red),
+    ("Net", "M", true, Color::Yellow),
+    ("Net", "P", true, Color::LightBlue),
+    ("Uct", "V", true, Color::Green),
+    ("Uct", "U", true, Color::LightBlue),
+    ("Uct", "M", true, Color::Yellow),
 ];
 
 impl<B: Board> Widget for &State<B> {
@@ -311,7 +348,10 @@ fn build_tree(real: bool) -> Tree<ChessBoard> {
     let settings = ZeroSettings::new(256, UctWeights::default(), false, FpuMode::Parent);
     let visits = 20_000;
 
-    let board = ChessBoard::new_without_history_fen("2r3rk/1b3p1p/pp2pPn1/2qp2RQ/8/2N3P1/PPP3BP/1K2R3 b - - 0 1", Default::default());
+    let board = ChessBoard::new_without_history_fen(
+        "2r3rk/1b3p1p/pp2pPn1/2qp2RQ/8/2N3P1/PPP3BP/1K2R3 b - - 0 1",
+        Default::default(),
+    );
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/networks/chess_16x128_gen3634.onnx";
     let mapper = ChessStdMapper;
 

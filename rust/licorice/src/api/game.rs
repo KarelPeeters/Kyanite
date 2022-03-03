@@ -11,10 +11,7 @@ impl Lichess {
         query_params: Option<&Vec<(&str, &str)>>,
     ) -> LichessResult<String> {
         let url = format!("{}/game/export/{}", self.base, game_id);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-chess-pgn");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-chess-pgn");
         if let Some(query) = query_params {
             builder = builder.query(&query)
         }
@@ -40,10 +37,7 @@ impl Lichess {
         query_params: Option<&Vec<(&str, &str)>>,
     ) -> LichessResult<String> {
         let url = format!("{}/api/user/{}/current-game", self.base, username);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-chess-pgn");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-chess-pgn");
         if let Some(query) = query_params {
             builder = builder.query(query)
         }
@@ -69,10 +63,7 @@ impl Lichess {
         query_params: Option<&Vec<(&str, &str)>>,
     ) -> LichessResult<impl Stream<Item = LichessResult<Bytes>>> {
         let url = format!("{}/api/games/user/{}", self.base, username);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-chess-pgn");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-chess-pgn");
         if let Some(query) = query_params {
             builder = builder.query(query)
         }
@@ -85,10 +76,7 @@ impl Lichess {
         query_params: Option<&Vec<(&str, &str)>>,
     ) -> LichessResult<impl Stream<Item = LichessResult<Game>>> {
         let url = format!("{}/api/games/user/{}", self.base, username);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-ndjson");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-ndjson");
         if let Some(query) = query_params {
             builder = builder.query(query)
         }
@@ -112,10 +100,7 @@ impl Lichess {
         self.to_model_stream(builder).await
     }
 
-    pub async fn stream_current_games(
-        &self,
-        ids: &[&str],
-    ) -> LichessResult<impl Stream<Item = LichessResult<Game>>> {
+    pub async fn stream_current_games(&self, ids: &[&str]) -> LichessResult<impl Stream<Item = LichessResult<Game>>> {
         let url = format!("{}/api/stream/games-by-users", self.base);
         let builder = self.client.post(&url).body(ids.join(","));
         self.to_model_stream(builder).await

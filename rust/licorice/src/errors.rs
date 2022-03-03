@@ -48,10 +48,7 @@ impl LichessError {
 
 impl From<StatusCode> for LichessError {
     fn from(code: StatusCode) -> Self {
-        Self::StatusCode(
-            code.as_u16(),
-            code.canonical_reason().unwrap_or("unknown").to_string(),
-        )
+        Self::StatusCode(code.as_u16(), code.canonical_reason().unwrap_or("unknown").to_string())
     }
 }
 

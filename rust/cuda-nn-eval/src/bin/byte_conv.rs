@@ -57,7 +57,8 @@ unsafe fn main_inner() {
             &0f32 as *const _ as *const _,
             io_desc.inner(),
             y_mem.ptr(),
-        ).unwrap();
+        )
+        .unwrap();
     };
 
     for _ in 0..10 {
@@ -78,8 +79,5 @@ unsafe fn main_inner() {
 }
 
 fn main() {
-    unsafe {
-        main_inner()
-    }
+    unsafe { main_inner() }
 }
-

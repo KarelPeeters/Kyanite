@@ -1,7 +1,7 @@
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
-use crate::mapping::{InputMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
+use crate::mapping::{InputMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct AtaxxStdMapper {
@@ -11,7 +11,10 @@ pub struct AtaxxStdMapper {
 
 impl AtaxxStdMapper {
     pub fn new(size: u8) -> Self {
-        AtaxxStdMapper { size, policy_shape: [17, size as usize, size as usize] }
+        AtaxxStdMapper {
+            size,
+            policy_shape: [17, size as usize, size as usize],
+        }
     }
 
     pub fn size(&self) -> u8 {
@@ -51,9 +54,10 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
             Move::Jump { from, to } => {
                 let dx = from.x() as i8 - to.x() as i8;
                 let dy = from.y() as i8 - to.y() as i8;
-                let from_index = FROM_DX_DY.iter().position(|&(fdx, fdy)| {
-                    fdx == dx && fdy == dy
-                }).unwrap();
+                let from_index = FROM_DX_DY
+                    .iter()
+                    .position(|&(fdx, fdy)| fdx == dx && fdy == dy)
+                    .unwrap();
                 let to_index = (to.y() * size + to.x()) as usize;
 
                 Some((1 + from_index) * (size * size) as usize + to_index)
@@ -95,9 +99,20 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
 }
 
 pub const FROM_DX_DY: [(i8, i8); 16] = [
-    (-2, -2), (-1, -2), (0, -2), (1, -2), (2, -2),
-    (-2, -1), (2, -1),
-    (-2, 0), (2, 0),
-    (-2, 1), (2, 1),
-    (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2),
+    (-2, -2),
+    (-1, -2),
+    (0, -2),
+    (1, -2),
+    (2, -2),
+    (-2, -1),
+    (2, -1),
+    (-2, 0),
+    (2, 0),
+    (-2, 1),
+    (2, 1),
+    (-2, 2),
+    (-1, 2),
+    (0, 2),
+    (1, 2),
+    (2, 2),
 ];

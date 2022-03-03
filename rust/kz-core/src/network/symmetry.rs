@@ -23,7 +23,12 @@ pub struct RandomSymmetryNetwork<B: Board, N: Network<B>, R: Rng> {
 
 impl<B: Board, N: Network<B>, R: Rng> RandomSymmetryNetwork<B, N, R> {
     pub fn new(inner: N, rng: R, enabled: bool) -> Self {
-        RandomSymmetryNetwork { inner, rng, enabled, ph: PhantomData }
+        RandomSymmetryNetwork {
+            inner,
+            rng,
+            enabled,
+            ph: PhantomData,
+        }
     }
 }
 
@@ -35,36 +40,44 @@ impl<B: Board, N: Network<B>, R: Rng> Network<B> for RandomSymmetryNetwork<B, N,
         }
 
         // map the boards
-        let (symmetries, mapped_boards): (Vec<B::Symmetry>, Vec<B>) =
-            boards.iter().map(|board| {
+        let (symmetries, mapped_boards): (Vec<B::Symmetry>, Vec<B>) = boards
+            .iter()
+            .map(|board| {
                 let board = board.borrow();
                 let sym = SymmetryDistribution.sample(&mut self.rng);
 
                 (sym, board.map(sym))
-            }).unzip();
+            })
+            .unzip();
 
         // call the inner network
         let mapped_evals = self.inner.evaluate_batch(&mapped_boards);
 
         // un-map the evaluations
         let evals = izip!(boards, symmetries, mapped_boards, mapped_evals)
-            .map(|(board, sym, mapped_board, mapped_eval)| {
-                unmap_eval(board.borrow(), sym, mapped_board, mapped_eval)
-            })
+            .map(|(board, sym, mapped_board, mapped_eval)| unmap_eval(board.borrow(), sym, mapped_board, mapped_eval))
             .collect();
 
         evals
     }
 }
 
-fn unmap_eval<B: Board>(board: &B, sym: B::Symmetry, mapped_board: B, mapped_eval: ZeroEvaluation) -> ZeroEvaluation<'static> {
+fn unmap_eval<B: Board>(
+    board: &B,
+    sym: B::Symmetry,
+    mapped_board: B,
+    mapped_eval: ZeroEvaluation,
+) -> ZeroEvaluation<'static> {
     let mapped_moves: Vec<B::Move> = mapped_board.available_moves().collect();
 
-    let policy = board.available_moves().map(|mv| {
-        let mapped_mv = board.map_move(sym, mv);
-        let index = mapped_moves.iter().index_of(&mapped_mv).unwrap();
-        mapped_eval.policy[index]
-    }).collect();
+    let policy = board
+        .available_moves()
+        .map(|mv| {
+            let mapped_mv = board.map_move(sym, mv);
+            let index = mapped_moves.iter().index_of(&mapped_mv).unwrap();
+            mapped_eval.policy[index]
+        })
+        .collect();
 
     ZeroEvaluation {
         values: mapped_eval.values,
@@ -80,4 +93,3 @@ impl<B: Board, N: Network<B>, R: Rng> Debug for RandomSymmetryNetwork<B, N, R> {
             .finish()
     }
 }
-

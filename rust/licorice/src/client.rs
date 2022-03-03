@@ -36,10 +36,7 @@ impl Lichess {
         header_value.set_sensitive(true);
         headers.insert(header::AUTHORIZATION, header_value);
         Lichess {
-            client: reqwest::Client::builder()
-                .default_headers(headers)
-                .build()
-                .unwrap(),
+            client: reqwest::Client::builder().default_headers(headers).build().unwrap(),
             base: String::from("https://lichess.org"),
         }
     }
@@ -54,28 +51,17 @@ impl Lichess {
     }
 
     pub(crate) async fn to_raw_str(&self, builder: RequestBuilder) -> LichessResult<String> {
-        self.api_call(builder)
-            .await?
-            .text()
-            .await
-            .map_err(Into::into)
+        self.api_call(builder).await?.text().await.map_err(Into::into)
     }
 
     pub(crate) async fn to_raw_bytes(
         &self,
         builder: RequestBuilder,
     ) -> LichessResult<impl Stream<Item = LichessResult<bytes::Bytes>>> {
-        Ok(self
-            .api_call(builder)
-            .await?
-            .bytes_stream()
-            .map_err(Into::into))
+        Ok(self.api_call(builder).await?.bytes_stream().map_err(Into::into))
     }
 
-    pub(crate) async fn to_model_full<T: DeserializeOwned>(
-        &self,
-        builder: RequestBuilder,
-    ) -> LichessResult<T> {
+    pub(crate) async fn to_model_full<T: DeserializeOwned>(&self, builder: RequestBuilder) -> LichessResult<T> {
         // self.api_call(builder).await?.json::<T>().await.map_err(Into::into)
         // https://github.com/serde-rs/json/issues/160
         from_str(&self.api_call(builder).await?.text().await?).map_err(Into::into)

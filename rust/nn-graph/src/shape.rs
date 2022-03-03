@@ -47,11 +47,7 @@ impl Shape {
     }
 
     pub fn unwrap_fixed(&self, what: &str) -> ConcreteShape {
-        let dims = self.dims.iter()
-            .map(|d| {
-                d.unwrap_fixed(what)
-            })
-            .collect_vec();
+        let dims = self.dims.iter().map(|d| d.unwrap_fixed(what)).collect_vec();
         ConcreteShape { dims }
     }
 
@@ -121,16 +117,31 @@ impl From<usize> for Size {
 }
 
 impl Size {
-    pub const ZERO: Size = Size { batch_exp: 0, fixed_factor: 0 };
-    pub const ONE: Size = Size { batch_exp: 0, fixed_factor: 1 };
-    pub const BATCH: Size = Size { batch_exp: 1, fixed_factor: 1 };
+    pub const ZERO: Size = Size {
+        batch_exp: 0,
+        fixed_factor: 0,
+    };
+    pub const ONE: Size = Size {
+        batch_exp: 0,
+        fixed_factor: 1,
+    };
+    pub const BATCH: Size = Size {
+        batch_exp: 1,
+        fixed_factor: 1,
+    };
 
     pub fn new(batch_exp: u32, fixed_factor: usize) -> Size {
-        Size { batch_exp, fixed_factor }
+        Size {
+            batch_exp,
+            fixed_factor,
+        }
     }
 
     pub fn fixed(size: usize) -> Size {
-        Size { batch_exp: 0, fixed_factor: size }
+        Size {
+            batch_exp: 0,
+            fixed_factor: size,
+        }
     }
 
     pub fn eval(self, batch_size: usize) -> usize {
@@ -207,7 +218,7 @@ impl std::ops::Div for Size {
 }
 
 impl std::iter::Product for Size {
-    fn product<I: Iterator<Item=Self>>(iter: I) -> Self {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Size::fixed(1), |a, s| a * s)
     }
 }

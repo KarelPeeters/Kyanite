@@ -1,5 +1,5 @@
 use bytemuck::cast_slice_mut;
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 
 use cuda_sys::wrapper::handle::Device;
 use nn_graph::cpu::Tensor;
@@ -26,7 +26,12 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
     let mut max_rel_error = 0.0;
 
     for (i, (expected_output, output)) in zip_eq(expected_outputs, outputs).enumerate() {
-        assert_eq!(expected_output.shape(), output.shape(), "Wrong output shape for output {}", i);
+        assert_eq!(
+            expected_output.shape(),
+            output.shape(),
+            "Wrong output shape for output {}",
+            i
+        );
 
         for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
             let abs_error = (expected_value - value).abs();
@@ -38,18 +43,26 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
             assert!(
                 (abs_error < ERROR_ABS_TOLERANCE) || (rel_error < ERROR_REL_TOLERANCE),
                 "Wrong output value {}, expected {} at indices {:?} in output {} (value {:?})",
-                value, expected_value, indices.slice(), i, output_values[i],
+                value,
+                expected_value,
+                indices.slice(),
+                i,
+                output_values[i],
             )
         }
 
         if print {
-            println!("Output {} matched, max error: abs {}, rel {}", i, max_abs_error, max_rel_error);
+            println!(
+                "Output {} matched, max error: abs {}, rel {}",
+                i, max_abs_error, max_rel_error
+            );
         }
     }
 }
 
 pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bool, use_graph: bool) -> Vec<Tensor> {
-    let inputs = inputs.iter()
+    let inputs = inputs
+        .iter()
         .map(|x| x.as_slice().expect("Only sliceable inputs supported in test framework"))
         .collect_vec();
 
@@ -64,8 +77,7 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bo
     let outputs = zip_eq(graph.outputs(), gpu_outputs)
         .map(|(&value, output)| {
             let shape = graph[value].shape.eval(batch_size);
-            Tensor::from_shape_vec(&*shape.dims, output.clone())
-                .expect("GPU output has wrong length")
+            Tensor::from_shape_vec(&*shape.dims, output.clone()).expect("GPU output has wrong length")
         })
         .collect_vec();
 
@@ -74,11 +86,15 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bo
 
 /// Load the check data into `(batch_size, inputs, expected_outputs)`.
 pub fn load_check_data(graph: &Graph, check_data_bytes: &[u8]) -> (usize, Vec<Tensor>, Vec<Tensor>) {
-    assert!(!check_data_bytes.is_empty(), "Check data must have at least one byte, the batch size");
+    assert!(
+        !check_data_bytes.is_empty(),
+        "Check data must have at least one byte, the batch size"
+    );
     let batch_size = check_data_bytes[0] as usize;
 
     assert_eq!(
-        (check_data_bytes.len() - 1) % 4, 0,
+        (check_data_bytes.len() - 1) % 4,
+        0,
         "Data byte count must be multiple of 4 + 1 to be able to cast to float, got {}",
         check_data_bytes.len()
     );
@@ -98,13 +114,11 @@ pub fn load_check_data(graph: &Graph, check_data_bytes: &[u8]) -> (usize, Vec<Te
 
 /// Load the given values from the buffer while advancing it.
 fn load_check_values(graph: &Graph, batch_size: usize, buf: &mut &[f32], values: &[Value]) -> Vec<Tensor> {
-    values.iter()
+    values
+        .iter()
         .map(|&value| {
             let shape = graph[value].shape.eval(batch_size);
-            let tensor = Tensor::from_shape_vec(
-                IxDyn(&shape.dims),
-                buf[0..shape.size()].to_vec(),
-            ).unwrap();
+            let tensor = Tensor::from_shape_vec(IxDyn(&shape.dims), buf[0..shape.size()].to_vec()).unwrap();
             *buf = &buf[shape.size()..];
             tensor
         })

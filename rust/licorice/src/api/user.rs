@@ -41,11 +41,7 @@ impl Lichess {
     /// - nb_users - Number of top players to fetch from the leaderbaord.
     /// Must be at most 200, the capacty of each lederboard.
     /// [Reference](https://lichess.org/api#operation/playerTopNbPerfType)
-    pub async fn get_one_leaderboard(
-        &self,
-        nb_users: u8,
-        perf_type: PerfType,
-    ) -> LichessResult<Vec<LightUser>> {
+    pub async fn get_one_leaderboard(&self, nb_users: u8, perf_type: PerfType) -> LichessResult<Vec<LightUser>> {
         let mut perf_str = to_string(&perf_type)?;
         // hack as representations of enum variants are enclosed with ""
         perf_str = perf_str[1..perf_str.len() - 1].to_owned();
@@ -103,10 +99,7 @@ impl Lichess {
     }
 
     /// Returns a stream of members belonging to the provided team
-    pub async fn get_members_of_a_team(
-        &self,
-        team_id: &str,
-    ) -> LichessResult<impl Stream<Item = LichessResult<User>>> {
+    pub async fn get_members_of_a_team(&self, team_id: &str) -> LichessResult<impl Stream<Item = LichessResult<User>>> {
         let url = format!("{}{}/{}/users", self.base, "/api/team", team_id);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await
@@ -120,12 +113,7 @@ impl Lichess {
     }
 
     /// Returns records of how two players match up against each other
-    pub async fn get_crosstable(
-        &self,
-        player: &str,
-        opponent: &str,
-        matchup: bool,
-    ) -> LichessResult<Crosstable> {
+    pub async fn get_crosstable(&self, player: &str, opponent: &str, matchup: bool) -> LichessResult<Crosstable> {
         let url = format!("{}/api/crosstable/{}/{}", self.base, player, opponent);
         let builder = self.client.get(&url).query(&[("matchup", matchup)]);
         self.to_model_full(builder).await

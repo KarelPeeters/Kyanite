@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudaEvent_t, cudaEventCreate, cudaEventDestroy, cudaEventElapsedTime, cudaEventSynchronize};
+use crate::bindings::{cudaEventCreate, cudaEventDestroy, cudaEventElapsedTime, cudaEventSynchronize, cudaEvent_t};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -35,8 +35,6 @@ impl CudaEvent {
 
 impl Drop for CudaEvent {
     fn drop(&mut self) {
-        unsafe {
-            cudaEventDestroy(self.0).unwrap_in_drop()
-        }
+        unsafe { cudaEventDestroy(self.0).unwrap_in_drop() }
     }
 }

@@ -16,7 +16,10 @@ pub struct MoveSelector {
 
 impl MoveSelector {
     pub fn new(temperature: f32, zero_temp_move_count: u32) -> Self {
-        MoveSelector { temperature, zero_temp_move_count }
+        MoveSelector {
+            temperature,
+            zero_temp_move_count,
+        }
     }
 
     /// Always select the move with the maximum policy, ie. temperature 0.
@@ -25,13 +28,20 @@ impl MoveSelector {
     }
 
     pub fn constant_temp(temperature: f32) -> Self {
-        MoveSelector { temperature, zero_temp_move_count: u32::MAX }
+        MoveSelector {
+            temperature,
+            zero_temp_move_count: u32::MAX,
+        }
     }
 }
 
 impl MoveSelector {
     pub fn select(&self, move_count: u32, policy: &[f32], rng: &mut impl Rng) -> usize {
-        let temperature = if move_count >= self.zero_temp_move_count { 0.0 } else { self.temperature };
+        let temperature = if move_count >= self.zero_temp_move_count {
+            0.0
+        } else {
+            self.temperature
+        };
         assert!(temperature >= 0.0);
 
         // we handle the extreme cases separately, in theory that would not be necessary but they're degenerate

@@ -1,8 +1,8 @@
 use board_game::board::Board;
 use board_game::games::sttt::{Coord, STTTBoard};
 
-use crate::mapping::{InputMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
+use crate::mapping::{InputMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct STTTStdMapper;

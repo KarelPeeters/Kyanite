@@ -27,7 +27,9 @@ impl<'a> LichessPuzzle<'a> {
             themes: iter.next().ok_or(())?,
             game_url: iter.next().ok_or(())?,
         };
-        if iter.next().is_some() { return Err(()); }
+        if iter.next().is_some() {
+            return Err(());
+        }
 
         Ok(puzzle)
     }
@@ -39,7 +41,9 @@ pub fn for_each_lichess_puzzle(mut read: impl BufRead, mut f: impl FnMut(Lichess
     loop {
         buf.clear();
         let result = read.read_line(&mut buf).unwrap();
-        if result == 0 { break; }
+        if result == 0 {
+            break;
+        }
 
         let line = buf.trim();
         if !line.is_empty() {

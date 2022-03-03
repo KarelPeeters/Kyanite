@@ -10,8 +10,8 @@ use nn_graph::graph::Graph;
 use nn_graph::ndarray::IxDyn;
 
 use crate::mapping::BoardMapper;
-use crate::network::{Network, ZeroEvaluation};
 use crate::network::common::{check_graph_shapes, decode_output};
+use crate::network::{Network, ZeroEvaluation};
 
 pub struct CPUNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,

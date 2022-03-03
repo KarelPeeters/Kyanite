@@ -3,7 +3,7 @@ use std::borrow::{Borrow, Cow};
 use board_game::board::Board;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
-use ndarray::{ArrayView1, ArrayView2, s};
+use ndarray::{s, ArrayView1, ArrayView2};
 
 use nn_graph::graph::Graph;
 use nn_graph::shape;
@@ -27,48 +27,71 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     let nan_array = ArrayView1::from(NAN_SLICE);
 
     // interpret outputs
-    let (batch_value_logit, batch_wdl_logit, batch_moves_left, batch_policy_logit) =
-        match outputs.len() {
-            2 => {
-                scalars = ArrayView2::from_shape((batch_size, 5), outputs[0]).unwrap();
-                let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[1]).unwrap();
+    let (batch_value_logit, batch_wdl_logit, batch_moves_left, batch_policy_logit) = match outputs.len() {
+        2 => {
+            scalars = ArrayView2::from_shape((batch_size, 5), outputs[0]).unwrap();
+            let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[1]).unwrap();
 
-                (scalars.slice(s![.., 0]), scalars.slice(s![.., 1..4]), scalars.slice(s![.., 4]), policy)
+            (
+                scalars.slice(s![.., 0]),
+                scalars.slice(s![.., 1..4]),
+                scalars.slice(s![.., 4]),
+                policy,
+            )
+        }
+        3 => {
+            let value = ArrayView1::from_shape(batch_size, outputs[0]).unwrap();
+            let wdl = ArrayView2::from_shape((batch_size, 3), outputs[1]).unwrap();
+            let moves_left = nan_array.broadcast(batch_size).unwrap();
+            let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[2]).unwrap();
+
+            (value, wdl, moves_left, policy)
+        }
+        _ => unreachable!("Output count should have been checked already"),
+    };
+
+    boards
+        .iter()
+        .enumerate()
+        .map(|(bi, board)| {
+            let board = board.borrow();
+
+            // simple scalars
+            let value = batch_value_logit[bi].tanh();
+            let moves_left = batch_moves_left[bi];
+
+            // wdl
+            let mut wdl = [
+                batch_wdl_logit[(bi, 0)],
+                batch_wdl_logit[(bi, 1)],
+                batch_wdl_logit[(bi, 2)],
+            ];
+            softmax_in_place(&mut wdl);
+            let wdl = WDL {
+                win: wdl[0],
+                draw: wdl[1],
+                loss: wdl[2],
+            };
+
+            // policy
+            let mut policy: Vec<f32> = board
+                .available_moves()
+                .map(|mv| {
+                    policy_mapper
+                        .move_to_index(board, mv)
+                        .map_or(1.0, |index| batch_policy_logit[(bi, index)])
+                })
+                .collect();
+            softmax_in_place(&mut policy);
+
+            // combine everything
+            let values = ZeroValues { value, wdl, moves_left };
+            ZeroEvaluation {
+                values,
+                policy: Cow::Owned(policy),
             }
-            3 => {
-                let value = ArrayView1::from_shape(batch_size, outputs[0]).unwrap();
-                let wdl = ArrayView2::from_shape((batch_size, 3), outputs[1]).unwrap();
-                let moves_left = nan_array.broadcast(batch_size).unwrap();
-                let policy = ArrayView2::from_shape((batch_size, policy_len), outputs[2]).unwrap();
-
-                (value, wdl, moves_left, policy)
-            }
-            _ => unreachable!("Output count should have been checked already")
-        };
-
-    boards.iter().enumerate().map(|(bi, board)| {
-        let board = board.borrow();
-
-        // simple scalars
-        let value = batch_value_logit[bi].tanh();
-        let moves_left = batch_moves_left[bi];
-
-        // wdl
-        let mut wdl = [batch_wdl_logit[(bi, 0)], batch_wdl_logit[(bi, 1)], batch_wdl_logit[(bi, 2)]];
-        softmax_in_place(&mut wdl);
-        let wdl = WDL { win: wdl[0], draw: wdl[1], loss: wdl[2] };
-
-        // policy
-        let mut policy: Vec<f32> = board.available_moves().map(|mv| {
-            policy_mapper.move_to_index(board, mv)
-                .map_or(1.0, |index| batch_policy_logit[(bi, index)])
-        }).collect();
-        softmax_in_place(&mut policy);
-
-        // combine everything
-        let values = ZeroValues { value, wdl, moves_left };
-        ZeroEvaluation { values, policy: Cow::Owned(policy) }
-    }).collect()
+        })
+        .collect()
 }
 
 pub fn softmax_in_place(slice: &mut [f32]) {
@@ -109,7 +132,10 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
             assert_eq!(&graph[outputs[2]].shape, &expected_policy_shape, "Wrong policy shape");
         }
         len => {
-            panic!("Wrong number of outputs, expected either (value, wdl, policy) or (scalars, policy), got {}", len);
+            panic!(
+                "Wrong number of outputs, expected either (value, wdl, policy) or (scalars, policy), got {}",
+                len
+            );
         }
     }
 }

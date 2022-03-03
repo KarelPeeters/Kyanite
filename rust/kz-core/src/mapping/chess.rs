@@ -8,8 +8,8 @@ use lazy_static::lazy_static;
 
 use kz_util::IndexOf;
 
-use crate::mapping::{InputMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
+use crate::mapping::{InputMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
@@ -68,7 +68,7 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
 fn pov_ranks(board: BitBoard, pov: Color) -> u64 {
     match pov {
         Color::White => board.0,
-        Color::Black => board.reverse_colors().0
+        Color::Black => board.reverse_colors().0,
     }
 }
 
@@ -96,9 +96,10 @@ impl PolicyMapper<ChessBoard> for ChessStdMapper {
 
     fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> Option<usize> {
         let mv_pov = move_pov(board.inner().side_to_move(), mv);
-        let index = *FLAT_MOVES_POV.mv_to_index.get(&mv_pov).unwrap_or_else(|| {
-            panic!("mv {:?}, pov_mv {:?} not found in flat moves", mv, mv_pov)
-        });
+        let index = *FLAT_MOVES_POV
+            .mv_to_index
+            .get(&mv_pov)
+            .unwrap_or_else(|| panic!("mv {:?}, pov_mv {:?} not found in flat moves", mv, mv_pov));
         Some(index)
     }
 
@@ -211,7 +212,10 @@ impl ClassifiedPovMove {
         }
 
         // queen
-        if let Some(direction) = QUEEN_DIRECTIONS.iter().index_of(&(rank_delta.signum(), file_delta.signum())) {
+        if let Some(direction) = QUEEN_DIRECTIONS
+            .iter()
+            .index_of(&(rank_delta.signum(), file_delta.signum()))
+        {
             let distance = max(rank_delta.abs(), file_delta.abs());
 
             let (rank_dir, file_dir) = QUEEN_DIRECTIONS[direction];
@@ -268,15 +272,15 @@ impl ClassifiedPovMove {
 
 fn square_from_index(index: usize) -> Square {
     assert!(index < 8 * 8);
-    Square::make_square(
-        Rank::from_index(index / 8),
-        File::from_index(index % 8),
-    )
+    Square::make_square(Rank::from_index(index / 8), File::from_index(index % 8))
 }
 
 fn square(rank: isize, file: isize) -> Option<Square> {
     if (0..8).contains(&rank) && (0..8).contains(&file) {
-        Some(Square::make_square(Rank::from_index(rank as usize), File::from_index(file as usize)))
+        Some(Square::make_square(
+            Rank::from_index(rank as usize),
+            File::from_index(file as usize),
+        ))
     } else {
         None
     }
@@ -322,8 +326,7 @@ const KNIGHT_DELTAS: [(isize, isize); KNIGHT_DIRECTION_COUNT] =
 const QUEEN_DIRECTIONS: [(isize, isize); QUEEN_DIRECTION_COUNT] =
     [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 
-const UNDERPROMOTION_PIECES: [Piece; 3] =
-    [Piece::Rook, Piece::Bishop, Piece::Knight];
+const UNDERPROMOTION_PIECES: [Piece; 3] = [Piece::Rook, Piece::Bishop, Piece::Knight];
 
 /// Generate all possible moves from the POV of the player making the move.
 /// The moves are generated in an intuitive order, but are not sorted.

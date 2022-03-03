@@ -1,7 +1,12 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate, cudnnDestroy, cudnnSetStream};
 use crate::bindings::cudnnHandle_t;
+use crate::bindings::{
+    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount,
+    cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy,
+    cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy,
+    cudnnSetStream,
+};
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::status::Status;
@@ -19,11 +24,15 @@ pub struct Device(i32);
 
 impl Device {
     pub fn new(device: i32) -> Self {
-        assert!(0 <= device && device < cuda_device_count(), "Device doesn't exist {}", device);
+        assert!(
+            0 <= device && device < cuda_device_count(),
+            "Device doesn't exist {}",
+            device
+        );
         Device(device)
     }
 
-    pub fn all() -> impl Iterator<Item=Self> {
+    pub fn all() -> impl Iterator<Item = Self> {
         (0..cuda_device_count()).map(Device::new)
     }
 
@@ -151,9 +160,7 @@ pub struct CublasHandle {
 
 impl Drop for CublasHandle {
     fn drop(&mut self) {
-        unsafe {
-            cublasDestroy_v2(self.inner).unwrap_in_drop()
-        }
+        unsafe { cublasDestroy_v2(self.inner).unwrap_in_drop() }
     }
 }
 

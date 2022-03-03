@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
 use board_game::board::{Board, BoardMoves};
@@ -66,9 +66,14 @@ fn main() -> std::io::Result<()> {
 
                             println!(
                                 "info depth {} seldepth {} nodes {} wdl {} {} {} multipv {} pv {}",
-                                min_depth, max_depth, tree.root_visits(),
-                                wdl.win, wdl.draw, wdl.loss,
-                                i + 1, child.last_move.unwrap(),
+                                min_depth,
+                                max_depth,
+                                tree.root_visits(),
+                                wdl.win,
+                                wdl.draw,
+                                wdl.loss,
+                                i + 1,
+                                child.last_move.unwrap(),
                             )
                         }
 
@@ -95,10 +100,8 @@ fn main() -> std::io::Result<()> {
                 UciMessage::Position { startpos, fen, moves } => {
                     let mut board = match (startpos, fen) {
                         (true, None) => ChessBoard::default(),
-                        (false, Some(fen)) => {
-                            ChessBoard::new_without_history_fen(fen.as_str(), Rules::default())
-                        }
-                        _ => panic!("Invalid position command")
+                        (false, Some(fen)) => ChessBoard::new_without_history_fen(fen.as_str(), Rules::default()),
+                        _ => panic!("Invalid position command"),
                     };
 
                     for mv in moves {

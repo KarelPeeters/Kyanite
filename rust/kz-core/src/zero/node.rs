@@ -18,7 +18,6 @@ pub struct ZeroValues {
 //   (but first try padding it so see if that makes it slower)
 pub struct Node<M> {
     // Potentially update Tree::keep_moves when this struct gets new fields.<
-
     /// The parent node.
     pub parent: Option<usize>,
     /// The move that was just made to get to this node. Is `None` only for the root node.
@@ -73,7 +72,11 @@ impl Default for UctWeights {
 
 impl Uct {
     pub fn nan() -> Uct {
-        Uct { v: f32::NAN, u: f32::NAN, m: f32::NAN }
+        Uct {
+            v: f32::NAN,
+            u: f32::NAN,
+            m: f32::NAN,
+        }
     }
 
     pub fn total(self, weights: UctWeights) -> f32 {
@@ -133,7 +136,10 @@ impl<N> Node<N> {
     pub fn outcome(&self) -> Result<Option<OutcomeWDL>, NotYetVisited> {
         if self.children.is_none() {
             if self.total_visits() > 0 {
-                let outcome = self.total_data().wdl.try_to_outcome_wdl()
+                let outcome = self
+                    .total_data()
+                    .wdl
+                    .try_to_outcome_wdl()
                     .unwrap_or_else(|| panic!("Unexpected wdl {:?} for terminal node", self.total_data().wdl));
                 Ok(Some(outcome))
             } else {
@@ -151,17 +157,9 @@ impl<N> Node<N> {
 
         let total_visits = self.total_visits();
 
-        let data = if total_visits == 0 {
-            fpu
-        } else {
-            self.total_data()
-        };
+        let data = if total_visits == 0 { fpu } else { self.total_data() };
 
-        let v = if use_value {
-            data.value
-        } else {
-            data.wdl.value()
-        };
+        let v = if use_value { data.value } else { data.wdl.value() };
 
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
         //TODO make sure to remove this -1 if we ever split ZeroValues.flip() into child() and parent()
@@ -181,12 +179,20 @@ impl ZeroValues {
     }
 
     pub fn nan() -> Self {
-        ZeroValues { value: f32::NAN, wdl: WDL::nan(), moves_left: f32::NAN }
+        ZeroValues {
+            value: f32::NAN,
+            wdl: WDL::nan(),
+            moves_left: f32::NAN,
+        }
     }
 
     /// The value that should be accumulated in the parent node of this value.
     pub fn parent(&self) -> Self {
-        ZeroValues { value: -self.value, wdl: self.wdl.flip(), moves_left: self.moves_left + 1.0 }
+        ZeroValues {
+            value: -self.value,
+            wdl: self.wdl.flip(),
+            moves_left: self.moves_left + 1.0,
+        }
     }
 
     pub fn add_virtual(&self, virtual_visits: u64) -> Self {
@@ -204,7 +210,11 @@ impl std::ops::Add<Self> for ZeroValues {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        ZeroValues { value: self.value + rhs.value, wdl: self.wdl + rhs.wdl, moves_left: self.moves_left + rhs.moves_left }
+        ZeroValues {
+            value: self.value + rhs.value,
+            wdl: self.wdl + rhs.wdl,
+            moves_left: self.moves_left + rhs.moves_left,
+        }
     }
 }
 
@@ -218,7 +228,11 @@ impl std::ops::Div<f32> for ZeroValues {
     type Output = ZeroValues;
 
     fn div(self, rhs: f32) -> Self::Output {
-        ZeroValues { value: self.value / rhs, wdl: self.wdl / rhs, moves_left: self.moves_left / rhs }
+        ZeroValues {
+            value: self.value / rhs,
+            wdl: self.wdl / rhs,
+            moves_left: self.moves_left / rhs,
+        }
     }
 }
 
@@ -228,7 +242,11 @@ impl ZeroValues {
 
 impl Display for ZeroValues {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.3}, {:.3}/{:.3}/{:.3}, {:.3}", self.value, self.wdl.win, self.wdl.draw, self.wdl.loss, self.moves_left)
+        write!(
+            f,
+            "{:.3}, {:.3}/{:.3}/{:.3}, {:.3}",
+            self.value, self.wdl.win, self.wdl.draw, self.wdl.loss, self.moves_left
+        )
     }
 }
 

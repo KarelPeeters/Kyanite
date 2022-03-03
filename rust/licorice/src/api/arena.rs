@@ -47,10 +47,7 @@ impl Lichess {
         query_params: Option<Vec<(&str, &str)>>,
     ) -> LichessResult<impl Stream<Item = LichessResult<Bytes>>> {
         let url = format!("{}/api/tournament/{}/games", self.base, id);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-chess-pgn");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-chess-pgn");
         if let Some(params) = query_params {
             builder = builder.query(&params)
         }
@@ -63,10 +60,7 @@ impl Lichess {
         query_params: Option<Vec<(&str, &str)>>,
     ) -> LichessResult<impl Stream<Item = LichessResult<Game>>> {
         let url = format!("{}/api/tournament/{}/games", self.base, id);
-        let mut builder = self
-            .client
-            .get(&url)
-            .header("Accept", "application/x-ndjson");
+        let mut builder = self.client.get(&url).header("Accept", "application/x-ndjson");
         if let Some(params) = query_params {
             builder = builder.query(&params)
         }

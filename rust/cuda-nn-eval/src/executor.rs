@@ -43,12 +43,29 @@ pub(crate) struct Handles {
 
 #[derive(Debug)]
 pub enum Step {
-    CopyInput { index: usize, mem: DeviceMem },
-    Conv { args: FusedConvolutionArgs },
-    MatMul { args: BatchedMatMulArgs },
-    TensorOp { args: TensorOpArgs },
-    Gather { input: Tensor, axis: usize, indices: Tensor, output: Tensor },
-    CopyOutput { index: usize, tensor: Tensor },
+    CopyInput {
+        index: usize,
+        mem: DeviceMem,
+    },
+    Conv {
+        args: FusedConvolutionArgs,
+    },
+    MatMul {
+        args: BatchedMatMulArgs,
+    },
+    TensorOp {
+        args: TensorOpArgs,
+    },
+    Gather {
+        input: Tensor,
+        axis: usize,
+        indices: Tensor,
+        output: Tensor,
+    },
+    CopyOutput {
+        index: usize,
+        tensor: Tensor,
+    },
 }
 
 #[derive(Default, Debug, Clone)]
@@ -103,7 +120,16 @@ impl CudnnExecutor {
             None
         };
 
-        CudnnExecutor { handles, plan, graph_plan, stage, outputs, use_graph: true, profile: false, last_profile: None }
+        CudnnExecutor {
+            handles,
+            plan,
+            graph_plan,
+            stage,
+            outputs,
+            use_graph: true,
+            profile: false,
+            last_profile: None,
+        }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
@@ -158,7 +184,9 @@ impl CudnnExecutor {
                     Step::CopyOutput { .. } => &mut profile.copy_to_host,
                 } += time;
 
-                profile.steps.push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step));
+                profile
+                    .steps
+                    .push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step));
             }
 
             let overhead_end = Instant::now();
@@ -211,7 +239,10 @@ fn record_graph(handles: &Handles, steps: &[Step]) -> GraphPlan {
         }
 
         assert_eq!(steps_before, (0..steps_before.len()).collect_vec());
-        assert_eq!(steps_after, ((steps.len() - steps_after.len())..steps.len()).collect_vec());
+        assert_eq!(
+            steps_after,
+            ((steps.len() - steps_after.len())..steps.len()).collect_vec()
+        );
 
         let graph = handles.cudnn.stream().end_capture();
         let graph_exec = graph.instantiate();
@@ -227,9 +258,7 @@ fn record_graph(handles: &Handles, steps: &[Step]) -> GraphPlan {
 impl Step {
     unsafe fn run(&self, handles: &Handles, inputs: &[&[f32]], stage: &mut [f32], outputs: &mut [Vec<f32>]) {
         match self {
-            Step::CopyInput { index, mem } => {
-                mem.copy_from_host(cast_slice(inputs[*index]))
-            }
+            Step::CopyInput { index, mem } => mem.copy_from_host(cast_slice(inputs[*index])),
             Step::Conv { args } => {
                 args.run(&handles.cudnn);
             }
@@ -248,11 +277,17 @@ impl Step {
             Step::TensorOp { args } => {
                 args.run(&handles.cudnn);
             }
-            Step::Gather { input, axis, indices, output } => {
+            Step::Gather {
+                input,
+                axis,
+                indices,
+                output,
+            } => {
                 assert!(
                     *axis == 1 && input.shape.rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
-                    input.shape, axis
+                    input.shape,
+                    axis
                 );
                 assert!(
                     indices.shape.rank() == 1 && indices.shape.has_simple_strides(),
@@ -261,11 +296,16 @@ impl Step {
 
                 kernels::gather2dAxis1FloatFloat(
                     handles.cudnn.stream().inner(),
-                    input.shape.shape()[0] as i32, input.shape.shape()[1] as i32,
-                    input.shape.strides()[0] as i32, input.shape.strides()[1] as i32,
+                    input.shape.shape()[0] as i32,
+                    input.shape.shape()[1] as i32,
+                    input.shape.strides()[0] as i32,
+                    input.shape.strides()[1] as i32,
                     indices.shape.size() as i32,
-                    input.mem.ptr() as *const f32, indices.mem.ptr() as *const f32, output.mem.ptr() as *mut f32,
-                ).unwrap();
+                    input.mem.ptr() as *const f32,
+                    indices.mem.ptr() as *const f32,
+                    output.mem.ptr() as *mut f32,
+                )
+                .unwrap();
             }
             //TODO look into fusing the copy operation if multiple outputs are sliced views on the same value
             //  this has recently become easier now that restriding is available

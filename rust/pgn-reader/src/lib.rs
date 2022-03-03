@@ -111,7 +111,10 @@ pub struct MoveIterator<'a>(&'a str);
 impl<'a> InternalIterator for MoveIterator<'a> {
     type Item = PgnMove<'a>;
 
-    fn try_for_each<R, F>(self, mut f: F) -> ControlFlow<R> where F: FnMut(Self::Item) -> ControlFlow<R> {
+    fn try_for_each<R, F>(self, mut f: F) -> ControlFlow<R>
+    where
+        F: FnMut(Self::Item) -> ControlFlow<R>,
+    {
         let mut left = self.0;
         let mut curr_mv = None;
 
@@ -126,7 +129,10 @@ impl<'a> InternalIterator for MoveIterator<'a> {
                 // report this comment together with the previously parsed move
                 if let Some(mv) = curr_mv {
                     let comment = left[1..skip - 1].trim();
-                    f(PgnMove { mv, comment: Some(comment) })?;
+                    f(PgnMove {
+                        mv,
+                        comment: Some(comment),
+                    })?;
                     curr_mv = None;
                 }
 
@@ -149,7 +155,9 @@ impl<'a> InternalIterator for MoveIterator<'a> {
             }
 
             // move
-            let start = left.find(|c: char| !c.is_ascii_digit() && c != '.' && c != ' ').unwrap();
+            let start = left
+                .find(|c: char| !c.is_ascii_digit() && c != '.' && c != ' ')
+                .unwrap();
             let len = left[start..].find(' ').unwrap();
 
             const MOVE_SUFFIX_CHARS: &[char] = &['?', '!'];
@@ -163,14 +171,11 @@ impl<'a> PgnMove<'a> {
     pub fn field(&self, key: &str) -> Option<&'a str> {
         //TODO this only considers non-nested variations/comments, maybe check the pgn spec
         self.comment.and_then(|comment| {
-            comment.split("[%")
-                .skip(1)
-                .find(|s| s.starts_with(key))
-                .map(|s| {
-                    let s = s[key.len()..].trim();
-                    let end = s.find(']').unwrap();
-                    &s[..end]
-                })
+            comment.split("[%").skip(1).find(|s| s.starts_with(key)).map(|s| {
+                let s = s[key.len()..].trim();
+                let end = s.find(']').unwrap();
+                &s[..end]
+            })
         })
     }
 }
@@ -180,7 +185,9 @@ impl FromStr for PgnResult {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         for &(cand, cand_str) in RESULT_STR {
-            if cand_str == s { return Ok(cand); }
+            if cand_str == s {
+                return Ok(cand);
+            }
         }
 
         Err(())
@@ -221,7 +228,9 @@ fn variation_length(left: &str) -> usize {
 impl<R: BufferedReader<()>> PgnReader<R> {
     pub fn next_game(&mut self) -> Result<Option<PgnGame>, Error> {
         self.input.consume(self.prev_game_length);
-        if self.input.eof() { return Ok(None); }
+        if self.input.eof() {
+            return Ok(None);
+        }
 
         // we're now at the start of a new game
         let mut in_header = true;
@@ -255,10 +264,8 @@ impl<R: BufferedReader<()>> PgnReader<R> {
         }
 
         match (header_length, moves_length) {
-            (0, 0) =>
-                Ok(None),
-            (0, _) | (_, 0) =>
-                Err(Error::InvalidPgn(self.start_index)),
+            (0, 0) => Ok(None),
+            (0, _) | (_, 0) => Err(Error::InvalidPgn(self.start_index)),
             (_, _) => {
                 let data = self.input.buffer();
                 let total_length = header_length + moves_length;
@@ -267,7 +274,11 @@ impl<R: BufferedReader<()>> PgnReader<R> {
                 let header = std::str::from_utf8(&data[0..header_length])?.trim();
                 let moves = std::str::from_utf8(&data[header_length..total_length])?.trim();
 
-                let game = PgnGame { start_index: self.start_index, header, moves };
+                let game = PgnGame {
+                    start_index: self.start_index,
+                    header,
+                    moves,
+                };
                 self.start_index += total_length;
                 self.prev_game_length = total_length;
 
@@ -312,14 +323,17 @@ impl From<std::str::Utf8Error> for Error {
 
 /// Version of [BufferedReader::read_to] that only starts searching from the given index.
 /// Implementation based on the linked function.
-fn buffered_read_to_from(input: &mut impl BufferedReader<()>, start: usize, terminal: u8) -> Result<&[u8], std::io::Error> {
+fn buffered_read_to_from(
+    input: &mut impl BufferedReader<()>,
+    start: usize,
+    terminal: u8,
+) -> Result<&[u8], std::io::Error> {
     let mut n = 128;
 
     let len = loop {
         let data = &input.data(start + n)?[start..];
 
-        if let Some(newline) = memchr(terminal, data)
-        {
+        if let Some(newline) = memchr(terminal, data) {
             break newline + 1;
         } else if data.len() < n {
             // EOF.

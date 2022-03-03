@@ -69,8 +69,14 @@ fn main_dispatch(opts: &Opts, path: &Path, input: impl Read + Send) {
             let output_folder = path.file_stem().unwrap();
             println!("Writing to output folder {:?}", output_folder);
             pgn_archive_to_bin(
-                mapper, input, output_folder,
-                thread_count, opts.skip_existing, &filter, None, None,
+                mapper,
+                input,
+                output_folder,
+                thread_count,
+                opts.skip_existing,
+                &filter,
+                None,
+                None,
             )
         }
         Some("pgn") => {

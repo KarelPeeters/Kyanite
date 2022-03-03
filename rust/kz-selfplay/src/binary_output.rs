@@ -61,17 +61,37 @@ pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
 type Result<T> = std::io::Result<T>;
 
 const SCALAR_NAMES: &[&str] = &[
-    "game_id", "pos_index", "game_length", "zero_visits", "available_mv_count", "played_mv",
+    "game_id",
+    "pos_index",
+    "game_length",
+    "zero_visits",
+    "available_mv_count",
+    "played_mv",
     "kdl_policy",
-    "final_v", "final_wdl_w", "final_wdl_d", "final_wdl_l", "final_moves_left",
-    "zero_v", "zero_wdl_w", "zero_wdl_d", "zero_wdl_l", "zero_moves_left",
-    "net_v", "net_wdl_w", "net_wdl_d", "net_wdl_l", "net_moves_left",
+    "final_v",
+    "final_wdl_w",
+    "final_wdl_d",
+    "final_wdl_l",
+    "final_moves_left",
+    "zero_v",
+    "zero_wdl_w",
+    "zero_wdl_d",
+    "zero_wdl_l",
+    "zero_moves_left",
+    "net_v",
+    "net_wdl_w",
+    "net_wdl_d",
+    "net_wdl_l",
+    "net_moves_left",
 ];
 
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     pub fn new(path: impl AsRef<Path>, game: &str, mapper: M) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        assert!(path.extension().is_none(), "Binary output path should not have an extension, .bin and .json are added automatically");
+        assert!(
+            path.extension().is_none(),
+            "Binary output path should not have an extension, .bin and .json are added automatically"
+        );
 
         //TODO try buffer sizes again
         let bin_write = BufWriter::new(File::create(path.with_extension("bin"))?);
@@ -124,11 +144,17 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
         for (pos_index, position) in positions.iter().enumerate() {
             let &Position {
-                ref board, should_store, played_mv, zero_visits,
-                ref zero_evaluation, ref net_evaluation
+                ref board,
+                should_store,
+                played_mv,
+                zero_visits,
+                ref zero_evaluation,
+                ref net_evaluation,
             } = position;
 
-            if !should_store { continue; }
+            if !should_store {
+                continue;
+            }
 
             let player = board.next_player();
             let moves_left = (positions.len() - pos_index) as f32;
@@ -151,9 +177,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                     Some(index) => {
                         policy_indices.push(index as u32);
                     }
-                    None => {
-                        forced_pass = true
-                    }
+                    None => forced_pass = true,
                 }
             });
             let played_mv_index = self.mapper.move_to_index(board, played_mv);

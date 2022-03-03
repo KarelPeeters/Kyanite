@@ -5,17 +5,17 @@ use board_game::games::max_length::MaxMovesBoard;
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use itertools::Itertools;
 use lru::LruCache;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use rand_distr::Dirichlet;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::BoardMapper;
-use kz_core::network::{Network, ZeroEvaluation};
 use kz_core::network::cudnn::CudnnNetwork;
 use kz_core::network::symmetry::RandomSymmetryNetwork;
+use kz_core::network::{Network, ZeroEvaluation};
 use kz_core::oracle::DummyOracle;
-use kz_core::zero::step::{FpuMode, zero_step_apply, zero_step_gather, ZeroRequest, ZeroResponse};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest, ZeroResponse};
 use kz_core::zero::tree::Tree;
 use kz_util::zip_eq_exact;
 use nn_graph::onnx::load_graph_from_onnx_path;
@@ -49,8 +49,7 @@ pub fn generator_main<B: Board>(
         let cmd = if settings.is_some() && network.is_some() {
             cmd_receiver.try_recv()
         } else {
-            cmd_receiver.recv()
-                .map_err(|_| TryRecvError::Disconnected)
+            cmd_receiver.recv().map_err(|_| TryRecvError::Disconnected)
         };
 
         match cmd {
@@ -61,9 +60,7 @@ pub fn generator_main<B: Board>(
             Ok(Command::WaitForNewNetwork) => {
                 network = None;
             }
-            Ok(Command::NewSettings(new_settings)) => {
-                settings = Some(new_settings)
-            }
+            Ok(Command::NewSettings(new_settings)) => settings = Some(new_settings),
             Ok(Command::NewNetwork(path)) => {
                 println!("Generator thread loading new network {:?}", path);
                 let loaded_graph = load_graph_from_onnx_path(path);
@@ -77,7 +74,12 @@ pub fn generator_main<B: Board>(
         // advance generator
         if let Some(settings) = &settings {
             if let Some(network) = &mut network {
-                let mut ctx = Context { thread_id, next_index, settings, rng: &mut rng };
+                let mut ctx = Context {
+                    thread_id,
+                    next_index,
+                    settings,
+                    rng: &mut rng,
+                };
                 state.step(&mut ctx, &start_pos, network, &sender)?;
                 next_index = ctx.next_index;
             }
@@ -163,15 +165,13 @@ impl<B: Board> GeneratorState<B> {
         // evaluate the requests
         //TODO kind of sketchy that the network doesn't get to see the move counter, is that okay?
         let boards = requests.iter().map(|r| r.board.inner()).collect_vec();
-        let evals = RandomSymmetryNetwork::new(network, &mut ctx.rng, ctx.settings.random_symmetries)
-            .evaluate_batch(&boards);
+        let evals =
+            RandomSymmetryNetwork::new(network, &mut ctx.rng, ctx.settings.random_symmetries).evaluate_batch(&boards);
 
         // store the responses for next step
         assert!(self.responses.is_empty());
-        self.responses.extend(
-            zip_eq_exact(requests, evals)
-                .map(|(req, eval)| req.respond(eval))
-        );
+        self.responses
+            .extend(zip_eq_exact(requests, evals).map(|(req, eval)| req.respond(eval)));
 
         // report progress
         sender.send(GeneratorUpdate::Progress {
@@ -193,20 +193,21 @@ impl<B: Board> GeneratorState<B> {
         let mut requests = vec![];
         let existing_games = std::mem::take(&mut self.games);
 
-        let mut step_and_append = |ctx: &mut Context,
-                                   games: &mut Vec<GameState<B>>,
-                                   mut game: GameState<B>,
-                                   response: Option<ZeroResponse<'static, MaxMovesBoard<B>>>| {
-            let result = game.step(ctx, response, sender, counter);
+        let mut step_and_append =
+            |ctx: &mut Context,
+             games: &mut Vec<GameState<B>>,
+             mut game: GameState<B>,
+             response: Option<ZeroResponse<'static, MaxMovesBoard<B>>>| {
+                let result = game.step(ctx, response, sender, counter);
 
-            match result {
-                StepResult::Done => {}
-                StepResult::Request(request) => {
-                    games.push(game);
-                    requests.push(request);
+                match result {
+                    StepResult::Done => {}
+                    StepResult::Request(request) => {
+                        games.push(game);
+                        requests.push(request);
+                    }
                 }
-            }
-        };
+            };
 
         // step all existing games
         for (game, response) in zip_eq_exact(existing_games, self.responses.drain(..)) {
@@ -306,12 +307,17 @@ impl<B: Board> GameState<B> {
 
         if let Some(outcome) = next_board.outcome() {
             //record this game
-            let simulation = Simulation { outcome, positions: std::mem::take(&mut self.positions) };
-            sender.send(GeneratorUpdate::FinishedSimulation {
-                thread_id: ctx.thread_id,
-                index: self.index,
-                simulation,
-            }).unwrap();
+            let simulation = Simulation {
+                outcome,
+                positions: std::mem::take(&mut self.positions),
+            };
+            sender
+                .send(GeneratorUpdate::FinishedSimulation {
+                    thread_id: ctx.thread_id,
+                    index: self.index,
+                    simulation,
+                })
+                .unwrap();
 
             //report that this game is done
             true
@@ -355,13 +361,23 @@ impl<B: Board> SearchState<B> {
                 self.needs_dirichlet = false;
             }
 
-            let target_iterations = if self.is_full_search { settings.full_iterations } else { settings.part_iterations };
+            let target_iterations = if self.is_full_search {
+                settings.full_iterations
+            } else {
+                settings.part_iterations
+            };
             if self.tree.root_visits() >= target_iterations {
                 return StepResult::Done;
             }
 
             //TODO use an oracle here (based on a boolean or maybe path setting)
-            if let Some(request) = zero_step_gather(&mut self.tree, &DummyOracle, settings.weights.to_uct(), settings.use_value, FpuMode::Parent) {
+            if let Some(request) = zero_step_gather(
+                &mut self.tree,
+                &DummyOracle,
+                settings.weights.to_uct(),
+                settings.use_value,
+                FpuMode::Parent,
+            ) {
                 return StepResult::Request(request);
             }
         }
@@ -370,17 +386,19 @@ impl<B: Board> SearchState<B> {
 
 fn extract_root_net_eval<B: Board>(tree: &Tree<B>) -> ZeroEvaluation<'static> {
     let values = tree[0].net_values.unwrap();
-    let policy = tree[0].children.unwrap().iter()
-        .map(|c| tree[c].net_policy)
-        .collect();
-    ZeroEvaluation { values, policy: Cow::Owned(policy) }
+    let policy = tree[0].children.unwrap().iter().map(|c| tree[c].net_policy).collect();
+    ZeroEvaluation {
+        values,
+        policy: Cow::Owned(policy),
+    }
 }
 
 fn add_dirichlet_noise<B: Board>(ctx: &mut Context, tree: &mut Tree<B>) {
     let alpha = ctx.settings.dirichlet_alpha;
     let eps = ctx.settings.dirichlet_eps;
 
-    let children = tree[0].children
+    let children = tree[0]
+        .children
         .expect("root node has no children yet, it must have been visited at least once");
 
     if children.length > 1 {

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StridedShape {
@@ -13,7 +13,11 @@ impl StridedShape {
     pub fn new(shape: Vec<usize>, strides: Vec<usize>) -> Self {
         assert_eq!(shape.len(), strides.len(), "Shape and stride rank mismatch");
         let has_simple_strides = itertools::equal(strides.iter().copied(), simple_strides(&shape));
-        StridedShape { shape, strides, has_simple_strides }
+        StridedShape {
+            shape,
+            strides,
+            has_simple_strides,
+        }
     }
 
     pub fn new_simple(shape: Vec<usize>) -> Self {
@@ -75,7 +79,13 @@ impl StridedShape {
         // https://github.com/pytorch/pytorch/blob/560cd881956bbf425251d63f0ff0f9085a759447/aten/src/ATen/TensorUtils.cpp#L335-L346
 
         let new_size = new_shape.iter().copied().product();
-        assert_eq!(self.size(), new_size, "Size cannot change during view, cannot go from {:?} to {:?}", self, new_shape);
+        assert_eq!(
+            self.size(),
+            new_size,
+            "Size cannot change during view, cannot go from {:?} to {:?}",
+            self,
+            new_shape
+        );
 
         if self.size() == 0 || self.rank() == 0 {
             return Some(StridedShape::new_simple(new_shape));
@@ -87,7 +97,9 @@ impl StridedShape {
         let mut failed = false;
 
         self.for_each_continuous_group(|group_size, group_stride| {
-            if failed { return; };
+            if failed {
+                return;
+            };
 
             let mut left_group_size = group_size;
             while left_group_size > 1 {
@@ -173,12 +185,7 @@ fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], 
         [] => f(start),
         [size_curr, size_rest @ ..] => {
             for i in 0..*size_curr {
-                visit_strided_indices_impl(
-                    start + i * strides[0],
-                    size_rest,
-                    &strides[1..],
-                    f,
-                )
+                visit_strided_indices_impl(start + i * strides[0], size_rest, &strides[1..], f)
             }
         }
     }
@@ -201,10 +208,7 @@ mod test {
     #[test]
     fn rank_zero() {
         let shape = StridedShape::new(vec![], vec![]);
-        assert_eq!(
-            collect_groups(&shape),
-            (vec![0], vec![1]),
-        );
+        assert_eq!(collect_groups(&shape), (vec![0], vec![1]),);
         assert_eq!(
             shape.view(vec![1, 1, 1]),
             Some(StridedShape::new(vec![1, 1, 1], vec![1, 1, 1])),
@@ -214,14 +218,8 @@ mod test {
     #[test]
     fn size_zero() {
         let shape = StridedShape::new(vec![2, 3, 0, 5], vec![0, 0, 0, 2]);
-        assert_eq!(
-            collect_groups(&shape),
-            (vec![0], vec![1])
-        );
-        assert_eq!(
-            shape.view(vec![0]),
-            Some(StridedShape::new(vec![0], vec![1])),
-        );
+        assert_eq!(collect_groups(&shape), (vec![0], vec![1]));
+        assert_eq!(shape.view(vec![0]), Some(StridedShape::new(vec![0], vec![1])),);
         assert_eq!(
             shape.view(vec![12, 0]),
             Some(StridedShape::new(vec![12, 0], vec![0, 1])),
@@ -232,14 +230,8 @@ mod test {
     fn simple() {
         let shape = StridedShape::new(vec![2, 3, 4, 3, 2], vec![72, 24, 6, 2, 1]);
         assert!(shape.has_simple_strides());
-        assert_eq!(
-            collect_groups(&shape),
-            (vec![144], vec![1])
-        );
-        assert_eq!(
-            shape.view(vec![144]),
-            Some(StridedShape::new(vec![144], vec![1])),
-        );
+        assert_eq!(collect_groups(&shape), (vec![144], vec![1]));
+        assert_eq!(shape.view(vec![144]), Some(StridedShape::new(vec![144], vec![1])),);
         assert_eq!(
             shape.view(vec![72, 2]),
             Some(StridedShape::new(vec![72, 2], vec![2, 1])),
@@ -253,17 +245,8 @@ mod test {
     #[test]
     fn split() {
         let shape = StridedShape::new(vec![2, 3, 4], vec![24, 8, 1]);
-        assert_eq!(
-            collect_groups(&shape),
-            (vec![6, 4], vec![8, 1])
-        );
-        assert_eq!(
-            shape.view(vec![6, 4]),
-            Some(StridedShape::new(vec![6, 4], vec![8, 1])),
-        );
-        assert_eq!(
-            shape.view(vec![24]),
-            None,
-        );
+        assert_eq!(collect_groups(&shape), (vec![6, 4], vec![8, 1]));
+        assert_eq!(shape.view(vec![6, 4]), Some(StridedShape::new(vec![6, 4], vec![8, 1])),);
+        assert_eq!(shape.view(vec![24]), None,);
     }
 }

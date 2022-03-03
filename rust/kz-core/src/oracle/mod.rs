@@ -27,8 +27,9 @@ pub struct DummyOracle;
 
 impl<B: Board> Oracle<B> for DummyOracle {
     fn evaluate(&self, board: &B) -> Option<OracleEvaluation<B>> {
-        board.outcome().map(|outcome| {
-            OracleEvaluation { best_outcome: outcome, best_move: None }
+        board.outcome().map(|outcome| OracleEvaluation {
+            best_outcome: outcome,
+            best_move: None,
         })
     }
 }

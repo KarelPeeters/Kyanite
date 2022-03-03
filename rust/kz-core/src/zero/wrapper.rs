@@ -10,7 +10,7 @@ use kz_util::zip_eq_exact;
 use crate::network::Network;
 use crate::oracle::Oracle;
 use crate::zero::node::UctWeights;
-use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
+use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
@@ -23,7 +23,12 @@ pub struct ZeroSettings {
 
 impl ZeroSettings {
     pub fn new(batch_size: usize, weights: UctWeights, use_value: bool, fpu_mode: FpuMode) -> Self {
-        ZeroSettings { batch_size, weights, use_value, fpu_mode }
+        ZeroSettings {
+            batch_size,
+            weights,
+            use_value,
+            fpu_mode,
+        }
     }
 }
 
@@ -50,7 +55,9 @@ impl ZeroSettings {
         mut stop: impl FnMut(&Tree<B>) -> bool,
     ) {
         'outer: loop {
-            if stop(tree) { break 'outer; }
+            if stop(tree) {
+                break 'outer;
+            }
 
             // collect requests until the batch is full or we repeatedly fail to find new positions to evaluate
             let mut requests = vec![];
@@ -90,7 +97,13 @@ pub struct ZeroBot<B: Board, N: Network<B>, O: Oracle<B>> {
 impl<B: Board, N: Network<B>, O: Oracle<B>> ZeroBot<B, N, O> {
     pub fn new(network: N, settings: ZeroSettings, oracle: O, visits: u64) -> Self {
         assert!(visits > 0, "Need at least one visit to pick the best move");
-        ZeroBot { network, settings, oracle, visits, ph: PhantomData }
+        ZeroBot {
+            network,
+            settings,
+            oracle,
+            visits,
+            ph: PhantomData,
+        }
     }
 
     pub fn build_tree(&mut self, board: &B) -> Tree<B> {
