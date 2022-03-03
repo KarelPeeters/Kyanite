@@ -1,5 +1,5 @@
 [package]
-name = "licoricedev"
+name = "licorice"
 version = "0.1.2"
 authors = ["icp <pangolin@vivaldi.net>", "hyperchessbot <hyperchessbot@gmail.com>"]
 edition = "2018"

@@ -1,0 +1,18 @@
+[package]
+name = "kz-lichess"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+licorice = { path = "../licorice" }
+board-game = { version = "0.4.1", path = "../../../board-game-rs" }
+
+kz-core = { path = "../kz-core" }
+kz-util = { path = "../kz-util" }
+nn-graph = { path = "../nn-graph" }
+cuda-nn-eval = { path = "../cuda-nn-eval" }
+
+tokio-stream = "0.1.8"
+futures-core = "0.3.21"
+itertools = "0.10.3"
+tokio = { version = "1.17.0", features = ["macros"] }

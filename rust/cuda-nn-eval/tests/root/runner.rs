@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use cuda_nn_eval::tester::{assert_outputs_match, eval_cudnn, load_check_data};
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
@@ -31,8 +29,7 @@ pub fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expec
 
     println!("Testing with CPU");
 
-    let cpu_inputs = inputs.iter().collect_vec();
-    let cpu_outputs = cpu_execute_graph(graph, batch_size, &cpu_inputs).output_tensors();
+    let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
 
     let expected_outputs = if let Some(expected_outputs) = expected_outputs {
         assert_outputs_match(graph.outputs(), expected_outputs, &cpu_outputs, true);

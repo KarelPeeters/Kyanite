@@ -1,0 +1,8 @@
+[package]
+name = "kz-util"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+itertools = "0.10.3"
+rand = "0.8.5"

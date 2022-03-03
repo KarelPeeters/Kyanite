@@ -1,6 +1,6 @@
 use bytemuck::{cast_slice, cast_slice_mut};
-use rand::rngs::SmallRng;
 use rand::{Fill, SeedableRng};
+use rand::rngs::SmallRng;
 
 use cuda_nn_eval::kernels;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
@@ -23,7 +23,6 @@ fn main() {
         output_size: 8,
         batch_size: Size::BATCH,
     };
-
 
     let mut input = Array4::zeros((batch_size, details.input_channels, details.input_size, details.input_size));
     let mut filter = Array4::zeros((details.output_channels, details.input_channels, details.kernel_size, details.kernel_size));
