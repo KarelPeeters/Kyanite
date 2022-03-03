@@ -1,14 +1,14 @@
 //! Objects for making human moves through the API
 
-use super::game::{Clock, Perf, StockFish, Variant};
-use super::user::LightUser;
-use chrono::{serde::ts_milliseconds, DateTime, Utc};
+use chrono::{DateTime, serde::ts_milliseconds, Utc};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use super::game::{Clock, StockFish, Variant};
+use super::user::LightUser;
+
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct GameID {
     pub id: String,
 }
@@ -16,7 +16,6 @@ pub struct GameID {
 /// Information about pairing (potential) two users
 #[skip_serializing_none]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct Challenge {
     pub id: String,
@@ -29,7 +28,6 @@ pub struct Challenge {
     pub dest_user: Option<LightUser>,
     pub initial_fen: Option<String>,
     pub decline_reason: Option<String>,
-    pub perf: Perf,
     pub rated: bool,
     pub speed: String,
     pub status: String,
@@ -37,7 +35,6 @@ pub struct Challenge {
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityChallenge {
     pub challenge: Option<Challenge>,
@@ -48,7 +45,6 @@ pub struct EntityChallenge {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct ChallengeGame {
     pub id: String,
@@ -57,7 +53,8 @@ pub struct ChallengeGame {
     pub perf: String,
     pub rated: bool,
     pub initial_fen: String,
-    pub fen: String, // Why is the needed?
+    pub fen: String,
+    // Why is the needed?
     pub player: String,
     pub turns: u8,
     pub started_at_turn: u8,
@@ -69,7 +66,13 @@ pub struct ChallengeGame {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenChallenges {
+    pub r#in: Vec<Challenge>,
+    pub out: Vec<Challenge>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Status {
     pub id: u8,
     pub name: String,
@@ -79,7 +82,6 @@ pub struct Status {
 /// necessary for playing through the board API
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum Event {
@@ -98,7 +100,6 @@ pub enum Event {
 #[skip_serializing_none]
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct GameState {
     pub r#type: Option<String>,
     pub moves: String,
@@ -106,8 +107,6 @@ pub struct GameState {
     pub btime: u32,
     pub winc: u16,
     pub binc: u16,
-    pub wdraw: bool,
-    pub bdraw: bool,
     pub status: String,
     pub winner: Option<String>,
     pub rematch: Option<String>,
@@ -122,15 +121,14 @@ pub enum Challengee {
 
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct GameFull {
     pub id: String,
     pub rated: bool,
     pub variant: Variant,
-    pub clock: Option<Clock>, //TODO: times are in ms!
+    pub clock: Option<Clock>,
+    //TODO: times are in ms!
     pub speed: String,
-    pub perf: Perf,
     #[serde(deserialize_with = "ts_milliseconds::deserialize")]
     pub created_at: DateTime<Utc>,
     pub white: Challengee,
@@ -142,7 +140,6 @@ pub struct GameFull {
 
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ChatLine {
     pub username: String,
     pub text: String,
@@ -151,9 +148,9 @@ pub struct ChatLine {
 
 /// State of the ongoing game played through board API
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
+#[allow(clippy::large_enum_variant)]
 pub enum BoardState {
     /// Full information about the game
     GameFull(GameFull),

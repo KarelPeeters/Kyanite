@@ -11,6 +11,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum PerfType {
+    FromPosition,
     UltraBullet,
     Bullet,
     Blitz,
@@ -215,7 +216,7 @@ pub struct Matchup {
     pub nb_games: u32,
 }
 
-/// Lifetime recoed between a pair of users
+/// Lifetime record between a pair of users
 #[skip_serializing_none]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,6 +225,17 @@ pub struct Crosstable {
     #[serde(rename = "nbGames")]
     pub nb_games: u32,
     pub matchup: Option<Matchup>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineBot {
+    pub id: String,
+    pub username: String,
+    pub title: Option<String>,
+
+    pub play_time: Option<UserPlaytime>,
 }
 
 fn de_history<'de, D>(deserializer: D) -> Result<Vec<(NaiveDate, u16)>, D::Error>

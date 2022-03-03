@@ -1,5 +1,5 @@
 use crate::client::{Lichess, LichessResult};
-use crate::models::board::{ChallengeGame, EntityChallenge};
+use crate::models::board::{ChallengeGame, EntityChallenge, OpenChallenges};
 use serde_json::{from_value, Value};
 
 impl Lichess {
@@ -96,6 +96,12 @@ impl Lichess {
         if let Some(params) = form_params {
             builder = builder.form(&params)
         }
+        self.to_model_full(builder).await
+    }
+
+    pub async fn list_challenges(&self) -> LichessResult<OpenChallenges> {
+        let url = format!("{}/api/challenge", self.base);
+        let builder = self.client.get(url);
         self.to_model_full(builder).await
     }
 }

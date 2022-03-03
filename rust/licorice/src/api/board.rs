@@ -3,6 +3,7 @@ use crate::models::board::{BoardState, Event};
 use bytes::Bytes;
 use futures_util::stream::Stream;
 use serde_json::{from_value, Value};
+use crate::models::chat::ChatMessage;
 
 impl Lichess {
     pub async fn stream_incoming_events(
@@ -40,6 +41,12 @@ impl Lichess {
         let url = format!("{}/api/board/game/stream/{}", self.base, game_id);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await
+    }
+
+    pub async fn get_game_chat(&self, game_id: &str) -> LichessResult<Vec<ChatMessage>> {
+        let url = format!("{}/api/board/game/{}/chat", self.base, game_id);
+        let builder = self.client.get(url);
+        self.to_model_full(builder).await
     }
 
     pub async fn make_a_board_move(

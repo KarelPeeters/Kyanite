@@ -6,3 +6,4 @@ pub mod game;
 pub mod team;
 pub mod tournament;
 pub mod user;
+pub mod chat;

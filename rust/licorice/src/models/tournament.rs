@@ -1,6 +1,6 @@
 //! Tournament and simul objects
 
-use super::game::{Clock, Perf, Variant};
+use super::game::{Clock, Variant};
 use super::user::LightUser;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -94,7 +94,6 @@ pub struct ArenaTournament {
     pub stats: Option<TournamentStats>,
     pub verdicts: Option<Verdicts>,
     pub status: Option<u8>,
-    pub perf: Perf,
     pub spotlight: Option<Spotlight>,
     pub position: Option<Position>,
     pub private: Option<bool>,
@@ -424,7 +423,6 @@ pub struct Simul {
     pub nb_applicants: u16,
     pub nb_pairings: u8,
     pub text: String,
-    pub variants: Vec<Perf>, // Why is this Perf?
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

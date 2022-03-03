@@ -1,7 +1,9 @@
-use crate::client::{Lichess, LichessResult};
-use crate::models::board::BoardState;
 use futures_util::stream::Stream;
 use serde_json::{from_value, Value};
+
+use crate::client::{Lichess, LichessResult};
+use crate::models::board::BoardState;
+use crate::models::user::OnlineBot;
 
 impl Lichess {
     pub async fn upgrade_to_bot_account(&self) -> LichessResult<()> {
@@ -15,7 +17,7 @@ impl Lichess {
     pub async fn stream_bot_game_state(
         &self,
         game_id: &str,
-    ) -> LichessResult<impl Stream<Item = LichessResult<BoardState>>> {
+    ) -> LichessResult<impl Stream<Item=LichessResult<BoardState>>> {
         let url = format!("{}/api/bot/game/stream/{}", self.base, game_id);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await
@@ -76,4 +78,10 @@ impl Lichess {
     //     assert!(from_value::<bool>(ok_json.await?["ok"].take())?);
     //     Ok(())
     // }
+
+    pub async fn get_online_bots(&self) -> LichessResult<impl Stream<Item=LichessResult<OnlineBot>>> {
+        let url = format!("{}/api/bot/online", self.base);
+        let builder = self.client.get(&url);
+        self.to_model_stream(builder).await
+    }
 }

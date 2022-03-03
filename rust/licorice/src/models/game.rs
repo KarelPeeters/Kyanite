@@ -1,6 +1,6 @@
 //! Game and analysis realted objects
 
-use super::user::{LightUser, PerfType};
+use super::user::LightUser;
 use chrono::{
     serde::{ts_milliseconds, ts_milliseconds_option},
     DateTime, Utc,
@@ -107,7 +107,6 @@ pub struct Game {
     pub rated: bool,
     pub variant: String,
     pub speed: String,
-    pub perf: PerfType,
     #[serde(deserialize_with = "ts_milliseconds::deserialize")]
     pub created_at: DateTime<Utc>,
     #[serde(default, deserialize_with = "ts_milliseconds_option::deserialize")]
@@ -148,7 +147,6 @@ pub struct Perf {
 
 /// Game information from one of the player's perspective
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct UserGame {
     pub full_id: String,
@@ -159,7 +157,6 @@ pub struct UserGame {
     pub last_move: String,
     pub variant: Variant,
     pub speed: String,
-    pub perf: PerfType,
     pub rated: bool,
     pub opponent: LightUser,
     pub is_my_turn: bool,
