@@ -13,6 +13,7 @@ byteorder = "1.4.3"
 itertools = "0.10.3"
 unwrap-match = "0.1.0"
 num-traits = "0.2.14"
+decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 
 ndarray = "0.15.4"
 convolutions-rs = "0.2.2"

@@ -1,3 +1,4 @@
+use decorum::cmp::FloatEq;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
@@ -23,7 +24,7 @@ pub struct Value {
     check: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
@@ -38,7 +39,7 @@ pub struct ConstantData(Vec<f32>);
 /// * `ReLU` -> `Clip`
 /// * `BatchNorm` -> `Bias,Conv,Bias,Conv` (can be fused into adjacent conv too)
 /// * `Gemm` -> `Conv,Bias`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Operation {
     /// A runtime-variable input.
     Input { index: usize },
@@ -76,7 +77,7 @@ pub enum Operation {
 }
 
 /// An elementwise operation.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ElementOp {
     Add,
     Sub,
@@ -166,7 +167,7 @@ impl Operation {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ConvDetails {
     pub batch_size: Size,
 
@@ -291,12 +292,24 @@ impl Graph {
 
     #[must_use]
     pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
-        for input in operation.inputs() {
-            self.check_contains(input);
-        }
+        let info = ValueInfo { shape, operation };
 
-        let index = self.values.len();
-        self.values.push(ValueInfo { shape, operation });
+        let index = match self.values.iter().position(|cand| cand == &info) {
+            Some(index) => {
+                // found duplicate, reuse existing value
+                index
+            }
+            None => {
+                for input in info.operation.inputs() {
+                    self.check_contains(input);
+                }
+
+                let index = self.values.len();
+                self.values.push(info);
+                index
+            }
+        };
+
         Value {
             index,
             check: self.check,
@@ -749,6 +762,14 @@ impl Debug for ConstantData {
         }
     }
 }
+
+impl PartialEq for ConstantData {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.float_eq(&other.0)
+    }
+}
+
+impl Eq for ConstantData {}
 
 impl Deref for ConstantData {
     type Target = Vec<f32>;
