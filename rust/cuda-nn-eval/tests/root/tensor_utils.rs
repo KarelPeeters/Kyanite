@@ -11,8 +11,7 @@ pub fn manual_tensor<I: IntoDimension>(shape: I, data: Vec<f32>) -> Tensor {
 
 pub fn linspace_tensor<I: IntoDimension + Copy>(shape: I) -> ArcArray<f32, I::Dim> {
     let size = shape.into_dimension().size();
-    ArcArray::linspace(-1.0, 1.0, size)
-        .reshape(shape)
+    ArcArray::linspace(-1.0, 1.0, size).reshape(shape)
 }
 
 pub fn range_vec(len: usize) -> Vec<f32> {

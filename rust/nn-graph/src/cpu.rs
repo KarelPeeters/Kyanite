@@ -5,7 +5,9 @@ use convolutions_rs::convolutions::*;
 use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use ndarray::{ArcArray, Array3, Array4, ArrayView3, ArrayView4, concatenate, Ix3, IxDyn, s, SliceInfo, SliceInfoElem, Zip};
+use ndarray::{
+    concatenate, s, ArcArray, Array3, Array4, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
+};
 
 use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
@@ -26,9 +28,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
         let start_time = Instant::now();
 
         let result: Tensor = match operation {
-            &Operation::Input { index } => {
-                inputs[index].to_shared()
-            }
+            &Operation::Input { index } => inputs[index].to_shared(),
             Operation::Constant { data } => {
                 let data = (&**data).clone();
                 Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
@@ -41,7 +41,12 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 let input = &map.get(&input).unwrap().tensor;
                 input.view().permuted_axes(permutation.clone()).to_shared()
             }
-            &Operation::Slice { input, axis, start, end, } => {
+            &Operation::Slice {
+                input,
+                axis,
+                start,
+                end,
+            } => {
                 let input = &map.get(&input).unwrap().tensor;
                 let info = slice_info(input.ndim(), axis, start, end);
                 input.slice(info).to_shared()
@@ -51,22 +56,27 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 let indices = &map.get(&indices).unwrap().tensor;
 
                 assert_eq!(indices.ndim(), 1);
-                let slices = indices.iter().map(|&f| {
-                    let i = f as usize;
-                    assert_eq!(i as f32, f);
+                let slices = indices
+                    .iter()
+                    .map(|&f| {
+                        let i = f as usize;
+                        assert_eq!(i as f32, f);
 
-                    input.slice(slice_info(input.ndim(), axis, i, i + 1))
-                }).collect_vec();
+                        input.slice(slice_info(input.ndim(), axis, i, i + 1))
+                    })
+                    .collect_vec();
 
                 concatenate(Axis(axis), &slices).unwrap().into_shared()
             }
             Operation::Concat { inputs, axis } => {
-                let inputs = inputs.iter()
-                    .map(|x| map.get(x).unwrap().tensor.view())
-                    .collect_vec();
+                let inputs = inputs.iter().map(|x| map.get(x).unwrap().tensor.view()).collect_vec();
                 ndarray::concatenate(Axis(*axis), &inputs).unwrap().into_shared()
             }
-            &Operation::Conv { input, filter, details: conv_shape } => {
+            &Operation::Conv {
+                input,
+                filter,
+                details: conv_shape,
+            } => {
                 let input = map.get(&input).unwrap().tensor.view().into_dimensionality().unwrap();
                 let filter = map.get(&filter).unwrap().tensor.view().into_dimensionality().unwrap();
                 let result = convolution(conv_shape, input, filter);
@@ -79,7 +89,9 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 batched_mat_mul(
                     left.view().into_dimensionality::<Ix3>().unwrap(),
                     right.view().into_dimensionality::<Ix3>().unwrap(),
-                ).into_dyn().into_shared()
+                )
+                .into_dyn()
+                .into_shared()
             }
             &Operation::Element { left, right, op } => {
                 let left = &map.get(&left).unwrap().tensor;
@@ -90,8 +102,12 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                     ElementOp::Sub => left - right,
                     ElementOp::Mul => left * right,
                     ElementOp::Div => left / right,
-                    ElementOp::Min => Zip::from(left).and_broadcast(right).map_collect(|&l, &r| f32::min(l, r)),
-                    ElementOp::Max => Zip::from(left).and_broadcast(right).map_collect(|&l, &r| f32::max(l, r)),
+                    ElementOp::Min => Zip::from(left)
+                        .and_broadcast(right)
+                        .map_collect(|&l, &r| f32::min(l, r)),
+                    ElementOp::Max => Zip::from(left)
+                        .and_broadcast(right)
+                        .map_collect(|&l, &r| f32::max(l, r)),
                 };
                 result.into_shared()
             }
@@ -117,7 +133,10 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
 }
 
 pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    assert!(details.keeps_spatial_shape(), "Different in/out shape not supported yet");
+    assert!(
+        details.keeps_spatial_shape(),
+        "Different in/out shape not supported yet"
+    );
 
     let batch_size = input.shape()[0];
     let output_shape = (batch_size, details.output_channels, details.output_h, details.output_w);
@@ -134,12 +153,19 @@ pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayVi
 pub fn batched_mat_mul(left: ArrayView3<f32>, right: ArrayView3<f32>) -> Array3<f32> {
     let (n0, p, q0) = left.dim();
     let (n1, q1, r) = right.dim();
-    assert!(n0 == n1 && q0 == q1, "Invalid matmul dimensions: {:?} and {:?}", left.dim(), right.dim());
+    assert!(
+        n0 == n1 && q0 == q1,
+        "Invalid matmul dimensions: {:?} and {:?}",
+        left.dim(),
+        right.dim()
+    );
 
     let mut result = Array3::zeros((n0, p, r));
     for i in 0..n0 {
         let slice = s![i, .., ..];
-        result.slice_mut(&slice).assign(&left.slice(&slice).dot(&right.slice(&slice)));
+        result
+            .slice_mut(&slice)
+            .assign(&left.slice(&slice).dot(&right.slice(&slice)));
     }
     result
 }
@@ -147,9 +173,9 @@ pub fn batched_mat_mul(left: ArrayView3<f32>, right: ArrayView3<f32>) -> Array3<
 /// Softmax along the given axis of the tensor.
 /// Implementation (and more importantly, the generic bounds) based on softmax within the onnxruntime crate
 pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
-    where
-        D: ndarray::RemoveAxis,
-        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
+where
+    D: ndarray::RemoveAxis,
+    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
 {
     let mut result = array.to_owned();
 
@@ -168,10 +194,18 @@ pub fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceIn
         .map(|r| {
             if r == axis {
                 // grab the relevant range
-                SliceInfoElem::Slice { start: start as isize, end: Some(end as isize), step: 1 }
+                SliceInfoElem::Slice {
+                    start: start as isize,
+                    end: Some(end as isize),
+                    step: 1,
+                }
             } else {
                 // grab everything
-                SliceInfoElem::Slice { start: 0, end: None, step: 1 }
+                SliceInfoElem::Slice {
+                    start: 0,
+                    end: None,
+                    step: 1,
+                }
             }
         })
         .collect_vec();
@@ -195,11 +229,11 @@ pub struct CalculatedValue {
 
 impl ExecutionInfo {
     pub fn output_tensors(self) -> Vec<Tensor> {
-        self.outputs.iter()
+        self.outputs
+            .iter()
             .map(|v| {
                 // convert to standard layout so users get easily get &[f32] slices
-                self.values.get(v).unwrap().tensor
-                    .as_standard_layout().to_shared()
+                self.values.get(v).unwrap().tensor.as_standard_layout().to_shared()
             })
             .collect_vec()
     }

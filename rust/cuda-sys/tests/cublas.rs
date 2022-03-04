@@ -19,9 +19,24 @@ fn simple() {
     let mut c_data: Vec<f32> = vec![0.0, 0.0, 0.0];
     let expected_result = vec![23.0, 67.0, 127.0];
 
-    let a_mat = MatMulArg { mem: a.view(), trans: cublasOperation_t::CUBLAS_OP_N, ld: 1, stride: 2 };
-    let b_mat = MatMulArg { mem: b.view(), trans: cublasOperation_t::CUBLAS_OP_N, ld: 2, stride: 2 };
-    let c_mat = MatMulArg { mem: c.view(), trans: cublasOperation_t::CUBLAS_OP_N, ld: 1, stride: 1 };
+    let a_mat = MatMulArg {
+        mem: a.view(),
+        trans: cublasOperation_t::CUBLAS_OP_N,
+        ld: 1,
+        stride: 2,
+    };
+    let b_mat = MatMulArg {
+        mem: b.view(),
+        trans: cublasOperation_t::CUBLAS_OP_N,
+        ld: 2,
+        stride: 2,
+    };
+    let c_mat = MatMulArg {
+        mem: c.view(),
+        trans: cublasOperation_t::CUBLAS_OP_N,
+        ld: 1,
+        stride: 1,
+    };
 
     let args = BatchedMatMulArgs {
         m: 1,

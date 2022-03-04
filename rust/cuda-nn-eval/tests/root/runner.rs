@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use cuda_nn_eval::tester::{assert_outputs_match, eval_cudnn, load_check_data};
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
@@ -26,13 +24,17 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
     test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
 }
 
-pub fn test_all_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) -> Vec<Tensor> {
+pub fn test_all_graph(
+    graph: &Graph,
+    batch_size: usize,
+    inputs: &[Tensor],
+    expected_outputs: Option<&[Tensor]>,
+) -> Vec<Tensor> {
     println!("Testing:\n{}", graph);
 
     println!("Testing with CPU");
 
-    let cpu_inputs = inputs.iter().collect_vec();
-    let cpu_outputs = cpu_execute_graph(graph, batch_size, &cpu_inputs).output_tensors();
+    let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
 
     let expected_outputs = if let Some(expected_outputs) = expected_outputs {
         assert_outputs_match(graph.outputs(), expected_outputs, &cpu_outputs, true);
@@ -64,24 +66,16 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
     let output = graph_op(&mut graph, left, right);
     graph.output(output);
 
-    let left_tensor = ArcArray::from_shape_fn(pair_count, |i| {
-        values[i / values.len()]
-    }).into_dyn();
-    let right_tensor = ArcArray::from_shape_fn(pair_count, |i| {
-        values[i % values.len()]
-    }).into_dyn();
-    let expected_output = ArcArray::from_shape_fn(pair_count, |i| {
-        op(values[i / values.len()], values[i % values.len()])
-    }).into_dyn();
+    let left_tensor = ArcArray::from_shape_fn(pair_count, |i| values[i / values.len()]).into_dyn();
+    let right_tensor = ArcArray::from_shape_fn(pair_count, |i| values[i % values.len()]).into_dyn();
+    let expected_output =
+        ArcArray::from_shape_fn(pair_count, |i| op(values[i / values.len()], values[i % values.len()])).into_dyn();
 
     test_all(&graph, 0, &[left_tensor, right_tensor], Some(&[expected_output]));
 }
 
 pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, Value) -> Value) {
-    test_elementwise_pair(
-        |left, _| op(left),
-        |graph, left, _| graph_op(graph, left),
-    )
+    test_elementwise_pair(|left, _| op(left), |graph, left, _| graph_op(graph, left))
 }
 
 pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {

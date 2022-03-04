@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [build-dependencies]
-bindgen = { git = "https://github.com/rust-lang/rust-bindgen", rev = "0f641061a78b8af93e977e072cfd8106461b3ca5" }
+bindgen = "0.59.2"
 
 [dependencies]
 bytemuck = "1.7.3"

@@ -1,12 +1,18 @@
 [workspace]
 
 members = [
-    "tree-vis",
-    "alpha-zero",
+    # general crates
     "nn-graph",
     "cuda-sys",
     "cuda-nn-eval",
     "pgn-reader",
+    "licorice",
+    # kZero-specific crates
+    "kz-util",
+    "kz-core",
+    "kz-selfplay",
+    "kz-lichess",
+    "kz-misc",
 ]
 
 [profile.release]

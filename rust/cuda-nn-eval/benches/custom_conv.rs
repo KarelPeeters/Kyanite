@@ -1,5 +1,5 @@
 use bytemuck::{cast_slice, cast_slice_mut};
-use rand::rngs::SmallRng;
+use rand::rngs::StdRng;
 use rand::{Fill, SeedableRng};
 
 use cuda_nn_eval::kernels;
@@ -8,51 +8,63 @@ use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::cpu::convolution;
 use nn_graph::graph::ConvDetails;
-use nn_graph::ndarray::{Array4, ArrayView4, azip};
+use nn_graph::ndarray::{azip, Array4, ArrayView4};
 use nn_graph::shape::Size;
 
 fn main() {
     let batch_size = 1024;
 
+    let io_size = 8;
+    let kernel_size = 3;
+    let padding = 1;
+
+    let channels = 16;
+
     let details = ConvDetails {
-        input_channels: 16,
-        output_channels: 16,
-        input_size: 8,
-        kernel_size: 3,
-        padding: 1,
-        output_size: 8,
+        input_channels: channels,
+        output_channels: channels,
+        input_h: io_size,
+        input_w: io_size,
+        kernel_h: kernel_size,
+        kernel_w: kernel_size,
+        padding_y: padding,
+        padding_x: padding,
+        output_h: io_size,
+        output_w: io_size,
         batch_size: Size::BATCH,
     };
 
+    let mut input = Array4::zeros((batch_size, details.input_channels, io_size, io_size));
+    let mut filter = Array4::zeros((
+        details.output_channels,
+        details.input_channels,
+        kernel_size,
+        kernel_size,
+    ));
 
-    let mut input = Array4::zeros((batch_size, details.input_channels, details.input_size, details.input_size));
-    let mut filter = Array4::zeros((details.output_channels, details.input_channels, details.kernel_size, details.kernel_size));
-
-    let mut rng = SmallRng::seed_from_u64(456);
+    let mut rng = StdRng::seed_from_u64(456);
     input.as_slice_mut().unwrap().try_fill(&mut rng).unwrap();
     filter.as_slice_mut().unwrap().try_fill(&mut rng).unwrap();
 
     let expected_output = convolution(details, input.view(), filter.view());
 
-    let actual_output = unsafe {
-        test_custom_conv(details, input.view(), filter.view())
-    };
+    let actual_output = unsafe { test_custom_conv(channels, io_size, kernel_size, input.view(), filter.view()) };
 
     if false {
         for bi in 0..batch_size {
             println!("bi={}", bi);
             for ki in 0..details.output_channels {
                 println!("  ki={}", ki);
-                for y in 0..details.output_size {
+                for y in 0..io_size {
                     print!("  ");
 
-                    for x in 0..details.output_size {
+                    for x in 0..io_size {
                         print!("{: >6.2},", expected_output[[bi, ki, y, x]]);
                     }
 
                     print!("    |    ");
 
-                    for x in 0..details.output_size {
+                    for x in 0..io_size {
                         print!("{: >6.2},", actual_output[[bi, ki, y, x]])
                     }
 
@@ -71,15 +83,18 @@ fn main() {
     println!("Max error: {}", max_error);
 }
 
-unsafe fn test_custom_conv(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    let ConvDetails { input_channels: c, output_channels: k, input_size, kernel_size, padding, output_size, batch_size: _ } = details;
-    assert_eq!(input_size, 8);
-    assert_eq!(output_size, 8);
+unsafe fn test_custom_conv(
+    channels: usize,
+    io_size: usize,
+    kernel_size: usize,
+    input: ArrayView4<f32>,
+    filter: ArrayView4<f32>,
+) -> Array4<f32> {
+    assert_eq!(io_size, 8);
     assert_eq!(kernel_size, 3);
-    assert_eq!(padding, 1);
 
     let batch_size = input.shape()[0];
-    let output_len = batch_size * k * output_size * output_size;
+    let output_len = batch_size * channels * io_size * io_size;
 
     let warmup_iter = 4;
     let bench_iter = 10;
@@ -96,9 +111,15 @@ unsafe fn test_custom_conv(details: ConvDetails, input: ArrayView4<f32>, filter:
 
     let launch = |stream: &mut CudaStream| {
         kernels::conv8x3Float(
-            stream.inner(), batch_size as i32, c as i32, k as i32,
-            input_mem.ptr() as *const f32, filter_mem.ptr() as *const f32, output_mem.ptr() as *mut f32,
-        ).unwrap()
+            stream.inner(),
+            batch_size as i32,
+            channels as i32,
+            channels as i32,
+            input_mem.ptr() as *const f32,
+            filter_mem.ptr() as *const f32,
+            output_mem.ptr() as *mut f32,
+        )
+        .unwrap()
     };
 
     let mut stream = CudaStream::new(device);
@@ -128,6 +149,5 @@ unsafe fn test_custom_conv(details: ConvDetails, input: ArrayView4<f32>, filter:
     println!("  {} s/iter", bench_delta);
     println!("  {} evals/s", batch_size as f32 / bench_delta);
 
-    Array4::from_shape_vec((batch_size, k, output_size, output_size), output_vec).unwrap()
+    Array4::from_shape_vec((batch_size, channels, io_size, io_size), output_vec).unwrap()
 }
-

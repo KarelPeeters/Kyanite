@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use cuda_nn_eval::Device;
 use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::Device;
 use nn_graph::graph::Graph;
 use nn_graph::shape::Shape;
 
@@ -14,7 +14,10 @@ fn bench_copy(c: &mut Criterion) {
     ];
 
     for (name, input_size, extra_output_size) in sizes {
-        println!("Name: {}, input_size: {}, extra_output_size: {}", name, input_size, extra_output_size);
+        println!(
+            "Name: {}, input_size: {}, extra_output_size: {}",
+            name, input_size, extra_output_size
+        );
 
         let mut graph = Graph::new();
         let input = graph.input(Shape::fixed(&[input_size]));
@@ -23,18 +26,17 @@ fn bench_copy(c: &mut Criterion) {
         println!("{}", graph);
 
         let device = Device::new(0);
-        let mut executor = CudnnExecutor::new(device, &graph, 1);
+        let mut executor = CudnnExecutor::new(device, &graph, 1, false);
 
         println!("{:?}", executor);
 
         let input = vec![1.0; input_size];
 
-        c.bench_function(
-            &format!("copy {}", name),
-            |b| b.iter(|| {
+        c.bench_function(&format!("copy {}", name), |b| {
+            b.iter(|| {
                 black_box(executor.evaluate(&[&input]).len());
-            }),
-        );
+            })
+        });
     }
 }
 

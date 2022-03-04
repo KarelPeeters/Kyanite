@@ -2,8 +2,8 @@ use crate::graph::Graph;
 pub use crate::optimizer::core::find_single_use_values;
 use crate::optimizer::core::Optimizer;
 
-mod core;
 mod affine;
+mod core;
 
 #[derive(Debug, Copy, Clone)]
 pub struct OptimizerSettings {
@@ -32,6 +32,8 @@ pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
 #[allow(clippy::derivable_impls)]
 impl Default for OptimizerSettings {
     fn default() -> Self {
-        OptimizerSettings { force_bias_through_conv: false }
+        OptimizerSettings {
+            force_bias_through_conv: false,
+        }
     }
 }

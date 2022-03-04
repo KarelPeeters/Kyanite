@@ -17,8 +17,7 @@ num-traits = "0.2.14"
 ndarray = "0.15.4"
 convolutions-rs = "0.2.2"
 indexmap = "1.8.0"
+rand = "0.8.5"
 
-image = { version = "0.24.1", default-features = false, features = ["png"] }
+image = { version = "0.24.1", default-features=false }
 palette = { version = "0.6.0", default-features = false, features = ["std"] }
-
-rayon = "1.5.1"

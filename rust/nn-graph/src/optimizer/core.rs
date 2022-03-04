@@ -55,9 +55,15 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_fuse(&mut self, old_start: Value) -> Option<Value> {
-        if let Some(result) = self.try_fuse_clamp(old_start) { return Some(result); }
-        if let Some(result) = self.try_fuse_conv_affine(old_start) { return Some(result); }
-        if let Some(result) = self.try_convert_div_to_mul(old_start) { return Some(result); }
+        if let Some(result) = self.try_fuse_clamp(old_start) {
+            return Some(result);
+        }
+        if let Some(result) = self.try_fuse_conv_affine(old_start) {
+            return Some(result);
+        }
+        if let Some(result) = self.try_convert_div_to_mul(old_start) {
+            return Some(result);
+        }
 
         None
     }
@@ -68,18 +74,16 @@ impl<'a> Optimizer<'a> {
 
         let old_input = self.follow_if(old_start, |_, _, operation| {
             if let &Operation::Element {
-                left: old_left, right: old_right,
-                op: op @ (ElementOp::Min | ElementOp::Max)
-            } = operation {
+                left: old_left,
+                right: old_right,
+                op: op @ (ElementOp::Min | ElementOp::Max),
+            } = operation
+            {
                 // if right is a single constant value we can fuse it
                 if let Some(&[f]) = self.old_graph.as_const(old_right) {
                     match op {
-                        ElementOp::Min => {
-                            total_max = f32::min(total_max, f)
-                        }
-                        ElementOp::Max => {
-                            total_min = f32::max(total_min, f)
-                        }
+                        ElementOp::Min => total_max = f32::min(total_max, f),
+                        ElementOp::Max => total_min = f32::max(total_min, f),
                         _ => unreachable!(),
                     }
 
@@ -107,7 +111,12 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_convert_div_to_mul(&mut self, old_start: Value) -> Option<Value> {
-        if let &Operation::Element { left, right, op: ElementOp::Div } = &self.old_graph[old_start].operation {
+        if let &Operation::Element {
+            left,
+            right,
+            op: ElementOp::Div,
+        } = &self.old_graph[old_start].operation
+        {
             if let Some(data) = self.follow_const(right) {
                 let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
                 let new_right = self.new_graph.constant(self.old_graph[right].shape.clone(), new_data);
@@ -143,10 +152,15 @@ impl<'a> Optimizer<'a> {
             } else {
                 None
             }
-        }).unwrap_or(start)
+        })
+        .unwrap_or(start)
     }
 
-    pub fn follow_if(&self, start: Value, mut next: impl FnMut(&Graph, Value, &Operation) -> Option<Value>) -> Option<Value> {
+    pub fn follow_if(
+        &self,
+        start: Value,
+        mut next: impl FnMut(&Graph, Value, &Operation) -> Option<Value>,
+    ) -> Option<Value> {
         let mut curr = start;
 
         loop {
@@ -170,15 +184,12 @@ impl<'a> Optimizer<'a> {
 }
 
 pub fn find_single_use_values(graph: &Graph) -> HashSet<Value> {
-    let all_inputs = graph.values()
-        .flat_map(|v| graph[v].operation.inputs())
-        .collect_vec();
+    let all_inputs = graph.values().flat_map(|v| graph[v].operation.inputs()).collect_vec();
 
-    graph.values()
+    graph
+        .values()
         .filter(|&value| {
-            let occurrences = all_inputs.iter()
-                .filter(|&&other| other == value)
-                .count();
+            let occurrences = all_inputs.iter().filter(|&&other| other == value).count();
             occurrences < 2
         })
         .collect()

@@ -9,26 +9,42 @@ extern "C" {
 
     pub fn stridedCopyFloat(
         stream: cudaStream_t,
-        rank: i32, output_size: i32,
-        input_strides: *const i32, output_strides: *const i32, dense_strides: *const i32,
-        input: *const f32, output: *mut f32,
+        rank: i32,
+        output_size: i32,
+        input_strides: *const i32,
+        output_strides: *const i32,
+        dense_strides: *const i32,
+        input: *const f32,
+        output: *mut f32,
     ) -> cudaError;
 
     pub fn gatherFloat(
-        stream: cudaStream_t, size: i32,
-        indices: *const i32, input: *const f32, output: *mut f32,
+        stream: cudaStream_t,
+        size: i32,
+        indices: *const i32,
+        input: *const f32,
+        output: *mut f32,
     ) -> cudaError;
 
     pub fn gather2dAxis1FloatFloat(
         stream: cudaStream_t,
-        input_size0: i32, input_size1: i32,
-        input_stride0: i32, input_stride1: i32,
+        input_size0: i32,
+        input_size1: i32,
+        input_stride0: i32,
+        input_stride1: i32,
         index_size: i32,
-        input: *const f32, indices: *const f32, output: *mut f32,
+        input: *const f32,
+        indices: *const f32,
+        output: *mut f32,
     ) -> cudaError;
 
     pub fn conv8x3Float(
-        stream: cudaStream_t, batch_size: i32, c: i32, k: i32,
-        input: *const f32, filter: *const f32, output: *mut f32,
+        stream: cudaStream_t,
+        batch_size: i32,
+        c: i32,
+        k: i32,
+        input: *const f32,
+        filter: *const f32,
+        output: *mut f32,
     ) -> cudaError;
 }

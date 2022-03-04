@@ -31,7 +31,10 @@ impl PinnedMem {
         unsafe {
             let mut result = null_mut();
             cudaHostAlloc(&mut result as *mut _, size_bytes, flags).unwrap();
-            PinnedMem { ptr: result, size_bytes }
+            PinnedMem {
+                ptr: result,
+                size_bytes,
+            }
         }
     }
 

@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -44,7 +44,12 @@ pub enum Operation {
     /// Change the order of axis in the shape.
     Permute { input: Value, permutation: Vec<usize> },
     /// Slice the last three axis of a value, each with range `start[i]..end[i]`
-    Slice { input: Value, axis: usize, start: usize, end: usize },
+    Slice {
+        input: Value,
+        axis: usize,
+        start: usize,
+        end: usize,
+    },
     /// Gather values from `input` at the indices in `index` on the given axis.
     Gather { input: Value, axis: usize, indices: Value },
 
@@ -52,7 +57,11 @@ pub enum Operation {
     Concat { inputs: Vec<Value>, axis: usize },
 
     /// The standard convolution operator.
-    Conv { input: Value, filter: Value, details: ConvDetails },
+    Conv {
+        input: Value,
+        filter: Value,
+        details: ConvDetails,
+    },
     /// Batched matrix multiply.
     MatMul { left: Value, right: Value },
 
@@ -78,10 +87,23 @@ impl Operation {
             Operation::Constant { data: _ } => vec![],
             &Operation::View { input } => vec![input],
             &Operation::Permute { input, permutation: _ } => vec![input],
-            &Operation::Slice { input, axis: _, start: _, end: _ } => vec![input],
-            &Operation::Gather { input, axis: _, indices } => vec![input, indices],
+            &Operation::Slice {
+                input,
+                axis: _,
+                start: _,
+                end: _,
+            } => vec![input],
+            &Operation::Gather {
+                input,
+                axis: _,
+                indices,
+            } => vec![input, indices],
             Operation::Concat { inputs, axis: _ } => inputs.clone(),
-            &Operation::Conv { input, filter, details: _ } => vec![input, filter],
+            &Operation::Conv {
+                input,
+                filter,
+                details: _,
+            } => vec![input, filter],
             &Operation::MatMul { left, right } => vec![left, right],
             &Operation::Element { left, right, op: _ } => vec![left, right],
         }
@@ -89,26 +111,51 @@ impl Operation {
 
     pub(crate) fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
         match self {
-            &Operation::Input { index } =>
-                Operation::Input { index },
-            Operation::Constant { data } =>
-                Operation::Constant { data: data.clone() },
-            &Operation::View { input } =>
-                Operation::View { input: f(input) },
-            &Operation::Permute { input, ref permutation } =>
-                Operation::Permute { input: f(input), permutation: permutation.clone() },
-            &Operation::Slice { input, axis, start, end } =>
-                Operation::Slice { input: f(input), axis, start, end },
-            &Operation::Gather { input, axis, indices } =>
-                Operation::Gather { input: f(input), axis, indices: f(indices) },
-            &Operation::Concat { ref inputs, axis } =>
-                Operation::Concat { inputs: inputs.iter().copied().map(f).collect(), axis },
-            &Operation::Conv { input, filter, details: conv_shape } =>
-                Operation::Conv { input: f(input), filter: f(filter), details: conv_shape },
-            &Operation::MatMul { left, right } =>
-                Operation::MatMul { left: f(left), right: f(right) },
-            &Operation::Element { left, right, op } =>
-                Operation::Element { left: f(left), right: f(right), op },
+            &Operation::Input { index } => Operation::Input { index },
+            Operation::Constant { data } => Operation::Constant { data: data.clone() },
+            &Operation::View { input } => Operation::View { input: f(input) },
+            &Operation::Permute { input, ref permutation } => Operation::Permute {
+                input: f(input),
+                permutation: permutation.clone(),
+            },
+            &Operation::Slice {
+                input,
+                axis,
+                start,
+                end,
+            } => Operation::Slice {
+                input: f(input),
+                axis,
+                start,
+                end,
+            },
+            &Operation::Gather { input, axis, indices } => Operation::Gather {
+                input: f(input),
+                axis,
+                indices: f(indices),
+            },
+            &Operation::Concat { ref inputs, axis } => Operation::Concat {
+                inputs: inputs.iter().copied().map(f).collect(),
+                axis,
+            },
+            &Operation::Conv {
+                input,
+                filter,
+                details: conv_shape,
+            } => Operation::Conv {
+                input: f(input),
+                filter: f(filter),
+                details: conv_shape,
+            },
+            &Operation::MatMul { left, right } => Operation::MatMul {
+                left: f(left),
+                right: f(right),
+            },
+            &Operation::Element { left, right, op } => Operation::Element {
+                left: f(left),
+                right: f(right),
+                op,
+            },
         }
     }
 }
@@ -161,7 +208,11 @@ impl Index<Value> for Graph {
 
 impl Graph {
     pub fn new() -> Self {
-        Graph { values: vec![], inputs: vec![], outputs: vec![] }
+        Graph {
+            values: vec![],
+            inputs: vec![],
+            outputs: vec![],
+        }
     }
 
     fn check_contains(&self, value: Value) {
@@ -177,13 +228,20 @@ impl Graph {
             self.view(right, new_right_shape)
         } else {
             assert_eq!(
-                left_shape.rank(), right_shape.rank(),
+                left_shape.rank(),
+                right_shape.rank(),
                 "Both inputs must have the same rank (or right must have rank 0), got {:?} and {:?}",
-                left_shape, right_shape
+                left_shape,
+                right_shape
             );
 
             for (&l, &r) in zip_eq(&left_shape.dims, &right_shape.dims) {
-                assert!(l == r || r == Size::ONE, "Cannot broadcast shape {:?} to {:?}", right_shape, left_shape);
+                assert!(
+                    l == r || r == Size::ONE,
+                    "Cannot broadcast shape {:?} to {:?}",
+                    right_shape,
+                    left_shape
+                );
             }
 
             right
@@ -192,7 +250,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item=Value> {
+    pub fn values(&self) -> impl Iterator<Item = Value> {
         (0..self.values.len()).map(Value)
     }
 
@@ -240,9 +298,20 @@ impl Graph {
     #[must_use]
     pub fn constant(&mut self, shape: Shape, data: Vec<f32>) -> Value {
         let expected_len = shape.unwrap_fixed("Constant shape must be fixed").size();
-        assert_eq!(expected_len, data.len() as usize, "Shape {:?} and data size {} mismatch", shape, data.len());
+        assert_eq!(
+            expected_len,
+            data.len() as usize,
+            "Shape {:?} and data size {} mismatch",
+            shape,
+            data.len()
+        );
 
-        self.push(shape, Operation::Constant { data: ConstantData(data) })
+        self.push(
+            shape,
+            Operation::Constant {
+                data: ConstantData(data),
+            },
+        )
     }
 
     /// View an existing value as a new shape.
@@ -254,9 +323,11 @@ impl Graph {
         }
 
         assert_eq!(
-            old_shape.size(), new_shape.size(),
+            old_shape.size(),
+            new_shape.size(),
             "New shape {:?} must have the same size as old shape {:?}",
-            new_shape, old_shape,
+            new_shape,
+            old_shape,
         );
 
         self.push(new_shape, Operation::View { input })
@@ -269,7 +340,9 @@ impl Graph {
         let old_shape = &self[input].shape;
         assert!(
             old_shape.rank() >= start_axis,
-            "Input rank {} to low for start axis {}", old_shape.rank(), start_axis
+            "Input rank {} to low for start axis {}",
+            old_shape.rank(),
+            start_axis
         );
 
         let new_shape = if start_axis == 0 {
@@ -289,13 +362,25 @@ impl Graph {
     pub fn permute(&mut self, input: Value, permutation: Vec<usize>) -> Value {
         let input_shape = &self[input].shape;
 
-        assert_eq!(permutation.len(), input_shape.rank(), "Permutation rank must match input shape, got {:?} and {:?}", permutation, input_shape);
-        assert!(permutation.iter().all_unique(), "Permutation cannot contain repeated axis, got {:?}", permutation);
-        assert!(permutation.iter().all(|&i| i < input_shape.rank()), "Permutation axis out of bounds, got {:?}", permutation);
+        assert_eq!(
+            permutation.len(),
+            input_shape.rank(),
+            "Permutation rank must match input shape, got {:?} and {:?}",
+            permutation,
+            input_shape
+        );
+        assert!(
+            permutation.iter().all_unique(),
+            "Permutation cannot contain repeated axis, got {:?}",
+            permutation
+        );
+        assert!(
+            permutation.iter().all(|&i| i < input_shape.rank()),
+            "Permutation axis out of bounds, got {:?}",
+            permutation
+        );
 
-        let result_dims = permutation.iter()
-            .map(|&i| input_shape[i])
-            .collect_vec();
+        let result_dims = permutation.iter().map(|&i| input_shape[i]).collect_vec();
         let result_shape = Shape::new(result_dims);
 
         self.push(result_shape, Operation::Permute { input, permutation })
@@ -308,7 +393,9 @@ impl Graph {
 
         assert!(
             axis < old_shape.rank(),
-            "Input rank {} too low for axis {}", old_shape.rank(), axis
+            "Input rank {} too low for axis {}",
+            old_shape.rank(),
+            axis
         );
 
         let mut new_shape = old_shape.clone();
@@ -321,11 +408,22 @@ impl Graph {
         assert!(
             start < *dim && end <= *dim,
             "Slice range {}..{} out of bounds for axis {} with size {}",
-            start, end, axis, *dim,
+            start,
+            end,
+            axis,
+            *dim,
         );
 
         *dim = end - start;
-        self.push(new_shape, Operation::Slice { input, axis, start, end })
+        self.push(
+            new_shape,
+            Operation::Slice {
+                input,
+                axis,
+                start,
+                end,
+            },
+        )
     }
 
     /// Index along a given axis.
@@ -359,10 +457,17 @@ impl Graph {
 
         let base_shape = self[inputs[0]].shape.with_one_at(axis);
 
-        let size_along_axis = inputs.iter().map(|&v| {
-            assert_eq!(self[v].shape.with_one_at(axis), base_shape, "All concatenated values must match base shape");
-            self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
-        }).sum::<usize>();
+        let size_along_axis = inputs
+            .iter()
+            .map(|&v| {
+                assert_eq!(
+                    self[v].shape.with_one_at(axis),
+                    base_shape,
+                    "All concatenated values must match base shape"
+                );
+                self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
+            })
+            .sum::<usize>();
 
         let mut result_shape = base_shape;
         result_shape[axis] = Size::fixed(size_along_axis);
@@ -373,9 +478,17 @@ impl Graph {
     /// Apply 2D convolution.
     #[must_use]
     pub fn conv(&mut self, input: Value, filter: Value, padding_y: usize, padding_x: usize) -> Value {
-        let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input].shape.dims.as_slice().try_into()
+        let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input]
+            .shape
+            .dims
+            .as_slice()
+            .try_into()
             .expect("Convolution input must have rank 4");
-        let [out_c, in_c_check, k_h, k_w]: [Size; 4] = self[filter].shape.dims.as_slice().try_into()
+        let [out_c, in_c_check, k_h, k_w]: [Size; 4] = self[filter]
+            .shape
+            .dims
+            .as_slice()
+            .try_into()
             .expect("Convolution filter must have rank 4");
 
         // almost everything must be fixed, except for the batch size n
@@ -409,10 +522,7 @@ impl Graph {
             output_h,
             output_w,
         };
-        self.push(
-            output_shape,
-            Operation::Conv { input, details, filter },
-        )
+        self.push(output_shape, Operation::Conv { input, details, filter })
     }
 
     /// Apply a linear transformation.
@@ -444,7 +554,12 @@ impl Graph {
         let [n0, p, q0] = self[left].shape.unwrap_3();
         let [n1, q1, r] = self[right].shape.unwrap_3();
 
-        assert!(n0 == n1 && q0 == q1, "MatMul dimension mismatch: {:?} and {:?}", self[left].shape, self[right].shape);
+        assert!(
+            n0 == n1 && q0 == q1,
+            "MatMul dimension mismatch: {:?} and {:?}",
+            self[left].shape,
+            self[right].shape
+        );
 
         let result_shape = shape![n0, p, r];
         self.push(result_shape, Operation::MatMul { left, right })
@@ -504,7 +619,9 @@ impl Graph {
             ElementOp::Min => self.is_const_filled_with(right, f32::INFINITY),
             ElementOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
         };
-        if skip { return left; }
+        if skip {
+            return left;
+        }
 
         let result_shape = self[left].shape.clone();
         self.push(result_shape, Operation::Element { left, right, op })
@@ -534,7 +651,11 @@ impl Debug for Graph {
 
 impl Display for Graph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let Graph { values, inputs, outputs } = self;
+        let Graph {
+            values,
+            inputs,
+            outputs,
+        } = self;
 
         writeln!(f, "Graph {{")?;
 

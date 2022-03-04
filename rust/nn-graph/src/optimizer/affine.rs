@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array4, ArrayView1, Data, Dimension, s};
+use ndarray::{s, Array1, Array4, ArrayView1, Data, Dimension};
 
 use crate::cpu::convolution;
 use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value};
@@ -40,7 +40,10 @@ impl Optimizer<'_> {
             Operation::Conv { input, filter, details } => {
                 if let Some(filter) = self.follow_const(filter) {
                     if builder.conv.is_none() && details.keeps_spatial_shape() {
-                        builder.set_conv(ConvOperation { details, filter: filter.to_owned() });
+                        builder.set_conv(ConvOperation {
+                            details,
+                            filter: filter.to_owned(),
+                        });
                         Some(input)
                     } else {
                         None
@@ -50,28 +53,31 @@ impl Optimizer<'_> {
                 }
             }
             Operation::Element {
-                left, right,
-                op: op @ (ElementOp::Add | ElementOp::Sub | ElementOp::Mul | ElementOp::Div)
+                left,
+                right,
+                op: op @ (ElementOp::Add | ElementOp::Sub | ElementOp::Mul | ElementOp::Div),
             } => {
                 if let &[Size::ONE, channels, Size::ONE, Size::ONE] = self.old_graph[right].shape.dims.as_slice() {
                     let expected_channels = builder.current_channels();
                     assert!(
                         channels == Size::ONE || channels == Size::fixed(expected_channels),
-                        "Invalid shape for right in element operation, got {:?} expected {:?}", channels, expected_channels
+                        "Invalid shape for right in element operation, got {:?} expected {:?}",
+                        channels,
+                        expected_channels
                     );
 
                     if let Some(data) = self.follow_const(right) {
                         let data = data.iter().copied().cycle().take(expected_channels);
 
                         let affine_op = match op {
-                            ElementOp::Add =>
-                                Some(AffineOperation::AddChannel { data: data.collect() }),
-                            ElementOp::Sub =>
-                                Some(AffineOperation::AddChannel { data: data.map(|x| -x).collect() }),
-                            ElementOp::Mul =>
-                                Some(AffineOperation::ScaleChannel { data: data.collect() }),
-                            ElementOp::Div =>
-                                Some(AffineOperation::ScaleChannel { data: data.map(|x| { 1.0 / x }).collect() }),
+                            ElementOp::Add => Some(AffineOperation::AddChannel { data: data.collect() }),
+                            ElementOp::Sub => Some(AffineOperation::AddChannel {
+                                data: data.map(|x| -x).collect(),
+                            }),
+                            ElementOp::Mul => Some(AffineOperation::ScaleChannel { data: data.collect() }),
+                            ElementOp::Div => Some(AffineOperation::ScaleChannel {
+                                data: data.map(|x| 1.0 / x).collect(),
+                            }),
                             _ => unreachable!(),
                         };
 
@@ -125,7 +131,11 @@ impl AffineGroupBuilder {
     }
 
     fn push_affine(&mut self, operation: AffineOperation) {
-        let target = if self.conv.is_some() { &mut self.before_rev } else { &mut self.after_rev };
+        let target = if self.conv.is_some() {
+            &mut self.before_rev
+        } else {
+            &mut self.after_rev
+        };
         target.push(operation);
     }
 
@@ -170,17 +180,23 @@ impl AffineGroup {
     }
 }
 
-fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value, before: ScaleBias, conv: ConvOperation, after: ScaleBias) -> Value {
+fn apply_fused_conv(
+    settings: OptimizerSettings,
+    graph: &mut Graph,
+    input: Value,
+    before: ScaleBias,
+    conv: ConvOperation,
+    after: ScaleBias,
+) -> Value {
     let details = conv.details;
 
-    let mut total_filter = Array4::from_shape_vec(
-        details.kernel_shape(),
-        conv.filter,
-    ).unwrap();
+    let mut total_filter = Array4::from_shape_vec(details.kernel_shape(), conv.filter).unwrap();
 
     // fuse output scale into kernel
     for k in 0..details.output_channels {
-        total_filter.slice_mut(s![k, .., .., ..]).mapv_inplace(|x| x * after.scale[k]);
+        total_filter
+            .slice_mut(s![k, .., .., ..])
+            .mapv_inplace(|x| x * after.scale[k]);
     }
 
     let bias_after_shaped = after.bias.into_shape((1, details.output_channels, 1, 1)).unwrap();
@@ -194,7 +210,9 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
             // fuse input scale into kernel
             let before_scale = before.scale;
             for c in 0..details.input_channels {
-                total_filter.slice_mut(s![.., c, .., ..]).mapv_inplace(|x| x * before_scale[c]);
+                total_filter
+                    .slice_mut(s![.., c, .., ..])
+                    .mapv_inplace(|x| x * before_scale[c]);
             }
 
             // put everything into the graph
@@ -208,9 +226,15 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
         }
         Err(bias_before) => {
             // put everything into the graph
-            let before = ScaleBias { scale: before.scale, bias: bias_before };
+            let before = ScaleBias {
+                scale: before.scale,
+                bias: bias_before,
+            };
             let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
-            let value_bias_after = graph.constant(Shape::fixed(bias_after_shaped.shape()), bias_after_shaped.into_raw_vec());
+            let value_bias_after = graph.constant(
+                Shape::fixed(bias_after_shaped.shape()),
+                bias_after_shaped.into_raw_vec(),
+            );
 
             let mut curr = input;
             curr = before.apply(graph, curr);
@@ -221,7 +245,12 @@ fn apply_fused_conv(settings: OptimizerSettings, graph: &mut Graph, input: Value
     }
 }
 
-fn pull_bias_through_conv(settings: OptimizerSettings, details: ConvDetails, before: Array1<f32>, filter: &Array4<f32>) -> Result<Array4<f32>, Array1<f32>> {
+fn pull_bias_through_conv(
+    settings: OptimizerSettings,
+    details: ConvDetails,
+    before: Array1<f32>,
+    filter: &Array4<f32>,
+) -> Result<Array4<f32>, Array1<f32>> {
     if is_entirely(&before, 0.0) {
         // we don't need to expand the shape even if there is padding, so immediately return 0 here
         Ok(Array4::zeros((1, details.output_channels, 1, 1)))
@@ -229,17 +258,21 @@ fn pull_bias_through_conv(settings: OptimizerSettings, details: ConvDetails, bef
         // the bias will be the same for each output (x,y), so we can keep a single bias vector
         let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
 
-        Ok(Array4::from_shape_fn((1, details.output_channels, 1, 1), |(_, k, _, _)| {
-            (0..details.input_channels)
-                .map(|c| filter.slice(s![k, c, .., ..]).sum() * before_shaped[(0, c, 0, 0)])
-                .sum()
-        }))
+        Ok(Array4::from_shape_fn(
+            (1, details.output_channels, 1, 1),
+            |(_, k, _, _)| {
+                (0..details.input_channels)
+                    .map(|c| filter.slice(s![k, c, .., ..]).sum() * before_shaped[(0, c, 0, 0)])
+                    .sum()
+            },
+        ))
     } else if settings.force_bias_through_conv {
         // the bias will be different for the edges, so it needs to be full-sized
         let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
 
         let before_broadcast = before_shaped
-            .broadcast((1, details.input_channels, details.input_h, details.input_w)).unwrap();
+            .broadcast((1, details.input_channels, details.input_h, details.input_w))
+            .unwrap();
 
         Ok(convolution(details, before_broadcast, filter.view()))
     } else {
@@ -266,11 +299,11 @@ impl ScaleBias {
     }
 }
 
-fn is_entirely<S: Data<Elem=f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
+fn is_entirely<S: Data<Elem = f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
     array.iter().all(|&x| x == value)
 }
 
-fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item=&'a AffineOperation>) -> ScaleBias {
+fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'a AffineOperation>) -> ScaleBias {
     let mut total_scale = Array1::ones(channels);
     let mut total_bias = Array1::zeros(channels);
 

@@ -1,6 +1,18 @@
 use std::ptr::null_mut;
 
-use crate::bindings::{cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor, cudnnCreatePoolingDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensorNdDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t};
+use crate::bindings::{
+    cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t,
+    cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor,
+    cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor, cudnnCreatePoolingDescriptor,
+    cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor,
+    cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor, cudnnDestroyPoolingDescriptor,
+    cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim,
+    cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim,
+    cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t,
+    cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor,
+    cudnnSetFilter4dDescriptor, cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensorNdDescriptor,
+    cudnnTensorDescriptor_t, cudnnTensorFormat_t,
+};
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::status::Status;
 
@@ -23,7 +35,12 @@ impl TensorDescriptor {
     }
 
     pub fn new_with_type(shape: Vec<i32>, strides: Vec<i32>, data_type: cudnnDataType_t) -> Self {
-        assert!(shape.len() >= 4, "Tensors must be at least 4d, got shape {:?} strides {:?}", shape, strides);
+        assert!(
+            shape.len() >= 4,
+            "Tensors must be at least 4d, got shape {:?} strides {:?}",
+            shape,
+            strides
+        );
 
         let rank = shape.len();
         assert_eq!(rank, strides.len());
@@ -31,19 +48,14 @@ impl TensorDescriptor {
         assert!(
             (0..rank).all(|i| shape[i] > 0 && strides[i] > 0),
             "Shape and strides must must be strictly positive, got shape {:?} with strides {:?}",
-            shape, strides,
+            shape,
+            strides,
         );
 
         unsafe {
             let mut inner = null_mut();
             cudnnCreateTensorDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetTensorNdDescriptor(
-                inner,
-                data_type,
-                rank as i32,
-                shape.as_ptr(),
-                strides.as_ptr(),
-            ).unwrap();
+            cudnnSetTensorNdDescriptor(inner, data_type, rank as i32, shape.as_ptr(), strides.as_ptr()).unwrap();
 
             TensorDescriptor { inner, shape, strides }
         }
@@ -82,24 +94,27 @@ pub struct FilterDescriptor {
 
 impl Drop for FilterDescriptor {
     fn drop(&mut self) {
-        unsafe {
-            cudnnDestroyFilterDescriptor(self.inner).unwrap_in_drop()
-        }
+        unsafe { cudnnDestroyFilterDescriptor(self.inner).unwrap_in_drop() }
     }
 }
 
 impl FilterDescriptor {
-    pub fn new_with_type_format(k: i32, c: i32, h: i32, w: i32, data_type: cudnnDataType_t, format: cudnnTensorFormat_t) -> Self {
+    pub fn new_with_type_format(
+        k: i32,
+        c: i32,
+        h: i32,
+        w: i32,
+        data_type: cudnnDataType_t,
+        format: cudnnTensorFormat_t,
+    ) -> Self {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetFilter4dDescriptor(
+            cudnnSetFilter4dDescriptor(inner, data_type, format, k, c, h, w).unwrap();
+            FilterDescriptor {
                 inner,
-                data_type,
-                format,
-                k, c, h, w,
-            ).unwrap();
-            FilterDescriptor { inner, shape: [k, c, h, w] }
+                shape: [k, c, h, w],
+            }
         }
     }
 
@@ -108,7 +123,10 @@ impl FilterDescriptor {
     /// * `(h, w)`: kernel size
     pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
         Self::new_with_type_format(
-            k, c, h, w,
+            k,
+            c,
+            h,
+            w,
             cudnnDataType_t::CUDNN_DATA_FLOAT,
             cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
         )
@@ -141,15 +159,13 @@ impl Drop for ConvolutionDescriptor {
 }
 
 impl ConvolutionDescriptor {
-    pub fn new(
-        pad_y: i32,
-        pad_x: i32,
-        stride_y: i32,
-        stride_x: i32,
-        dilation_y: i32,
-        dilation_x: i32,
-    ) -> Self {
-        assert!(pad_y >= 0 && pad_x >= 0, "Padding cannot be negative, got ({}, {})", pad_y, pad_x);
+    pub fn new(pad_y: i32, pad_x: i32, stride_y: i32, stride_x: i32, dilation_y: i32, dilation_x: i32) -> Self {
+        assert!(
+            pad_y >= 0 && pad_x >= 0,
+            "Padding cannot be negative, got ({}, {})",
+            pad_y,
+            pad_x
+        );
 
         let checked = [stride_y, stride_x, dilation_y, dilation_x];
         assert!(
@@ -163,10 +179,16 @@ impl ConvolutionDescriptor {
             cudnnCreateConvolutionDescriptor(&mut inner as *mut _).unwrap();
             cudnnSetConvolution2dDescriptor(
                 inner,
-                pad_y, pad_x, stride_y, stride_x, dilation_y, dilation_x,
+                pad_y,
+                pad_x,
+                stride_y,
+                stride_x,
+                dilation_y,
+                dilation_x,
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
-            ).unwrap();
+            )
+            .unwrap();
             ConvolutionDescriptor(inner)
         }
     }
@@ -196,7 +218,8 @@ impl ConvolutionDescriptor {
                 output.inner(),
                 algo,
                 &mut workspace as *mut _,
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         workspace
@@ -222,7 +245,8 @@ impl ConvolutionDescriptor {
                 &mut c as *mut _,
                 &mut h as *mut _,
                 &mut w as *mut _,
-            ).unwrap();
+            )
+            .unwrap();
             [n, c, h, w]
         }
     }
@@ -245,19 +269,12 @@ impl Drop for ActivationDescriptor {
 }
 
 impl ActivationDescriptor {
-    pub fn new(
-        mode: cudnnActivationMode_t,
-        coef: f32,
-    ) -> Self {
+    pub fn new(mode: cudnnActivationMode_t, coef: f32) -> Self {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateActivationDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetActivationDescriptor(
-                inner,
-                mode,
-                cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN,
-                coef as f64,
-            ).unwrap();
+            cudnnSetActivationDescriptor(inner, mode, cudnnNanPropagation_t::CUDNN_NOT_PROPAGATE_NAN, coef as f64)
+                .unwrap();
             ActivationDescriptor { inner, mode }
         }
     }
@@ -297,10 +314,14 @@ impl PoolingDescriptor {
                 inner,
                 mode,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-                size_y, size_x,
-                pad_y, pad_x,
-                stride_y, stride_x,
-            ).unwrap();
+                size_y,
+                size_x,
+                pad_y,
+                pad_x,
+                stride_y,
+                stride_x,
+            )
+            .unwrap();
             PoolingDescriptor(inner)
         }
     }
@@ -318,7 +339,8 @@ impl PoolingDescriptor {
                 &mut c as *mut _,
                 &mut h as *mut _,
                 &mut w as *mut _,
-            ).unwrap();
+            )
+            .unwrap();
             [n, c, h, w]
         }
     }
@@ -337,9 +359,7 @@ pub struct TensorOpDescriptor {
 
 impl Drop for TensorOpDescriptor {
     fn drop(&mut self) {
-        unsafe {
-            cudnnDestroyOpTensorDescriptor(self.inner).unwrap_in_drop()
-        }
+        unsafe { cudnnDestroyOpTensorDescriptor(self.inner).unwrap_in_drop() }
     }
 }
 
@@ -353,7 +373,8 @@ impl TensorOpDescriptor {
                 operation,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-            ).unwrap();
+            )
+            .unwrap();
 
             TensorOpDescriptor { inner, operation }
         }
