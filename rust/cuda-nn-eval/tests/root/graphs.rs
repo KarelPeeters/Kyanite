@@ -422,3 +422,32 @@ fn permute() {
 
     test_all(&graph, 0, &[], None);
 }
+
+#[test]
+fn chain() {
+    // child implements y = x * 2.0
+    let mut child = Graph::new();
+    {
+        let child_x = child.input(shape![2]);
+        let child_w = child.constant(shape![1], vec![2.0]);
+        let child_y = child.mul(child_x, child_w);
+        child.output(child_y);
+    }
+
+    // parent implements y = child(x + 3.0)
+    let mut parent = Graph::new();
+    let parent_x = parent.input(shape![2]);
+    let parent_w = parent.constant(shape![1], vec![3.0]);
+    let parent_z = parent.add(parent_x, parent_w);
+    let parent_y = parent.call(&child, &[parent_z]);
+
+    assert_eq!(parent_y.len(), 1);
+    parent.output(parent_y[0]);
+
+    test_all(
+        &parent,
+        0,
+        &[manual_tensor(2, vec![1.0, 2.0])],
+        Some(&[manual_tensor(2, vec![8.0, 10.0])]),
+    )
+}

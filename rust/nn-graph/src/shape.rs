@@ -89,7 +89,7 @@ impl Shape {
 
     /// Returns a new shape with the same rank with all sizes set to 1, except the size at `index` is kept.
     pub fn all_ones_except(&self, index: usize) -> Shape {
-        assert!(index < self.rank());
+        assert!(index < self.rank(), "Axis {} out of bounds for shape {}", index, self);
 
         let mut result = self.clone();
         for i in 0..self.rank() {

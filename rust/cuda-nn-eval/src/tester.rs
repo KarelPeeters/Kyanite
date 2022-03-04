@@ -42,7 +42,7 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
 
             assert!(
                 (abs_error < ERROR_ABS_TOLERANCE) || (rel_error < ERROR_REL_TOLERANCE),
-                "Wrong output value {}, expected {} at indices {:?} in output {} (value {:?})",
+                "Wrong output value '{}', expected '{}' at indices {:?} in output {} (value {:?})",
                 value,
                 expected_value,
                 indices.slice(),

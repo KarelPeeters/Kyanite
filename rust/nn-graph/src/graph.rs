@@ -1,21 +1,27 @@
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
 use itertools::{zip_eq, Itertools};
+use rand::{thread_rng, Rng};
 
 use crate::shape;
 use crate::shape::{Shape, Size};
 
 #[derive(Clone)]
 pub struct Graph {
+    check: u32,
     values: Vec<ValueInfo>,
     inputs: Vec<Value>,
     outputs: Vec<Value>,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Value(usize);
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Value {
+    index: usize,
+    check: u32,
+}
 
 #[derive(Debug, Clone)]
 pub struct ValueInfo {
@@ -190,8 +196,6 @@ impl ConvDetails {
         (self.input_h == self.output_h) && (self.input_w == self.output_w)
     }
 
-    pub fn has_padding() {}
-
     pub fn kernel_shape(&self) -> [usize; 4] {
         [self.output_channels, self.input_channels, self.kernel_h, self.kernel_w]
     }
@@ -202,13 +206,14 @@ impl Index<Value> for Graph {
 
     fn index(&self, value: Value) -> &Self::Output {
         self.check_contains(value);
-        &self.values[value.0]
+        &self.values[value.index]
     }
 }
 
 impl Graph {
     pub fn new() -> Self {
         Graph {
+            check: thread_rng().gen(),
             values: vec![],
             inputs: vec![],
             outputs: vec![],
@@ -216,7 +221,12 @@ impl Graph {
     }
 
     fn check_contains(&self, value: Value) {
-        assert!(value.0 < self.values.len());
+        assert_eq!(
+            value.check, self.check,
+            "Value {:?} does not belong to this graph",
+            value
+        );
+        assert!(value.index < self.values.len());
     }
 
     fn broadcast(&mut self, left: Value, right: Value) -> Value {
@@ -251,7 +261,8 @@ impl Graph {
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
     pub fn values(&self) -> impl Iterator<Item = Value> {
-        (0..self.values.len()).map(Value)
+        let check = self.check;
+        (0..self.values.len()).map(move |index| Value { index, check })
     }
 
     pub fn inputs(&self) -> &[Value] {
@@ -280,9 +291,16 @@ impl Graph {
 
     #[must_use]
     pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
+        for input in operation.inputs() {
+            self.check_contains(input);
+        }
+
         let index = self.values.len();
         self.values.push(ValueInfo { shape, operation });
-        Value(index)
+        Value {
+            index,
+            check: self.check,
+        }
     }
 
     /// Declare a new input value.
@@ -610,6 +628,7 @@ impl Graph {
 
     /// Compute an elementwise operation between two values.
     /// They must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
+    #[must_use]
     pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
         let right = self.broadcast(left, right);
 
@@ -625,6 +644,42 @@ impl Graph {
 
         let result_shape = self[left].shape.clone();
         self.push(result_shape, Operation::Element { left, right, op })
+    }
+
+    /// Computes the operations described by `graph` on the given inputs.
+    #[must_use]
+    pub fn call(&mut self, graph: &Graph, inputs: &[Value]) -> Vec<Value> {
+        let mut map = HashMap::new();
+
+        // check inputs
+        assert_eq!(inputs.len(), graph.inputs.len(), "Wrong number of inputs");
+        for (&input, &graph_input) in zip_eq(inputs, &graph.inputs) {
+            assert_eq!(self[input].shape, graph[graph_input].shape, "Wrong input shape");
+        }
+
+        // map operations
+        for graph_value in graph.values() {
+            let graph_info = &graph[graph_value];
+
+            let shape = graph_info.shape.clone();
+            let graph_operation = &graph_info.operation;
+
+            let value = if let &Operation::Input { index } = graph_operation {
+                inputs[index]
+            } else {
+                let operation = graph_info.operation.clone_map_inputs(|p| *map.get(&p).unwrap());
+                self.push(shape, operation)
+            };
+
+            map.insert(graph_value, value);
+        }
+
+        // map outputs
+        graph
+            .outputs()
+            .iter()
+            .map(|graph_value| *map.get(graph_value).unwrap())
+            .collect_vec()
     }
 
     /// Register an existing value as an output
@@ -652,6 +707,7 @@ impl Debug for Graph {
 impl Display for Graph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Graph {
+            check,
             values,
             inputs,
             outputs,
@@ -659,9 +715,19 @@ impl Display for Graph {
 
         writeln!(f, "Graph {{")?;
 
+        writeln!(f, "  check: {},", self.check)?;
+
         writeln!(f, "  values: [")?;
         for (i, info) in values.iter().enumerate() {
-            writeln!(f, "    {:?} = {:?},", Value(i), info)?;
+            writeln!(
+                f,
+                "    {:?} = {:?},",
+                Value {
+                    index: i,
+                    check: *check
+                },
+                info
+            )?;
         }
         writeln!(f, "  ],")?;
 
@@ -693,7 +759,18 @@ impl Deref for ConstantData {
 }
 
 impl Value {
-    pub fn id(self) -> usize {
-        self.0
+    pub fn index(self) -> usize {
+        self.index
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Value { index, check } = self;
+        if f.alternate() {
+            write!(f, "Value {{ index: {}, check: {} }}", index, check)
+        } else {
+            write!(f, "Value({})", index)
+        }
     }
 }

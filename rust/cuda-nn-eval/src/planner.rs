@@ -60,10 +60,12 @@ impl<'a> Planner<'a> {
             return result.view();
         }
 
-        if let Some(result) = self.visit_fused_conv(value) {
-            let prev = self.map.insert(value, result.view());
-            assert!(prev.is_none());
-            return result;
+        if self.graph[value].shape.rank() == 4 {
+            if let Some(result) = self.visit_fused_conv(value) {
+                let prev = self.map.insert(value, result.view());
+                assert!(prev.is_none());
+                return result;
+            }
         }
 
         let result_info = &self.graph[value];
