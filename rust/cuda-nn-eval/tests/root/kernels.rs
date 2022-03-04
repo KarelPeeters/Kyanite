@@ -1,6 +1,6 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
-use rand::rngs::SmallRng;
+use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use cuda_nn_eval::{kernels, Device};
@@ -115,7 +115,7 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
 
     let input_data: Vec<f32> = (0..batch_size * input_size).map(|x| -(x as f32)).collect_vec();
 
-    let mut index_rng = SmallRng::seed_from_u64(1);
+    let mut index_rng = StdRng::seed_from_u64(1);
     let indices_data: Vec<f32> = (0..index_count)
         .map(|_| index_rng.gen_range(0..input_size) as f32)
         .collect_vec();

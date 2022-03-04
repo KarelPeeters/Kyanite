@@ -1187,7 +1187,9 @@ dependencies = [
  "crossbeam",
  "crossterm 0.23.0",
  "cuda-nn-eval",
+ "cuda-sys",
  "decorum",
+ "image",
  "internal-iterator",
  "itertools",
  "kz-core",
@@ -1195,6 +1197,7 @@ dependencies = [
  "kz-util",
  "ndarray",
  "nn-graph",
+ "palette",
  "pgn-reader",
  "rand 0.8.5",
  "rayon",
@@ -1485,7 +1488,7 @@ dependencies = [
  "palette",
  "prost",
  "prost-build",
- "rayon",
+ "rand 0.8.5",
  "unwrap-match",
 ]
 

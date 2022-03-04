@@ -1,6 +1,6 @@
 use board_game::board::Board;
 use board_game::games::chess::ChessBoard;
-use rand::rngs::SmallRng;
+use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use kz_core::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper};
@@ -21,7 +21,7 @@ fn conv() {
 }
 
 fn random_impl(mapper: impl PolicyMapper<ChessBoard>) {
-    let mut rng = SmallRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
 
     let game_count = 10_000;
     for i in 0..game_count {

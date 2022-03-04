@@ -45,7 +45,7 @@ fn main() {
 
                 let image_path = PathBuf::from(format!(
                     "D:/Documents/A0/filters/16x128/{}_{}/{}.png",
-                    v.id(),
+                    v.index(),
                     shape,
                     ei
                 ));
@@ -54,7 +54,7 @@ fn main() {
                     continue;
                 }
 
-                println!("Saving filters for layer {}_{}", v.id(), shape);
+                println!("Saving filters for layer {}_{}", v.index(), shape);
 
                 let mut sorted = data.to_owned();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));

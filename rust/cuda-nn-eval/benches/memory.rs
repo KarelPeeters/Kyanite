@@ -26,7 +26,7 @@ fn bench_copy(c: &mut Criterion) {
         println!("{}", graph);
 
         let device = Device::new(0);
-        let mut executor = CudnnExecutor::new(device, &graph, 1);
+        let mut executor = CudnnExecutor::new(device, &graph, 1, false);
 
         println!("{:?}", executor);
 

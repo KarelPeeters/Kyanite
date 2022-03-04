@@ -8,6 +8,7 @@ board-game = { version = "0.4.1", path = "../../../board-game-rs" }
 pgn-reader = { path = "../pgn-reader" }
 nn-graph = { path = "../nn-graph" }
 cuda-nn-eval = { path = "../cuda-nn-eval" }
+cuda-sys = { path = "../cuda-sys" }
 
 kz-core = { path = "../kz-core" }
 kz-util = { path = "../kz-util" }
@@ -28,3 +29,5 @@ rayon = "1.5.1"
 shakmaty = "0.21.0"
 tar = "0.4.38"
 bzip2 = "0.4.3"
+image = { version = "0.24.1", default-features = false, features=["png"] }
+palette = { version = "0.6.0", default-features = false, features = ["std"] }

@@ -21,4 +21,4 @@ rand = "0.8.5"
 ndarray = "0.15.4"
 
 # TODO switch to nanoserde or similar, we just want basic json deserialization
-serde = "1.0.136"
+serde = { version = "1.0.136", features = ["derive"] }
