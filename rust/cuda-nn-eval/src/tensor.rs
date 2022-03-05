@@ -1,3 +1,4 @@
+use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
@@ -26,7 +27,7 @@ impl Tensor {
         let mut shape = self.shape.shape().iter().map(|&x| x as i32).collect_vec();
         let mut strides = self.shape.strides().iter().map(|&x| x as i32).collect_vec();
 
-        // tensors descriptors and some cudnn operations seem to break with ranks < 4,
+        // tensor descriptors and some cudnn operations seem to break with ranks < 4,
         //   so pad the rank until it's large enough
         while shape.len() < 4 {
             shape.push(1);
@@ -69,5 +70,31 @@ impl Tensor {
 
         let mem = self.mem.slice_bytes(start_bytes, len_bytes);
         Tensor::new(mem, result_shape)
+    }
+
+    pub unsafe fn copy_from(&self, other: &Tensor) {
+        assert_eq!(
+            self.shape, other.shape,
+            "Both tensors must have the same shape and stride for now"
+        );
+        self.mem.copy_from_device(&other.mem);
+    }
+
+    pub unsafe fn copy_from_host(&self, buffer: &[f32]) {
+        assert!(
+            self.shape.has_simple_strides(),
+            "Tensor must have simple stride for now, got {:?}",
+            self.shape
+        );
+        self.mem.copy_from_host(cast_slice(buffer));
+    }
+
+    pub unsafe fn copy_to_host(&self, buffer: &mut [f32]) {
+        assert!(
+            self.shape.has_simple_strides(),
+            "Tensor must have simple stride for now, got {:?}",
+            self.shape
+        );
+        self.mem.copy_to_host(cast_slice_mut(buffer));
     }
 }

@@ -5,7 +5,7 @@ use clap::Parser;
 use itertools::{izip, Itertools};
 use ndarray::IxDyn;
 
-use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::Graph;
@@ -52,6 +52,10 @@ fn main() {
         println!("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
     }
 
+    if use_graph {
+        println!("Warning: graph mode is currently not implemented");
+    }
+
     if cpu && use_graph {
         println!("Warning: ignoring graph mode when using CPU");
     }
@@ -77,7 +81,7 @@ fn main() {
 
     if batch_size < 1 {
         if cpu {
-            profile_different_batch_sizes(&graph, use_graph);
+            profile_different_batch_sizes(&graph);
         } else {
             println!("Error: profiling different batch sizes for CPU not yet implemented");
         }
@@ -85,18 +89,18 @@ fn main() {
         if cpu {
             profile_single_batch_size_cpu(&graph, batch_size as usize, n)
         } else {
-            profile_single_batch_size_cudnn(&graph, use_graph, batch_size as usize, n);
+            profile_single_batch_size_cudnn(&graph, batch_size as usize, n);
         }
     }
 }
 
-fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
+fn profile_different_batch_sizes(graph: &Graph) {
     let mut result = vec![];
 
     for (&batch_size, &iterations) in izip!(TEST_BATCH_SIZES, TEST_BATCH_ITERATIONS) {
         println!("Testing batch size {} with {} iterations", batch_size, iterations);
 
-        let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
+        let mut executor = CudaExecutor::new(Device::new(0), &graph, batch_size);
         let inputs = dummy_inputs(&graph, batch_size);
         let inputs = inputs.iter().map(|v| v.as_slice().unwrap()).collect_vec();
 
@@ -118,8 +122,8 @@ fn profile_different_batch_sizes(graph: &Graph, use_graph: bool) {
     println!("{:?}", result);
 }
 
-fn profile_single_batch_size_cudnn(graph: &Graph, use_graph: bool, batch_size: usize, n: usize) {
-    let mut executor = CudnnExecutor::new(Device::new(0), &graph, batch_size, use_graph);
+fn profile_single_batch_size_cudnn(graph: &Graph, batch_size: usize, n: usize) {
+    let mut executor = CudaExecutor::new(Device::new(0), &graph, batch_size);
 
     let inputs = dummy_inputs(&graph, batch_size);
     let inputs = inputs.iter().map(|v| v.as_slice().unwrap()).collect_vec();

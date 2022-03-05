@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use board_game::board::Board;
 use itertools::Itertools;
 
-use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
 use nn_graph::graph::Graph;
 
@@ -17,7 +17,7 @@ pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
     max_batch_size: usize,
 
-    executor: CudnnExecutor,
+    executor: CudaExecutor,
 
     input: Vec<f32>,
     ph: PhantomData<B>,
@@ -28,7 +28,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
     pub fn new(mapper: M, graph: Graph, max_batch_size: usize, device: Device) -> Self {
         check_graph_shapes(mapper, &graph);
 
-        let executor = CudnnExecutor::new(device, &graph, max_batch_size, false);
+        let executor = CudaExecutor::new(device, &graph, max_batch_size);
 
         let input = vec![0.0; max_batch_size * mapper.input_full_len()];
 
@@ -41,7 +41,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
         }
     }
 
-    pub fn executor(&mut self) -> &mut CudnnExecutor {
+    pub fn executor(&mut self) -> &mut CudaExecutor {
         &mut self.executor
     }
 }

@@ -42,15 +42,6 @@ impl<'a> Planner<'a> {
         }
     }
 
-    pub fn copy_output(&mut self, index: usize, value: Value) -> Tensor {
-        let tensor = self.map.get(&value).unwrap();
-        self.plan.push(Step::CopyOutput {
-            index,
-            tensor: tensor.view(),
-        });
-        tensor.view()
-    }
-
     pub fn finish(self) -> Vec<Step> {
         self.plan
     }
@@ -72,13 +63,9 @@ impl<'a> Planner<'a> {
         let result_shape = result_info.shape.eval(self.batch_size);
 
         let result: Tensor = match &result_info.operation {
-            &Operation::Input { index } => {
-                let result = self.alloc_tensor(result_shape);
-                self.plan.push(Step::CopyInput {
-                    index,
-                    mem: result.mem.view(),
-                });
-                result
+            &Operation::Input { index: _ } => {
+                // just allocate space, the user is responsible for writing the data
+                self.alloc_tensor(result_shape)
             }
             Operation::Constant { data } => {
                 let result = self.alloc_tensor(result_shape);

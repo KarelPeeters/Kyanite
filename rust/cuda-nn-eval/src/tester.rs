@@ -6,13 +6,13 @@ use nn_graph::cpu::Tensor;
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::{Dimension, IxDyn};
 
-use crate::executor::CudnnExecutor;
+use crate::executor::CudaExecutor;
 
 /// Check that the given graph produces the correct outputs as described by `check_data`,
 /// which typically comes from a `.bin` file next to the `.onnx` file.
-pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8], use_graph: bool) {
+pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
-    let outputs = eval_cudnn(graph, batch_size, &inputs, false, use_graph);
+    let outputs = eval_cudnn(graph, batch_size, &inputs, false);
     assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
 }
 
@@ -60,13 +60,13 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
     }
 }
 
-pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bool, use_graph: bool) -> Vec<Tensor> {
+pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bool) -> Vec<Tensor> {
     let inputs = inputs
         .iter()
         .map(|x| x.as_slice().expect("Only sliceable inputs supported in test framework"))
         .collect_vec();
 
-    let mut executor = CudnnExecutor::new(Device::new(0), graph, batch_size, use_graph);
+    let mut executor = CudaExecutor::new(Device::new(0), graph, batch_size);
     if print {
         println!("{:?}", executor);
     }

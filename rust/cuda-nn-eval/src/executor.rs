@@ -1,14 +1,10 @@
-use std::cmp::max;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use bytemuck::{cast_slice, cast_slice_mut};
-use itertools::Itertools;
+use itertools::{zip, Itertools};
 
-use cuda_sys::wrapper::graph::CudaGraphExec;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CublasHandle, CudnnHandle, Device};
-use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::graph::Graph;
 
@@ -16,37 +12,27 @@ use crate::kernels;
 use crate::planner::Planner;
 use crate::tensor::Tensor;
 
-pub struct CudnnExecutor {
-    handles: Handles,
-    plan: Vec<Step>,
-    graph_plan: Option<GraphPlan>,
+pub struct CudaExecutor {
+    pub handles: Handles,
 
-    stage: Vec<f32>,
-    outputs: Vec<Vec<f32>>,
+    pub inputs: Vec<Tensor>,
+    pub outputs: Vec<Tensor>,
+    steps: Vec<Step>,
 
-    use_graph: bool,
     profile: bool,
     last_profile: Option<Profile>,
-}
 
-struct GraphPlan {
-    steps_before: Vec<usize>,
-    graph_exec: CudaGraphExec,
-    steps_after: Vec<usize>,
+    output_buffers: Option<Vec<Vec<f32>>>,
 }
 
 #[derive(Debug)]
-pub(crate) struct Handles {
+pub struct Handles {
     pub cudnn: CudnnHandle,
     pub cublas: CublasHandle,
 }
 
 #[derive(Debug)]
 pub enum Step {
-    CopyInput {
-        index: usize,
-        mem: DeviceMem,
-    },
     Conv {
         args: FusedConvolutionArgs,
     },
@@ -62,10 +48,6 @@ pub enum Step {
         indices: Tensor,
         output: Tensor,
     },
-    CopyOutput {
-        index: usize,
-        tensor: Tensor,
-    },
 }
 
 #[derive(Default, Debug, Clone)]
@@ -76,112 +58,124 @@ pub struct Profile {
     pub mat_mul: f32,
     pub tensor_op: f32,
     pub gather: f32,
-    pub copy_to_device: f32,
-    pub copy_to_host: f32,
 
     pub total_cpu: f32,
     pub total_gpu: f32,
     pub timing_overhead: f32,
 }
 
-impl CudnnExecutor {
-    pub fn new(device: Device, graph: &Graph, batch_size: usize, use_graph: bool) -> Self {
+impl CudaExecutor {
+    pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
         let handles = Handles {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
         };
         let mut planner = Planner::new(&handles, graph, batch_size);
 
-        // do all necessary calculations
-        for &output in graph.outputs() {
-            planner.visit(output);
-        }
+        // allocate inputs
+        let inputs = graph.inputs().iter().map(|&input| planner.visit(input)).collect_vec();
 
-        // schedule copy operations
-        let mut outputs = vec![];
-        let mut stage_size = 0;
+        // plan operations and collect outputs
+        let outputs = graph
+            .outputs()
+            .iter()
+            .map(|&output| planner.visit(output))
+            .collect_vec();
 
-        for (index, &value) in graph.outputs().iter().enumerate() {
-            let tensor = planner.copy_output(index, value);
+        let steps = planner.finish();
 
-            if !tensor.shape.has_simple_strides() {
-                stage_size = max(stage_size, tensor.mem.len_bytes() / 4);
-            }
-
-            outputs.push(vec![f32::NAN; tensor.shape.size()])
-        }
-
-        let stage = vec![f32::NAN; stage_size];
-        let plan = planner.finish();
-
-        let graph_plan = if use_graph {
-            Some(record_graph(&handles, &plan))
-        } else {
-            None
-        };
-
-        CudnnExecutor {
+        CudaExecutor {
             handles,
-            plan,
-            graph_plan,
-            stage,
+            steps,
+            inputs,
             outputs,
-            use_graph: true,
             profile: false,
             last_profile: None,
+            output_buffers: None,
         }
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
-        let mut timers = vec![];
-        let start_cpu = Instant::now();
-        let start_all;
-        let end_all;
+        assert_eq!(inputs.len(), self.inputs.len());
 
         unsafe {
+            // copy inputs
+            self.handles.cudnn.stream().synchronize();
+            for (tensor, buffer) in zip(&self.inputs, inputs) {
+                tensor.copy_from_host(buffer);
+            }
+
+            // run the steps
+            self.handles.cudnn.stream().synchronize();
+            self.run();
+            self.handles.cudnn.stream().synchronize();
+
+            // initialize output buffers if this is the first time we need them
+            let outputs = &self.outputs;
+            let output_buffers = self.output_buffers.get_or_insert_with(|| {
+                outputs
+                    .iter()
+                    .map(|tensor| {
+                        assert!(tensor.shape.has_simple_strides());
+                        vec![f32::NAN; tensor.shape.strided_size()]
+                    })
+                    .collect()
+            });
+
+            // copy outputs
+            assert_eq!(output_buffers.len(), self.outputs.len());
+            for (tensor, buffer) in zip(&self.outputs, output_buffers) {
+                tensor.copy_to_host(buffer);
+                self.handles.cudnn.stream().synchronize();
+            }
+
+            // cannot be None, we just initialized this
+            self.output_buffers.as_ref().unwrap()
+        }
+    }
+
+    /// Run the steps in this executor. Does no explicit before/after synchronization,
+    /// so ensure inputs are written and synchronize before reading outputs.
+    pub unsafe fn run(&mut self) {
+        if !self.profile {
+            for step in &self.steps {
+                step.run(&self.handles);
+            }
+
+            self.last_profile = None
+        } else {
+            let mut timers = vec![];
+            let start_cpu = Instant::now();
+            let start_all;
+            let end_all;
+
             start_all = self.handles.cudnn.stream().record_new_event();
 
-            if let Some(graph_plan) = &self.graph_plan {
-                for &step in &graph_plan.steps_before {
-                    self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
-                }
+            for step in &self.steps {
+                let start = self.handles.cudnn.stream().record_new_event();
+                step.run(&self.handles);
+                let end = self.handles.cudnn.stream().record_new_event();
 
-                graph_plan.graph_exec.launch(self.handles.cudnn.stream());
-
-                for &step in &graph_plan.steps_after {
-                    self.plan[step].run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
-                }
-            } else {
-                for step in &self.plan {
-                    let start = self.handles.cudnn.stream().record_new_event();
-                    step.run(&self.handles, inputs, &mut self.stage, &mut self.outputs);
-                    let end = self.handles.cudnn.stream().record_new_event();
-
-                    if self.profile {
-                        timers.push((step, start, end));
-                    }
+                if self.profile {
+                    timers.push((step, start, end));
                 }
             }
 
             end_all = self.handles.cudnn.stream().record_new_event();
             self.handles.cudnn.stream().synchronize();
-        }
 
-        let end_cpu = Instant::now();
+            let end_cpu = Instant::now();
 
-        if self.profile {
             let mut profile = Profile::default();
 
             for (i, (step, start, end)) in timers.iter().enumerate() {
                 let time = end.time_elapsed_since(start);
 
                 *match step {
-                    Step::CopyInput { .. } => &mut profile.copy_to_device,
                     Step::Conv { .. } => &mut profile.conv,
                     Step::MatMul { .. } => &mut profile.mat_mul,
                     Step::TensorOp { .. } => &mut profile.tensor_op,
                     Step::Gather { .. } => &mut profile.gather,
-                    Step::CopyOutput { .. } => &mut profile.copy_to_host,
                 } += time;
 
                 profile
@@ -195,15 +189,7 @@ impl CudnnExecutor {
             profile.timing_overhead = (overhead_end - end_cpu).as_secs_f32();
 
             self.last_profile = Some(profile)
-        } else {
-            self.last_profile = None;
         }
-
-        &self.outputs
-    }
-
-    pub fn use_graph(&mut self, use_graph: bool) {
-        self.use_graph = use_graph;
     }
 
     pub fn set_profile(&mut self, profile: bool) {
@@ -215,50 +201,9 @@ impl CudnnExecutor {
     }
 }
 
-fn record_graph(handles: &Handles, steps: &[Step]) -> GraphPlan {
-    let mut steps_before = vec![];
-    let mut steps_after = vec![];
-
-    unsafe {
-        handles.cudnn.stream().begin_capture();
-
-        for (i, step) in steps.iter().enumerate() {
-            match step {
-                Step::CopyInput { .. } => {
-                    steps_before.push(i);
-                    continue;
-                }
-                Step::CopyOutput { .. } => {
-                    steps_after.push(i);
-                    continue;
-                }
-                Step::Conv { .. } | Step::MatMul { .. } | Step::TensorOp { .. } | Step::Gather { .. } => {
-                    step.run(handles, &[], &mut [], &mut []);
-                }
-            }
-        }
-
-        assert_eq!(steps_before, (0..steps_before.len()).collect_vec());
-        assert_eq!(
-            steps_after,
-            ((steps.len() - steps_after.len())..steps.len()).collect_vec()
-        );
-
-        let graph = handles.cudnn.stream().end_capture();
-        let graph_exec = graph.instantiate();
-
-        GraphPlan {
-            steps_before,
-            graph_exec,
-            steps_after,
-        }
-    }
-}
-
 impl Step {
-    unsafe fn run(&self, handles: &Handles, inputs: &[&[f32]], stage: &mut [f32], outputs: &mut [Vec<f32>]) {
+    unsafe fn run(&self, handles: &Handles) {
         match self {
-            Step::CopyInput { index, mem } => mem.copy_from_host(cast_slice(inputs[*index])),
             Step::Conv { args } => {
                 args.run(&handles.cudnn);
             }
@@ -307,41 +252,19 @@ impl Step {
                 )
                 .unwrap();
             }
-            //TODO look into fusing the copy operation if multiple outputs are sliced views on the same value
-            //  this has recently become easier now that restriding is available
-            Step::CopyOutput { index, tensor } => {
-                let index = *index;
-
-                if tensor.shape.has_simple_strides() {
-                    // directly copy everything into the output
-                    tensor.mem.copy_to_host(cast_slice_mut(&mut outputs[index]));
-                } else {
-                    // copy the entire mem over
-                    let used_stage = &mut stage[0..tensor.mem.len_bytes() / 4];
-                    tensor.mem.copy_to_host(cast_slice_mut(used_stage));
-
-                    // selectively copy over the actual values we want
-                    let output = &mut outputs[index];
-                    let mut output_i = 0;
-                    tensor.shape.visit_strided_indices(|stage_i| {
-                        output[output_i] = used_stage[stage_i];
-                        output_i += 1;
-                    });
-                }
-            }
         }
     }
 }
 
-impl Debug for CudnnExecutor {
+impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    use_graph: {}, plan: [\n",
-            self.profile, self.handles, self.use_graph
+            "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n",
+            self.profile, self.handles
         )?;
 
-        for step in &self.plan {
+        for step in &self.steps {
             writeln!(f, "        {:?},", step)?;
         }
 
@@ -362,8 +285,6 @@ impl Display for Profile {
         writeln!(f, "  Matmul:    {:>10.4} ms", self.mat_mul * 1e3)?;
         writeln!(f, "  Tensor op: {:>10.4} ms", self.tensor_op * 1e3)?;
         writeln!(f, "  Gather:    {:>10.4} ms", self.gather * 1e3)?;
-        writeln!(f, "  Copy ->:   {:>10.4} ms", self.copy_to_device * 1e3)?;
-        writeln!(f, "  Copy <-:   {:>10.4} ms", self.copy_to_host * 1e3)?;
         writeln!(f, "  ================")?;
         writeln!(f, "  Total GPU: {:>10.4} ms", self.total_gpu * 1e3)?;
         writeln!(f, "  Total CPU: {:>10.4} ms", self.total_cpu * 1e3)?;
