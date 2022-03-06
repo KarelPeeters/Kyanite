@@ -77,6 +77,12 @@ impl Tensor {
             self.shape, other.shape,
             "Both tensors must have the same shape and stride for now"
         );
+        // necessary to ensure "in-between" data does not get overriden
+        assert!(
+            self.shape.has_simple_strides(),
+            "Tensors must have simple stride for now, got {:?}",
+            self.shape
+        );
         self.mem.copy_from_device(&other.mem);
     }
 
