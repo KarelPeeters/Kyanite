@@ -35,6 +35,7 @@ struct MetaData<'a> {
     scalar_names: &'static [&'static str],
 }
 
+//TODO include terminal position in output?
 #[derive(Debug)]
 pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     game: String,

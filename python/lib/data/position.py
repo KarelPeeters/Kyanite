@@ -3,12 +3,14 @@ from typing import List
 import numpy as np
 import torch
 
+from lib.data.taker import Taker
 from lib.games import Game
 from lib.util import DEVICE, prod
 
 
 class Position:
     def __init__(self, game: Game, scalar_names: List[str], data: bytes):
+        self.game = game
         data = Taker(data)
 
         scalar_array = np.frombuffer(data.take(len(scalar_names) * 4), dtype=np.float32)
@@ -52,9 +54,34 @@ class Position:
         data.finish()
 
 
+class PostTerminalPosition:
+    def __init__(self, terminal: Position):
+        game = terminal.game
+        self.game = game
+
+        self.available_mv_count = 0
+
+        self.input_scalars = np.full(game.input_scalar_channels, np.nan, np.float32)
+        self.input_bools = np.full(game.input_bool_shape, np.nan, np.uint8)
+
+        self.policy_indices = np.zeros(0, dtype=np.int32)
+        self.policy_values = np.zeros(0, dtype=np.float32)
+
+        # TODO is this right? we "extremify" the values here
+        self.final_wdl = terminal.final_wdl
+        self.zero_wdl = terminal.final_wdl
+        self.net_wdl = terminal.final_wdl
+        self.final_v = terminal.final_v
+        self.zero_v = terminal.final_v
+        self.net_v = terminal.final_v
+        self.final_moves_left = 0.0
+        self.zero_moves_left = 0.0
+        self.net_moves_left = 0.0
+
+
 class PositionBatch:
     def __init__(self, game: Game, positions: List[Position], pin_memory: bool):
-        self.max_available_moves = max(p.available_mv_count for p in positions)
+        self.max_available_moves = max(p.available_mv_count if p is not None else 0 for p in positions)
 
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
@@ -106,14 +133,26 @@ class PositionBatch:
         return len(self.input_full)
 
 
-class Taker:
-    def __init__(self, inner):
-        self.inner = inner
-        self.next = 0
+class UnrolledPositionBatch:
+    def __init__(self, game: Game, unroll_steps: int, chains: List[List[Position]], pin_memory: bool):
+        assert unroll_steps > 0, "Must contain at least one unroll step"
+        for chain in chains:
+            assert len(chain) == unroll_steps + 1
 
-    def take(self, n: int):
-        self.next += n
-        return self.inner[self.next - n:self.next]
+        positions_by_step = [[] for _ in range(unroll_steps + 1)]
 
-    def finish(self):
-        assert self.next == len(self.inner), f"Only read {self.next}/{len(self.inner)} bytes"
+        for chain in chains:
+            last_position = None
+
+            for si, p in enumerate(chain):
+                if p is not None:
+                    positions_by_step[si].append(p)
+                    last_position = p
+                else:
+                    assert last_position is not None, "Each chain must contain at least one position"
+                    positions_by_step[si].append(PostTerminalPosition(last_position))
+
+        self.steps = [
+            PositionBatch(game, positions, pin_memory)
+            for positions in positions_by_step
+        ]
