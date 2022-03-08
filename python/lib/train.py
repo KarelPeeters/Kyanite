@@ -11,7 +11,7 @@ from lib.data.position import PositionBatch, UnrolledPositionBatch
 from lib.games import Game
 from lib.logger import Logger
 from lib.networks import MuZeroNetworks
-from lib.util import calc_gradient_norms, calc_parameter_norm, scale_gradient
+from lib.util import calc_gradient_norms, calc_parameter_norm
 
 
 class ScalarTarget:
@@ -102,27 +102,34 @@ class TrainSettings:
             log_prefix: str, logger: Logger,
             batch: UnrolledPositionBatch,
     ):
-        curr_state = networks.representation(batch.steps[0].input_full)
-        scalars_0, policy_logits_0 = networks.prediction(curr_state)
+        total_loss = 0
+        curr_state = None
 
-        total_loss = self.evaluate_batch_predictions(f"{log_prefix}/f0", logger, batch.steps[0], scalars_0,
-                                                     policy_logits_0)
+        for k, step in enumerate(batch.positions):
+            if k == 0:
+                curr_state = networks.representation(step.input_full)
+            else:
+                prev_position = batch.positions[k - 1]
+                curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
 
-        logger.log("state", f"max_0", torch.std(curr_state.flatten(1), dim=1).mean())
-
-        for k in range(1, len(batch.steps)):
-            curr_state = networks.dynamics(curr_state, batch.steps[k - 1].played_mv_full)
             scalars_k, policy_logits_k = networks.prediction(curr_state)
 
-            total_loss += 1 / k * self.evaluate_batch_predictions(f"{log_prefix}/f{k}", logger, batch.steps[k],
-                                                                  scalars_k, policy_logits_k)
+            total_loss += self.evaluate_batch_predictions(
+                f"{log_prefix}/f{k}", logger,
+                batch.positions[k], scalars_k, policy_logits_k
+            )
 
-            # TODO clamp/normalize curr_state somewhere
-            logger.log("state", f"max_{k}", torch.std(curr_state.flatten(1), dim=1).mean())
+            # TODO is a BN layer inside of the networks enough for hidden state normalization?
+            std, mean = torch.std_mean(curr_state.flatten(1), dim=1)
+            logger.log("state", f"std_{k}", std.mean())
+            logger.log("state", f"mean_{k}", mean.mean())
 
-            curr_state = scale_gradient(curr_state, 0.5)
+            # TODO _why_ does the muzero paper scale the gradient here?
+            #   maybe this is more important when working with SGD?
+            # curr_state = scale_gradient(curr_state, 0.5)
 
-        return total_loss
+        norm_loss = total_loss / len(batch.positions)
+        return norm_loss
 
     def evaluate_batch_predictions(
             self,

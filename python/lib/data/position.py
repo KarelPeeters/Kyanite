@@ -166,7 +166,8 @@ class UnrolledPositionBatch:
                     assert last_position is not None, "Each chain must contain at least one position"
                     positions_by_step[si].append(PostTerminalPosition(last_position))
 
-        self.steps = [
+        self.unroll_steps = unroll_steps
+        self.positions = [
             PositionBatch(game, positions, pin_memory)
             for positions in positions_by_step
         ]
