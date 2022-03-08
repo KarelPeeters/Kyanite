@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
+from lib.model.post_act import PostActNetwork, ScalarHead, AttentionPolicyHead
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
@@ -53,16 +53,16 @@ def main():
     def dummy_network():
         return PostActNetwork(
             game, 1, 8,
-            PostActScalarHead(game, 8, 2, 16),
-            PostActAttentionPolicyHead(game, 8, 4),
+            ScalarHead(game, 8, 2, 16),
+            AttentionPolicyHead(game, 8, 4),
         )
 
     def initial_network():
         channels = 64
         return PostActNetwork(
             game, 8, channels,
-            PostActScalarHead(game, channels, 4, 64),
-            PostActAttentionPolicyHead(game, channels, channels),
+            ScalarHead(game, channels, 4, 64),
+            AttentionPolicyHead(game, channels, channels),
         )
 
     initial_files_pattern = ""

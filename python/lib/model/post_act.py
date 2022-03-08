@@ -5,14 +5,14 @@ from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_ATT, CHESS_FLAT_TO_CON
 from lib.games import Game
 
 
-class PostActScalarHead(nn.Module):
-    def __init__(self, game: Game, channels: int, hidden_channels: int, hidden_size: int):
+class ScalarHead(nn.Module):
+    def __init__(self, board_size: int, channels: int, hidden_channels: int, hidden_size: int):
         super().__init__()
         self.seq = nn.Sequential(
             conv2d(channels, hidden_channels, 1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(hidden_channels * game.board_size * game.board_size, hidden_size),
+            nn.Linear(hidden_channels * board_size * board_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, 1 + 3 + 1)
         )
@@ -21,7 +21,7 @@ class PostActScalarHead(nn.Module):
         return self.seq(common)
 
 
-class PostActConvPolicyHead(nn.Module):
+class ConvPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int):
         assert game.policy_conv_channels is not None, "Conv head only works for games with policy_conv_channels set"
         super().__init__()
@@ -44,7 +44,7 @@ class PostActConvPolicyHead(nn.Module):
             return flat_policy
 
 
-class PostActAttentionPolicyHead(nn.Module):
+class AttentionPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int, query_channels: int):
         super().__init__()
         assert game.name == "chess", "Attention policy head only works for chess for now"
@@ -72,29 +72,43 @@ class PostActAttentionPolicyHead(nn.Module):
         return flat_policy
 
 
-class PostActNetwork(nn.Module):
-    def __init__(self, game: Game, depth: int, channels: int, scalar_head: nn.Module, policy_head: nn.Module):
+class ConcatInputsChannelwise(nn.Module):
+    def __init__(self, inner: nn.Module):
         super().__init__()
+        self.inner = inner
 
-        self.tower = nn.Sequential(
-            conv2d(game.full_input_channels, channels, 3),
-            *[Block(channels) for _ in range(depth)],
-            nn.BatchNorm2d(channels),
-        )
+    def forward(self, x0, x1):
+        x = torch.concat([x0, x1], dim=1)
+        y = self.inner(x)
+        return y
 
+
+class PredictionHeads(nn.Module):
+    def __init__(self, scalar_head: nn.Module, policy_head: nn.Module):
+        super().__init__()
         self.scalar_head = scalar_head
         self.policy_head = policy_head
 
-    def forward(self, input):
-        common = self.tower(input)
-
+    def forward(self, common):
         scalars = self.scalar_head(common)
         policy = self.policy_head(common)
-
         return scalars, policy
 
 
-class Block(nn.Module):
+class ResTower(nn.Module):
+    def __init__(self, depth: int, input_channels: int, channels: int):
+        super().__init__()
+        self.tower = nn.Sequential(
+            conv2d(input_channels, channels, 3),
+            *[ResBlock(channels) for _ in range(depth)],
+            nn.BatchNorm2d(channels),
+        )
+
+    def forward(self, input):
+        return self.tower(input)
+
+
+class ResBlock(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
 

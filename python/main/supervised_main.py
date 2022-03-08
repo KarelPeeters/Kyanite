@@ -10,7 +10,7 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
+from lib.model.post_act import PostActNetwork, ScalarHead, AttentionPolicyHead
 from lib.plotter import LogPlotter, run_with_plotter
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
@@ -65,8 +65,8 @@ def main(plotter: LogPlotter):
         channels = 32
         new_network = PostActNetwork(
             game, 8, channels,
-            PostActScalarHead(game, channels, 4, 32),
-            PostActAttentionPolicyHead(game, channels, channels),
+            ScalarHead(game, channels, 4, 32),
+            AttentionPolicyHead(game, channels, channels),
         )
 
         old_params = list(old_network.named_parameters())

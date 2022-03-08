@@ -34,7 +34,7 @@ def plot_grad_norms(settings: TrainSettings, network: nn.Module, batch):
         pass
 
     network.train()
-    loss = settings.evaluate_batch(network, "", dummy_log, batch)
+    loss = settings.evaluate_batch_predictions(network, "", dummy_log, batch)
     loss.backward()
 
     grad_norms = list(reversed(grad_norms))

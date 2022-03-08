@@ -7,11 +7,11 @@ from torch import nn
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 
-from lib.data.buffer import FileListSampler
-from lib.data.position import PositionBatch
+from lib.data.position import PositionBatch, UnrolledPositionBatch
 from lib.games import Game
 from lib.logger import Logger
-from lib.util import calc_gradient_norms
+from lib.networks import MuZeroNetworks
+from lib.util import calc_gradient_norms, calc_parameter_norm, scale_gradient
 
 
 class ScalarTarget:
@@ -38,7 +38,7 @@ ScalarTarget.Zero = ScalarTarget(0.0)
 @dataclass
 class TrainSettings:
     game: Game
-    value_target: ScalarTarget
+    scalar_target: ScalarTarget
 
     value_weight: float
     wdl_weight: float
@@ -47,12 +47,9 @@ class TrainSettings:
     policy_weight: float
 
     train_in_eval_mode: bool
-
     clip_norm: float
 
-    def train_step(self, sampler: FileListSampler, network: nn.Module, optimizer: Optimizer, logger: Logger):
-        batch = sampler.next_batch()
-
+    def train_step(self, batch: PositionBatch, network: nn.Module, optimizer: Optimizer, logger: Logger):
         optimizer.zero_grad(set_to_none=True)
 
         if self.train_in_eval_mode:
@@ -60,7 +57,8 @@ class TrainSettings:
         else:
             network.train()
 
-        loss = self.evaluate_batch(network, "train", logger, batch, self.value_target)
+        scalars, policy_logits = network(batch.input_full)
+        loss = self.evaluate_batch_predictions("train", logger, batch, scalars, policy_logits)
         loss.backward()
 
         grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
@@ -71,26 +69,75 @@ class TrainSettings:
         logger.log("grad_norm", "mean", np.mean(grad_norms))
         logger.log("grad_norm", "max", np.max(grad_norms))
         logger.log("grad_norm", "torch", grad_norm)
+        logger.log("param_norm", "param_norm", calc_parameter_norm(network))
 
-        param_norm = sum(param.detach().norm(p=2) for param in network.parameters()).item()
-        logger.log("param_norm", "param_norm", param_norm)
+    def train_step_unrolled(
+            self,
+            batch: UnrolledPositionBatch,
+            networks: MuZeroNetworks, optimizer: Optimizer,
+            logger: Logger
+    ):
+        optimizer.zero_grad(set_to_none=True)
 
-    def evaluate_batch(
-            self, network: nn.Module,
+        if self.train_in_eval_mode:
+            networks.eval()
+        else:
+            networks.train()
+
+        loss = self.evaluate_batch_unrolled(networks, "train", logger, batch)
+        loss.backward()
+
+        grad_norm = clip_grad_norm_(networks.parameters(), max_norm=self.clip_norm)
+        optimizer.step()
+
+        grad_norms = calc_gradient_norms(networks)
+        logger.log("grad_norm", "min", np.min(grad_norms))
+        logger.log("grad_norm", "mean", np.mean(grad_norms))
+        logger.log("grad_norm", "max", np.max(grad_norms))
+        logger.log("grad_norm", "torch", grad_norm)
+        logger.log("param_norm", "param_norm", calc_parameter_norm(networks))
+
+    def evaluate_batch_unrolled(
+            self, networks: MuZeroNetworks,
+            log_prefix: str, logger: Logger,
+            batch: UnrolledPositionBatch,
+    ):
+        curr_state = networks.representation(batch.steps[0].input_full)
+        scalars_0, policy_logits_0 = networks.prediction(curr_state)
+
+        total_loss = self.evaluate_batch_predictions(f"{log_prefix}/f0", logger, batch.steps[0], scalars_0,
+                                                     policy_logits_0)
+
+        logger.log("state", f"max_0", torch.std(curr_state.flatten(1), dim=1).mean())
+
+        for k in range(1, len(batch.steps)):
+            curr_state = networks.dynamics(curr_state, batch.steps[k - 1].played_mv_full)
+            scalars_k, policy_logits_k = networks.prediction(curr_state)
+
+            total_loss += 1 / k * self.evaluate_batch_predictions(f"{log_prefix}/f{k}", logger, batch.steps[k],
+                                                                  scalars_k, policy_logits_k)
+
+            # TODO clamp/normalize curr_state somewhere
+            logger.log("state", f"max_{k}", torch.std(curr_state.flatten(1), dim=1).mean())
+
+            curr_state = scale_gradient(curr_state, 0.5)
+
+        return total_loss
+
+    def evaluate_batch_predictions(
+            self,
             log_prefix: str, logger: Logger,
             batch: PositionBatch,
-            scalar_target: ScalarTarget
+            scalars, policy_logits,
     ):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
-
-        scalars, policy_logit = network(batch.input_full)
 
         value = torch.tanh(scalars[:, 0])
         wdl = nnf.softmax(scalars[:, 1:4], -1)
         moves_left = torch.relu(scalars[:, 4])
 
-        batch_value = scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
-        batch_wdl = scalar_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
+        batch_value = self.scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
+        batch_wdl = self.scalar_target.pick(final=batch.wdl_final, zero=batch.wdl_zero)
         # TODO this should be replaced with the same pick construct as the other ones
         batch_moves_left = batch.moves_left_final
 
@@ -98,7 +145,7 @@ class TrainSettings:
         loss_value = nnf.mse_loss(value, batch_value)
         loss_wdl = nnf.mse_loss(wdl, batch_wdl)
         loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
-        loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logit, batch.policy_indices, batch.policy_values)
+        loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values)
 
         loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left, loss_policy)
 

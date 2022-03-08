@@ -5,11 +5,13 @@ from torch import nn
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PIN_MEMORY = DEVICE == "cuda"
 
+
 def prod(values):
     result = 1
     for v in values:
         result *= v
     return result
+
 
 def print_param_count(module: nn.Module, ):
     param_count = sum(prod(p.shape) for p in module.parameters())
@@ -30,7 +32,15 @@ def calc_gradient_norms(module: nn.Module):
     return np.array(norms)
 
 
+def calc_parameter_norm(module: nn.Module):
+    return sum(param.detach().norm(p=2) for param in module.parameters()).item()
+
+
 def guess_module_device(model: nn.Module) -> str:
     for p in model.parameters():
         return p.device
     return "cpu"
+
+
+def scale_gradient(x: torch.tensor, t: float) -> torch.tensor:
+    return t * x + (1 - t) * x.detach()

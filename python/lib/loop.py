@@ -282,7 +282,8 @@ class LoopSettings:
         network.eval()
         for prefix, sampler in setups:
             batch = sampler.next_batch()
-            self.train_settings.evaluate_batch(network, prefix, logger, batch, self.train_settings.value_target)
+            self.train_settings.evaluate_batch_predictions(network, prefix, logger, batch,
+                                                           self.train_settings.scalar_target)
             sampler.close()
 
 
