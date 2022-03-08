@@ -260,15 +260,15 @@ impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CudnnExecutor {{\n    profile: {},\n    handle: {:?},\n    plan: [\n",
-            self.profile, self.handles
+            "CudaExecutor {{\n    profile: {},\n    inputs: {:?},\n    outputs: {:?}\n    plan: [\n",
+            self.profile, self.inputs, self.outputs,
         )?;
 
         for step in &self.steps {
             writeln!(f, "        {:?},", step)?;
         }
 
-        writeln!(f, "    ]\n}}")?;
+        write!(f, "    ]\n}}")?;
         Ok(())
     }
 }

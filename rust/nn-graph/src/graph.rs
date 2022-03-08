@@ -1,9 +1,9 @@
-use decorum::cmp::FloatEq;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
+use decorum::cmp::FloatEq;
 use itertools::{zip_eq, Itertools};
 use rand::{thread_rng, Rng};
 
@@ -729,6 +729,8 @@ impl Display for Graph {
         writeln!(f, "Graph {{")?;
 
         writeln!(f, "  check: {},", self.check)?;
+        writeln!(f, "  inputs: {:?},", inputs)?;
+        writeln!(f, "  outputs: {:?},", outputs)?;
 
         writeln!(f, "  values: [")?;
         for (i, info) in values.iter().enumerate() {
@@ -737,15 +739,12 @@ impl Display for Graph {
                 "    {:?} = {:?},",
                 Value {
                     index: i,
-                    check: *check
+                    check: *check,
                 },
                 info
             )?;
         }
         writeln!(f, "  ],")?;
-
-        writeln!(f, "  inputs: {:?},", inputs)?;
-        writeln!(f, "  outputs: {:?},", outputs)?;
 
         writeln!(f, "}}")?;
 

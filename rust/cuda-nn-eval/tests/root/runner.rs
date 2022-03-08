@@ -42,14 +42,12 @@ pub fn test_all_graph(
     } else {
         &cpu_outputs
     };
+    println!();
 
     println!("Testing Cudnn without graph");
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
     assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
-
-    println!("Testing Cudnn with graph");
-    let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
-    assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
+    println!();
 
     cpu_outputs
 }

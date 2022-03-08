@@ -258,6 +258,27 @@ fn affine_single_element() {
 }
 
 #[test]
+fn affine_add_twice() {
+    let mut graph = Graph::new();
+
+    let x = graph.input(shape![Size::BATCH, 1, 1, 1]);
+    let w1 = graph.constant(shape![1, 1, 1, 1], vec![1.0]);
+    let w2 = graph.constant(shape![1, 1, 1, 1], vec![2.0]);
+
+    let y1 = graph.add(x, w1);
+    let y2 = graph.add(y1, w2);
+
+    graph.output(y2);
+
+    test_all(
+        &graph,
+        2,
+        &[manual_tensor((2, 1, 1, 1), vec![0.0, 1.0])],
+        Some(&[manual_tensor((2, 1, 1, 1), vec![3.0, 4.0])]),
+    )
+}
+
+#[test]
 fn affine_single_div() {
     let mut graph = Graph::new();
 
