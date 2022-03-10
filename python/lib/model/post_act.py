@@ -96,12 +96,12 @@ class PredictionHeads(nn.Module):
 
 
 class ResTower(nn.Module):
-    def __init__(self, depth: int, input_channels: int, channels: int):
+    def __init__(self, depth: int, input_channels: int, channels: int, final_affine=True):
         super().__init__()
         self.tower = nn.Sequential(
             conv2d(input_channels, channels, 3),
             *[ResBlock(channels) for _ in range(depth)],
-            nn.BatchNorm2d(channels),
+            nn.BatchNorm2d(channels, affine=final_affine),
         )
 
     def forward(self, input):

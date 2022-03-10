@@ -44,3 +44,7 @@ def guess_module_device(model: nn.Module) -> str:
 
 def scale_gradient(x: torch.tensor, t: float) -> torch.tensor:
     return t * x + (1 - t) * x.detach()
+
+
+def inv_softmax(x, c):
+    return torch.log(x) + c

@@ -48,6 +48,8 @@ class TrainSettings:
 
     train_in_eval_mode: bool
     clip_norm: float
+    mask_policy: bool
+    flip_state: bool
 
     def train_step(self, batch: PositionBatch, network: nn.Module, optimizer: Optimizer, logger: Logger):
         optimizer.zero_grad(set_to_none=True)
@@ -114,6 +116,9 @@ class TrainSettings:
 
             scalars_k, policy_logits_k = networks.prediction(curr_state)
 
+            if self.flip_state:
+                curr_state = torch.flip(curr_state, [1])
+
             total_loss += self.evaluate_batch_predictions(
                 f"{log_prefix}/f{k}", logger,
                 batch.positions[k], scalars_k, policy_logits_k
@@ -152,22 +157,25 @@ class TrainSettings:
         loss_value = nnf.mse_loss(value, batch_value)
         loss_wdl = nnf.mse_loss(wdl, batch_wdl)
         loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
-        loss_policy, acc_policy, cap_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values)
+        eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, self.mask_policy)
 
-        loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left, loss_policy)
+        loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left,
+                                         eval_policy.train_loss)
 
-        # accuracies
-        # TODO check that all of this calculates the correct values in the presence of pass moves
-        # TODO actually, for games like ataxx just never ask the network about pass positions
+        # value accuracies
         batch_size = len(batch)
-
         acc_value = torch.eq(value.sign(), batch_value.sign()).sum() / (batch_value != 0).sum()
         acc_wdl = torch.eq(wdl.argmax(dim=-1), batch_wdl.argmax(dim=-1)).sum() / batch_size
 
         logger.log("acc-value", f"{log_prefix} value", acc_value)
         logger.log("acc-value", f"{log_prefix} wdl", acc_wdl)
-        logger.log("acc-policy", f"{log_prefix} acc", acc_policy)
-        logger.log("acc-policy", f"{log_prefix} captured", cap_policy)
+
+        # log policy info
+        logger.log("acc-policy", f"{log_prefix} acc", eval_policy.norm_acc)
+        logger.log("acc-policy", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
+        logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
+
+        logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
 
         return loss_total
 
@@ -196,7 +204,7 @@ class TrainSettings:
         return loss_total
 
 
-def evaluate_policy(logits, indices, values):
+def old_evaluate_policy(logits, indices, values):
     """Returns the cross-entropy loss, the accuracy and the value of the argmax policy."""
     assert len(indices.shape) == 2
     assert indices.shape == values.shape
@@ -228,3 +236,81 @@ def evaluate_policy(logits, indices, values):
     cap = torch.gather(values, 1, selected_argmax).mean() + 2 * (empty_count / batch_size)
 
     return total_loss, acc, cap
+
+
+@dataclass
+class PolicyEvaluation:
+    train_loss: torch.tensor
+    norm_loss: torch.tensor
+
+    norm_acc: torch.tensor
+    norm_top_mass: torch.tensor
+    norm_valid_mass: torch.tensor
+
+
+VALUE_MASS_TOLERANCE = 0.01
+
+
+def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> PolicyEvaluation:
+    """
+    Returns the cross-entropy loss, the accuracy and the value of the argmax policy.
+    The loss is calculated between `softmax(logits, 1)` and `torch.zeros(logits.shape).scatter(1, indices, values)`
+    Indices 0 with value -1 are considered to be "unavailable" and not punished
+    """
+    assert len(indices.shape) == 2
+    assert indices.shape == values.shape
+    assert len(logits) == len(indices)
+
+    (batch_size, max_mv_count) = indices.shape
+    logits = logits.flatten(1)
+
+    # for each batch element, whether there are any valid moves
+    has_valid = (values != -1).any(dim=1)
+    has_valid_count = has_valid.sum()
+
+    # sum should be 1 or 0 (for no valid moves)
+    value_mass = (values * (values != -1)).sum(dim=1)
+    valid_and_1 = torch.logical_and(has_valid, (1.0 - value_mass < VALUE_MASS_TOLERANCE))
+    invalid_and_0 = torch.logical_and(~has_valid, value_mass == 0.0)
+    assert torch.logical_or(valid_and_1, invalid_and_0).all(), "Invalid value mass"
+
+    # select data based on both indices and (values != -1)
+    if mask_invalid_moves:
+        # only softmax between selected indices, implicitly assuming other logits are -inf
+        picked_logits = torch.gather(logits, 1, indices)
+        picked_logits[values == -1] = -np.inf
+        picked_logs = torch.log_softmax(picked_logits, 1)
+
+        top_index = torch.argmax(picked_logits, dim=1)
+        batch_acc = top_index == torch.argmax(values, dim=1)
+        batch_top_mass = torch.gather(values, 1, top_index.unsqueeze(1)).squeeze(1) * has_valid
+        batch_valid_mass = has_valid * np.nan
+    else:
+        # softmax between all logits, then only use selected logs, implicitly assuming other values are 0.0
+        logs = torch.log_softmax(logits, 1)
+        picked_logs = torch.gather(logs, 1, indices)
+        picked_logs[values == -1] = -np.inf
+
+        top_index = torch.argmax(logits, dim=1)
+        batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1))
+        batch_top_mass = has_valid * np.nan
+
+        predicted = torch.softmax(logits, 1)
+        predicted_invalid = torch.scatter(predicted, 1, indices, (values == -1).float(), reduce="multiply")
+        batch_valid_mass = 1 - predicted_invalid.sum(dim=1)
+
+    # cross-entropy loss
+    loss = -values * picked_logs
+
+    # unavailable moves (values == -1 from before) become -inf but should be 0
+    loss[loss.isinf()] = 0
+
+    # positions without any valid moves become rows of nan, which we skip here
+    total_loss = loss.nansum()
+    return PolicyEvaluation(
+        train_loss=total_loss / batch_size,
+        norm_loss=total_loss / has_valid_count,
+        norm_acc=(batch_acc * has_valid).sum() / has_valid_count,
+        norm_top_mass=batch_top_mass.sum() / has_valid_count,
+        norm_valid_mass=batch_valid_mass.sum() / has_valid_count,
+    )

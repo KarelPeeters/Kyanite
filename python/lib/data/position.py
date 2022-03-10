@@ -93,12 +93,17 @@ class PositionBatch:
         all_values = torch.empty(len(positions), 3, pin_memory=pin_memory)
         all_moves_left = torch.empty(len(positions), 3, pin_memory=pin_memory)
 
+        # positions with less available moves get padded extra indices 0 and values -1
         policy_indices = torch.zeros(len(positions), self.max_available_moves, dtype=torch.int64, pin_memory=pin_memory)
         policy_values = torch.empty(len(positions), self.max_available_moves, pin_memory=pin_memory)
         policy_values.fill_(-1)
 
         played_mv = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
-        played_mv_full = torch.zeros(len(positions), *game.input_mv_shape, pin_memory=pin_memory)
+
+        if game.input_mv_channels is not None:
+            played_mv_full = torch.zeros(len(positions), *game.input_mv_shape, pin_memory=pin_memory)
+        else:
+            played_mv_full = None
 
         for i, p in enumerate(positions):
             input_full[i, :game.input_scalar_channels, :, :] = torch.from_numpy(p.input_scalars) \
@@ -120,14 +125,15 @@ class PositionBatch:
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
             played_mv[i] = p.played_mv
-            played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
+            if game.input_mv_channels is not None:
+                played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
 
         self.input_full = input_full.to(DEVICE)
         self.policy_indices = policy_indices.to(DEVICE)
         self.policy_values = policy_values.to(DEVICE)
 
         self.played_mv = played_mv
-        self.played_mv_full = played_mv_full.to(DEVICE)
+        self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
 
         self.all_wdls = all_wdls.to(DEVICE)
         self.all_values = all_values.to(DEVICE)
