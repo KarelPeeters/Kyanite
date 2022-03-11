@@ -19,13 +19,14 @@ from lib.util import DEVICE
 # TODO list for muzero rewrite
 #   * train a network without policy mask, ie. penalize invalid move predictions
 #       * both alphazero and muzero style, see if they're any different
-#   * downscale loss when there are less boards with policy loss, but plot upscaled loss for fair comparison
 #   * rewrite tree search to deal with non-available moves as well
 #       * dynamic children array?
 #       * sort by policy and skip calculating uct for lower-policy moves
 #   * should the state be flipped inbetween moves? probably yes for chess, but not for other games
 #       * this could explain why 1,3,5 policies are easier to predict than 2, 4, 6
+#       * doesn't really seem to matter much, strangely enough
 #   * why do we keep getting sudden spikes? is it because of the duplicate batchnorm?
+#       * clipping the logs does't seem to help much
 
 
 def main(plotter: LogPlotter):
@@ -33,8 +34,10 @@ def main(plotter: LogPlotter):
 
     game = Game.find("chess")
 
-    paths = [fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin" for i in
-             range(2600, 3600)]
+    paths = [
+        fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
+        for i in range(2600, 3600)
+    ]
     files = [DataFile.open(game, p) for p in paths]
 
     sampler = FileListSampler(game, files, batch_size=64, unroll_steps=5, threads=1)
@@ -52,7 +55,7 @@ def main(plotter: LogPlotter):
         flip_state=False,
     )
 
-    output_path = "../../data/muzero/large_noaffine"
+    output_path = "../../data/muzero/large_noaffine_clipped"
     os.makedirs(output_path, exist_ok=False)
 
     channels = 256
