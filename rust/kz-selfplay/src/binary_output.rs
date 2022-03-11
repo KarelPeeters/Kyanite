@@ -162,7 +162,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             let final_values = ZeroValues::from_outcome(outcome.pov(player), moves_left);
 
             // board
-            self.mapper.encode(&mut board_bools, &mut board_scalars, board);
+            self.mapper.encode_input(&mut board_bools, &mut board_scalars, board);
 
             assert_eq!(self.mapper.input_bool_len(), board_bools.len());
             assert_eq!(self.mapper.input_scalar_count(), board_scalars.len());

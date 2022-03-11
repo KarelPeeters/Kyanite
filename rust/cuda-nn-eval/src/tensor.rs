@@ -2,6 +2,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
+use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DeviceMem;
 
 use crate::shape::StridedShape;
@@ -21,6 +22,12 @@ impl Tensor {
             shape
         );
         Tensor { mem, shape }
+    }
+
+    pub fn alloc(shape: StridedShape, device: Device) -> Self {
+        // TODO should we allow non-simple/densely strided shapes? we're potentially wasting memory here
+        let mem = DeviceMem::alloc(shape.strided_size() * 4, device);
+        Tensor::new(mem, shape)
     }
 
     pub fn descriptor(&self) -> TensorDescriptor {

@@ -7,10 +7,15 @@ mod core;
 
 #[derive(Debug, Copy, Clone)]
 pub struct OptimizerSettings {
+    pub optimize: bool,
     pub force_bias_through_conv: bool,
 }
 
 pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
+    if !settings.optimize {
+        return graph.clone();
+    }
+
     let mut optimizer = Optimizer::new(settings, graph);
 
     // ensure all inputs are copied over in the same order
@@ -33,6 +38,7 @@ pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
 impl Default for OptimizerSettings {
     fn default() -> Self {
         OptimizerSettings {
+            optimize: true,
             force_bias_through_conv: false,
         }
     }

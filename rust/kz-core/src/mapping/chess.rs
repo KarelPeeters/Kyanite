@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use kz_util::IndexOf;
 
 use crate::mapping::bit_buffer::BitBuffer;
-use crate::mapping::{InputMapper, PolicyMapper};
+use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ChessStdMapper;
@@ -28,7 +28,7 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         2 + (1 + 1) + (2 * 2)
     }
 
-    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
+    fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
         let inner = board.inner();
         let pov_color = inner.side_to_move();
         let pov_colors = [pov_color, !pov_color];
@@ -372,4 +372,41 @@ pub fn generate_all_flat_moves_pov() -> Vec<ChessMove> {
 
     assert_eq!(result.len(), FLAT_MOVE_COUNT);
     result
+}
+
+impl MuZeroMapper<ChessBoard> for ChessStdMapper {
+    fn mv_full_shape(&self) -> [usize; 3] {
+        [8, 8, 8]
+    }
+
+    //TODO in reality we wont have a board while we're encoding the move
+    //TODO in general think more about how POV should work in muzero
+    fn encode_mv(&self, result: &mut Vec<f32>, board: &ChessBoard, mv: ChessMove) {
+        let mv_pov = move_pov(board.inner().side_to_move(), mv);
+
+        // first 2 channels: from, to
+        let start = result.len();
+        result.extend(std::iter::repeat(0.0).take(2 * 64));
+        result[start + mv_pov.get_source().to_index()] = 1.0;
+        result[start + 64 + mv_pov.get_dest().to_index()] = 1.0;
+
+        // 1 channel: all zeros (validness in original paper)
+        result.extend(std::iter::repeat(0.0).take(64));
+
+        // 5 channels: promotion bools, repeated 64 times to fill the entire channel
+        let all_expected = [
+            Some(Piece::Queen),
+            Some(Piece::Rook),
+            Some(Piece::Bishop),
+            Some(Piece::Knight),
+            None,
+        ];
+
+        for expected in all_expected {
+            let value = mv_pov.get_promotion() == expected;
+            result.extend(std::iter::repeat(value as u8 as f32).take(64));
+        }
+
+        assert_eq!(result.len() - start, self.mv_full_len());
+    }
 }

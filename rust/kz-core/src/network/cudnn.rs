@@ -55,7 +55,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         // encode input
         self.input.clear();
         for board in boards {
-            self.mapper.encode_full(&mut self.input, board.borrow())
+            self.mapper.encode_input_full(&mut self.input, board.borrow())
         }
 
         // pad the rest of input with nans

@@ -32,16 +32,16 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUn
 
     /// Encode this board.
     /// Should append `BOOL_COUNT` booleans to `bool_result` and `FLOAT_COUNT` floats to `float_result`..
-    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B);
+    fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B);
 
-    fn encode_full(&self, result: &mut Vec<f32>, board: &B) {
+    fn encode_input_full(&self, result: &mut Vec<f32>, board: &B) {
         let bool_count = self.input_bool_len();
         let [_, w, h] = self.input_bool_shape();
 
         let mut bools = BitBuffer::new(bool_count);
         let mut scalars = vec![];
 
-        self.encode(&mut bools, &mut scalars, board);
+        self.encode_input(&mut bools, &mut scalars, board);
 
         assert_eq!(bool_count, bools.len());
         assert_eq!(self.input_scalar_count(), scalars.len());
@@ -77,10 +77,21 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
     fn index_to_move(&self, board: &B, index: usize) -> Option<B::Move>;
 }
 
-/// Utility trait automatically implemented for anything that implements both [InputMapper] and [PolicyMapper].
-pub trait BoardMapper<B: Board>: InputMapper<B> + PolicyMapper<B> {}
+//TODO update the docs in the file
+pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
+    fn mv_full_shape(&self) -> [usize; 3];
 
-impl<B: Board, M: InputMapper<B> + PolicyMapper<B>> BoardMapper<B> for M {}
+    fn mv_full_len(&self) -> usize {
+        self.mv_full_shape().iter().product()
+    }
+
+    fn encode_mv(&self, result: &mut Vec<f32>, board: &B, mv: B::Move);
+}
+
+/// Utility trait automatically implemented for anything that implements both [InputMapper] and [PolicyMapper].
+pub trait BoardMapper<B: Board>: InputMapper<B> + PolicyMapper<B> + MuZeroMapper<B> {}
+
+impl<B: Board, M: InputMapper<B> + PolicyMapper<B> + MuZeroMapper<B>> BoardMapper<B> for M {}
 
 /// A [BoardMapper] composed of separate input and policy mappers.
 #[derive(Debug)]
@@ -117,8 +128,8 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> InputMapper<B> for Compose
         self.input_mapper.input_scalar_count()
     }
 
-    fn encode(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B) {
-        self.input_mapper.encode(bools, scalars, board)
+    fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &B) {
+        self.input_mapper.encode_input(bools, scalars, board)
     }
 }
 

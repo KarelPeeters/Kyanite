@@ -2,7 +2,7 @@ use board_game::board::Board;
 use board_game::games::ttt::{Coord, TTTBoard};
 
 use crate::mapping::bit_buffer::BitBuffer;
-use crate::mapping::{InputMapper, PolicyMapper};
+use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct TTTStdMapper;
@@ -16,7 +16,7 @@ impl InputMapper<TTTBoard> for TTTStdMapper {
         0
     }
 
-    fn encode(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &TTTBoard) {
+    fn encode_input(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &TTTBoard) {
         bools.extend(Coord::all().map(|c| board.tile(c) == Some(board.next_player())));
         bools.extend(Coord::all().map(|c| board.tile(c) == Some(board.next_player().other())));
     }
@@ -33,5 +33,15 @@ impl PolicyMapper<TTTBoard> for TTTStdMapper {
 
     fn index_to_move(&self, _: &TTTBoard, index: usize) -> Option<Coord> {
         Some(Coord::from_i(index))
+    }
+}
+
+impl MuZeroMapper<TTTBoard> for TTTStdMapper {
+    fn mv_full_shape(&self) -> [usize; 3] {
+        todo!()
+    }
+
+    fn encode_mv(&self, _: &mut Vec<f32>, _: &TTTBoard, _: Coord) {
+        todo!()
     }
 }

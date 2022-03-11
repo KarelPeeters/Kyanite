@@ -1,7 +1,7 @@
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
 use crate::mapping::bit_buffer::BitBuffer;
-use crate::mapping::{InputMapper, PolicyMapper};
+use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone)]
 pub struct AtaxxStdMapper {
@@ -31,7 +31,7 @@ impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
         0
     }
 
-    fn encode(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
+    fn encode_input(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
         let (next_tiles, other_tiles) = board.tiles_pov();
         bools.extend(Coord::all(self.size).map(|c| next_tiles.has(c)));
         bools.extend(Coord::all(self.size).map(|c| other_tiles.has(c)));
@@ -116,3 +116,13 @@ pub const FROM_DX_DY: [(i8, i8); 16] = [
     (1, 2),
     (2, 2),
 ];
+
+impl MuZeroMapper<AtaxxBoard> for AtaxxStdMapper {
+    fn mv_full_shape(&self) -> [usize; 3] {
+        todo!()
+    }
+
+    fn encode_mv(&self, _: &mut Vec<f32>, _: &AtaxxBoard, _: Move) {
+        todo!()
+    }
+}
