@@ -102,7 +102,7 @@ impl CudaExecutor {
             // copy inputs
             self.handles.cudnn.stream().synchronize();
             for (tensor, buffer) in zip(&self.inputs, inputs) {
-                tensor.copy_from_host(buffer);
+                tensor.copy_from_host_staged(buffer);
             }
 
             // run the steps
@@ -115,17 +115,14 @@ impl CudaExecutor {
             let output_buffers = self.output_buffers.get_or_insert_with(|| {
                 outputs
                     .iter()
-                    .map(|tensor| {
-                        assert!(tensor.shape.has_simple_strides());
-                        vec![f32::NAN; tensor.shape.strided_size()]
-                    })
+                    .map(|tensor| vec![f32::NAN; tensor.shape.size()])
                     .collect()
             });
 
             // copy outputs
             assert_eq!(output_buffers.len(), self.outputs.len());
             for (tensor, buffer) in zip(&self.outputs, output_buffers) {
-                tensor.copy_to_host(buffer);
+                tensor.copy_to_host_staged(buffer);
                 self.handles.cudnn.stream().synchronize();
             }
 

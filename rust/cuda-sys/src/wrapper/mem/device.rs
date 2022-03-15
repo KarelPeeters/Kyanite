@@ -81,6 +81,7 @@ impl DevicePtr {
     pub unsafe fn copy_linear_from_host(&self, buffer: &[u8]) {
         self.assert_linear_in_bounds(buffer.len());
 
+        self.device().switch_to();
         cudaMemcpy(
             self.ptr(),
             buffer as *const _ as *const _,
@@ -93,6 +94,7 @@ impl DevicePtr {
     pub unsafe fn copy_linear_to_host(&self, buffer: &mut [u8]) {
         self.assert_linear_in_bounds(buffer.len());
 
+        self.device().switch_to();
         cudaMemcpy(
             buffer as *mut _ as *mut _,
             self.ptr(),
@@ -103,9 +105,16 @@ impl DevicePtr {
     }
 
     pub unsafe fn copy_linear_from_device(&self, other: &DevicePtr, len: usize) {
+        assert_eq!(
+            self.device(),
+            other.device(),
+            "Can only copy between tensors on the same device"
+        );
+
         self.assert_linear_in_bounds(len);
         other.assert_linear_in_bounds(len);
 
+        self.device().switch_to();
         cudaMemcpy(self.ptr(), other.ptr(), len, cudaMemcpyKind::cudaMemcpyDeviceToDevice).unwrap();
     }
 

@@ -1,23 +1,29 @@
+use std::cmp::Reverse;
 use std::fmt::Debug;
 
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
-use itertools::{zip_eq, Itertools};
+use itertools::{zip, zip_eq, Itertools};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StridedShape {
     shape: Vec<usize>,
     strides: Vec<usize>,
     has_simple_strides: bool,
+    has_dense_strides: bool,
 }
 
 impl StridedShape {
     pub fn new(shape: Vec<usize>, strides: Vec<usize>) -> Self {
         assert_eq!(shape.len(), strides.len(), "Shape and stride rank mismatch");
-        let has_simple_strides = itertools::equal(strides.iter().copied(), simple_strides(&shape));
+
+        let has_simple_strides = &strides == &simple_strides(&shape);
+        let has_dense_strides = has_dense_strides(&shape, &strides);
+
         StridedShape {
             shape,
             strides,
             has_simple_strides,
+            has_dense_strides,
         }
     }
 
@@ -40,6 +46,10 @@ impl StridedShape {
 
     pub fn has_simple_strides(&self) -> bool {
         self.has_simple_strides
+    }
+
+    pub fn has_dense_strides(&self) -> bool {
+        self.has_dense_strides
     }
 
     pub fn visit_strided_indices(&self, mut f: impl FnMut(usize)) {
@@ -79,7 +89,7 @@ impl StridedShape {
         // implementation roughly based on pytorch computeStride_impl:
         // https://github.com/pytorch/pytorch/blob/560cd881956bbf425251d63f0ff0f9085a759447/aten/src/ATen/TensorUtils.cpp#L335-L346
 
-        let new_size = new_shape.iter().copied().product();
+        let new_size = new_shape.iter().copied().product::<usize>();
         assert_eq!(
             self.size(),
             new_size,
@@ -201,6 +211,21 @@ fn simple_strides(shape: &[usize]) -> Vec<usize> {
 
     result.reverse();
     result
+}
+
+/// Whether the given shape covers every value within its data range.
+/// This is equivalent to asking whether any possible permutation of the shape has simple strides.
+fn has_dense_strides(shape: &[usize], strides: &[usize]) -> bool {
+    assert_eq!(shape.len(), strides.len());
+
+    let pairs = zip(shape.iter().copied(), strides.iter().copied())
+        .sorted_by_key(|x| Reverse(x.1))
+        .collect_vec();
+
+    let sorted_shape = pairs.iter().map(|&x| x.0).collect_vec();
+    let sorted_strides = pairs.iter().map(|&x| x.1).collect_vec();
+
+    simple_strides(&sorted_shape) == sorted_strides
 }
 
 fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], f: &mut impl FnMut(usize)) {

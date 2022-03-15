@@ -43,8 +43,8 @@ fn restride_with_bias() {
         test_restride(|handle, input_desc, input, output_desc, output| {
             let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD);
 
+            // we don't need to initialize anything, since alpha_2 is already 0
             let zero = handle.device().alloc(4);
-            zero.copy_linear_from_host(cast_slice(&[0f32]));
             let zero_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
 
             run_tensor_op(

@@ -68,7 +68,7 @@ impl<'a> Planner<'a> {
             Operation::Constant { data } => {
                 let result = self.alloc_tensor(result_shape);
                 unsafe {
-                    result.copy_from_host(cast_slice(&**data));
+                    result.copy_simple_from_host(cast_slice(&**data));
                 }
                 result
             }
@@ -354,13 +354,13 @@ impl<'a> Planner<'a> {
     }
 
     fn alloc_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {
-        DeviceTensor::alloc(self.handles.cudnn.device(), shape.dims)
+        DeviceTensor::alloc_simple(self.handles.cudnn.device(), shape.dims)
     }
 
     fn alloc_zero_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {
         let result = self.alloc_tensor(shape);
         unsafe {
-            result.copy_from_host(&vec![0.0; result.shape.size()]);
+            result.copy_simple_from_host(&vec![0.0; result.shape.size()]);
         }
         result
     }

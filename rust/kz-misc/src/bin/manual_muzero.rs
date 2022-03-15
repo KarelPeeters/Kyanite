@@ -4,7 +4,6 @@ use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 
 use cuda_nn_eval::executor::CudaExecutor;
-use cuda_nn_eval::shape::StridedShape;
 use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::chess::ChessStdMapper;
@@ -54,13 +53,13 @@ unsafe fn main_impl() {
     );
 
     let state_shape = fused.state_shape.eval(1);
-    let state_tensor = DeviceTensor::alloc(device, state_shape.dims);
+    let state_tensor = DeviceTensor::alloc_simple(device, state_shape.dims);
 
     println!("Initial representation");
     let mut input_encoded = vec![];
     mapper.encode_input_full(&mut input_encoded, &board);
 
-    representation.inputs[0].copy_from_host(&input_encoded);
+    representation.inputs[0].copy_simple_from_host(&input_encoded);
     representation.run();
     representation.handles.cudnn.stream().synchronize();
     state_tensor.copy_from(&representation.outputs[0]);
@@ -79,12 +78,12 @@ unsafe fn main_impl() {
         let policy_tensor = prediction.outputs[1].clone();
 
         let mut scalars = vec![0.0; 5];
-        scalars_tensor.copy_to_host(&mut scalars);
+        scalars_tensor.copy_simple_to_host(&mut scalars);
         scalars[0] = scalars[0].tanh();
         softmax_in_place(&mut scalars[1..4]);
 
         let mut policy = vec![0.0; mapper.policy_len()];
-        policy_tensor.copy_to_host(&mut policy);
+        policy_tensor.copy_simple_to_host(&mut policy);
         softmax_in_place(&mut policy);
 
         println!("Scalars: {:?}", scalars);
@@ -116,7 +115,7 @@ unsafe fn main_impl() {
         mapper.encode_mv(&mut move_encoded, &board, mv);
 
         dynamics.inputs[0].copy_from(&state_tensor);
-        dynamics.inputs[1].copy_from_host(&move_encoded);
+        dynamics.inputs[1].copy_simple_from_host(&move_encoded);
         dynamics.run();
         dynamics.handles.cudnn.stream().synchronize();
         state_tensor.copy_from(&dynamics.outputs[0]);
