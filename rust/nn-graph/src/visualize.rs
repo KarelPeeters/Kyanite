@@ -224,6 +224,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 }
                 Operation::Permute { .. }
                 | Operation::Slice { .. }
+                | Operation::Flip { .. }
                 | Operation::Gather { .. }
                 | Operation::Concat { .. }
                 | Operation::Conv { .. }
@@ -246,6 +247,7 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         Operation::View { .. }
         | Operation::Permute { .. }
         | Operation::Slice { .. }
+        | Operation::Flip { .. }
         | Operation::Gather { .. }
         | Operation::Concat { .. }
         | Operation::Conv { .. }

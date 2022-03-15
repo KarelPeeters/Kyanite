@@ -1,7 +1,6 @@
 use itertools::Itertools;
 
-use nn_graph::graph::{ElementOp, Graph, Value};
-use nn_graph::ndarray::s;
+use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -41,23 +40,50 @@ fn slice() {
     let mut graph = Graph::new();
 
     let input = graph.input(shape![10, 4]);
-    let indexed = graph.index(input, 1, 0);
-    let sliced = graph.slice(input, 0, 0, 2);
-    let both = graph.slice(indexed, 0, 0, 2);
-    graph.output_all(&[indexed, sliced, both]);
-
     let input_tensor = linspace_tensor((10, 4));
 
-    test_all(
-        &graph,
-        0,
-        &[input_tensor.to_shared().into_dyn()],
-        Some(&[
-            input_tensor.slice(s![.., 0]).into_dyn().to_shared(),
-            input_tensor.slice(s![0..2, ..]).into_dyn().to_shared(),
-            input_tensor.slice(s![0..2, 0]).into_dyn().to_shared(),
-        ]),
-    )
+    let indexed = graph.index(input, 1, 0);
+    let outputs = [
+        // start:end slicing
+        indexed,
+        graph.slice(input, 0, SliceRange::new(0, 2, 1)),
+        graph.slice(indexed, 0, SliceRange::new(0, 2, 1)),
+    ];
+
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[input_tensor.into_dyn()], None)
+}
+
+#[test]
+fn flip() {
+    let mut graph = Graph::new();
+
+    let x = graph.constant(shape![2, 3], linspace_vec(6));
+    let y0 = graph.flip(x, 0);
+    let y1 = graph.flip(x, 1);
+
+    graph.output_all(&[y0, y1]);
+
+    test_all(&graph, 0, &[], None);
+}
+
+#[test]
+fn repeat() {
+    let mut graph = Graph::new();
+
+    let x = graph.constant(shape![2, 3], linspace_vec(6));
+
+    let outputs = [
+        graph.repeat(x, 0, 0),
+        graph.repeat(x, 0, 2),
+        graph.repeat(x, 1, 0),
+        graph.repeat(x, 1, 2),
+    ];
+
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[], None);
 }
 
 #[test]
@@ -423,7 +449,7 @@ fn concat() {
     let b = graph.constant(shape![2, 1, 4], linspace_vec(2 * 1 * 4));
     let c = graph.constant(shape![2, 8, 4], linspace_vec(2 * 8 * 4));
 
-    let result = graph.concat(vec![a, b, c], 1);
+    let result = graph.concat(vec![a, b, c], 1, None);
     graph.output(result);
 
     test_all(&graph, 0, &[], None);

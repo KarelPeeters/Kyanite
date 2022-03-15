@@ -1,8 +1,10 @@
 use std::cmp::Reverse;
 use std::fmt::Debug;
 
-use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
 use itertools::{zip, zip_eq, Itertools};
+
+use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
+use nn_graph::graph::SliceRange;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StridedShape {
@@ -76,12 +78,16 @@ impl StridedShape {
         Some(total)
     }
 
-    pub fn slice(&self, axis: usize, start: usize, end: usize) -> StridedShape {
-        // everything stays the same except the size of the sliced axis
+    pub fn slice(&self, axis: usize, range: SliceRange) -> StridedShape {
         let mut new_shape = self.shape.clone();
-        new_shape[axis] = end - start;
+        let mut new_strides = self.strides.clone();
 
-        let new_strides = self.strides.clone();
+        range.assert_valid();
+        let SliceRange { start, end, step } = range;
+
+        new_shape[axis] = (end - start) / step;
+        new_strides[axis] *= step;
+
         StridedShape::new(new_shape, new_strides)
     }
 
@@ -241,6 +247,8 @@ fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], 
 
 #[cfg(test)]
 mod test {
+    use nn_graph::graph::SliceRange;
+
     use crate::shape::StridedShape;
 
     fn collect_groups(shape: &StridedShape) -> (Vec<usize>, Vec<usize>) {
@@ -254,7 +262,7 @@ mod test {
     }
 
     #[test]
-    fn rank_zero() {
+    fn view_rank_zero() {
         let shape = StridedShape::new(vec![], vec![]);
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]),);
         assert_eq!(
@@ -264,7 +272,7 @@ mod test {
     }
 
     #[test]
-    fn size_zero() {
+    fn view_size_zero() {
         let shape = StridedShape::new(vec![2, 3, 0, 5], vec![0, 0, 0, 2]);
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]));
         assert_eq!(shape.view(vec![0]), Some(StridedShape::new(vec![0], vec![1])),);
@@ -275,7 +283,7 @@ mod test {
     }
 
     #[test]
-    fn simple() {
+    fn view_simple() {
         let shape = StridedShape::new(vec![2, 3, 4, 3, 2], vec![72, 24, 6, 2, 1]);
         assert!(shape.has_simple_strides());
         assert_eq!(collect_groups(&shape), (vec![144], vec![1]));
@@ -291,10 +299,19 @@ mod test {
     }
 
     #[test]
-    fn split() {
+    fn view_split() {
         let shape = StridedShape::new(vec![2, 3, 4], vec![24, 8, 1]);
         assert_eq!(collect_groups(&shape), (vec![6, 4], vec![8, 1]));
         assert_eq!(shape.view(vec![6, 4]), Some(StridedShape::new(vec![6, 4], vec![8, 1])),);
         assert_eq!(shape.view(vec![24]), None,);
+    }
+
+    #[test]
+    fn slice_simple() {
+        let shape = StridedShape::new(vec![2, 3, 4], vec![24, 8, 1]);
+        assert_eq!(
+            shape.slice(1, SliceRange::new(0, 4, 2)),
+            StridedShape::new(vec![2, 2, 4], vec![24, 16, 1])
+        )
     }
 }

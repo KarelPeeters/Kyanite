@@ -7,9 +7,9 @@ use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{ElementOp, Graph, Operation, Value};
+use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
 use nn_graph::optimizer::find_single_use_values;
-use nn_graph::shape::ConcreteShape;
+use nn_graph::shape::{ConcreteShape, Size};
 
 use crate::executor::{Handles, Step};
 use crate::tensor::DeviceTensor;
@@ -82,19 +82,9 @@ impl<'a> Planner<'a> {
 
                 DeviceTensor::new(input_tensor.ptr.clone(), new_shape)
             }
-            &Operation::Permute { input, ref permutation } => {
-                let input_tensor = self.visit(input);
-                input_tensor.permute(permutation)
-            }
-            &Operation::Slice {
-                input,
-                axis,
-                start,
-                end,
-            } => {
-                let input_tensor = self.visit(input);
-                input_tensor.slice(axis, start, end)
-            }
+            &Operation::Permute { input, ref permutation } => self.visit(input).permute(permutation),
+            &Operation::Slice { input, axis, range } => self.visit(input).slice(axis, range),
+            &Operation::Flip { input, axis } => self.visit(input).flip(axis),
             &Operation::Gather { input, axis, indices } => {
                 let input = self.visit(input);
                 let indices = self.visit(indices);
@@ -113,25 +103,15 @@ impl<'a> Planner<'a> {
                 let result = self.alloc_tensor(result_shape);
                 let inputs = inputs.iter().map(|&x| self.visit(x)).collect_vec();
 
-                // copy each input into the right slice of the output
+                // copy each input into the corresponding slice of the output
                 let mut curr_start = 0;
+
                 for input in inputs {
                     let curr_size = input.shape.shape()[axis];
-                    let result_slice = result.slice(axis, curr_start, curr_start + curr_size);
-                    let zero = self.alloc_zero_tensor(ConcreteShape::new(vec![1; result_slice.shape.rank()]));
+                    let curr_range = SliceRange::new(curr_start, curr_start + curr_size, 1);
 
-                    let args = TensorOpArgs {
-                        op_desc: TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD),
-                        alpha_1: 1.0,
-                        input_1_desc: input.shape.descriptor(),
-                        input_1_ptr: input.ptr,
-                        alpha_2: 0.0,
-                        input_2_desc: zero.shape.descriptor(),
-                        input_2_ptr: zero.ptr,
-                        beta: 0.0,
-                        output_desc: result_slice.shape.descriptor(),
-                        output_ptr: result_slice.ptr.clone(),
-                    };
+                    let curr_result = result.slice(axis, curr_range);
+                    let args = curr_result.copy_from_as_tensor_op(&input);
                     self.plan.push(Step::TensorOp { args });
 
                     curr_start += curr_size;
@@ -241,7 +221,7 @@ impl<'a> Planner<'a> {
                 } else {
                     return None;
                 }
-            } else if graph[left].shape.all_ones_except(1) == graph[right].shape {
+            } else if graph[left].shape.keep(1, Size::ONE) == graph[right].shape {
                 // has to be bias
                 if bias.is_none() {
                     bias = Some(right);

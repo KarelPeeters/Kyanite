@@ -2,10 +2,10 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use cuda_sys::bindings::{cublasOperation_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::MatMulArg;
+use cuda_sys::wrapper::group::{MatMulArg, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
-use cuda_sys::wrapper::operation::run_tensor_op;
+use nn_graph::graph::SliceRange;
 
 use crate::shape::StridedShape;
 
@@ -37,18 +37,19 @@ impl DeviceTensor {
         DeviceTensor::new(self.ptr.clone(), self.shape.permute(permutation))
     }
 
-    pub fn slice(&self, axis: usize, start: usize, end: usize) -> DeviceTensor {
-        // Steps to slice a tensor:
-        //  * use the new shape
-        //  * keep the old strides
-        //  * offset initial pointer to account for `start`
-        //  * limit the buffer length based on the new size
-        let result_shape = self.shape.slice(axis, start, end);
+    pub fn slice(&self, axis: usize, range: SliceRange) -> DeviceTensor {
+        // use the new shape & strides (which only change along `axis`)
+        let result_shape = self.shape.slice(axis, range);
 
-        let start_bytes = result_shape.strides()[axis] * start * 4;
-        let mem = self.ptr.offset(start_bytes as isize);
+        // offset initial pointer to account for `start`
+        let offset = result_shape.strides()[axis] * range.start * 4;
+        let ptr = self.ptr.offset(offset as isize);
 
-        DeviceTensor::new(mem, result_shape)
+        DeviceTensor::new(ptr, result_shape)
+    }
+
+    pub fn flip(&self, axis: usize) -> DeviceTensor {
+        todo!()
     }
 
     pub fn to_mat_mul_arg(&self) -> MatMulArg {
@@ -100,6 +101,27 @@ impl DeviceTensor {
         self.ptr.copy_linear_to_host(cast_slice_mut(buffer));
     }
 
+    pub fn copy_from_as_tensor_op(&self, other: &DeviceTensor) -> TensorOpArgs {
+        let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD);
+
+        // the value of the RHS tensor does not matter (alpha_2 = 0), so we reuse the input to avoid an allocation
+        // (this should also work if both input and output are empty)
+        let rhs_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
+
+        TensorOpArgs {
+            op_desc,
+            alpha_1: 1.0,
+            input_1_desc: other.shape.descriptor(),
+            input_1_ptr: other.ptr.clone(),
+            alpha_2: 0.0,
+            input_2_desc: rhs_desc,
+            input_2_ptr: other.ptr.clone(),
+            beta: 0.0,
+            output_desc: self.shape.descriptor(),
+            output_ptr: self.ptr.clone(),
+        }
+    }
+
     pub unsafe fn copy_from(&self, other: &DeviceTensor) {
         assert_eq!(
             self.shape.shape(),
@@ -114,7 +136,9 @@ impl DeviceTensor {
             self.ptr.copy_linear_from_device(&other.ptr, self.shape.size())
         } else {
             // otherwise use the TensorOp restride trick
-            restride_with_tensor_op(other, self);
+            let handle = CudnnHandle::new(self.device());
+            self.copy_from_as_tensor_op(&other).run(&handle);
+            handle.stream().synchronize();
         }
     }
 
@@ -141,31 +165,4 @@ impl DeviceTensor {
             stage.copy_simple_to_host(buffer);
         }
     }
-}
-
-//TODO extract this function to somewhere more general, maybe even with fixed pre-allocation of the descriptors
-unsafe fn restride_with_tensor_op(input: &DeviceTensor, output: &DeviceTensor) {
-    let handle = CudnnHandle::new(input.device());
-
-    let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD);
-
-    // we don't need to initialize anything, since alpha_2 is already 0
-    let zero = handle.device().alloc(4);
-    let zero_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
-
-    run_tensor_op(
-        &handle,
-        &op_desc,
-        1.0,
-        &input.shape.descriptor(),
-        &input.ptr,
-        0.0,
-        &zero_desc,
-        &zero,
-        0.0,
-        &output.shape.descriptor(),
-        &output.ptr,
-    );
-
-    handle.stream().synchronize();
 }

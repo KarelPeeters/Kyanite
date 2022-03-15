@@ -3,8 +3,8 @@ use itertools::Itertools;
 use num_traits::cast;
 use prost::Message;
 
-use crate::graph::ElementOp;
 pub use crate::graph::Graph;
+use crate::graph::{ElementOp, SliceRange};
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
@@ -210,7 +210,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 // figure out the shapes
                 let input_shape = &graph[input].shape;
                 assert!(input_shape.rank() >= 2, "BN input must have at least rank 2");
-                let const_shape = input_shape.all_ones_except(1);
+                let index = 1;
+                let const_shape = input_shape.keep(index, Size::ONE);
 
                 let channels = input_shape[1].unwrap_fixed("BN channel count must be fixed");
                 assert!(
@@ -345,6 +346,11 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let axes = attrs.take_ints("axes");
                 let starts = attrs.take_ints("starts");
                 let ends = attrs.take_ints("ends");
+                let steps = if attrs.has("steps") {
+                    Some(attrs.take_ints("steps"))
+                } else {
+                    None
+                };
 
                 assert!(
                     axes.len() == starts.len() && axes.len() == ends.len(),
@@ -372,7 +378,24 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                             let axis = abs_axis(axes[i], input_shape.rank());
                             let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
 
-                            graph.slice(curr, axis, abs_axis(starts[i], axis_size), abs_axis(ends[i], axis_size))
+                            let start = abs_axis(starts[i], axis_size);
+                            let end = abs_axis(ends[i], axis_size);
+                            let step = steps.map_or(1, |steps| steps[i]);
+
+                            assert_ne!(step, 0, "Step cannot be 0");
+
+                            let (range, flip) = if step > 0 {
+                                //TODO fix slice ranges with a non-factor delta
+                                (SliceRange::new(start, end, step as usize), false)
+                            } else {
+                                todo!("Negative slice step");
+                            };
+
+                            let mut result = graph.slice(curr, axis, range);
+                            if flip {
+                                result = graph.flip(result, axis);
+                            }
+                            result
                         });
                         TypedValue::with_same_type(result, input)
                     }
@@ -400,7 +423,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     TypedValue::Shape(shape)
                 } else {
                     let input_tensors = inputs.iter().map(|v| v.unwrap_tensor()).collect_vec();
-                    let result = graph.concat(input_tensors, axis);
+                    let result = graph.concat(input_tensors, axis, None);
 
                     if any_float {
                         assert!(

@@ -16,6 +16,10 @@ impl<'a> Attributes<'a> {
         Attributes { inner }
     }
 
+    pub fn has(&self, key: &str) -> bool {
+        self.inner.contains_key(key)
+    }
+
     pub fn take(&mut self, key: &str, ty: AttributeType) -> &'a AttributeProto {
         let attribute = self.inner.remove(key).unwrap_or_else(|| {
             let available = self.inner.keys().collect_vec();

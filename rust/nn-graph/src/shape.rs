@@ -42,6 +42,14 @@ impl Shape {
         Shape { dims }
     }
 
+    pub fn ones(rank: usize) -> Shape {
+        Shape::new(vec![Size::ONE; rank])
+    }
+
+    pub fn zeros(rank: usize) -> Shape {
+        Shape::new(vec![Size::ZERO; rank])
+    }
+
     pub fn rank(&self) -> usize {
         self.dims.len()
     }
@@ -82,30 +90,25 @@ impl Shape {
         self
     }
 
-    /// Returns a new shape with the same rank with all sizes set to 1.
-    pub fn all_ones(&self) -> Shape {
-        Shape::new(vec![Size::ONE; self.rank()])
-    }
-
-    /// Returns a new shape with the same rank with all sizes set to 1, except the size at `index` is kept.
-    pub fn all_ones_except(&self, index: usize) -> Shape {
-        assert!(index < self.rank(), "Axis {} out of bounds for shape {}", index, self);
+    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
+    pub fn replace(&self, axis: usize, replacement: Size) -> Shape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
 
         let mut result = self.clone();
-        for i in 0..self.rank() {
-            if i != index {
-                result.dims[i] = Size::ONE;
-            }
-        }
+        result[axis] = replacement;
         result
     }
 
-    /// Returns a new shape with the size at `index` set to 1, the rest are kept.
-    pub fn with_one_at(&self, index: usize) -> Shape {
-        assert!(index < self.rank());
+    /// Build a new shape with the shape at `axis` kept and all other axes replaced by `rest`.
+    pub fn keep(&self, axis: usize, rest: Size) -> Shape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
 
         let mut result = self.clone();
-        result[index] = Size::ONE;
+        for i in 0..self.rank() {
+            if i != axis {
+                result.dims[i] = rest;
+            }
+        }
         result
     }
 }
