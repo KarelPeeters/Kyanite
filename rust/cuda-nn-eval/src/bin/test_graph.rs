@@ -2,7 +2,6 @@ use cuda_sys::bindings::cudnnActivationMode_t;
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::group::FusedConvolutionArgs;
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 
 fn main() {
@@ -27,17 +26,18 @@ fn main() {
     let conv0 = FusedConvolutionArgs {
         conv_desc,
         algo,
-        work_mem: DeviceMem::alloc(work_size, device),
+        work_ptr: device.alloc(work_size),
+        work_size_bytes: work_size,
         filter_desc,
-        filter_mem: DeviceMem::alloc(channels * channels * 3 * 3 * 4, device),
+        filter_ptr: device.alloc(channels * channels * 3 * 3 * 4),
         input_desc,
-        input_mem: DeviceMem::alloc(128 * channels * 8 * 8 * 4, device),
-        res_mem: None,
+        input_ptr: device.alloc(128 * channels * 8 * 8 * 4),
+        res_ptr: None,
         bias_desc,
-        bias_mem: DeviceMem::alloc(channels * 4, device),
+        bias_ptr: device.alloc(channels * 4),
         act_desc: ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0),
         output_desc,
-        output_mem: DeviceMem::alloc(128 * channels * 8 * 8 * 4, device),
+        output_ptr: device.alloc(128 * channels * 8 * 8 * 4),
     };
 
     let channels = channels as i32;
@@ -51,17 +51,18 @@ fn main() {
     let conv1 = FusedConvolutionArgs {
         conv_desc,
         algo,
-        work_mem: DeviceMem::alloc(work_size, device),
+        work_ptr: device.alloc(work_size),
+        work_size_bytes: work_size,
         filter_desc,
-        filter_mem: DeviceMem::alloc(channels * channels * 3 * 3 * 4, device),
+        filter_ptr: device.alloc(channels * channels * 3 * 3 * 4),
         input_desc,
-        input_mem: DeviceMem::alloc(128 * channels * 8 * 8 * 4, device),
-        res_mem: None,
+        input_ptr: device.alloc(128 * channels * 8 * 8 * 4),
+        res_ptr: None,
         bias_desc,
-        bias_mem: DeviceMem::alloc(channels * 4, device),
+        bias_ptr: device.alloc(channels * 4),
         act_desc: ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0),
         output_desc,
-        output_mem: DeviceMem::alloc(128 * channels * 8 * 8 * 4, device),
+        output_ptr: device.alloc(128 * channels * 8 * 8 * 4),
     };
 
     let par = true;

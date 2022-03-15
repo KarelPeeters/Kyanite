@@ -3,7 +3,6 @@ use std::time::Instant;
 use cuda_sys::bindings::{cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
 use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
 
 // baseline: 100k evals/s
@@ -37,10 +36,10 @@ unsafe fn main_inner() {
     let workspace_size = conv_desc.workspace_size(&handle, algo, &io_desc, &f_desc, &io_desc);
     println!("Workspace size: {}", workspace_size);
 
-    let x_mem = DeviceMem::alloc(io_desc.size_bytes(), device);
-    let y_mem = DeviceMem::alloc(io_desc.size_bytes(), device);
-    let f_mem = DeviceMem::alloc(f_desc.size_bytes(), device);
-    let w_mem = DeviceMem::alloc(workspace_size, device);
+    let x_mem = device.alloc(io_desc.size_bytes());
+    let y_mem = device.alloc(io_desc.size_bytes());
+    let f_mem = device.alloc(f_desc.size_bytes());
+    let w_mem = device.alloc(workspace_size);
 
     let run = || {
         cudnnConvolutionForward(

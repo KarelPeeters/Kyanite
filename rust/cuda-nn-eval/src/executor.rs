@@ -10,13 +10,13 @@ use nn_graph::graph::Graph;
 
 use crate::kernels;
 use crate::planner::Planner;
-use crate::tensor::Tensor;
+use crate::tensor::DeviceTensor;
 
 pub struct CudaExecutor {
     pub handles: Handles,
 
-    pub inputs: Vec<Tensor>,
-    pub outputs: Vec<Tensor>,
+    pub inputs: Vec<DeviceTensor>,
+    pub outputs: Vec<DeviceTensor>,
     steps: Vec<Step>,
 
     profile: bool,
@@ -43,10 +43,10 @@ pub enum Step {
         args: TensorOpArgs,
     },
     Gather {
-        input: Tensor,
+        input: DeviceTensor,
         axis: usize,
-        indices: Tensor,
-        output: Tensor,
+        indices: DeviceTensor,
+        output: DeviceTensor,
     },
 }
 
@@ -246,9 +246,9 @@ impl Step {
                     input.shape.strides()[0] as i32,
                     input.shape.strides()[1] as i32,
                     indices.shape.size() as i32,
-                    input.mem.ptr() as *const f32,
-                    indices.mem.ptr() as *const f32,
-                    output.mem.ptr() as *mut f32,
+                    input.ptr.ptr() as *const f32,
+                    indices.ptr.ptr() as *const f32,
+                    output.ptr.ptr() as *mut f32,
                 )
                 .unwrap();
             }

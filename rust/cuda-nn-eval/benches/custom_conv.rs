@@ -4,7 +4,7 @@ use rand::{Fill, SeedableRng};
 
 use cuda_nn_eval::kernels;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::mem::device::DeviceMem;
+use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::cpu::convolution;
 use nn_graph::graph::ConvDetails;

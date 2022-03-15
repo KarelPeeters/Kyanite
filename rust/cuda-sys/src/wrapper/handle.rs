@@ -9,6 +9,7 @@ use crate::bindings::{
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
+use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
 pub fn cuda_device_count() -> i32 {
@@ -44,6 +45,10 @@ impl Device {
     //TODO is this enough when there are multiple threads running?
     pub unsafe fn switch_to(self) {
         cudaSetDevice(self.0).unwrap()
+    }
+
+    pub fn alloc(self, len_bytes: usize) -> DevicePtr {
+        DevicePtr::alloc(self, len_bytes)
     }
 }
 

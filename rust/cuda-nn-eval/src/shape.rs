@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
 use itertools::{zip_eq, Itertools};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -164,6 +165,28 @@ impl StridedShape {
         let new_strides = permutation.iter().map(|&i| self.strides()[i]).collect();
 
         StridedShape::new(new_shape, new_strides)
+    }
+
+    pub fn descriptor(&self) -> TensorDescriptor {
+        let mut shape = self.shape.iter().map(|&x| x as i32).collect_vec();
+        let mut strides = self.strides.iter().map(|&x| x as i32).collect_vec();
+
+        // tensor descriptors and some cudnn operations seem to break with ranks < 4,
+        //   so pad the rank until it's large enough
+        while shape.len() < 4 {
+            shape.push(1);
+            strides.push(1);
+        }
+
+        TensorDescriptor::new(shape, strides)
+    }
+
+    pub fn filter_descriptor(&self) -> FilterDescriptor {
+        assert_eq!(4, self.rank(), "Filter must have rank 4");
+        assert!(self.has_simple_strides(), "Filter must have simple strides");
+
+        let dims = self.shape();
+        FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
     }
 }
 

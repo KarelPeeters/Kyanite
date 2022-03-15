@@ -3,7 +3,7 @@ use crate::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor,
 };
 use crate::wrapper::handle::{CublasHandle, CudnnHandle};
-use crate::wrapper::mem::device::DeviceMem;
+use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::operation::{run_conv_bias_res_activation, run_tensor_op};
 use crate::wrapper::status::Status;
 
@@ -11,22 +11,24 @@ use crate::wrapper::status::Status;
 #[derive(Debug)]
 pub struct FusedConvolutionArgs {
     pub conv_desc: ConvolutionDescriptor,
+
     pub algo: cudnnConvolutionFwdAlgo_t,
-    pub work_mem: DeviceMem,
+    pub work_ptr: DevicePtr,
+    pub work_size_bytes: usize,
 
     pub filter_desc: FilterDescriptor,
-    pub filter_mem: DeviceMem,
+    pub filter_ptr: DevicePtr,
     pub input_desc: TensorDescriptor,
-    pub input_mem: DeviceMem,
+    pub input_ptr: DevicePtr,
 
-    pub res_mem: Option<DeviceMem>,
+    pub res_ptr: Option<DevicePtr>,
     pub bias_desc: TensorDescriptor,
-    pub bias_mem: DeviceMem,
+    pub bias_ptr: DevicePtr,
 
     pub act_desc: ActivationDescriptor,
 
     pub output_desc: TensorDescriptor,
-    pub output_mem: DeviceMem,
+    pub output_ptr: DevicePtr,
 }
 
 impl FusedConvolutionArgs {
@@ -36,16 +38,17 @@ impl FusedConvolutionArgs {
             &self.act_desc,
             &self.conv_desc,
             self.algo,
-            &self.work_mem,
+            &self.work_ptr,
+            self.work_size_bytes,
             &self.filter_desc,
-            &self.filter_mem,
+            &self.filter_ptr,
             &self.input_desc,
-            &self.input_mem,
-            self.res_mem.as_ref(),
+            &self.input_ptr,
+            self.res_ptr.as_ref(),
             &self.bias_desc,
-            &self.bias_mem,
+            &self.bias_ptr,
             &self.output_desc,
-            &self.output_mem,
+            &self.output_ptr,
         )
     }
 }
@@ -55,13 +58,13 @@ pub struct TensorOpArgs {
     pub op_desc: TensorOpDescriptor,
     pub alpha_1: f32,
     pub input_1_desc: TensorDescriptor,
-    pub input_1_mem: DeviceMem,
+    pub input_1_ptr: DevicePtr,
     pub alpha_2: f32,
     pub input_2_desc: TensorDescriptor,
-    pub input_2_mem: DeviceMem,
+    pub input_2_ptr: DevicePtr,
     pub beta: f32,
     pub output_desc: TensorDescriptor,
-    pub output_mem: DeviceMem,
+    pub output_ptr: DevicePtr,
 }
 
 impl TensorOpArgs {
@@ -71,20 +74,20 @@ impl TensorOpArgs {
             &self.op_desc,
             self.alpha_1,
             &self.input_1_desc,
-            &self.input_1_mem,
+            &self.input_1_ptr,
             self.alpha_2,
             &self.input_2_desc,
-            &self.input_2_mem,
+            &self.input_2_ptr,
             self.beta,
             &self.output_desc,
-            &self.output_mem,
+            &self.output_ptr,
         )
     }
 }
 
 #[derive(Debug)]
 pub struct MatMulArg {
-    pub mem: DeviceMem,
+    pub ptr: DevicePtr,
     pub trans: cublasOperation_t,
     pub ld: i32,
     pub stride: i64,
@@ -115,14 +118,14 @@ impl BatchedMatMulArgs {
             self.n,
             self.k,
             &(self.alpha) as *const f32,
-            self.a.mem.ptr() as *const f32,
+            self.a.ptr.ptr() as *const f32,
             self.a.ld,
             self.a.stride,
-            self.b.mem.ptr() as *const f32,
+            self.b.ptr.ptr() as *const f32,
             self.b.ld,
             self.b.stride,
             &(self.beta) as *const f32,
-            self.c.mem.ptr() as *mut f32,
+            self.c.ptr.ptr() as *mut f32,
             self.c.ld,
             self.c.stride,
             self.batch_count,

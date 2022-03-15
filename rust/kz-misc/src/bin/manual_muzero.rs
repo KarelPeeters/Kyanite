@@ -5,7 +5,7 @@ use board_game::games::chess::{ChessBoard, Rules};
 
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::shape::StridedShape;
-use cuda_nn_eval::tensor::Tensor;
+use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
@@ -54,7 +54,7 @@ unsafe fn main_impl() {
     );
 
     let state_shape = fused.state_shape.eval(1);
-    let state_tensor = Tensor::alloc(StridedShape::new_simple(state_shape.dims), device);
+    let state_tensor = DeviceTensor::alloc(device, state_shape.dims);
 
     println!("Initial representation");
     let mut input_encoded = vec![];
@@ -75,8 +75,8 @@ unsafe fn main_impl() {
         prediction.run();
         prediction.handles.cudnn.stream().synchronize();
 
-        let scalars_tensor = prediction.outputs[0].view();
-        let policy_tensor = prediction.outputs[1].view();
+        let scalars_tensor = prediction.outputs[0].clone();
+        let policy_tensor = prediction.outputs[1].clone();
 
         let mut scalars = vec![0.0; 5];
         scalars_tensor.copy_to_host(&mut scalars);

@@ -6,7 +6,6 @@ use rand::{Rng, SeedableRng};
 use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;
-use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
 
 #[test]
@@ -17,8 +16,8 @@ fn strided_copy() {
     let input_data = (0..128).map(|x| x as f32).collect_vec();
     let mut output_data = vec![0f32; 128];
 
-    let input = DeviceMem::alloc(input_data.len() * 4, device);
-    let output = DeviceMem::alloc(output_data.len() * 4, device);
+    let input = device.alloc(input_data.len() * 4);
+    let output = device.alloc(output_data.len() * 4);
 
     let rank = 4;
     let size = 56;
@@ -30,7 +29,7 @@ fn strided_copy() {
     let end_event = CudaEvent::new();
 
     unsafe {
-        input.copy_from_host(cast_slice(&input_data));
+        input.copy_linear_from_host(cast_slice(&input_data));
 
         stream.record_event(&start_event);
 
@@ -49,7 +48,7 @@ fn strided_copy() {
         }
         stream.record_event(&end_event);
 
-        output.copy_to_host(cast_slice_mut(&mut output_data));
+        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
     }
 
     let delta = end_event.time_elapsed_since(&start_event);
@@ -66,13 +65,13 @@ fn gather() {
     let indices_data: Vec<i32> = vec![16, 3, 8, 2, 4, 9];
     let mut output_data = vec![0f32; indices_data.len()];
 
-    let input = DeviceMem::alloc(input_data.len() * 4, device);
-    let indices = DeviceMem::alloc(indices_data.len() * 4, device);
-    let output = DeviceMem::alloc(output_data.len() * 4, device);
+    let input = device.alloc(input_data.len() * 4);
+    let indices = device.alloc(indices_data.len() * 4);
+    let output = device.alloc(output_data.len() * 4);
 
     unsafe {
-        input.copy_from_host(cast_slice(&input_data));
-        indices.copy_from_host(cast_slice(&indices_data));
+        input.copy_linear_from_host(cast_slice(&input_data));
+        indices.copy_linear_from_host(cast_slice(&indices_data));
 
         kernels::gatherFloat(
             stream.inner(),
@@ -83,7 +82,7 @@ fn gather() {
         )
         .unwrap();
 
-        output.copy_to_host(cast_slice_mut(&mut output_data));
+        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
     }
 
     println!("{:?}", output_data);
@@ -122,13 +121,13 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
 
     let mut output_data: Vec<f32> = vec![0f32; batch_size * indices_data.len()];
 
-    let input = DeviceMem::alloc(input_data.len() * 4, device);
-    let indices = DeviceMem::alloc(indices_data.len() * 4, device);
-    let output = DeviceMem::alloc(output_data.len() * 4, device);
+    let input = device.alloc(input_data.len() * 4);
+    let indices = device.alloc(indices_data.len() * 4);
+    let output = device.alloc(output_data.len() * 4);
 
     unsafe {
-        input.copy_from_host(cast_slice(&input_data));
-        indices.copy_from_host(cast_slice(&indices_data));
+        input.copy_linear_from_host(cast_slice(&input_data));
+        indices.copy_linear_from_host(cast_slice(&indices_data));
 
         let before = stream.record_new_event();
 
@@ -149,7 +148,7 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
         stream.synchronize();
         println!("Took {}s", after.time_elapsed_since(&before));
 
-        output.copy_to_host(cast_slice_mut(&mut output_data));
+        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
     }
 
     let expected_output_data = (0..batch_size)

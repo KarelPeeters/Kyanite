@@ -3,18 +3,16 @@ use std::collections::{HashMap, HashSet};
 use bytemuck::cast_slice;
 use itertools::Itertools;
 
-use cuda_sys::bindings::{cublasOperation_t, cudnnActivationMode_t, cudnnOpTensorOp_t};
+use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulArg, TensorOpArgs};
-use cuda_sys::wrapper::mem::device::DeviceMem;
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use nn_graph::graph::{ElementOp, Graph, Operation, Value};
 use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::ConcreteShape;
 
 use crate::executor::{Handles, Step};
-use crate::shape::StridedShape;
-use crate::tensor::Tensor;
+use crate::tensor::DeviceTensor;
 
 pub(crate) struct Planner<'a> {
     handles: &'a Handles,
@@ -24,7 +22,7 @@ pub(crate) struct Planner<'a> {
     // all values that are only used once in the graph (and are thus candidates for fusing)
     single_use: HashSet<Value>,
 
-    map: HashMap<Value, Tensor>,
+    map: HashMap<Value, DeviceTensor>,
     plan: Vec<Step>,
 }
 
@@ -46,14 +44,14 @@ impl<'a> Planner<'a> {
         self.plan
     }
 
-    pub fn visit(&mut self, value: Value) -> Tensor {
+    pub fn visit(&mut self, value: Value) -> DeviceTensor {
         if let Some(result) = self.map.get(&value) {
-            return result.view();
+            return result.clone();
         }
 
         if self.graph[value].shape.rank() == 4 {
             if let Some(result) = self.visit_fused_conv(value) {
-                let prev = self.map.insert(value, result.view());
+                let prev = self.map.insert(value, result.clone());
                 assert!(prev.is_none());
                 return result;
             }
@@ -62,7 +60,7 @@ impl<'a> Planner<'a> {
         let result_info = &self.graph[value];
         let result_shape = result_info.shape.eval(self.batch_size);
 
-        let result: Tensor = match &result_info.operation {
+        let result: DeviceTensor = match &result_info.operation {
             &Operation::Input { index: _ } => {
                 // just allocate space, the user is responsible for writing the data
                 self.alloc_tensor(result_shape)
@@ -70,7 +68,7 @@ impl<'a> Planner<'a> {
             Operation::Constant { data } => {
                 let result = self.alloc_tensor(result_shape);
                 unsafe {
-                    result.mem.copy_from_host(cast_slice(&**data));
+                    result.copy_from_host(cast_slice(&**data));
                 }
                 result
             }
@@ -82,7 +80,7 @@ impl<'a> Planner<'a> {
                     .view(result_shape.dims.clone())
                     .unwrap_or_else(|| panic!("Cannot view shape {:?} as {:?}", input_tensor.shape, result_shape));
 
-                Tensor::new(input_tensor.mem.view(), new_shape)
+                DeviceTensor::new(input_tensor.ptr.clone(), new_shape)
             }
             &Operation::Permute { input, ref permutation } => {
                 let input_tensor = self.visit(input);
@@ -107,7 +105,7 @@ impl<'a> Planner<'a> {
                     input,
                     axis,
                     indices,
-                    output: output.view(),
+                    output: output.clone(),
                 });
                 output
             }
@@ -125,14 +123,14 @@ impl<'a> Planner<'a> {
                     let args = TensorOpArgs {
                         op_desc: TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD),
                         alpha_1: 1.0,
-                        input_1_desc: input.descriptor(),
-                        input_1_mem: input.mem,
+                        input_1_desc: input.shape.descriptor(),
+                        input_1_ptr: input.ptr,
                         alpha_2: 0.0,
-                        input_2_desc: zero.descriptor(),
-                        input_2_mem: zero.mem,
+                        input_2_desc: zero.shape.descriptor(),
+                        input_2_ptr: zero.ptr,
                         beta: 0.0,
-                        output_desc: result_slice.descriptor(),
-                        output_mem: result_slice.mem.view(),
+                        output_desc: result_slice.shape.descriptor(),
+                        output_ptr: result_slice.ptr.clone(),
                     };
                     self.plan.push(Step::TensorOp { args });
 
@@ -164,9 +162,9 @@ impl<'a> Planner<'a> {
                     k: k as i32,
                     alpha: 1.0,
                     beta: 0.0,
-                    a: to_mat_mul_arg(&left),
-                    b: to_mat_mul_arg(&right),
-                    c: to_mat_mul_arg(&result),
+                    a: left.to_mat_mul_arg(),
+                    b: right.to_mat_mul_arg(),
+                    c: result.to_mat_mul_arg(),
                     batch_count: batch_size as i32,
                 };
 
@@ -193,13 +191,13 @@ impl<'a> Planner<'a> {
             result_info.shape.eval(self.batch_size).dims,
             "Got wrong result shape"
         );
-        let prev = self.map.insert(value, result.view());
+        let prev = self.map.insert(value, result.clone());
         assert!(prev.is_none());
 
         result
     }
 
-    fn visit_fused_conv(&mut self, value: Value) -> Option<Tensor> {
+    fn visit_fused_conv(&mut self, value: Value) -> Option<DeviceTensor> {
         let mut curr = value;
         let graph = self.graph;
 
@@ -285,33 +283,34 @@ impl<'a> Planner<'a> {
             let output_shape = graph[curr].shape.eval(self.batch_size);
             let output = self.alloc_tensor(output_shape);
 
-            let input_desc = input.descriptor();
-            let output_desc = output.descriptor();
-            let filter_desc = filter.filter_descriptor();
+            let input_desc = input.shape.descriptor();
+            let output_desc = output.shape.descriptor();
+            let filter_desc = filter.shape.filter_descriptor();
 
             let conv_desc = ConvolutionDescriptor::new(details.padding_y as i32, details.padding_x as i32, 1, 1, 1, 1);
 
             let algo = STANDARD_CONV_ALGO;
-            let work_size_bytes =
+            let work_size =
                 conv_desc.workspace_size(&self.handles.cudnn, algo, &input_desc, &filter_desc, &output_desc);
-            let work_mem = DeviceMem::alloc(work_size_bytes, self.handles.cudnn.device());
+            let work_ptr = self.handles.cudnn.device().alloc(work_size);
 
             let act_desc = ActivationDescriptor::new(act_mode, 0.0);
 
             let args = FusedConvolutionArgs {
                 conv_desc,
                 algo,
-                work_mem,
+                work_ptr,
+                work_size_bytes: work_size,
                 filter_desc,
-                filter_mem: filter.mem,
+                filter_ptr: filter.ptr,
                 input_desc,
-                input_mem: input.mem,
-                res_mem: res.map(|res| res.mem),
-                bias_desc: bias.descriptor(),
-                bias_mem: bias.mem,
+                input_ptr: input.ptr,
+                res_ptr: res.map(|res| res.ptr),
+                bias_desc: bias.shape.descriptor(),
+                bias_ptr: bias.ptr,
                 act_desc,
                 output_desc,
-                output_mem: output.mem.view(),
+                output_ptr: output.ptr.clone(),
             };
 
             self.plan.push(Step::Conv { args });
@@ -328,7 +327,7 @@ impl<'a> Planner<'a> {
         right: Value,
         op: cudnnOpTensorOp_t,
         negate_right: bool,
-    ) -> Tensor {
+    ) -> DeviceTensor {
         let op_desc = TensorOpDescriptor::new(op);
         let alpha_2 = if negate_right { -1.0 } else { 1.0 };
 
@@ -340,65 +339,29 @@ impl<'a> Planner<'a> {
         let args = TensorOpArgs {
             op_desc,
             alpha_1: 1.0,
-            input_1_desc: left.descriptor(),
-            input_1_mem: left.mem.view(),
+            input_1_desc: left.shape.descriptor(),
+            input_1_ptr: left.ptr.clone(),
             alpha_2,
-            input_2_desc: right.descriptor(),
-            input_2_mem: right.mem.view(),
+            input_2_desc: right.shape.descriptor(),
+            input_2_ptr: right.ptr.clone(),
             beta: 0.0,
-            output_desc: output.descriptor(),
-            output_mem: output.mem.view(),
+            output_desc: output.shape.descriptor(),
+            output_ptr: output.ptr.clone(),
         };
 
         self.plan.push(Step::TensorOp { args });
         output
     }
 
-    fn alloc_tensor(&mut self, shape: ConcreteShape) -> Tensor {
-        let shape = StridedShape::new_simple(shape.dims);
-        Tensor::new(
-            DeviceMem::alloc(shape.strided_size() * 4, self.handles.cudnn.device()),
-            shape,
-        )
+    fn alloc_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {
+        DeviceTensor::alloc(self.handles.cudnn.device(), shape.dims)
     }
 
-    fn alloc_zero_tensor(&mut self, shape: ConcreteShape) -> Tensor {
-        let size = shape.size();
+    fn alloc_zero_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {
         let result = self.alloc_tensor(shape);
         unsafe {
-            result.mem.copy_from_host(cast_slice(&vec![0; size]));
+            result.copy_from_host(&vec![0.0; result.shape.size()]);
         }
         result
-    }
-}
-
-fn to_mat_mul_arg(tensor: &Tensor) -> MatMulArg {
-    assert_eq!(tensor.shape.rank(), 3);
-
-    let inner_shape = StridedShape::new(tensor.shape.shape()[1..].to_vec(), tensor.shape.strides()[1..].to_vec());
-
-    // whether the strides are col-major (true) or row-major (false)
-    let col_major = if inner_shape.has_simple_strides() {
-        false
-    } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
-        true
-    } else {
-        panic!(
-            "For now GPU matmul operand must be either col- or row-major, got {:?}",
-            tensor
-        )
-    };
-
-    let lead_axis = if col_major { 1 } else { 2 };
-
-    MatMulArg {
-        mem: tensor.mem.view(),
-        trans: if col_major {
-            cublasOperation_t::CUBLAS_OP_N
-        } else {
-            cublasOperation_t::CUBLAS_OP_T
-        },
-        ld: tensor.shape.shape()[lead_axis] as i32,
-        stride: tensor.shape.strides()[0] as i64,
     }
 }
