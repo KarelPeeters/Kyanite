@@ -9,24 +9,34 @@ use nn_graph::graph::SliceRange;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StridedShape {
     shape: Vec<usize>,
-    strides: Vec<usize>,
+    strides: Vec<isize>,
     has_simple_strides: bool,
     has_dense_strides: bool,
 }
 
 impl StridedShape {
-    pub fn new(shape: Vec<usize>, strides: Vec<usize>) -> Self {
+    pub fn new(shape: Vec<usize>, strides: Vec<isize>) -> Self {
         assert_eq!(shape.len(), strides.len(), "Shape and stride rank mismatch");
 
         let has_simple_strides = &strides == &simple_strides(&shape);
         let has_dense_strides = has_dense_strides(&shape, &strides);
 
-        StridedShape {
+        if has_simple_strides {
+            assert!(
+                has_dense_strides,
+                "Simple should imply dense, {{ shape: {:?}, strides: {:?} }}",
+                shape, strides
+            );
+        }
+
+        let result = StridedShape {
             shape,
             strides,
             has_simple_strides,
             has_dense_strides,
-        }
+        };
+
+        result
     }
 
     pub fn new_simple(shape: Vec<usize>) -> Self {
@@ -38,7 +48,7 @@ impl StridedShape {
         &self.shape
     }
 
-    pub fn strides(&self) -> &[usize] {
+    pub fn strides(&self) -> &[isize] {
         &self.strides
     }
 
@@ -54,28 +64,12 @@ impl StridedShape {
         self.has_dense_strides
     }
 
-    pub fn visit_strided_indices(&self, mut f: impl FnMut(usize)) {
+    pub fn visit_strided_indices(&self, mut f: impl FnMut(isize)) {
         visit_strided_indices_impl(0, &self.shape, &self.strides, &mut f)
     }
 
     pub fn size(&self) -> usize {
         self.shape.iter().copied().product()
-    }
-
-    pub fn strided_size(&self) -> usize {
-        self.max_index().map_or(0, |x| x + 1)
-    }
-
-    pub fn max_index(&self) -> Option<usize> {
-        let mut total = 0;
-        for (&size, &stride) in zip_eq(&self.shape, &self.strides) {
-            if size == 0 {
-                return None;
-            } else {
-                total += (size - 1) * stride;
-            }
-        }
-        Some(total)
     }
 
     pub fn slice(&self, axis: usize, range: SliceRange) -> StridedShape {
@@ -86,13 +80,23 @@ impl StridedShape {
         let SliceRange { start, end, step } = range;
 
         new_shape[axis] = (end - start) / step;
-        new_strides[axis] *= step;
+        new_strides[axis] *= step as isize;
+
+        StridedShape::new(new_shape, new_strides)
+    }
+
+    pub fn flip(&self, axis: usize) -> StridedShape {
+        let new_shape = self.shape.clone();
+        let mut new_strides = self.strides.clone();
+
+        // just flip the stride of the axis
+        new_strides[axis] *= -1;
 
         StridedShape::new(new_shape, new_strides)
     }
 
     pub fn view(&self, new_shape: Vec<usize>) -> Option<StridedShape> {
-        // implementation roughly based on pytorch computeStride_impl:
+        // implementation originally based on pytorch computeStride_impl:
         // https://github.com/pytorch/pytorch/blob/560cd881956bbf425251d63f0ff0f9085a759447/aten/src/ATen/TensorUtils.cpp#L335-L346
 
         let new_size = new_shape.iter().copied().product::<usize>();
@@ -122,7 +126,7 @@ impl StridedShape {
             while left_group_size > 1 {
                 if left_group_size % new_shape[next_d] == 0 {
                     left_group_size /= new_shape[next_d];
-                    new_strides[next_d] = left_group_size * group_stride;
+                    new_strides[next_d] = left_group_size as isize * group_stride;
                     next_d += 1;
                 } else {
                     failed = true;
@@ -144,7 +148,7 @@ impl StridedShape {
         }
     }
 
-    fn for_each_continuous_group(&self, mut f: impl FnMut(usize, usize)) {
+    fn for_each_continuous_group(&self, mut f: impl FnMut(usize, isize)) {
         if self.size() == 0 || self.rank() == 0 {
             f(0, 1);
             return;
@@ -155,7 +159,7 @@ impl StridedShape {
 
         for (&d_size, &d_stride) in zip_eq(&self.shape, &self.strides) {
             if let Some(prev_stride) = prev_stride {
-                if prev_stride != d_size * d_stride {
+                if prev_stride != d_size as isize * d_stride {
                     //finish previous group
                     f(group_size, prev_stride);
                     group_size = 1;
@@ -206,12 +210,12 @@ impl StridedShape {
     }
 }
 
-fn simple_strides(shape: &[usize]) -> Vec<usize> {
+fn simple_strides(shape: &[usize]) -> Vec<isize> {
     let mut result = vec![];
     let mut next_stride = 1;
 
     for &size in shape.iter().rev() {
-        result.push(next_stride);
+        result.push(next_stride as isize);
         next_stride *= size;
     }
 
@@ -220,11 +224,15 @@ fn simple_strides(shape: &[usize]) -> Vec<usize> {
 }
 
 /// Whether the given shape covers every value within its data range.
-/// This is equivalent to asking whether any possible permutation of the shape has simple strides.
-fn has_dense_strides(shape: &[usize], strides: &[usize]) -> bool {
+/// This is equivalent to asking whether any possible permutation of the shape with abs strides has simple strides.
+fn has_dense_strides(shape: &[usize], strides: &[isize]) -> bool {
     assert_eq!(shape.len(), strides.len());
 
-    let pairs = zip(shape.iter().copied(), strides.iter().copied())
+    if shape.iter().copied().product::<usize>() == 0 {
+        return true;
+    }
+
+    let pairs = zip(shape.iter().copied(), strides.iter().copied().map(|x| x.abs()))
         .sorted_by_key(|x| Reverse(x.1))
         .collect_vec();
 
@@ -234,12 +242,13 @@ fn has_dense_strides(shape: &[usize], strides: &[usize]) -> bool {
     simple_strides(&sorted_shape) == sorted_strides
 }
 
-fn visit_strided_indices_impl(start: usize, shape: &[usize], strides: &[usize], f: &mut impl FnMut(usize)) {
+fn visit_strided_indices_impl(start: isize, shape: &[usize], strides: &[isize], f: &mut impl FnMut(isize)) {
     match shape {
-        [] => f(start),
+        [] => f(start as isize),
         [size_curr, size_rest @ ..] => {
             for i in 0..*size_curr {
-                visit_strided_indices_impl(start + i * strides[0], size_rest, &strides[1..], f)
+                let i_start = start + i as isize * strides[0];
+                visit_strided_indices_impl(i_start, size_rest, &strides[1..], f)
             }
         }
     }
@@ -251,7 +260,29 @@ mod test {
 
     use crate::shape::StridedShape;
 
-    fn collect_groups(shape: &StridedShape) -> (Vec<usize>, Vec<usize>) {
+    #[test]
+    fn properties_positive() {
+        let simple = StridedShape::new(vec![2, 3], vec![3, 1]);
+        assert!(simple.has_simple_strides);
+        assert!(simple.has_dense_strides);
+
+        let dense = StridedShape::new(vec![3, 2], vec![1, 3]);
+        assert!(!dense.has_simple_strides);
+        assert!(dense.has_dense_strides);
+
+        let neither = StridedShape::new(vec![3, 2], vec![8, 10]);
+        assert!(!neither.has_simple_strides);
+        assert!(!neither.has_dense_strides);
+    }
+
+    #[test]
+    fn properties_negative() {
+        let simple = StridedShape::new(vec![2, 3], vec![3, -1]);
+        assert!(!simple.has_simple_strides);
+        assert!(simple.has_dense_strides);
+    }
+
+    fn collect_groups(shape: &StridedShape) -> (Vec<usize>, Vec<isize>) {
         let mut sizes = vec![];
         let mut strides = vec![];
         shape.for_each_continuous_group(|group_size, group_stride| {

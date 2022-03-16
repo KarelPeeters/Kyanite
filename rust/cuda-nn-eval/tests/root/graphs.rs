@@ -59,13 +59,29 @@ fn slice() {
 fn flip() {
     let mut graph = Graph::new();
 
-    let x = graph.constant(shape![2, 3], linspace_vec(6));
-    let y0 = graph.flip(x, 0);
-    let y1 = graph.flip(x, 1);
+    let x = graph.constant(shape![2, 3].clone(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    let first_once = graph.flip(x, 0);
+    let first_twice = graph.flip(first_once, 0);
 
-    graph.output_all(&[y0, y1]);
+    let other_once = graph.flip(x, 1);
+    let other_twice = graph.flip(other_once, 1);
 
-    test_all(&graph, 0, &[], None);
+    let combined = graph.flip(first_once, 1);
+
+    graph.output_all(&[first_once, first_twice, other_once, other_twice, combined]);
+
+    test_all(
+        &graph,
+        0,
+        &[],
+        Some(&[
+            manual_tensor((2, 3), vec![3.0, 4.0, 5.0, 0.0, 1.0, 2.0]),
+            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor((2, 3), vec![2.0, 1.0, 0.0, 5.0, 4.0, 3.0]),
+            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor((2, 3), vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0]),
+        ]),
+    );
 }
 
 #[test]

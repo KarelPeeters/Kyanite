@@ -46,8 +46,8 @@ impl TensorDescriptor {
         assert_eq!(rank, strides.len());
 
         assert!(
-            (0..rank).all(|i| shape[i] > 0 && strides[i] > 0),
-            "Shape and strides must must be strictly positive, got shape {:?} with strides {:?}",
+            shape.iter().all(|&x| x > 0),
+            "Shape cannot be negative, got shape {:?} with strides {:?}",
             shape,
             strides,
         );

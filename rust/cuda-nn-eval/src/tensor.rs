@@ -41,15 +41,31 @@ impl DeviceTensor {
         // use the new shape & strides (which only change along `axis`)
         let result_shape = self.shape.slice(axis, range);
 
-        // offset initial pointer to account for `start`
-        let offset = result_shape.strides()[axis] * range.start * 4;
-        let ptr = self.ptr.offset(offset as isize);
+        let offset = if result_shape.size() != 0 {
+            // offset initial pointer to account for `start`
+            result_shape.strides()[axis] * range.start as isize
+        } else {
+            0
+        };
 
+        let ptr = self.ptr.offset(4 * offset as isize);
         DeviceTensor::new(ptr, result_shape)
     }
 
     pub fn flip(&self, axis: usize) -> DeviceTensor {
-        todo!()
+        // invert the axis stride
+        let result_shape = self.shape.flip(axis);
+
+        let axis_len = self.shape.shape()[axis];
+        let offset = if self.shape.size() != 0 && axis_len != 0 {
+            // offset so index 0 gets the last element along the axis
+            (axis_len - 1) as isize * self.shape.strides()[axis]
+        } else {
+            0
+        };
+
+        let ptr = self.ptr.offset(4 * offset as isize);
+        DeviceTensor::new(ptr, result_shape)
     }
 
     pub fn to_mat_mul_arg(&self) -> MatMulArg {

@@ -11,6 +11,7 @@ use nn_graph::graph::Graph;
 use crate::kernels;
 use crate::planner::Planner;
 use crate::tensor::DeviceTensor;
+use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
     pub handles: Handles,
@@ -255,18 +256,15 @@ impl Step {
 
 impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let indent = "    ";
         write!(
             f,
-            "CudaExecutor {{\n    profile: {},\n    inputs: {:?},\n    outputs: {:?}\n    plan: [\n",
-            self.profile, self.inputs, self.outputs,
-        )?;
-
-        for step in &self.steps {
-            writeln!(f, "        {:?},", step)?;
-        }
-
-        write!(f, "    ]\n}}")?;
-        Ok(())
+            "CudaExecutor {{\n    profile: {},\n    inputs: {:?},\n    outputs: {:?},\n    plan: {:?},\n}}",
+            self.profile,
+            debug_vec_multiline(indent, &self.inputs),
+            debug_vec_multiline(indent, &self.outputs),
+            debug_vec_multiline(indent, &self.steps),
+        )
     }
 }
 
