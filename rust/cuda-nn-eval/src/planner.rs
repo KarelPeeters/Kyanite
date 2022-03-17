@@ -74,13 +74,7 @@ impl<'a> Planner<'a> {
             }
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
-
-                let new_shape = input_tensor
-                    .shape
-                    .view(result_shape.dims.clone())
-                    .unwrap_or_else(|| panic!("Cannot view shape {:?} as {:?}", input_tensor.shape, result_shape));
-
-                DeviceTensor::new(input_tensor.ptr.clone(), new_shape)
+                input_tensor.view(result_shape.dims.clone())
             }
             &Operation::Permute { input, ref permutation } => self.visit(input).permute(permutation),
             &Operation::Slice { input, axis, range } => self.visit(input).slice(axis, range),

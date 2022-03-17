@@ -37,6 +37,11 @@ impl DeviceTensor {
         DeviceTensor::new(self.ptr.clone(), self.shape.permute(permutation))
     }
 
+    pub fn view(&self, new_shape: Vec<usize>) -> DeviceTensor {
+        let new_shape = self.shape.view(new_shape.clone()).unwrap();
+        DeviceTensor::new(self.ptr.clone(), new_shape)
+    }
+
     pub fn slice(&self, axis: usize, range: SliceRange) -> DeviceTensor {
         // use the new shape & strides (which only change along `axis`)
         let result_shape = self.shape.slice(axis, range);
@@ -50,6 +55,13 @@ impl DeviceTensor {
 
         let ptr = self.ptr.offset(4 * offset as isize);
         DeviceTensor::new(ptr, result_shape)
+    }
+
+    pub fn index(&self, axis: usize, index: usize) -> DeviceTensor {
+        let mut new_shape = self.shape.shape().to_vec();
+        new_shape.remove(axis);
+
+        self.slice(axis, SliceRange::new(index, index + 1, 1)).view(new_shape)
     }
 
     pub fn flip(&self, axis: usize) -> DeviceTensor {
@@ -97,6 +109,14 @@ impl DeviceTensor {
             ld: self.shape.shape()[lead_axis] as i32,
             stride: self.shape.strides()[0] as i64,
         }
+    }
+
+    pub fn deep_clone(&self) -> DeviceTensor {
+        let new = DeviceTensor::alloc_simple(self.device(), self.shape.shape().to_vec());
+        unsafe {
+            new.copy_from(self);
+        }
+        new
     }
 
     pub unsafe fn copy_simple_from_host(&self, buffer: &[f32]) {

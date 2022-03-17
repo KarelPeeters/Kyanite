@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use itertools::{zip, zip_eq, Itertools};
 
@@ -12,6 +12,12 @@ pub struct StridedShape {
     strides: Vec<isize>,
     has_simple_strides: bool,
     has_dense_strides: bool,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ViewError {
+    old: StridedShape,
+    new: Vec<usize>,
 }
 
 impl StridedShape {
@@ -95,7 +101,7 @@ impl StridedShape {
         StridedShape::new(new_shape, new_strides)
     }
 
-    pub fn view(&self, new_shape: Vec<usize>) -> Option<StridedShape> {
+    pub fn view(&self, new_shape: Vec<usize>) -> Result<StridedShape, ViewError> {
         // implementation originally based on pytorch computeStride_impl:
         // https://github.com/pytorch/pytorch/blob/560cd881956bbf425251d63f0ff0f9085a759447/aten/src/ATen/TensorUtils.cpp#L335-L346
 
@@ -109,7 +115,7 @@ impl StridedShape {
         );
 
         if self.size() == 0 || self.rank() == 0 {
-            return Some(StridedShape::new_simple(new_shape));
+            return Ok(StridedShape::new_simple(new_shape));
         }
 
         let mut new_strides = vec![0; new_shape.len()];
@@ -136,7 +142,10 @@ impl StridedShape {
         });
 
         if failed {
-            None
+            Err(ViewError {
+                old: self.clone(),
+                new: new_shape,
+            })
         } else {
             // complete the strides for trailing 1-sized dims
             for d in next_d..new_shape.len() {
@@ -144,7 +153,7 @@ impl StridedShape {
                 new_strides[d] = 1;
             }
 
-            Some(StridedShape::new(new_shape, new_strides))
+            Ok(StridedShape::new(new_shape, new_strides))
         }
     }
 
@@ -254,6 +263,12 @@ fn visit_strided_indices_impl(start: isize, shape: &[usize], strides: &[isize], 
     }
 }
 
+impl Debug for ViewError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Cannot view shape {:?} as {:?}", self.old, self.new)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use nn_graph::graph::SliceRange;
@@ -298,7 +313,7 @@ mod test {
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]),);
         assert_eq!(
             shape.view(vec![1, 1, 1]),
-            Some(StridedShape::new(vec![1, 1, 1], vec![1, 1, 1])),
+            Ok(StridedShape::new(vec![1, 1, 1], vec![1, 1, 1])),
         );
     }
 
@@ -306,11 +321,8 @@ mod test {
     fn view_size_zero() {
         let shape = StridedShape::new(vec![2, 3, 0, 5], vec![0, 0, 0, 2]);
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]));
-        assert_eq!(shape.view(vec![0]), Some(StridedShape::new(vec![0], vec![1])),);
-        assert_eq!(
-            shape.view(vec![12, 0]),
-            Some(StridedShape::new(vec![12, 0], vec![0, 1])),
-        );
+        assert_eq!(shape.view(vec![0]), Ok(StridedShape::new(vec![0], vec![1])),);
+        assert_eq!(shape.view(vec![12, 0]), Ok(StridedShape::new(vec![12, 0], vec![0, 1])),);
     }
 
     #[test]
@@ -318,14 +330,11 @@ mod test {
         let shape = StridedShape::new(vec![2, 3, 4, 3, 2], vec![72, 24, 6, 2, 1]);
         assert!(shape.has_simple_strides());
         assert_eq!(collect_groups(&shape), (vec![144], vec![1]));
-        assert_eq!(shape.view(vec![144]), Some(StridedShape::new(vec![144], vec![1])),);
-        assert_eq!(
-            shape.view(vec![72, 2]),
-            Some(StridedShape::new(vec![72, 2], vec![2, 1])),
-        );
+        assert_eq!(shape.view(vec![144]), Ok(StridedShape::new(vec![144], vec![1])),);
+        assert_eq!(shape.view(vec![72, 2]), Ok(StridedShape::new(vec![72, 2], vec![2, 1])),);
         assert_eq!(
             shape.view(vec![72, 2, 1, 1, 1]),
-            Some(StridedShape::new(vec![72, 2, 1, 1, 1], vec![2, 1, 1, 1, 1])),
+            Ok(StridedShape::new(vec![72, 2, 1, 1, 1], vec![2, 1, 1, 1, 1])),
         );
     }
 
@@ -333,8 +342,8 @@ mod test {
     fn view_split() {
         let shape = StridedShape::new(vec![2, 3, 4], vec![24, 8, 1]);
         assert_eq!(collect_groups(&shape), (vec![6, 4], vec![8, 1]));
-        assert_eq!(shape.view(vec![6, 4]), Some(StridedShape::new(vec![6, 4], vec![8, 1])),);
-        assert_eq!(shape.view(vec![24]), None,);
+        assert_eq!(shape.view(vec![6, 4]), Ok(StridedShape::new(vec![6, 4], vec![8, 1])),);
+        assert!(shape.view(vec![24]).is_err());
     }
 
     #[test]
