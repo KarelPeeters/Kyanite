@@ -247,13 +247,27 @@ impl<'a> Planner<'a> {
             let bias = bias.map(|bias| self.visit(bias));
             let res = res.map(|res| self.visit(res));
 
-            if let Some(res) = &res {
-                //TODO this should be checked before we actually start fusing
+            // ensure input has simple strides
+            let input = if input.shape.has_simple_strides() {
+                input
+            } else {
+                self.plan_restride_tensor(&input)
+            };
+
+            // ensure res also has simple strides
+            let res = res.map(|res| {
                 assert_eq!(
-                    res.shape, input.shape,
-                    "Input and res shapes and strides (!) must match.",
+                    res.shape.shape(),
+                    input.shape.shape(),
+                    "Input and res must have the same shape"
                 );
-            }
+
+                if res.shape == input.shape {
+                    res
+                } else {
+                    self.plan_restride_tensor(&res)
+                }
+            });
 
             let bias = bias.unwrap_or_else(|| {
                 let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);
@@ -331,6 +345,15 @@ impl<'a> Planner<'a> {
 
         self.plan.push(Step::TensorOp { args });
         output
+    }
+
+    fn plan_restride_tensor(&mut self, old: &DeviceTensor) -> DeviceTensor {
+        let new = self.alloc_tensor(ConcreteShape::new(old.shape.shape().to_vec()));
+
+        let args = new.copy_from_as_tensor_op(&old);
+        self.plan.push(Step::TensorOp { args });
+
+        new
     }
 
     fn alloc_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {

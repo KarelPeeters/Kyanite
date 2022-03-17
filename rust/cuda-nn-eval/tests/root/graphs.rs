@@ -85,6 +85,20 @@ fn flip() {
 }
 
 #[test]
+fn flip_conv() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![2, 4, 8, 8]);
+    let flipped = graph.flip(input, 3);
+
+    let weight = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
+    let result = graph.conv(flipped, weight, 1, 1);
+
+    graph.output(result);
+    test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
 fn repeat() {
     let mut graph = Graph::new();
 

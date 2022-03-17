@@ -198,6 +198,12 @@ pub unsafe fn run_conv_bias_res_activation(
         "unsupported activation mode"
     );
 
+    assert!(
+        input_desc.has_positive_strides(),
+        "Conv input should have positive strides, got {:?}",
+        input_desc
+    );
+
     cudnnConvolutionBiasActivationForward(
         handle.inner(),
         &alpha1 as *const f32 as *const _,

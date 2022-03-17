@@ -84,6 +84,10 @@ impl TensorDescriptor {
             result
         }
     }
+
+    pub fn has_positive_strides(&self) -> bool {
+        self.strides.iter().all(|&s| s > 0)
+    }
 }
 
 #[derive(Debug)]
@@ -205,6 +209,12 @@ impl ConvolutionDescriptor {
             &self.output_shape(input, filter)[..],
             &output.shape,
             "Output shape mismatch"
+        );
+
+        assert!(
+            input.has_positive_strides(),
+            "Conv input should have positive strides, got {:?}",
+            input
         );
 
         let mut workspace: usize = 0;
