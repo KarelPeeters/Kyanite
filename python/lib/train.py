@@ -48,8 +48,10 @@ class TrainSettings:
 
     train_in_eval_mode: bool
     clip_norm: float
-    mask_policy: bool
-    flip_state: bool
+
+    mask_policy_root: bool
+    mask_policy_unrolled: bool
+    root_policy_scale: float
 
     def train_step(self, batch: PositionBatch, network: nn.Module, optimizer: Optimizer, logger: Logger):
         optimizer.zero_grad(set_to_none=True)
@@ -109,19 +111,30 @@ class TrainSettings:
 
         for k, step in enumerate(batch.positions):
             if k == 0:
+                mask_policy = self.mask_policy_root
+                policy_scale = self.root_policy_scale
+
                 curr_state = networks.representation(step.input_full)
             else:
+                mask_policy = self.mask_policy_unrolled
+                policy_scale = 1.0
+
                 prev_position = batch.positions[k - 1]
                 curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
 
-            scalars_k, policy_logits_k = networks.prediction(curr_state)
+            # TODO should we detach here? or take a moving average and use that instead?
+            # TODO try clamping instead, that's a lot easier to do at runtime
+            flat_state = curr_state.flatten(1)
+            min = flat_state.min(dim=1).values[:, None, None, None]
+            max = flat_state.max(dim=1).values[:, None, None, None]
+            curr_state = (curr_state - min) / (max - min)
 
-            if self.flip_state:
-                curr_state = torch.flip(curr_state, [1])
+            scalars_k, policy_logits_k = networks.prediction(curr_state)
 
             total_loss += self.evaluate_batch_predictions(
                 f"{log_prefix}/f{k}", logger,
-                batch.positions[k], scalars_k, policy_logits_k
+                batch.positions[k], scalars_k, policy_logits_k,
+                mask_policy, policy_scale
             )
 
             # TODO is a BN layer inside of the networks enough for hidden state normalization?
@@ -141,6 +154,7 @@ class TrainSettings:
             log_prefix: str, logger: Logger,
             batch: PositionBatch,
             scalars, policy_logits,
+            mask_policy: bool, policy_scale: float,
     ):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
@@ -157,10 +171,10 @@ class TrainSettings:
         loss_value = nnf.mse_loss(value, batch_value)
         loss_wdl = nnf.mse_loss(wdl, batch_wdl)
         loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
-        eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, self.mask_policy)
+        eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, mask_policy)
 
         loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left,
-                                         eval_policy.train_loss)
+                                         eval_policy.train_loss * policy_scale)
 
         # value accuracies
         batch_size = len(batch)

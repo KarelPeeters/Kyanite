@@ -1,3 +1,4 @@
+import os.path
 from pathlib import Path
 from typing import Optional, List
 
@@ -57,7 +58,9 @@ def save_onnx_inner(
         check_batch_size: Optional[int]
 ):
     path_onnx = Path(path_onnx)
-    assert path_onnx.suffix == ".onnx"
+    assert path_onnx.suffix == ".onnx", f"Output path should end with .onnx: '{path_onnx}'"
+    assert not path_onnx.exists(), f"Output path already exists: '{path_onnx}'"
+
     print(f"Saving model to {path_onnx}")
 
     guessed_device = guess_module_device(network)
@@ -94,7 +97,7 @@ def save_onnx_inner(
         input_names=input_names,
         output_names=output_names,
         dynamic_axes={k: batch_axis for k in input_names + output_names},
-        opset_version=7,
+        opset_version=10,
     )
 
     # move the network back to the original device
