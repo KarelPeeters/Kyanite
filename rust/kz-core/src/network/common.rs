@@ -139,3 +139,20 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
         }
     }
 }
+
+pub fn zero_value_from_scalars(scalars: &[f32]) -> ZeroValues {
+    assert_eq!(scalars.len(), 5, "Expected 5 scalars, got len {}", scalars.len());
+
+    let value = scalars[0].tanh();
+
+    let mut wdl = [scalars[1], scalars[2], scalars[3]];
+    softmax_in_place(&mut wdl);
+
+    let moves_left = scalars[4];
+
+    ZeroValues {
+        value,
+        wdl: WDL::new(wdl[0], wdl[1], wdl[2]),
+        moves_left,
+    }
+}

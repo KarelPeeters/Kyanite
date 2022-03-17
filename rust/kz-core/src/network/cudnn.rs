@@ -7,6 +7,7 @@ use itertools::Itertools;
 
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
+use kz_util::Pad;
 use nn_graph::graph::Graph;
 
 use crate::mapping::BoardMapper;
@@ -52,15 +53,13 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         let max_batch_size = self.max_batch_size;
         assert!(batch_size <= max_batch_size);
 
-        // encode input
+        // encode input, padded until batch size
         self.input.clear();
         for board in boards {
             self.mapper.encode_input_full(&mut self.input, board.borrow())
         }
-
-        // pad the rest of input with nans
         self.input
-            .resize(max_batch_size * self.mapper.input_full_len(), f32::NAN);
+            .pad(max_batch_size * self.mapper.input_full_len(), f32::NAN);
 
         // run the actual computation
         let outputs = self.executor.evaluate(&[&self.input]);

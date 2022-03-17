@@ -118,11 +118,11 @@ pub const FROM_DX_DY: [(i8, i8); 16] = [
 ];
 
 impl MuZeroMapper<AtaxxBoard> for AtaxxStdMapper {
-    fn mv_full_shape(&self) -> [usize; 3] {
+    fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }
 
-    fn encode_mv(&self, _: &mut Vec<f32>, _: &AtaxxBoard, _: Move) {
+    fn encode_mv(&self, _: &mut Vec<f32>, _: usize) {
         todo!()
     }
 }

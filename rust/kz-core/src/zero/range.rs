@@ -4,15 +4,18 @@ use std::num::NonZeroUsize;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct IdxRange {
     pub start: NonZeroUsize,
-    pub length: u8,
+    pub length: u16,
 }
 
 impl IdxRange {
     pub fn new(start: usize, end: usize) -> IdxRange {
         assert!(end > start, "IdxRange must be non-empty");
+        let length = end - start;
         IdxRange {
             start: NonZeroUsize::new(start).expect("IdxRange start cannot be 0"),
-            length: (end - start).try_into().expect("IdxRange length too high"),
+            length: length
+                .try_into()
+                .unwrap_or_else(|_| panic!("IdxRange length too high: {}", length)),
         }
     }
 

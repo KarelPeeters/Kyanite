@@ -355,6 +355,7 @@ impl<B: Board> SearchState<B> {
         }
 
         loop {
+            // TODO for muzero we need to do this before the response gets to the tree
             if self.tree.root_visits() > 0 && self.needs_dirichlet {
                 self.root_net_eval = Some(extract_root_net_eval(&self.tree));
                 add_dirichlet_noise(ctx, &mut self.tree);

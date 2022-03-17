@@ -1,3 +1,6 @@
+#![allow(unreachable_code)]
+#![allow(dead_code)]
+
 use std::marker::PhantomData;
 
 use board_game::board::Board;
@@ -8,8 +11,11 @@ use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
+use kz_core::muzero::wrapper::MuZeroSettings;
 use kz_core::network::common::softmax_in_place;
 use kz_core::network::muzero::MuZeroGraphs;
+use kz_core::zero::node::UctWeights;
+use kz_core::zero::step::FpuMode;
 use kz_util::display_option;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::OptimizerSettings;
@@ -23,7 +29,7 @@ unsafe fn main_impl() {
     let device = Device::new(0);
 
     println!("Loading graphs");
-    let path = "C:/Documents/Programming/STTT/AlphaZero/data/muzero/large_noaffine/models_8500";
+    let path = "C:/Documents/Programming/STTT/AlphaZero/data/muzero/max_norm_attached_flip/models_13500";
 
     let graphs = MuZeroGraphs {
         mapper,
@@ -36,10 +42,25 @@ unsafe fn main_impl() {
     println!("Optimizing graphs");
     let graphs = graphs.optimize(OptimizerSettings::default());
 
-    println!("{}", graphs.prediction);
-
     println!("Fusing graphs & re-optimizing");
     let fused = graphs.fuse(OptimizerSettings::default());
+
+    println!("Building executors");
+    let mut exec = fused.executors(device, 1, 1);
+
+    let mut board = ChessBoard::new_without_history_fen(
+        "2k5/1pp5/p2r1q2/4p1np/2Q1P1p1/1N4P1/PPP4P/3R3K w - - 0 29",
+        Rules::default(),
+    );
+
+    println!("Building tree");
+    let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent);
+    let visits = 100;
+    let tree = settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
+
+    println!("{}", tree.display(1, true, usize::MAX, false));
+
+    return;
 
     println!("Creating executors");
     let mut representation = CudaExecutor::new(device, &graphs.representation, 1);
@@ -47,10 +68,6 @@ unsafe fn main_impl() {
     let mut prediction = CudaExecutor::new(device, &graphs.prediction, 1);
 
     let moves = ["d1d6", "f6f3", "h1g1", "g5h3", ""];
-    let mut board = ChessBoard::new_without_history_fen(
-        "2k5/1pp5/p2r1q2/4p1np/2Q1P1p1/1N4P1/PPP4P/3R3K w - - 0 29",
-        Rules::default(),
-    );
 
     let state_shape = fused.state_shape.eval(1);
     let state_tensor = DeviceTensor::alloc_simple(device, state_shape.dims);
@@ -60,7 +77,7 @@ unsafe fn main_impl() {
     mapper.encode_input_full(&mut input_encoded, &board);
 
     representation.inputs[0].copy_simple_from_host(&input_encoded);
-    representation.run();
+    representation.run_async();
     representation.handles.cudnn.stream().synchronize();
     state_tensor.copy_from(&representation.outputs[0]);
 
@@ -71,7 +88,7 @@ unsafe fn main_impl() {
         println!("Prediction");
 
         prediction.inputs[0].copy_from(&state_tensor);
-        prediction.run();
+        prediction.run_async();
         prediction.handles.cudnn.stream().synchronize();
 
         let scalars_tensor = prediction.outputs[0].clone();
@@ -110,13 +127,14 @@ unsafe fn main_impl() {
 
         println!("Dynamics (playing mv {})", mv);
         let mv = board.parse_move(mv).unwrap();
+        let mv_index = mapper.move_to_index(&board, mv).unwrap();
 
         let mut move_encoded = vec![];
-        mapper.encode_mv(&mut move_encoded, &board, mv);
+        mapper.encode_mv(&mut move_encoded, mv_index);
 
         dynamics.inputs[0].copy_from(&state_tensor);
         dynamics.inputs[1].copy_simple_from_host(&move_encoded);
-        dynamics.run();
+        dynamics.run_async();
         dynamics.handles.cudnn.stream().synchronize();
         state_tensor.copy_from(&dynamics.outputs[0]);
 

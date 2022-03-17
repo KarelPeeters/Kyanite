@@ -18,6 +18,8 @@ pub struct CudaExecutor {
 
     pub inputs: Vec<DeviceTensor>,
     pub outputs: Vec<DeviceTensor>,
+
+    pub batch_size: usize,
     steps: Vec<Step>,
 
     profile: bool,
@@ -90,6 +92,7 @@ impl CudaExecutor {
             steps,
             inputs,
             outputs,
+            batch_size,
             profile: false,
             last_profile: None,
             output_buffers: None,
@@ -108,7 +111,7 @@ impl CudaExecutor {
 
             // run the steps
             self.handles.cudnn.stream().synchronize();
-            self.run();
+            self.run_async();
             self.handles.cudnn.stream().synchronize();
 
             // initialize output buffers if this is the first time we need them
@@ -134,7 +137,7 @@ impl CudaExecutor {
 
     /// Run the steps in this executor. Does no explicit before/after synchronization,
     /// so ensure inputs are written and synchronize before reading outputs.
-    pub unsafe fn run(&mut self) {
+    pub unsafe fn run_async(&mut self) {
         if !self.profile {
             for step in &self.steps {
                 step.run(&self.handles);

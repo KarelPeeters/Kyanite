@@ -375,14 +375,14 @@ pub fn generate_all_flat_moves_pov() -> Vec<ChessMove> {
 }
 
 impl MuZeroMapper<ChessBoard> for ChessStdMapper {
-    fn mv_full_shape(&self) -> [usize; 3] {
+    fn encoded_move_shape(&self) -> [usize; 3] {
         [8, 8, 8]
     }
 
     //TODO in reality we wont have a board while we're encoding the move
     //TODO in general think more about how POV should work in muzero
-    fn encode_mv(&self, result: &mut Vec<f32>, board: &ChessBoard, mv: ChessMove) {
-        let mv_pov = move_pov(board.inner().side_to_move(), mv);
+    fn encode_mv(&self, result: &mut Vec<f32>, move_index: usize) {
+        let mv_pov = FLAT_MOVES_POV.index_to_mv[move_index];
 
         // first 2 channels: from, to
         let start = result.len();
@@ -407,6 +407,6 @@ impl MuZeroMapper<ChessBoard> for ChessStdMapper {
             result.extend(std::iter::repeat(value as u8 as f32).take(64));
         }
 
-        assert_eq!(result.len() - start, self.mv_full_len());
+        assert_eq!(result.len() - start, self.encoded_mv_len());
     }
 }

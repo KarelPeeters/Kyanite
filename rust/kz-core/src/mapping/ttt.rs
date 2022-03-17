@@ -37,11 +37,11 @@ impl PolicyMapper<TTTBoard> for TTTStdMapper {
 }
 
 impl MuZeroMapper<TTTBoard> for TTTStdMapper {
-    fn mv_full_shape(&self) -> [usize; 3] {
+    fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }
 
-    fn encode_mv(&self, _: &mut Vec<f32>, _: &TTTBoard, _: Coord) {
+    fn encode_mv(&self, _: &mut Vec<f32>, _: usize) {
         todo!()
     }
 }

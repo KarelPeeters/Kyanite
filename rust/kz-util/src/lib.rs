@@ -176,3 +176,21 @@ impl PrintThroughput {
         self.update_delta(count - self.total_count)
     }
 }
+
+pub trait Pad {
+    type T;
+    fn pad(&mut self, result_size: usize, value: Self::T);
+}
+
+impl<T: Clone> Pad for Vec<T> {
+    type T = T;
+    fn pad(&mut self, result_size: usize, value: T) {
+        assert!(
+            result_size >= self.len(),
+            "Cannot pad to smaller size, curr {} target {}",
+            self.len(),
+            result_size
+        );
+        self.resize(result_size, value)
+    }
+}

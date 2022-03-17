@@ -79,13 +79,13 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
 
 //TODO update the docs in the file
 pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
-    fn mv_full_shape(&self) -> [usize; 3];
+    fn encoded_move_shape(&self) -> [usize; 3];
 
-    fn mv_full_len(&self) -> usize {
-        self.mv_full_shape().iter().product()
+    fn encoded_mv_len(&self) -> usize {
+        self.encoded_move_shape().iter().product()
     }
 
-    fn encode_mv(&self, result: &mut Vec<f32>, board: &B, mv: B::Move);
+    fn encode_mv(&self, result: &mut Vec<f32>, mv_index: usize);
 }
 
 /// Utility trait automatically implemented for anything that implements both [InputMapper] and [PolicyMapper].

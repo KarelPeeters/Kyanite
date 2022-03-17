@@ -39,11 +39,11 @@ impl PolicyMapper<STTTBoard> for STTTStdMapper {
 }
 
 impl MuZeroMapper<STTTBoard> for STTTStdMapper {
-    fn mv_full_shape(&self) -> [usize; 3] {
+    fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }
 
-    fn encode_mv(&self, _: &mut Vec<f32>, _: &STTTBoard, _: Coord) {
+    fn encode_mv(&self, _: &mut Vec<f32>, _: usize) {
         todo!()
     }
 }
