@@ -1,11 +1,10 @@
 #![allow(unreachable_code)]
 #![allow(dead_code)]
 
-use std::fmt::format;
 use std::marker::PhantomData;
 
 use board_game::board::{Board, BoardMoves};
-use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::chess::ChessBoard;
 use internal_iterator::InternalIterator;
 
 use cuda_nn_eval::executor::CudaExecutor;
@@ -19,7 +18,7 @@ use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::MuZeroGraphs;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
-use kz_util::display_option;
+use kz_util::{display_option, PrintThroughput};
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::OptimizerSettings;
 
@@ -76,16 +75,31 @@ unsafe fn main_impl() {
 
     println!("Building tree");
     let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent);
-    let visits = 100;
+    let visits = 600;
     let tree = settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
 
     println!("{}", tree.display(8, true, 10, false));
 
     let mut test_board = board.clone();
     for mv_index in tree.principal_variation(10) {
-        let mv = mapper.index_to_move(&test_board, mv_index);
-        println!("{} => {}", mv_index, display_option(mv));
-        test_board.play(mv.unwrap());
+        let mv = mapper.index_to_move(&test_board, mv_index.unwrap());
+        println!("{:?} => {}", mv_index, display_option(mv));
+        if let Some(mv) = mv {
+            if test_board.is_available_move(mv) {
+                test_board.play(mv);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    let mut tp = PrintThroughput::new("trees");
+
+    loop {
+        settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
+        tp.update_delta(1);
     }
 
     return;

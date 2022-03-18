@@ -61,11 +61,11 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
         self.best_child(0).map(|c| self[c].last_move_index.unwrap())
     }
 
-    pub fn principal_variation(&self, max_len: usize) -> Vec<usize> {
+    pub fn principal_variation(&self, max_len: usize) -> Vec<Option<usize>> {
         std::iter::successors(Some(0), |&n| self.best_child(n))
             .skip(1)
             .take(max_len)
-            .map(|n| self[n].last_move_index.unwrap())
+            .map(|n| self[n].last_move_index)
             .collect()
     }
 
