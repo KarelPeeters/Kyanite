@@ -15,15 +15,17 @@ pub struct MuZeroSettings {
     pub weights: UctWeights,
     pub use_value: bool,
     pub fpu_mode: FpuMode,
+    pub top_moves: usize,
 }
 
 impl MuZeroSettings {
-    pub fn new(batch_size: usize, weights: UctWeights, use_value: bool, fpu_mode: FpuMode) -> Self {
-        MuZeroSettings {
+    pub fn new(batch_size: usize, weights: UctWeights, use_value: bool, fpu_mode: FpuMode, top_moves: usize) -> Self {
+        Self {
             batch_size,
             weights,
             use_value,
             fpu_mode,
+            top_moves,
         }
     }
 }
@@ -77,7 +79,7 @@ impl MuZeroSettings {
                 };
 
                 // apply response
-                muzero_step_apply(tree, response);
+                muzero_step_apply(tree, self.top_moves, response);
             };
         }
     }

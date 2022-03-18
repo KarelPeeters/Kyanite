@@ -74,7 +74,8 @@ unsafe fn main_impl() {
     });
 
     println!("Building tree");
-    let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent);
+    let top_moves = 100;
+    let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent, top_moves);
     let visits = 600;
     let tree = settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
 

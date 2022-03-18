@@ -1,9 +1,10 @@
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
 use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
 
-use itertools::zip;
+use itertools::{zip, Itertools};
 use rand::{Error, Rng, RngCore};
 
 /// An Rng implementation that panics as soon as it is called.
@@ -193,4 +194,39 @@ impl<T: Clone> Pad for Vec<T> {
         );
         self.resize(result_size, value)
     }
+}
+
+pub fn top_k_indices_sorted<T: Ord>(values: impl IntoIterator<Item = T>, n: usize) -> Vec<usize> {
+    // (index, T), sorted by T
+    struct Pair<T>(usize, T);
+    impl<T: Ord> PartialEq for Pair<T> {
+        fn eq(&self, other: &Self) -> bool {
+            self.1.eq(&other.1)
+        }
+    }
+    impl<T: Ord> PartialOrd for Pair<T> {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            self.1.partial_cmp(&other.1)
+        }
+    }
+    impl<T: Ord> Eq for Pair<T> {}
+    impl<T: Ord> Ord for Pair<T> {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.1.cmp(&other.1)
+        }
+    }
+
+    // keep only top-n by popping lowest
+    let mut heap = BinaryHeap::new();
+    for (i, v) in values.into_iter().enumerate() {
+        heap.push(Pair(i, Reverse(v)));
+        if heap.len() > n {
+            heap.pop();
+        }
+    }
+
+    // collect, sorted from high to low
+    let mut result = heap.iter().map(|w| w.0).collect_vec();
+    result.reverse();
+    result
 }

@@ -4,6 +4,7 @@ use cuda_nn_eval::tensor::DeviceTensor;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
+use kz_util::top_k_indices_sorted;
 
 use crate::mapping::BoardMapper;
 use crate::muzero::node::{MuNode, MuNodeInner};
@@ -96,7 +97,11 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
 /// The second half of a step. Applies a network evaluation to the given node,
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
-pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(tree: &mut MuTree<B, M>, response: MuZeroResponse) {
+pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
+    tree: &mut MuTree<B, M>,
+    top_moves: usize,
+    response: MuZeroResponse,
+) {
     let MuZeroResponse {
         node,
         state,
@@ -117,8 +122,10 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(tree: &mut MuTree<B, M>, r
         })
     } else {
         // all moves deeper in the tree
-        // TODO consider only adding either top-N nodes or nodes with p > 0.001
-        for (i, &p) in policy.as_ref().iter().enumerate() {
+        // TODO use the fact that moves are sorted by policy to optimize UCT calculations
+        let mapped = policy.iter().copied().map(N32::from_inner);
+        for i in top_k_indices_sorted(mapped, top_moves) {
+            let p = policy[i];
             tree.nodes.push(MuNode::new(Some(node), Some(i), p))
         }
     }
