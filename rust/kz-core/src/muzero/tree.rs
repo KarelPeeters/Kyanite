@@ -57,9 +57,16 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
         })
     }
 
-    //TODO this doesn't really work for oracle moves any more
     pub fn best_move_index(&self) -> Option<usize> {
         self.best_child(0).map(|c| self[c].last_move_index.unwrap())
+    }
+
+    pub fn principal_variation(&self, max_len: usize) -> Vec<usize> {
+        std::iter::successors(Some(0), |&n| self.best_child(n))
+            .skip(1)
+            .take(max_len)
+            .map(|n| self[n].last_move_index.unwrap())
+            .collect()
     }
 
     /// The values corresponding to `root_board` from the POV of `root_board.next_player`.

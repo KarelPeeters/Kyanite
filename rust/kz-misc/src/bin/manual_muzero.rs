@@ -1,18 +1,21 @@
 #![allow(unreachable_code)]
 #![allow(dead_code)]
 
+use std::fmt::format;
 use std::marker::PhantomData;
 
-use board_game::board::Board;
+use board_game::board::{Board, BoardMoves};
 use board_game::games::chess::{ChessBoard, Rules};
+use internal_iterator::InternalIterator;
 
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::tensor::DeviceTensor;
+use cuda_nn_eval::tester::check_cudnn;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 use kz_core::muzero::wrapper::MuZeroSettings;
-use kz_core::network::common::softmax_in_place;
+use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::MuZeroGraphs;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
@@ -29,7 +32,7 @@ unsafe fn main_impl() {
     let device = Device::new(0);
 
     println!("Loading graphs");
-    let path = "C:/Documents/Programming/STTT/AlphaZero/data/muzero/max_norm_attached_flip/models_13500";
+    let path = "C:/Documents/Programming/STTT/AlphaZero/data/muzero/clamp/models_13500";
 
     let graphs = MuZeroGraphs {
         mapper,
@@ -42,23 +45,48 @@ unsafe fn main_impl() {
     println!("Optimizing graphs");
     let graphs = graphs.optimize(OptimizerSettings::default());
 
+    println!("Checking representation");
+    check_cudnn(
+        &graphs.representation,
+        &std::fs::read(format!("{}_representation.bin", path)).unwrap(),
+    );
+    println!("Checking dynamics");
+    check_cudnn(
+        &graphs.dynamics,
+        &std::fs::read(format!("{}_dynamics.bin", path)).unwrap(),
+    );
+    println!("Checking prediction");
+    check_cudnn(
+        &graphs.prediction,
+        &std::fs::read(format!("{}_prediction.bin", path)).unwrap(),
+    );
+
     println!("Fusing graphs & re-optimizing");
     let fused = graphs.fuse(OptimizerSettings::default());
 
     println!("Building executors");
     let mut exec = fused.executors(device, 1, 1);
 
-    let mut board = ChessBoard::new_without_history_fen(
-        "2k5/1pp5/p2r1q2/4p1np/2Q1P1p1/1N4P1/PPP4P/3R3K w - - 0 29",
-        Rules::default(),
-    );
+    let mut board = ChessBoard::default();
+
+    println!("Available moves:");
+    board.available_moves().for_each(|mv| {
+        println!("  {} => {}", mv, display_option(mapper.move_to_index(&board, mv)));
+    });
 
     println!("Building tree");
     let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent);
     let visits = 100;
     let tree = settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
 
-    println!("{}", tree.display(1, true, usize::MAX, false));
+    println!("{}", tree.display(8, true, 10, false));
+
+    let mut test_board = board.clone();
+    for mv_index in tree.principal_variation(10) {
+        let mv = mapper.index_to_move(&test_board, mv_index);
+        println!("{} => {}", mv_index, display_option(mv));
+        test_board.play(mv.unwrap());
+    }
 
     return;
 
@@ -67,14 +95,23 @@ unsafe fn main_impl() {
     let mut dynamics = CudaExecutor::new(device, &graphs.dynamics, 1);
     let mut prediction = CudaExecutor::new(device, &graphs.prediction, 1);
 
-    let moves = ["d1d6", "f6f3", "h1g1", "g5h3", ""];
+    println!("\n\n==== Representation: ");
+    println!("{:?}", representation);
+    println!("\n\n==== Dynamics: ");
+    println!("{:?}", dynamics);
+    println!("\n\n==== Prediction: ");
+    println!("{:?}", prediction);
+
+    let moves = ["e2e4", ""];
 
     let state_shape = fused.state_shape.eval(1);
-    let state_tensor = DeviceTensor::alloc_simple(device, state_shape.dims);
+    let state_tensor = DeviceTensor::alloc_simple(device, state_shape.dims.clone());
 
     println!("Initial representation");
     let mut input_encoded = vec![];
     mapper.encode_input_full(&mut input_encoded, &board);
+
+    println!("input: {input_encoded:?}");
 
     representation.inputs[0].copy_simple_from_host(&input_encoded);
     representation.run_async();
@@ -84,6 +121,12 @@ unsafe fn main_impl() {
     for (i, mv) in moves.iter().enumerate() {
         println!("\n============");
         println!("Running iteration {} before move {}", i, mv);
+
+        let mut state = vec![f32::NAN; state_shape.size()];
+        state_tensor.copy_to_host_staged(&mut state);
+
+        println!("{:?}", state_tensor);
+        println!("state: {:?}", state);
 
         println!("Prediction");
 
@@ -96,29 +139,33 @@ unsafe fn main_impl() {
 
         let mut scalars = vec![0.0; 5];
         scalars_tensor.copy_simple_to_host(&mut scalars);
-        scalars[0] = scalars[0].tanh();
-        softmax_in_place(&mut scalars[1..4]);
+        let values = zero_values_from_scalars(&scalars);
 
         let mut policy = vec![0.0; mapper.policy_len()];
         policy_tensor.copy_simple_to_host(&mut policy);
         softmax_in_place(&mut policy);
 
         println!("Scalars: {:?}", scalars);
+        println!("Values: {:?}", values);
 
         println!("Policy:");
         let mut non_available_mass = 0.0;
+        let mut available_mass = 0.0;
+
         for i in 0..mapper.policy_len() {
             let mv = mapper.index_to_move(&board, i);
             let available = board.is_done() || mv.map_or(false, |mv| board.is_available_move(mv));
 
-            if true || available {
-                println!("  {} {} {}", display_option(mv), available, policy[i]);
-            }
-            if !available {
+            println!("  {} {} {}", display_option(mv), available, policy[i]);
+
+            if available {
+                available_mass += policy[i];
+            } else {
                 non_available_mass += policy[i];
             }
         }
 
+        println!("  * true {}", available_mass);
         println!("  * false {}", non_available_mass);
 
         if mv.is_empty() {

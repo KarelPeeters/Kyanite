@@ -12,8 +12,8 @@ use crate::executor::CudaExecutor;
 /// which typically comes from a `.bin` file next to the `.onnx` file.
 pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
-    let outputs = eval_cudnn(graph, batch_size, &inputs, false);
-    assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, false);
+    let outputs = eval_cudnn(graph, batch_size, &inputs, true);
+    assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, true);
 }
 
 const ERROR_ABS_TOLERANCE: f32 = 0.001;
@@ -53,8 +53,11 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
 
         if print {
             println!(
-                "Output {} matched, max error: abs {}, rel {}",
-                i, max_abs_error, max_rel_error
+                "Output {} with shape {:?} matched, max error: abs {}, rel {}",
+                i,
+                output.shape(),
+                max_abs_error,
+                max_rel_error
             );
         }
     }

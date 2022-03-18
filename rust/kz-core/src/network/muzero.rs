@@ -15,7 +15,7 @@ use nn_graph::shape::{Shape, Size};
 
 use crate::mapping::BoardMapper;
 use crate::muzero::MuZeroEvaluation;
-use crate::network::common::{softmax_in_place, zero_value_from_scalars};
+use crate::network::common::{softmax_in_place, zero_values_from_scalars};
 
 pub struct MuZeroGraphs<B: Board, M: BoardMapper<B>> {
     pub mapper: M,
@@ -226,7 +226,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
                 softmax_in_place(&mut policy);
 
                 let eval = MuZeroEvaluation {
-                    values: zero_value_from_scalars(scalars),
+                    values: zero_values_from_scalars(scalars),
                     policy: Cow::Owned(policy),
                 };
 

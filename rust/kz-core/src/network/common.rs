@@ -140,7 +140,7 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
     }
 }
 
-pub fn zero_value_from_scalars(scalars: &[f32]) -> ZeroValues {
+pub fn zero_values_from_scalars(scalars: &[f32]) -> ZeroValues {
     assert_eq!(scalars.len(), 5, "Expected 5 scalars, got len {}", scalars.len());
 
     let value = scalars[0].tanh();

@@ -122,13 +122,6 @@ class TrainSettings:
                 prev_position = batch.positions[k - 1]
                 curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
 
-            # TODO should we detach here? or take a moving average and use that instead?
-            # TODO try clamping instead, that's a lot easier to do at runtime
-            flat_state = curr_state.flatten(1)
-            min = flat_state.min(dim=1).values[:, None, None, None]
-            max = flat_state.max(dim=1).values[:, None, None, None]
-            curr_state = (curr_state - min) / (max - min)
-
             scalars_k, policy_logits_k = networks.prediction(curr_state)
 
             total_loss += self.evaluate_batch_predictions(

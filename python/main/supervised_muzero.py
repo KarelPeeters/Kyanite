@@ -58,7 +58,7 @@ def main(plotter: LogPlotter):
         root_policy_scale=1.0,
     )
 
-    output_path = "../../data/muzero/flip_built_in"
+    output_path = "../../data/muzero/clamp"
     os.makedirs(output_path, exist_ok=False)
 
     channels = 256
@@ -66,9 +66,11 @@ def main(plotter: LogPlotter):
 
     representation = nn.Sequential(
         ResTower(depth, game.full_input_channels, channels, final_affine=False),
+        nn.Hardtanh(-1.0, 1.0),
     )
     dynamics = ConcatInputsChannelwise(nn.Sequential(
         ResTower(depth, channels + game.input_mv_channels, channels, final_affine=False),
+        nn.Hardtanh(-1.0, 1.0),
         Flip(dim=2),
     ))
     prediction = PredictionHeads(
