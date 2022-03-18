@@ -16,7 +16,7 @@ use crate::zero::node::ZeroValues;
 /// The result of a zero search.
 #[derive(Debug)]
 pub struct MuTree<B: Board, M: BoardMapper<B>> {
-    root_board: B,
+    pub(super) root_board: B,
     pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
 }

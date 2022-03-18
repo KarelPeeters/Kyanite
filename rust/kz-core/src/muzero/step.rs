@@ -2,6 +2,7 @@ use board_game::board::Board;
 use board_game::wdl::{Flip, OutcomeWDL};
 use cuda_nn_eval::tensor::DeviceTensor;
 use decorum::N32;
+use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
 use crate::mapping::BoardMapper;
@@ -104,10 +105,22 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(tree: &mut MuTree<B, M>, r
 
     assert_eq!(tree.mapper.policy_len(), policy.len(), "Mismatching policy length");
 
-    // create children with correct policy
+    // create children
     let start = tree.nodes.len();
-    for (i, &p) in policy.as_ref().iter().enumerate() {
-        tree.nodes.push(MuNode::new(Some(node), Some(i), p))
+    if node == 0 {
+        // only available moves for root node
+        let board = &tree.root_board;
+        board.available_moves().for_each(|mv| {
+            let index = tree.mapper.move_to_index(board, mv);
+            let p = index.map_or(1.0, |index| policy[index]);
+            tree.nodes.push(MuNode::new(Some(node), index, p))
+        })
+    } else {
+        // all moves deeper in the tree
+        // TODO consider only adding either top-N nodes or nodes with p > 0.001
+        for (i, &p) in policy.as_ref().iter().enumerate() {
+            tree.nodes.push(MuNode::new(Some(node), Some(i), p))
+        }
     }
     let end = tree.nodes.len();
 
