@@ -104,18 +104,24 @@ impl DevicePtr {
         .unwrap();
     }
 
-    pub unsafe fn copy_linear_from_device(&self, other: &DevicePtr, len: usize) {
+    pub unsafe fn copy_linear_from_device(&self, other: &DevicePtr, len_bytes: usize) {
         assert_eq!(
             self.device(),
             other.device(),
             "Can only copy between tensors on the same device"
         );
 
-        self.assert_linear_in_bounds(len);
-        other.assert_linear_in_bounds(len);
+        self.assert_linear_in_bounds(len_bytes);
+        other.assert_linear_in_bounds(len_bytes);
 
         self.device().switch_to();
-        cudaMemcpy(self.ptr(), other.ptr(), len, cudaMemcpyKind::cudaMemcpyDeviceToDevice).unwrap();
+        cudaMemcpy(
+            self.ptr(),
+            other.ptr(),
+            len_bytes,
+            cudaMemcpyKind::cudaMemcpyDeviceToDevice,
+        )
+        .unwrap();
     }
 
     fn assert_linear_in_bounds(&self, len: usize) {
