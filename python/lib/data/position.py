@@ -106,6 +106,8 @@ class PositionBatch:
             played_mv_full = None
 
         for i, p in enumerate(positions):
+            assert p.game == game
+
             input_full[i, :game.input_scalar_channels, :, :] = torch.tensor(p.input_scalars) \
                 .view(-1, 1, 1).expand(*game.input_scalar_shape)
             input_full[i, game.input_scalar_channels:, :, :] = torch.tensor(p.input_bools) \
