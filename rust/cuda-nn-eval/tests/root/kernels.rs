@@ -3,10 +3,12 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
+use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;
 use cuda_sys::wrapper::status::Status;
+use nn_graph::ndarray::Array1;
 
 #[test]
 fn strided_copy() {
@@ -179,4 +181,47 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
             }
         }
     }
+}
+
+#[test]
+fn quantize() {
+    let device = Device::new(0);
+    let stream = CudaStream::new(device);
+
+    let length = 20;
+
+    let input_data: Vec<f32> = Array1::linspace(-0.2, 1.2, length).to_vec();
+    let mut middle_data: Vec<u8> = vec![0; length];
+    let mut output_data: Vec<f32> = vec![0.0; length];
+
+    let input = device.alloc(length * 4);
+    let middle = device.alloc(length);
+    let output = device.alloc(length * 4);
+
+    unsafe {
+        input.copy_linear_from_host(cast_slice(&input_data));
+
+        kernels::quantize(
+            stream.inner(),
+            length as i32,
+            input.ptr() as *const _,
+            middle.ptr() as *mut _,
+        )
+        .unwrap();
+        kernels::unquantize(
+            stream.inner(),
+            length as i32,
+            middle.ptr() as *const _,
+            output.ptr() as *mut _,
+        )
+        .unwrap();
+        stream.synchronize();
+
+        middle.copy_linear_to_host(&mut middle_data);
+        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
+    }
+
+    println!("{:?}", input_data);
+    println!("{:?}", middle_data);
+    println!("{:?}", output_data);
 }
