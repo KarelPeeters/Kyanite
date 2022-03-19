@@ -6,6 +6,7 @@ pub mod executor;
 pub mod shape;
 pub mod tensor;
 pub mod tester;
+pub mod quant;
 pub mod util;
 
 mod planner;

@@ -3,6 +3,7 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
+use cuda_nn_eval::quant::QuantizedStorage;
 use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
@@ -191,37 +192,25 @@ fn quantize() {
     let length = 20;
 
     let input_data: Vec<f32> = Array1::linspace(-0.2, 1.2, length).to_vec();
-    let mut middle_data: Vec<u8> = vec![0; length];
+    let mut quant_data: Vec<u8> = vec![0; length];
     let mut output_data: Vec<f32> = vec![0.0; length];
 
-    let input = device.alloc(length * 4);
-    let middle = device.alloc(length);
-    let output = device.alloc(length * 4);
+    let input = DeviceTensor::alloc_simple(device, vec![length]);
+    let quant = QuantizedStorage::alloc(device, length);
+    let output = DeviceTensor::alloc_simple(device, vec![length]);
 
     unsafe {
-        input.copy_linear_from_host(cast_slice(&input_data));
+        input.copy_simple_from_host(&input_data);
 
-        kernels::quantize(
-            stream.inner(),
-            length as i32,
-            input.ptr() as *const _,
-            middle.ptr() as *mut _,
-        )
-        .unwrap();
-        kernels::unquantize(
-            stream.inner(),
-            length as i32,
-            middle.ptr() as *const _,
-            output.ptr() as *mut _,
-        )
-        .unwrap();
+        quant.launch_copy_from_simple_tensor(&input, &stream);
+        quant.launch_copy_to_simple_tensor(&output, &stream);
         stream.synchronize();
 
-        middle.copy_linear_to_host(&mut middle_data);
-        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
+        quant.ptr().copy_linear_to_host(&mut quant_data);
+        output.copy_simple_to_host(&mut output_data);
     }
 
     println!("{:?}", input_data);
-    println!("{:?}", middle_data);
+    println!("{:?}", quant_data);
     println!("{:?}", output_data);
 }
