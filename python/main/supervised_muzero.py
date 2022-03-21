@@ -41,12 +41,11 @@ def main(plotter: LogPlotter):
         clip_norm=4.0,
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
-        mask_policy_root=False,
-        mask_policy_unrolled=False,
-        root_policy_scale=1.0,
+        mask_policy=False,
+        muzero=True,
     )
 
-    output_path = "../../data/muzero/limit64_reshead"
+    output_path = "../../data/muzero/derp"
     os.makedirs(output_path, exist_ok=False)
 
     channels = 256
@@ -92,7 +91,7 @@ def main(plotter: LogPlotter):
         logger.start_batch()
 
         batch = sampler.next_unrolled_batch()
-        train.train_step_unrolled(batch, networks, optimizer, logger)
+        train.train_step(batch, networks, optimizer, logger)
 
         plotter.update(logger)
 

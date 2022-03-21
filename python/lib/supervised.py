@@ -5,11 +5,11 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as nnf
+from torch import nn
 from torch.optim import Optimizer
 
 from lib.data.buffer import FileListSampler
 from lib.logger import Logger
-from lib.networks import MuZeroNetworks
 from lib.plotter import LogPlotter
 from lib.save_onnx import save_onnx
 from lib.schedule import Schedule
@@ -20,7 +20,7 @@ def supervised_loop(
         settings: TrainSettings, schedule: Optional[Schedule], optimizer: Optimizer,
         start_bi: int, output_folder: str,
         logger: Logger, plotter: LogPlotter,
-        networks: MuZeroNetworks,
+        network: nn.Module,
         train_sampler: FileListSampler, test_sampler: FileListSampler,
         test_steps: int, save_steps: int,
 ):
@@ -39,16 +39,17 @@ def supervised_loop(
             for group in optimizer.param_groups:
                 group["lr"] = lr
 
-        settings.train_step(train_sampler, network, optimizer, logger)
+        train_batch = train_sampler.next_batch()
+        settings.train_step(train_batch, network, optimizer, logger)
 
         if bi % test_steps == 0:
             network.eval()
 
             train_batch = train_sampler.next_batch()
-            settings.evaluate_batch_predictions(network, "test-train", logger, train_batch, settings.scalar_target)
+            settings.evaluate_batch(network, train_batch, "test-train", logger)
 
             test_batch = test_sampler.next_batch()
-            settings.evaluate_batch_predictions(network, "test-test", logger, test_batch, settings.scalar_target)
+            settings.evaluate_batch(network, train_batch, "test-test", logger)
 
             # compare to just predicting the mean value
             train_batch_wdl = settings.scalar_target.pick(final=train_batch.wdl_final, zero=train_batch.wdl_zero)

@@ -68,7 +68,7 @@ class DataFile:
 
         # wrap everything up
         info = DataFileInfo(game, meta, bin_path, off_path, final_offset, timestamp)
-        assert info.position_count == offset_count, "Mismatch between offset and position counts"
+        assert info.position_count == offset_count, f"Mismatch between offset and position counts for '{path}'"
         return DataFile(info, bin_handle, off_handle)
 
     def with_new_handle(self) -> 'DataFile':

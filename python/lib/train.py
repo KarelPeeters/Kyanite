@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
 import torch
@@ -11,7 +12,7 @@ from lib.data.position import PositionBatch, UnrolledPositionBatch
 from lib.games import Game
 from lib.logger import Logger
 from lib.networks import MuZeroNetworks
-from lib.util import calc_gradient_norms, calc_parameter_norm, fake_quantize_scale
+from lib.util import calc_gradient_norms, calc_parameter_norm, fake_quantize_scale, DEVICE
 
 
 class ScalarTarget:
@@ -34,6 +35,9 @@ class ScalarTarget:
 ScalarTarget.Final = ScalarTarget(1.0)
 ScalarTarget.Zero = ScalarTarget(0.0)
 
+EitherNetwork = Union[nn.Module, MuZeroNetworks]
+EitherBatch = Union[PositionBatch, UnrolledPositionBatch]
+
 
 @dataclass
 class TrainSettings:
@@ -49,20 +53,29 @@ class TrainSettings:
     train_in_eval_mode: bool
     clip_norm: float
 
-    mask_policy_root: bool
-    mask_policy_unrolled: bool
-    root_policy_scale: float
+    mask_policy: bool
+    muzero: bool
 
-    def train_step(self, batch: PositionBatch, network: nn.Module, optimizer: Optimizer, logger: Logger):
-        optimizer.zero_grad(set_to_none=True)
-
+    def train_step(
+            self,
+            batch: EitherBatch,
+            network: EitherNetwork,
+            optimizer: Optimizer,
+            logger: Logger
+    ):
         if self.train_in_eval_mode:
             network.eval()
         else:
             network.train()
 
-        scalars, policy_logits = network(batch.input_full)
-        loss = self.evaluate_batch_predictions("train", logger, batch, scalars, policy_logits)
+        if self.muzero:
+            assert isinstance(batch, UnrolledPositionBatch)
+            loss = self.evaluate_batch_unrolled(network, batch, "train", logger)
+        else:
+            assert isinstance(batch, PositionBatch)
+            loss = self.evaluate_batch(network, batch, "train", logger)
+
+        optimizer.zero_grad(set_to_none=True)
         loss.backward()
 
         grad_norm = clip_grad_norm_(network.parameters(), max_norm=self.clip_norm)
@@ -75,50 +88,20 @@ class TrainSettings:
         logger.log("grad_norm", "torch", grad_norm)
         logger.log("param_norm", "param_norm", calc_parameter_norm(network))
 
-    def train_step_unrolled(
-            self,
-            batch: UnrolledPositionBatch,
-            networks: MuZeroNetworks, optimizer: Optimizer,
-            logger: Logger
-    ):
-        optimizer.zero_grad(set_to_none=True)
+    def evaluate_batch(self, network: nn.Module, batch: PositionBatch, log_prefix: str, logger: Logger):
+        scalars, policy_logits = network(batch.input_full)
+        loss = self.evaluate_batch_predictions(log_prefix, logger, batch, scalars, policy_logits)
+        return loss
 
-        if self.train_in_eval_mode:
-            networks.eval()
-        else:
-            networks.train()
-
-        loss = self.evaluate_batch_unrolled(networks, "train", logger, batch)
-        loss.backward()
-
-        grad_norm = clip_grad_norm_(networks.parameters(), max_norm=self.clip_norm)
-        optimizer.step()
-
-        grad_norms = calc_gradient_norms(networks)
-        logger.log("grad_norm", "min", np.min(grad_norms))
-        logger.log("grad_norm", "mean", np.mean(grad_norms))
-        logger.log("grad_norm", "max", np.max(grad_norms))
-        logger.log("grad_norm", "torch", grad_norm)
-        logger.log("param_norm", "param_norm", calc_parameter_norm(networks))
-
-    def evaluate_batch_unrolled(
-            self, networks: MuZeroNetworks,
-            log_prefix: str, logger: Logger,
-            batch: UnrolledPositionBatch,
-    ):
-        total_loss = 0
+    def evaluate_batch_unrolled(self, networks: MuZeroNetworks, batch: UnrolledPositionBatch, log_prefix: str,
+                                logger: Logger):
+        total_loss = torch.zeros((), device=DEVICE)
         curr_state = None
 
         for k, step in enumerate(batch.positions):
             if k == 0:
-                mask_policy = self.mask_policy_root
-                policy_scale = self.root_policy_scale
-
                 curr_state = networks.representation(step.input_full)
             else:
-                mask_policy = self.mask_policy_unrolled
-                policy_scale = 1.0
-
                 prev_position = batch.positions[k - 1]
                 curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
 
@@ -133,8 +116,7 @@ class TrainSettings:
 
             total_loss += self.evaluate_batch_predictions(
                 f"{log_prefix}/f{k}", logger,
-                batch.positions[k], scalars_k, policy_logits_k,
-                mask_policy, policy_scale
+                batch.positions[k], scalars_k, policy_logits_k
             )
 
             # TODO is a BN layer inside of the networks enough for hidden state normalization?
@@ -154,7 +136,6 @@ class TrainSettings:
             log_prefix: str, logger: Logger,
             batch: PositionBatch,
             scalars, policy_logits,
-            mask_policy: bool, policy_scale: float,
     ):
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
@@ -171,10 +152,13 @@ class TrainSettings:
         loss_value = nnf.mse_loss(value, batch_value)
         loss_wdl = nnf.mse_loss(wdl, batch_wdl)
         loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
-        eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, mask_policy)
+        eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, self.mask_policy)
 
-        loss_total = self.combine_losses(log_prefix, logger, loss_value, loss_wdl, loss_moves_left,
-                                         eval_policy.train_loss * policy_scale)
+        loss_total = self.combine_losses(
+            log_prefix, logger,
+            loss_value, loss_wdl, loss_moves_left,
+            eval_policy.train_loss
+        )
 
         # value accuracies
         batch_size = len(batch)
@@ -187,9 +171,12 @@ class TrainSettings:
         # log policy info
         logger.log("acc-policy", f"{log_prefix} acc", eval_policy.norm_acc)
         logger.log("acc-policy", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
-        logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
 
-        logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
+        if self.mask_policy:
+            logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
+
+        if self.muzero:
+            logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
 
         return loss_total
 
