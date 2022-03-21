@@ -84,12 +84,14 @@ class ConcatInputsChannelwise(nn.Module):
 
 
 class PredictionHeads(nn.Module):
-    def __init__(self, scalar_head: nn.Module, policy_head: nn.Module):
+    def __init__(self, common: nn.Module, scalar_head: nn.Module, policy_head: nn.Module):
         super().__init__()
+        self.common = common
         self.scalar_head = scalar_head
         self.policy_head = policy_head
 
-    def forward(self, common):
+    def forward(self, input):
+        common = self.common(input)
         scalars = self.scalar_head(common)
         policy = self.policy_head(common)
         return scalars, policy

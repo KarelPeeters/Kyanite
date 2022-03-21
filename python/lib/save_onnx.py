@@ -1,3 +1,4 @@
+import json
 import os.path
 from pathlib import Path
 from typing import Optional, List
@@ -14,6 +15,19 @@ def save_muzero_onnx(game: Game, path_base: str, networks: MuZeroNetworks, check
     assert path_base.endswith("_"), f"Path must end with '_', got '{path_base}'"
 
     state_shape = (networks.state_channels, game.board_size, game.board_size)
+    state_limit_shape = (networks.state_channel_limit, game.board_size, game.board_size)
+
+    info_path = path_base + "info.json"
+    assert not os.path.exists(info_path), f"Path '{info_path}' already exists"
+
+    info = {
+        "game": game.name,
+        "state_channels": networks.state_channels,
+        "state_channels_saved": networks.state_channels_saved,
+        "state_quant_bits": networks.state_quant_bits,
+    }
+    with open(info_path, "w") as f:
+        json.dump(info, f)
 
     save_onnx_inner(
         path_base + "representation.onnx",
@@ -26,7 +40,7 @@ def save_muzero_onnx(game: Game, path_base: str, networks: MuZeroNetworks, check
     save_onnx_inner(
         path_base + "dynamics.onnx",
         networks.dynamics,
-        [state_shape, game.input_mv_shape],
+        [state_limit_shape, game.input_mv_shape],
         ["prev_state", "move"],
         ["state"],
         check_batch_size

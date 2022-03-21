@@ -11,7 +11,7 @@ from lib.data.position import PositionBatch, UnrolledPositionBatch
 from lib.games import Game
 from lib.logger import Logger
 from lib.networks import MuZeroNetworks
-from lib.util import calc_gradient_norms, calc_parameter_norm
+from lib.util import calc_gradient_norms, calc_parameter_norm, fake_quantize_scale
 
 
 class ScalarTarget:
@@ -123,6 +123,13 @@ class TrainSettings:
                 curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
 
             scalars_k, policy_logits_k = networks.prediction(curr_state)
+
+            # limit the number of channels that have to be saved
+            curr_state = curr_state[:, :networks.state_channels_saved, :, :]
+
+            # quantize to reduce memory usage in inference, but only _after_ policy and value heads
+            if networks.state_quant_bits is not None:
+                curr_state = fake_quantize_scale(curr_state, 1.0, networks.state_quant_bits)
 
             total_loss += self.evaluate_batch_predictions(
                 f"{log_prefix}/f{k}", logger,

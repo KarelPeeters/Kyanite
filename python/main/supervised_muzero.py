@@ -10,24 +10,12 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.layers import Flip
-from lib.model.post_act import ResTower, ConcatInputsChannelwise, PredictionHeads, ScalarHead, AttentionPolicyHead
+from lib.model.post_act import ResTower, ConcatInputsChannelwise, PredictionHeads, ScalarHead, AttentionPolicyHead, \
+    ResBlock
 from lib.networks import MuZeroNetworks
 from lib.plotter import run_with_plotter, LogPlotter
 from lib.train import TrainSettings, ScalarTarget
 from lib.util import DEVICE
-
-
-# TODO list for muzero rewrite
-#   * train a network without policy mask, ie. penalize invalid move predictions
-#       * both alphazero and muzero style, see if they're any different
-#   * rewrite tree search to deal with non-available moves as well
-#       * dynamic children array?
-#       * sort by policy and skip calculating uct for lower-policy moves
-#   * should the state be flipped inbetween moves? probably yes for chess, but not for other games
-#       * this could explain why 1,3,5 policies are easier to predict than 2, 4, 6
-#       * doesn't really seem to matter much, strangely enough
-#   * why do we keep getting sudden spikes? is it because of the duplicate batchnorm?
-#       * clipping the logs doesn't seem to help much
 
 
 def main(plotter: LogPlotter):
@@ -58,28 +46,32 @@ def main(plotter: LogPlotter):
         root_policy_scale=1.0,
     )
 
-    output_path = "../../data/muzero/clamp"
+    output_path = "../../data/muzero/limit64_reshead"
     os.makedirs(output_path, exist_ok=False)
 
     channels = 256
     depth = 16
+    saved_channels = 64
 
     representation = nn.Sequential(
         ResTower(depth, game.full_input_channels, channels, final_affine=False),
         nn.Hardtanh(-1.0, 1.0),
     )
     dynamics = ConcatInputsChannelwise(nn.Sequential(
-        ResTower(depth, channels + game.input_mv_channels, channels, final_affine=False),
+        ResTower(depth, saved_channels + game.input_mv_channels, channels, final_affine=False),
         nn.Hardtanh(-1.0, 1.0),
         Flip(dim=2),
     ))
     prediction = PredictionHeads(
-        ScalarHead(game.board_size, channels, 8, 128),
-        AttentionPolicyHead(game, channels, 64)
+        common=ResBlock(channels),
+        scalar_head=ScalarHead(game.board_size, channels, 8, 128),
+        policy_head=AttentionPolicyHead(game, channels, 64)
     )
 
     networks = MuZeroNetworks(
         state_channels=channels,
+        state_channels_saved=saved_channels,
+        state_quant_bits=8,
         representation=representation,
         dynamics=dynamics,
         prediction=prediction,

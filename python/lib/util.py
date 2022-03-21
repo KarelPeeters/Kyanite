@@ -48,3 +48,17 @@ def scale_gradient(x: torch.tensor, t: float) -> torch.tensor:
 
 def inv_softmax(x, c):
     return torch.log(x) + c
+
+
+def fake_quantize_scale(x, scale: float, bits: int):
+    assert bits > 1, f"Need at least two bits (to properly represent min, max and 0), got {bits}"
+    assert scale > 0.0
+
+    a = 2 ** bits
+    return torch.fake_quantize_per_tensor_affine(
+        x,
+        scale=2 * scale / (a - 2),
+        zero_point=0,
+        quant_min=-(a // 2 - 1),
+        quant_max=(a // 2 - 1),
+    )
