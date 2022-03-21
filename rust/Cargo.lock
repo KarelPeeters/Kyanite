@@ -1157,6 +1157,7 @@ dependencies = [
  "nn-graph",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "shakmaty",
  "shakmaty-syzygy",
 ]

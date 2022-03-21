@@ -37,6 +37,10 @@ impl PolicyMapper<TTTBoard> for TTTStdMapper {
 }
 
 impl MuZeroMapper<TTTBoard> for TTTStdMapper {
+    fn state_board_size(&self) -> usize {
+        todo!()
+    }
+
     fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }

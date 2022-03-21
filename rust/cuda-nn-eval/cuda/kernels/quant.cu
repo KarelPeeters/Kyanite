@@ -10,8 +10,8 @@ __global__ void quantizeKernel(
             return;
         }
 
-        float scaled = input[index] * 255.0 + 0.5;
-        float clamped = clamp(scaled, 0.0, 255.0);
+        float scaled = input[index] * 127.0 + 127.5;
+        float clamped = clamp(scaled, 0.0, 254.0);
         output[index] = (u8) clamped;
     }
 }
@@ -26,7 +26,7 @@ __global__ void unquantizeKernel(
             return;
         }
 
-        output[index] = ((float) input[index]) / 255.0;
+        output[index] = (((float) input[index]) - 127.0) / 127.0;
     }
 }
 

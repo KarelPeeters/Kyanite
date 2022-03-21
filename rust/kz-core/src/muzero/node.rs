@@ -1,4 +1,4 @@
-use cuda_nn_eval::tensor::DeviceTensor;
+use cuda_nn_eval::quant::QuantizedStorage;
 
 use crate::zero::node::{Uct, ZeroValues};
 use crate::zero::range::IdxRange;
@@ -17,7 +17,7 @@ pub struct MuNode {
 
 #[derive(Debug, Clone)]
 pub struct MuNodeInner {
-    pub state: DeviceTensor,
+    pub state: QuantizedStorage,
     pub net_values: ZeroValues,
     pub children: IdxRange,
 }

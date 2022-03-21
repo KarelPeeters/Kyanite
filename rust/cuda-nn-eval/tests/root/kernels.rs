@@ -9,7 +9,6 @@ use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;
 use cuda_sys::wrapper::status::Status;
-use nn_graph::ndarray::Array1;
 
 #[test]
 fn strided_copy() {
@@ -189,9 +188,14 @@ fn quantize() {
     let device = Device::new(0);
     let stream = CudaStream::new(device);
 
-    let length = 20;
+    #[rustfmt::skip]
+        let input_data = vec![0.0, 1.0, -1.0, 1.1, -1.1, 0.9, 0.8, -500.1, 500.1, 0.999, -0.999, -0.2, 0.2, 0.16];
+    #[rustfmt::skip]
+        let expected_output_data = vec![0.0, 1.0, -1.0, 1.0, -1.0, 0.8976378, 0.8031496, -1.0, 1.0, 1.0, -1.0, -0.19685039, 0.19685039, 0.15748031];
 
-    let input_data: Vec<f32> = Array1::linspace(-0.2, 1.2, length).to_vec();
+    let length = input_data.len();
+    assert_eq!(expected_output_data.len(), length);
+
     let mut quant_data: Vec<u8> = vec![0; length];
     let mut output_data: Vec<f32> = vec![0.0; length];
 
@@ -213,4 +217,20 @@ fn quantize() {
     println!("{:?}", input_data);
     println!("{:?}", quant_data);
     println!("{:?}", output_data);
+
+    let mut any_error = false;
+
+    for i in 0..length {
+        if output_data[i] != expected_output_data[i] {
+            eprintln!(
+                "Mismatch at i={} for input {}, expected {} got {}",
+                i, input_data[i], expected_output_data[i], output_data[i],
+            );
+            any_error = true;
+        }
+    }
+
+    if any_error {
+        panic!("Wrong output");
+    }
 }

@@ -15,7 +15,7 @@ def save_muzero_onnx(game: Game, path_base: str, networks: MuZeroNetworks, check
     assert path_base.endswith("_"), f"Path must end with '_', got '{path_base}'"
 
     state_shape = (networks.state_channels, game.board_size, game.board_size)
-    state_limit_shape = (networks.state_channel_limit, game.board_size, game.board_size)
+    state_limit_shape = (networks.state_channels_saved, game.board_size, game.board_size)
 
     info_path = path_base + "info.json"
     assert not os.path.exists(info_path), f"Path '{info_path}' already exists"

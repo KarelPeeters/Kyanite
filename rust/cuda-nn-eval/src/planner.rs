@@ -44,6 +44,16 @@ impl<'a> Planner<'a> {
         self.plan
     }
 
+    pub fn visit_ensure_simple_strides(&mut self, value: Value) -> DeviceTensor {
+        let result = self.visit(value);
+
+        if result.shape.has_simple_strides() {
+            result
+        } else {
+            self.plan_restride_tensor(&result)
+        }
+    }
+
     pub fn visit(&mut self, value: Value) -> DeviceTensor {
         if let Some(result) = self.map.get(&value) {
             return result.clone();
@@ -102,7 +112,7 @@ impl<'a> Planner<'a> {
 
                 for input in inputs {
                     let curr_size = input.shape.shape()[axis];
-                    let curr_range = SliceRange::new(curr_start, curr_start + curr_size, 1);
+                    let curr_range = SliceRange::simple(curr_start, curr_start + curr_size);
 
                     let curr_result = result.slice(axis, curr_range);
                     let args = curr_result.copy_from_as_tensor_op(&input);
@@ -236,32 +246,19 @@ impl<'a> Planner<'a> {
                 }
             }
 
-            let input = self.visit(input);
+            // for conv everything needs simple strides
+            let input = self.visit_ensure_simple_strides(input);
             let filter = self.visit(filter);
             let bias = bias.map(|bias| self.visit(bias));
-            let res = res.map(|res| self.visit(res));
+            let res = res.map(|res| self.visit_ensure_simple_strides(res));
 
-            // ensure input has simple strides
-            let input = if input.shape.has_simple_strides() {
-                input
-            } else {
-                self.plan_restride_tensor(&input)
-            };
-
-            // ensure res also has simple strides
-            let res = res.map(|res| {
+            if let Some(res) = &res {
                 assert_eq!(
                     res.shape.shape(),
                     input.shape.shape(),
                     "Input and res must have the same shape"
                 );
-
-                if res.shape == input.shape {
-                    res
-                } else {
-                    self.plan_restride_tensor(&res)
-                }
-            });
+            };
 
             let bias = bias.unwrap_or_else(|| {
                 let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);

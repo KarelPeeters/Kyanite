@@ -82,7 +82,7 @@ impl CudaExecutor {
         let outputs = graph
             .outputs()
             .iter()
-            .map(|&output| planner.visit(output))
+            .map(|&output| planner.visit_ensure_simple_strides(output))
             .collect_vec();
 
         let steps = planner.finish();

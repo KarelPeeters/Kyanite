@@ -1,6 +1,6 @@
 use board_game::board::Board;
 use board_game::wdl::{Flip, OutcomeWDL};
-use cuda_nn_eval::tensor::DeviceTensor;
+use cuda_nn_eval::quant::QuantizedStorage;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
@@ -22,7 +22,7 @@ pub enum MuZeroRequest<B> {
     },
     Expand {
         node: usize,
-        state: DeviceTensor,
+        state: QuantizedStorage,
         move_index: usize,
     },
 }
@@ -30,7 +30,7 @@ pub enum MuZeroRequest<B> {
 #[derive(Debug)]
 pub struct MuZeroResponse<'a> {
     pub node: usize,
-    pub state: DeviceTensor,
+    pub state: QuantizedStorage,
     pub eval: MuZeroEvaluation<'a>,
 }
 
@@ -51,7 +51,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0);
 
     let mut last_move_index = None;
-    let mut last_state: Option<DeviceTensor> = None;
+    let mut last_state: Option<QuantizedStorage> = None;
 
     loop {
         let inner = if let Some(inner) = &tree[curr_node].inner {

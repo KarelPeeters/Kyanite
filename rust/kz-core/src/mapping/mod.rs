@@ -79,6 +79,8 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
 
 //TODO update the docs in the file
 pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
+    fn state_board_size(&self) -> usize;
+
     fn encoded_move_shape(&self) -> [usize; 3];
 
     fn encoded_mv_len(&self) -> usize {

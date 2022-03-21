@@ -39,6 +39,10 @@ impl PolicyMapper<STTTBoard> for STTTStdMapper {
 }
 
 impl MuZeroMapper<STTTBoard> for STTTStdMapper {
+    fn state_board_size(&self) -> usize {
+        todo!()
+    }
+
     fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }

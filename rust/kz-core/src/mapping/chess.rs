@@ -375,6 +375,10 @@ pub fn generate_all_flat_moves_pov() -> Vec<ChessMove> {
 }
 
 impl MuZeroMapper<ChessBoard> for ChessStdMapper {
+    fn state_board_size(&self) -> usize {
+        8
+    }
+
     fn encoded_move_shape(&self) -> [usize; 3] {
         [8, 8, 8]
     }

@@ -61,7 +61,7 @@ impl DeviceTensor {
         let mut new_shape = self.shape.shape().to_vec();
         new_shape.remove(axis);
 
-        self.slice(axis, SliceRange::new(index, index + 1, 1)).view(new_shape)
+        self.slice(axis, SliceRange::simple(index, index + 1)).view(new_shape)
     }
 
     pub fn flip(&self, axis: usize) -> DeviceTensor {

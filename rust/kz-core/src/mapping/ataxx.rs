@@ -118,6 +118,10 @@ pub const FROM_DX_DY: [(i8, i8); 16] = [
 ];
 
 impl MuZeroMapper<AtaxxBoard> for AtaxxStdMapper {
+    fn state_board_size(&self) -> usize {
+        todo!()
+    }
+
     fn encoded_move_shape(&self) -> [usize; 3] {
         todo!()
     }

@@ -272,8 +272,16 @@ impl Graph {
         &self.inputs
     }
 
+    pub fn input_shapes(&self) -> Vec<Shape> {
+        self.inputs().iter().map(|&v| self[v].shape.clone()).collect()
+    }
+
     pub fn outputs(&self) -> &[Value] {
         &self.outputs
+    }
+
+    pub fn output_shapes(&self) -> Vec<Shape> {
+        self.outputs().iter().map(|&v| self[v].shape.clone()).collect()
     }
 
     pub fn outputs_mut(&mut self) -> &mut Vec<Value> {
@@ -448,7 +456,7 @@ impl Graph {
     /// Similar to slice with a 1-sized interval except that the the resulting value doesn't have the extra axis.
     #[must_use]
     pub fn index(&mut self, input: Value, axis: usize, index: usize) -> Value {
-        let sliced = self.slice(input, axis, SliceRange::new(index, index + 1, 1));
+        let sliced = self.slice(input, axis, SliceRange::single(index));
 
         let mut new_shape = self[input].shape.clone();
         new_shape.dims.remove(axis);
@@ -808,6 +816,14 @@ impl SliceRange {
         let result = Self { start, end, step };
         result.assert_valid();
         result
+    }
+
+    pub fn simple(start: usize, end: usize) -> Self {
+        Self::new(start, end, 1)
+    }
+
+    pub fn single(index: usize) -> Self {
+        Self::new(index, index + 1, 1)
     }
 
     pub fn assert_valid(self) {

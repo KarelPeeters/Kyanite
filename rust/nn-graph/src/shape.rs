@@ -90,6 +90,10 @@ impl Shape {
         self
     }
 
+    pub fn batched(&self) -> Shape {
+        shape![Size::BATCH].concat(self)
+    }
+
     /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
     pub fn replace(&self, axis: usize, replacement: Size) -> Shape {
         assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
