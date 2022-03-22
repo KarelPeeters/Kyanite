@@ -7,7 +7,6 @@ from torch import nn
 from torch.optim import Adam
 
 from lib.games import Game
-from lib.model.lc0_pre_act import LCZOldPreNetwork
 from lib.model.simple import DenseNetwork
 from lib.save_onnx import save_onnx
 
@@ -17,7 +16,7 @@ def build_networks():
     networks = {
         "simple-sttt-1x64": (sttt, DenseNetwork(sttt, 1, 64, False)),
         "simple-bn-sttt-1x64": (sttt, DenseNetwork(sttt, 1, 64, True)),
-        "pre-sttt-4x8": (sttt, LCZOldPreNetwork(sttt, 4, 8, 5, (6, 32))),
+        # "pre-sttt-4x8": (sttt, LCZOldPreNetwork(sttt, 4, 8, 5, (6, 32))),
     }
     return networks
 
@@ -50,15 +49,12 @@ def prepare_output_folder(output_folder):
         os.remove(file)
 
 
-CHECK_BATCH_SIZE = 2
-
-
 def main():
     output_folder = "../../rust/cuda-nn-eval/tests/data/"
 
     prepare_output_folder(output_folder)
     networks = build_networks()
-    save_networks(output_folder, CHECK_BATCH_SIZE, networks)
+    save_networks(output_folder, 2, networks)
 
 
 if __name__ == '__main__':

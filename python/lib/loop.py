@@ -19,7 +19,9 @@ from lib.save_onnx import save_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings
 from lib.util import DEVICE, print_param_count
-from main.write_test_networks import CHECK_BATCH_SIZE
+
+CHECK_BATCH_SIZE = 2
+SAVE_BATCH_SIZE = 2
 
 
 @dataclass
@@ -210,13 +212,14 @@ class LoopSettings:
                     if bi != 0:
                         logger.start_batch()
 
-                    self.train_settings.train_step(train_sampler, network, optimizer, logger)
+                    train_batch = train_sampler.next_batch()
+                    self.train_settings.train_step(train_batch, network, optimizer, logger)
                 train_sampler.close()
 
                 logger.log("time", "train", time.perf_counter() - train_start)
 
                 torch.jit.save(network, gen.network_path_pt)
-                save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
+                save_onnx(game, gen.network_path_onnx, network, 2)
                 client.send_new_network(gen.network_path_onnx)
 
             logger.save(self.log_path)
@@ -250,12 +253,12 @@ class LoopSettings:
                     network.to(DEVICE)
 
                     prev_network_path_onnx = self.initial_network_path_onnx
-                    save_onnx(game, prev_network_path_onnx, network, CHECK_BATCH_SIZE)
+                    save_onnx(game, prev_network_path_onnx, network, SAVE_BATCH_SIZE)
 
                     # save the dummy network too if there is one
                     if self.dummy_network is not None:
                         dummy_network = self.dummy_network()
-                        save_onnx(game, self.dummy_network_path_onnx, dummy_network, CHECK_BATCH_SIZE)
+                        save_onnx(game, self.dummy_network_path_onnx, dummy_network, SAVE_BATCH_SIZE)
                 else:
                     print(f"Continuing run, first gen {gi}")
                     logger = Logger.load(self.log_path)
@@ -282,8 +285,7 @@ class LoopSettings:
         network.eval()
         for prefix, sampler in setups:
             batch = sampler.next_batch()
-            self.train_settings.evaluate_batch_predictions(network, prefix, logger, batch,
-                                                           self.train_settings.scalar_target)
+            self.train_settings.evaluate_batch(network, batch, prefix, logger)
             sampler.close()
 
 
@@ -363,7 +365,7 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
     def sampler_full(self, batch_size: int):
-        return FileListSampler(self.game, self.files, batch_size)
+        return FileListSampler(self.game, self.files, batch_size, unroll_steps=None, threads=1)
 
     def sampler_last(self, batch_size: int):
-        return FileListSampler(self.game, [self.files[-1]], batch_size)
+        return FileListSampler(self.game, [self.files[-1]], batch_size, unroll_steps=None, threads=1)

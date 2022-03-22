@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import PostActNetwork, ScalarHead, AttentionPolicyHead
+from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
@@ -46,24 +46,24 @@ def main():
         moves_left_delta=20,
         moves_left_weight=0.0001,
         clip_norm=20.0,
-        value_target=ScalarTarget.Final,
+        scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
+        mask_policy=True,
+        muzero=False,
     )
 
-    def dummy_network():
-        return PostActNetwork(
-            game, 1, 8,
-            ScalarHead(game, 8, 2, 16),
-            AttentionPolicyHead(game, 8, 4),
+    def build_network(depth: int, channels: int):
+        return PredictionHeads(
+            common=ResTower(depth, game.full_input_channels, channels),
+            scalar_head=ScalarHead(game.board_size, channels, 8, 128),
+            policy_head=AttentionPolicyHead(game, channels, channels),
         )
 
+    def dummy_network():
+        return build_network(1, 8)
+
     def initial_network():
-        channels = 64
-        return PostActNetwork(
-            game, 8, channels,
-            ScalarHead(game, channels, 4, 64),
-            AttentionPolicyHead(game, channels, channels),
-        )
+        return build_network(16, 256)
 
     initial_files_pattern = ""
 
