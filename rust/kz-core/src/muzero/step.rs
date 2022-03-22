@@ -1,9 +1,10 @@
 use board_game::board::Board;
 use board_game::wdl::{Flip, OutcomeWDL};
-use cuda_nn_eval::quant::QuantizedStorage;
 use decorum::N32;
-use internal_iterator::InternalIterator;
+use internal_iterator::{InternalIterator, IteratorExt};
 use itertools::Itertools;
+
+use cuda_nn_eval::quant::QuantizedStorage;
 use kz_util::top_k_indices_sorted;
 
 use crate::mapping::BoardMapper;
@@ -111,36 +112,55 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
     assert_eq!(tree.mapper.policy_len(), policy.len(), "Mismatching policy length");
 
     // create children
-    let start = tree.nodes.len();
-    if node == 0 {
-        // only available moves for root node
+    let children = if node == 0 {
+        // only keep available moves for root node
         let board = &tree.root_board;
-        board.available_moves().for_each(|mv| {
-            let index = tree.mapper.move_to_index(board, mv);
-            let p = index.map_or(1.0, |index| policy[index]);
-            tree.nodes.push(MuNode::new(Some(node), index, p))
-        })
+        let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
+        create_child_nodes(&mut tree.nodes, node, indices, &policy)
     } else {
-        // all moves deeper in the tree
-        // TODO use the fact that moves are sorted by policy to optimize UCT calculations
+        // keep all moves deeper in the tree
+        // TODO use the fact that moves are sorted by policy to optimize UCT calculations later on
+        // TODO this doesn't work for the pass move, maybe it's finally time to retire it
         let mapped = policy.iter().copied().map(N32::from_inner);
-        for i in top_k_indices_sorted(mapped, top_moves) {
-            let p = policy[i];
-            tree.nodes.push(MuNode::new(Some(node), Some(i), p))
-        }
-    }
-    let end = tree.nodes.len();
+        let indices = top_k_indices_sorted(mapped, top_moves).into_iter().map(Some);
+        create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy)
+    };
 
     // set node inner
     let inner = MuNodeInner {
         state,
         net_values: values,
-        children: IdxRange::new(start, end),
+        children,
     };
     tree[node].inner = Some(inner);
 
     // propagate values
     tree_propagate_values(tree, node, values);
+}
+
+fn create_child_nodes(
+    nodes: &mut Vec<MuNode>,
+    parent_node: usize,
+    indices: impl InternalIterator<Item = Option<usize>>,
+    policy: &[f32],
+) -> IdxRange {
+    let start = nodes.len();
+    let mut total_p = 0.0;
+
+    indices.for_each(|index| {
+        let p = index.map_or(1.0, |index| policy[index]);
+        total_p += p;
+        nodes.push(MuNode::new(Some(parent_node), index, p))
+    });
+
+    let end = nodes.len();
+
+    // re-normalize policy
+    for node in start..end {
+        nodes[node].net_policy /= total_p;
+    }
+
+    IdxRange::new(start, end)
 }
 
 /// Propagate the given `values` up to the root.
