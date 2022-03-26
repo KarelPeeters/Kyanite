@@ -1,11 +1,13 @@
+use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 
-use crate::bindings::cudnnHandle_t;
+use bytemuck::cast_slice;
+
 use crate::bindings::{
-    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaEventRecord, cudaGetDeviceCount,
-    cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy,
-    cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy,
-    cudnnSetStream,
+    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceProp, cudaEventRecord,
+    cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode,
+    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent,
+    cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
@@ -49,6 +51,25 @@ impl Device {
 
     pub fn alloc(self, len_bytes: usize) -> DevicePtr {
         DevicePtr::alloc(self, len_bytes)
+    }
+
+    pub fn properties(self) -> cudaDeviceProp {
+        unsafe {
+            self.switch_to();
+            let mut properties = MaybeUninit::uninit();
+            cudaGetDeviceProperties(properties.as_mut_ptr(), self.0).unwrap();
+            properties.assume_init()
+        }
+    }
+
+    pub fn name(self) -> String {
+        let properties = self.properties();
+        let name = &properties.name;
+
+        let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+        std::str::from_utf8(cast_slice::<i8, u8>(&name[..len]))
+            .unwrap()
+            .to_owned()
     }
 }
 
