@@ -4,10 +4,10 @@ use decorum::N32;
 use internal_iterator::{InternalIterator, IteratorExt};
 use itertools::Itertools;
 
+use crate::mapping::BoardMapper;
 use cuda_nn_eval::quant::QuantizedStorage;
 use kz_util::top_k_indices_sorted;
 
-use crate::mapping::BoardMapper;
 use crate::muzero::node::{MuNode, MuNodeInner};
 use crate::muzero::tree::MuTree;
 use crate::muzero::MuZeroEvaluation;
@@ -35,8 +35,8 @@ pub struct MuZeroResponse<'a> {
     pub eval: MuZeroEvaluation<'a>,
 }
 
-pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
-    tree: &MuTree<B, M>,
+pub fn muzero_step_gather<B: Board>(
+    tree: &MuTree<B>,
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
@@ -99,9 +99,10 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
 pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
-    tree: &mut MuTree<B, M>,
+    tree: &mut MuTree<B>,
     top_moves: usize,
     response: MuZeroResponse,
+    mapper: M,
 ) {
     let MuZeroResponse {
         node,
@@ -109,13 +110,18 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
         eval: MuZeroEvaluation { values, policy },
     } = response;
 
-    assert_eq!(tree.mapper.policy_len(), policy.len(), "Mismatching policy length");
+    let lengths = [tree.mapper_policy_len, mapper.policy_len(), policy.len()];
+    assert!(
+        lengths.iter().all(|&x| x == policy.len()),
+        "Mismatching policy lengths: {:?}",
+        lengths
+    );
 
     // create children
     let children = if node == 0 {
         // only keep available moves for root node
         let board = &tree.root_board;
-        let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
+        let indices = board.available_moves().map(|mv| mapper.move_to_index(&board, mv));
         create_child_nodes(&mut tree.nodes, node, indices, &policy)
     } else {
         // keep all moves deeper in the tree
@@ -164,7 +170,7 @@ fn create_child_nodes(
 }
 
 /// Propagate the given `values` up to the root.
-fn tree_propagate_values<B: Board, M: BoardMapper<B>>(tree: &mut MuTree<B, M>, node: usize, mut values: ZeroValues) {
+fn tree_propagate_values<B: Board>(tree: &mut MuTree<B>, node: usize, mut values: ZeroValues) {
     values = values.flip();
     let mut curr_index = node;
 
