@@ -279,11 +279,15 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        writeln!(f, "  Conv:      {:>10.4} ms", self.conv * 1e3)?;
-        writeln!(f, "  Matmul:    {:>10.4} ms", self.mat_mul * 1e3)?;
-        writeln!(f, "  Tensor op: {:>10.4} ms", self.tensor_op * 1e3)?;
-        writeln!(f, "  Gather:    {:>10.4} ms", self.gather * 1e3)?;
-        writeln!(f, "  ================")?;
+        let total = self.conv + self.mat_mul + self.tensor_op + self.gather;
+        let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
+
+        line("Conv:     ", self.conv)?;
+        line("Matmul:   ", self.mat_mul)?;
+        line("Tensor op:", self.tensor_op)?;
+        line("Gather:   ", self.gather)?;
+
+        writeln!(f, "  ==============================")?;
         writeln!(f, "  Total GPU: {:>10.4} ms", self.total_gpu * 1e3)?;
         writeln!(f, "  Total CPU: {:>10.4} ms", self.total_cpu * 1e3)?;
         writeln!(f, "  Overhead:  {:>10.4} ms", self.timing_overhead * 1e3)?;
