@@ -1,28 +1,41 @@
+extern crate core;
+
 use std::env;
 use std::env::VarError;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
-//TODO rewrite this thing again to find cuda automatically (env Var & default location),
-// and verify that cudnn is installed
+fn get_var_path(name: &str) -> PathBuf {
+    let path = std::env::var(name).unwrap_or_else(|e| match e {
+        VarError::NotPresent => panic!("Environment variable {} is not defined", name),
+        VarError::NotUnicode(_) => panic!("Environment variable {} contains non-unicode path", name),
+    });
+
+    println!("Using {}={:?}", name, path);
+
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        panic!("Path {}={:?} does not exist", name, path);
+    }
+
+    path
+}
 
 #[cfg(target_family = "windows")]
 fn link_cuda(builder: Builder) -> Builder {
-    let cuda_path = std::env::var("CUDA_PATH").unwrap_or_else(|e| match e {
-        VarError::NotPresent => panic!("Environment variable CUDA_PATH is not defined"),
-        VarError::NotUnicode(_) => panic!("Environment variable CUDA_PATH contains non-unicode path"),
-    });
+    let cuda_path = get_var_path("CUDA_PATH");
+    let cudnn_path = get_var_path("CUDNN_PATH");
 
-    println!("Using CUDA_PATH={:?}", cuda_path);
-    let cuda_path = PathBuf::from(cuda_path);
+    for path in [&cuda_path, &cudnn_path] {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            path.join("lib/x64").to_str().unwrap()
+        );
+    }
 
-    println!(
-        "cargo:rustc-link-search=native={}",
-        cuda_path.join("lib/x64").to_str().unwrap()
-    );
     println!("cargo:rustc-link-lib=dylib=cuda");
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
@@ -32,6 +45,7 @@ fn link_cuda(builder: Builder) -> Builder {
     builder
         .clang_arg(format!("-I{}", cuda_path.join("include").to_str().unwrap()))
         .clang_arg(format!("-I{}", cuda_path.join("include/nvtx3").to_str().unwrap()))
+        .clang_arg(format!("-I{}", cudnn_path.join("include").to_str().unwrap()))
 }
 
 #[cfg(target_family = "unix")]
