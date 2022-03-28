@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use board_game::board::Board;
 
 use crate::mapping::BoardMapper;
-use crate::muzero::step::{muzero_step_apply, muzero_step_gather, MuZeroRequest, MuZeroResponse};
+use crate::muzero::step::{muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse};
 use crate::muzero::tree::MuTree;
 use crate::network::muzero::MuZeroFusedExecutors;
 use crate::zero::node::UctWeights;
@@ -68,11 +68,11 @@ impl MuZeroSettings {
                         let (state, eval) = network.eval_root(&[board]).remove(0);
                         MuZeroResponse { node, state, eval }
                     }
-                    MuZeroRequest::Expand {
+                    MuZeroRequest::Expand(MuZeroExpandRequest {
                         node,
                         state,
                         move_index,
-                    } => {
+                    }) => {
                         let (state, eval) = network.eval_expand(&[(state, move_index)]).remove(0);
                         MuZeroResponse { node, state, eval }
                     }

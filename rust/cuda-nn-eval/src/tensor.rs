@@ -121,9 +121,10 @@ impl DeviceTensor {
 
     pub unsafe fn copy_simple_from_host(&self, buffer: &[f32]) {
         assert_eq!(
-            self.shape.size(),
             buffer.len(),
-            "Wrong buffer size for {:?}",
+            self.shape.size(),
+            "Wrong buffer size {} for {:?}",
+            buffer.len(),
             self.shape
         );
         assert!(
@@ -132,8 +133,8 @@ impl DeviceTensor {
             self.shape
         );
         assert_eq!(
-            self.shape.size(),
             buffer.len(),
+            self.shape.size(),
             "Wrong buffer size for {:?}",
             self.shape
         );
@@ -144,7 +145,8 @@ impl DeviceTensor {
         assert_eq!(
             self.shape.size(),
             buffer.len(),
-            "Wrong buffer size for {:?}",
+            "Wrong buffer size {} for {:?}",
+            buffer.len(),
             self.shape
         );
         assert!(

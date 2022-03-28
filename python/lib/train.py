@@ -54,7 +54,6 @@ class TrainSettings:
     clip_norm: float
 
     mask_policy: bool
-    muzero: bool
 
     def train_step(
             self,
@@ -68,12 +67,12 @@ class TrainSettings:
         else:
             network.train()
 
-        if self.muzero:
-            assert isinstance(batch, UnrolledPositionBatch)
+        if isinstance(batch, UnrolledPositionBatch):
             loss = self.evaluate_batch_unrolled(network, batch, "train", logger)
-        else:
-            assert isinstance(batch, PositionBatch)
+        elif isinstance(batch, PositionBatch):
             loss = self.evaluate_batch(network, batch, "train", logger)
+        else:
+            assert False, f"Unexpected batch type {type(batch)}"
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -90,7 +89,7 @@ class TrainSettings:
 
     def evaluate_batch(self, network: nn.Module, batch: PositionBatch, log_prefix: str, logger: Logger):
         scalars, policy_logits = network(batch.input_full)
-        loss = self.evaluate_batch_predictions(log_prefix, logger, batch, scalars, policy_logits)
+        loss = self.evaluate_batch_predictions(log_prefix, logger, False, batch, scalars, policy_logits)
         return loss
 
     def evaluate_batch_unrolled(self, networks: MuZeroNetworks, batch: UnrolledPositionBatch, log_prefix: str,
@@ -115,7 +114,7 @@ class TrainSettings:
                 curr_state = fake_quantize_scale(curr_state, 1.0, networks.state_quant_bits)
 
             total_loss += self.evaluate_batch_predictions(
-                f"{log_prefix}/f{k}", logger,
+                f"{log_prefix}/f{k}", logger, True,
                 batch.positions[k], scalars_k, policy_logits_k
             )
 
@@ -133,7 +132,7 @@ class TrainSettings:
 
     def evaluate_batch_predictions(
             self,
-            log_prefix: str, logger: Logger,
+            log_prefix: str, logger: Logger, log_policy_norm: bool,
             batch: PositionBatch,
             scalars, policy_logits,
     ):
@@ -175,7 +174,7 @@ class TrainSettings:
         if self.mask_policy:
             logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
 
-        if self.muzero:
+        if log_policy_norm:
             logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
 
         return loss_total

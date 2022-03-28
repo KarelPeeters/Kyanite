@@ -210,8 +210,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
             self.root_exec.run_async();
             self.expand_exec.handles.cudnn.stream().synchronize();
 
-            // copy & decode outputs
-            self.decode_outputs(boards.len(), true)
+            // get the result
+            self.copy_and_decode_outputs(boards.len(), true)
         }
     }
 
@@ -245,16 +245,12 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
             self.expand_exec.run_async();
             self.expand_exec.handles.cudnn.stream().synchronize();
 
-            // copy outputs back
-            self.root_exec.outputs[1].copy_simple_to_host(&mut self.output_scalars_buffer);
-            self.root_exec.outputs[2].copy_simple_to_host(&mut self.output_policy_buffer);
-
-            // decode outputs
-            self.decode_outputs(pairs.len(), false)
+            // get the result
+            self.copy_and_decode_outputs(pairs.len(), false)
         }
     }
 
-    unsafe fn decode_outputs(
+    unsafe fn copy_and_decode_outputs(
         &mut self,
         count: usize,
         is_root: bool,

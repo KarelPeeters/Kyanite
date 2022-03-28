@@ -13,6 +13,8 @@ class StartupSettings:
     first_gen: int
 
     game: str
+    muzero: bool
+
     threads_per_device: int
     batch_size: int
     games_per_gen: int
@@ -54,6 +56,7 @@ class SelfplaySettings:
     full_search_prob: float
     full_iterations: int
     part_iterations: int
+    top_moves: int
     cache_size: int
 
     def as_dict(self):

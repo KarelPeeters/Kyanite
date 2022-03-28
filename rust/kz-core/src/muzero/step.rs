@@ -17,15 +17,15 @@ use crate::zero::step::FpuMode;
 
 #[derive(Debug)]
 pub enum MuZeroRequest<B> {
-    Root {
-        node: usize,
-        board: B,
-    },
-    Expand {
-        node: usize,
-        state: QuantizedStorage,
-        move_index: usize,
-    },
+    Root { node: usize, board: B },
+    Expand(MuZeroExpandRequest),
+}
+
+#[derive(Debug)]
+pub struct MuZeroExpandRequest {
+    pub node: usize,
+    pub state: QuantizedStorage,
+    pub move_index: usize,
 }
 
 #[derive(Debug)]
@@ -58,11 +58,11 @@ pub fn muzero_step_gather<B: Board>(
         let inner = if let Some(inner) = &tree[curr_node].inner {
             inner
         } else {
-            return Some(MuZeroRequest::Expand {
+            return Some(MuZeroRequest::Expand(MuZeroExpandRequest {
                 node: curr_node,
                 state: last_state.unwrap(),
                 move_index: last_move_index.unwrap(),
-            });
+            }));
         };
 
         // update fpu

@@ -14,6 +14,7 @@ pub struct StartupSettings {
     pub games_per_gen: usize,
     pub first_gen: u32,
     pub reorder_games: bool,
+    pub muzero: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +75,8 @@ pub struct Settings {
     pub full_search_prob: f64,
     pub full_iterations: u64,
     pub part_iterations: u64,
+
+    pub top_moves: usize,
 
     // performance
     pub cache_size: usize,

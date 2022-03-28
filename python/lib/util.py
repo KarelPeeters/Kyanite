@@ -1,3 +1,6 @@
+import os.path
+import shutil
+
 import numpy as np
 import torch
 from torch import nn
@@ -62,3 +65,9 @@ def fake_quantize_scale(x, scale: float, bits: int):
         quant_min=-(a // 2 - 1),
         quant_max=(a // 2 - 1),
     )
+
+
+def clean_folder(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)

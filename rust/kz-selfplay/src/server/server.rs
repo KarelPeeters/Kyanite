@@ -20,6 +20,7 @@ use kz_core::mapping::BoardMapper;
 use crate::server::collector::collector_main;
 use crate::server::commander::{commander_main, read_command};
 use crate::server::generator::generator_main;
+use crate::server::generator_muzero::generator_muzero_main;
 use crate::server::protocol::{Command, StartupSettings};
 
 #[derive(Debug, Copy, Clone)]
@@ -109,10 +110,17 @@ fn selfplay_start<B: Board>(
 
                 let start_pos = &start_pos;
                 let batch_size = startup.batch_size;
+
+                let f = if startup.muzero {
+                    generator_muzero_main
+                } else {
+                    generator_main
+                };
+
                 s.builder()
                     .name(format!("generator-d{}-{}", device.inner(), thread_id))
                     .spawn(move |_| {
-                        generator_main(
+                        f(
                             thread_id,
                             mapper,
                             start_pos,
