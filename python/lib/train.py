@@ -67,12 +67,7 @@ class TrainSettings:
         else:
             network.train()
 
-        if isinstance(batch, UnrolledPositionBatch):
-            loss = self.evaluate_batch_unrolled(network, batch, "train", logger)
-        elif isinstance(batch, PositionBatch):
-            loss = self.evaluate_batch(network, batch, "train", logger)
-        else:
-            assert False, f"Unexpected batch type {type(batch)}"
+        loss = self.evaluate_either_batch(batch, network, logger, "train")
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -86,6 +81,15 @@ class TrainSettings:
         logger.log("grad_norm", "max", np.max(grad_norms))
         logger.log("grad_norm", "torch", grad_norm)
         logger.log("param_norm", "param_norm", calc_parameter_norm(network))
+
+    def evaluate_either_batch(self, batch: EitherBatch, network: EitherNetwork, logger: Logger, log_prefix: str):
+        if isinstance(batch, UnrolledPositionBatch):
+            loss = self.evaluate_batch_unrolled(network, batch, log_prefix, logger)
+        elif isinstance(batch, PositionBatch):
+            loss = self.evaluate_batch(network, batch, log_prefix, logger)
+        else:
+            assert False, f"Unexpected batch type {type(batch)}"
+        return loss
 
     def evaluate_batch(self, network: nn.Module, batch: PositionBatch, log_prefix: str, logger: Logger):
         scalars, policy_logits = network(batch.input_full)
@@ -120,8 +124,8 @@ class TrainSettings:
 
             # TODO is a BN layer inside of the networks enough for hidden state normalization?
             std, mean = torch.std_mean(curr_state.flatten(1), dim=1)
-            logger.log("state", f"std_{k}", std.mean())
-            logger.log("state", f"mean_{k}", mean.mean())
+            logger.log(f"state", f"{log_prefix} std_{k}", std.mean())
+            logger.log(f"state", f"{log_prefix} mean_{k}", mean.mean())
 
             # TODO _why_ does the muzero paper scale the gradient here?
             #   maybe this is more important when working with SGD?

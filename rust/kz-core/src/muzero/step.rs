@@ -104,6 +104,8 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
     response: MuZeroResponse,
     mapper: M,
 ) {
+    assert!(top_moves != 0);
+    
     let MuZeroResponse {
         node,
         state,

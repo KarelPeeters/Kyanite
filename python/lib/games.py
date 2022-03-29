@@ -81,6 +81,12 @@ def encode_chess_move(mv: int) -> np.array:
     return result
 
 
+def encode_ttt_move(mv: int) -> np.array:
+    result = np.zeros((1, 3, 3))
+    result.reshape(-1)[mv] = 1
+    return result
+
+
 GAMES = [
     *(_ataxx_game(size) for size in range(2, 9)),
     Game(
@@ -110,10 +116,10 @@ GAMES = [
         board_size=3,
         input_bool_channels=2,
         input_scalar_channels=0,
-        input_mv_channels=None,
+        input_mv_channels=1,
         policy_shape=(1, 3, 3),
         policy_conv_channels=1,
         estimate_moves_per_game=5,
-        encode_mv=None,
+        encode_mv=encode_ttt_move,
     )
 ]

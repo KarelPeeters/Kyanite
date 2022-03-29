@@ -355,7 +355,12 @@ impl<B: Board> SearchState<B> {
                 add_dirichlet_noise(ctx, self.tree.root_board(), response.eval.policy.to_mut());
             }
 
-            muzero_step_apply(&mut self.tree, ctx.settings.top_moves, response, ctx.mapper);
+            let top_moves = if ctx.settings.top_moves == 0 {
+                usize::MAX
+            } else {
+                ctx.settings.top_moves
+            };
+            muzero_step_apply(&mut self.tree, top_moves, response, ctx.mapper);
         }
 
         loop {

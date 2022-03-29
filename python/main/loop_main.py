@@ -20,6 +20,7 @@ def main():
         batch_size=256,
         games_per_gen=200,
         reorder_games=False,
+        muzero=False,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -36,6 +37,7 @@ def main():
         weights=UctWeights.default(),
         random_symmetries=True,
         cache_size=200,
+        top_moves=0,
     )
 
     train_settings = TrainSettings(
@@ -49,7 +51,6 @@ def main():
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
         mask_policy=True,
-        muzero=False,
     )
 
     def build_network(depth: int, channels: int):
@@ -89,9 +90,11 @@ def main():
         fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
+
+        muzero_steps=None
     )
 
-    settings.calc_batch_count_per_gen()
+    # settings.calc_batch_count_per_gen()
     settings.run_loop()
 
 

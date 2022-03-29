@@ -1,6 +1,6 @@
 import random
 from threading import Thread
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 
@@ -57,6 +57,12 @@ class FileListSampler:
     def __getitem__(self, i: int):
         (fi, pi) = self.split_index(i)
         return self.files[fi][pi]
+
+    def next_batch_either(self) -> Union[PositionBatch, UnrolledPositionBatch]:
+        if self.unroll_steps is None:
+            return self.next_batch()
+        else:
+            return self.next_unrolled_batch()
 
     def next_batch(self) -> PositionBatch:
         assert self.unroll_steps is None, "This sampler does not sample simple batches"

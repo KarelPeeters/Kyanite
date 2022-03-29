@@ -68,11 +68,12 @@ class PostTerminalPosition:
         self.policy_indices = np.zeros(0, dtype=np.int32)
         self.policy_values = np.zeros(0, dtype=np.float32)
 
-        # TODO is picking a random move right here?
-        assert terminal.game == Game.find("chess")
-        self.played_mv = random.randrange(1880)
+        # pick a random move to teach that any more stays in the terminal state
+        mv_size = prod(game.input_mv_shape)
+        self.played_mv = random.randrange(mv_size)
 
         # TODO is this right? we "extremify" the values here
+        #  doesn't really matter since usually we train on terminal values
         self.final_wdl = terminal.final_wdl
         self.zero_wdl = terminal.final_wdl
         self.net_wdl = terminal.final_wdl

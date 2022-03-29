@@ -217,7 +217,7 @@ class LoopSettings:
                 client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
-                train_sampler = buffer.sampler_full(self.train_batch_size)
+                train_sampler = buffer.sampler_full(self.train_batch_size, self.muzero_steps)
                 print(f"Training network on buffer with size {len(train_sampler)}")
                 train_start = time.perf_counter()
 
@@ -225,7 +225,7 @@ class LoopSettings:
                     if bi != 0:
                         logger.start_batch()
 
-                    train_batch = train_sampler.next_batch()
+                    train_batch = train_sampler.next_batch_either()
                     self.train_settings.train_step(train_batch, network, optimizer, logger)
                 train_sampler.close()
 
@@ -269,16 +269,16 @@ class LoopSettings:
                 network.to(DEVICE)
                 return gen, buffer, logger, network
 
-    def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
+    def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network):
         setups = [
-            ("eval-test-buffer", buffer.sampler_full(self.train_batch_size)),
-            ("eval-test-last", buffer.sampler_last(self.train_batch_size)),
+            ("test-buffer", buffer.sampler_full(self.train_batch_size, self.muzero_steps)),
+            ("test-last", buffer.sampler_last(self.train_batch_size, self.muzero_steps)),
         ]
 
         network.eval()
         for prefix, sampler in setups:
-            batch = sampler.next_batch()
-            self.train_settings.evaluate_batch(network, batch, prefix, logger)
+            batch = sampler.next_batch_either()
+            self.train_settings.evaluate_either_batch(batch, network, logger, prefix)
             sampler.close()
 
     def save_tmp_onnx_network(self, network, name: str) -> str:
@@ -368,8 +368,8 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", info.root_wdl[1])
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
-    def sampler_full(self, batch_size: int):
-        return FileListSampler(self.game, self.files, batch_size, unroll_steps=None, threads=1)
+    def sampler_full(self, batch_size: int, unroll_steps: Optional[int]):
+        return FileListSampler(self.game, self.files, batch_size, unroll_steps=unroll_steps, threads=1)
 
-    def sampler_last(self, batch_size: int):
-        return FileListSampler(self.game, [self.files[-1]], batch_size, unroll_steps=None, threads=1)
+    def sampler_last(self, batch_size: int, unroll_steps: Optional[int]):
+        return FileListSampler(self.game, [self.files[-1]], batch_size, unroll_steps=unroll_steps, threads=1)

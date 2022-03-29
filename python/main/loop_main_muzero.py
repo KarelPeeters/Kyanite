@@ -8,19 +8,19 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.layers import Flip
-from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
-    ResBlock
+from lib.model.post_act import ScalarHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
+    ResBlock, ConvPolicyHead
 from lib.networks import MuZeroNetworks
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("chess")
+    game = Game.find("ttt")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
-        threads_per_device=2,
+        threads_per_device=1,
         batch_size=256,
         games_per_gen=200,
         reorder_games=False,
@@ -36,7 +36,7 @@ def main():
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=200,
+        full_iterations=100,
         part_iterations=20,
         weights=UctWeights.default(),
         random_symmetries=True,
@@ -70,7 +70,8 @@ def main():
         prediction = PredictionHeads(
             common=ResBlock(channels),
             scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-            policy_head=AttentionPolicyHead(game, channels, channels)
+            # policy_head=AttentionPolicyHead(game, channels, channels)
+            policy_head=ConvPolicyHead(game, channels)
         )
 
         return MuZeroNetworks(
@@ -86,7 +87,7 @@ def main():
         return build_network(1, 8, 8)
 
     def initial_network():
-        return build_network(4, 64, 48)
+        return build_network(8, 32, 32)
 
     initial_files_pattern = ""
 
@@ -94,14 +95,14 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop_mu/{game.name}/test/",
 
-        dummy_network=dummy_network,
+        dummy_network=None,
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
         only_generate=False,
 
-        min_buffer_size=1_000,
-        max_buffer_size=10_000,
+        min_buffer_size=10_000,
+        max_buffer_size=100_000,
 
         train_batch_size=128,
         samples_per_position=0.3,
@@ -115,7 +116,7 @@ def main():
         muzero_steps=5,
     )
 
-    settings.calc_batch_count_per_gen()
+    # settings.calc_batch_count_per_gen()
     settings.run_loop()
 
 

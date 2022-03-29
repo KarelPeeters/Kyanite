@@ -9,7 +9,7 @@ pub struct TTTStdMapper;
 
 impl InputMapper<TTTBoard> for TTTStdMapper {
     fn input_bool_shape(&self) -> [usize; 3] {
-        [2, 9, 9]
+        [2, 3, 3]
     }
 
     fn input_scalar_count(&self) -> usize {
@@ -38,14 +38,15 @@ impl PolicyMapper<TTTBoard> for TTTStdMapper {
 
 impl MuZeroMapper<TTTBoard> for TTTStdMapper {
     fn state_board_size(&self) -> usize {
-        todo!()
+        3
     }
 
     fn encoded_move_shape(&self) -> [usize; 3] {
-        todo!()
+        [1, 3, 3]
     }
 
-    fn encode_mv(&self, _: &mut Vec<f32>, _: usize) {
-        todo!()
+    fn encode_mv(&self, result: &mut Vec<f32>, mv_index: usize) {
+        let mv = Coord::from_i(mv_index);
+        result.extend(Coord::all().map(|c| (c == mv) as u8 as f32))
     }
 }
