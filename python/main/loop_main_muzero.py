@@ -9,14 +9,14 @@ from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.layers import Flip
 from lib.model.post_act import ScalarHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
-    ResBlock, ConvPolicyHead
+    ResBlock, AttentionPolicyHead
 from lib.networks import MuZeroNetworks
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("ttt")
+    game = Game.find("chess")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
@@ -38,7 +38,7 @@ def main():
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=100,
+        full_iterations=400,
         part_iterations=20,
         weights=UctWeights.default(),
         random_symmetries=True,
@@ -53,7 +53,7 @@ def main():
         policy_weight=1.0,
         moves_left_delta=20,
         moves_left_weight=0.0001,
-        clip_norm=20.0,
+        clip_norm=5.0,
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
         mask_policy=False,
@@ -72,8 +72,8 @@ def main():
         prediction = PredictionHeads(
             common=ResBlock(channels),
             scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-            # policy_head=AttentionPolicyHead(game, channels, channels)
-            policy_head=ConvPolicyHead(game, channels)
+            policy_head=AttentionPolicyHead(game, channels, channels)
+            # policy_head=ConvPolicyHead(game, channels)
         )
 
         return MuZeroNetworks(
@@ -86,16 +86,16 @@ def main():
         )
 
     def dummy_network():
-        return build_network(1, 8, 8)
+        return build_network(1, 32, 32)
 
     def initial_network():
-        return build_network(8, 32, 32)
+        return build_network(8, 128, 64)
 
     initial_files_pattern = ""
 
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop_mu/{game.name}/new/",
+        root_path=f"data/loop_mu/{game.name}/first/",
 
         dummy_network=None,
         initial_network=initial_network,
@@ -103,8 +103,8 @@ def main():
 
         only_generate=False,
 
-        min_buffer_size=10_000,
-        max_buffer_size=100_000,
+        min_buffer_size=500_000,
+        max_buffer_size=1_000_000,
 
         train_batch_size=128,
         samples_per_position=0.3,
