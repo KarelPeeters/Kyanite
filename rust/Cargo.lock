@@ -1214,6 +1214,7 @@ name = "kz-selfplay"
 version = "0.1.0"
 dependencies = [
  "board-game",
+ "bytemuck",
  "bzip2",
  "chess",
  "crossbeam",
@@ -1228,7 +1229,6 @@ dependencies = [
  "pgn-reader",
  "rand 0.8.5",
  "rand_distr",
- "safe-transmute",
  "serde",
  "serde_json",
  "tar",
@@ -2226,12 +2226,6 @@ name = "ryu"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
-
-[[package]]
-name = "safe-transmute"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
 
 [[package]]
 name = "same-file"
