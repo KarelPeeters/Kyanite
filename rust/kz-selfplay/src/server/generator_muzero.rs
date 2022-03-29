@@ -15,6 +15,7 @@ use kz_core::muzero::step::{
 };
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
+use kz_core::network::common::{normalize_in_place, softmax_in_place};
 use kz_core::network::muzero::{MuZeroFusedExecutors, MuZeroGraphs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
@@ -409,10 +410,13 @@ fn extract_zero_eval<B: Board, M: BoardMapper<B>>(
     board: &B,
     response: &MuZeroEvaluation,
 ) -> ZeroEvaluation<'static> {
-    let policy = board
+    let mut policy: Vec<f32> = board
         .available_moves()
         .map(|mv| mapper.move_to_index(board, mv).map_or(1.0, |i| response.policy[i]))
         .collect();
+
+    // TODO should we even normalize here? that just means we lose valid weight information
+    normalize_in_place(&mut policy);
 
     ZeroEvaluation {
         values: response.values,

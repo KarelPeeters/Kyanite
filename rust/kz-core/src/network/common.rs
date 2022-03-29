@@ -108,6 +108,11 @@ pub fn softmax_in_place(slice: &mut [f32]) {
     }
 }
 
+pub fn normalize_in_place(slice: &mut [f32]) {
+    let total = slice.iter().sum::<f32>();
+    slice.iter_mut().for_each(|f| *f /= total);
+}
+
 pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph) {
     // input
     let inputs = graph.inputs();
