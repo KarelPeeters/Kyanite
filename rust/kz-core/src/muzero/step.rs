@@ -127,8 +127,7 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
         // keep all moves deeper in the tree
         // TODO use the fact that moves are sorted by policy to optimize UCT calculations later on
         // TODO this doesn't work for the pass move, maybe it's finally time to retire it
-        let mapped = policy.iter().copied().map(N32::from_inner);
-        let indices = top_k_indices_sorted(mapped, top_moves).into_iter().map(Some);
+        let indices = top_k_indices_sorted(&policy, top_moves).into_iter().map(Some);
         create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy)
     };
 

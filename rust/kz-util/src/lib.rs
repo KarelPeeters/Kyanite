@@ -1,5 +1,4 @@
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
@@ -196,37 +195,41 @@ impl<T: Clone> Pad for Vec<T> {
     }
 }
 
-pub fn top_k_indices_sorted<T: Ord>(values: impl IntoIterator<Item = T>, n: usize) -> Vec<usize> {
-    // (index, T), sorted by T
-    struct Pair<T>(usize, T);
-    impl<T: Ord> PartialEq for Pair<T> {
-        fn eq(&self, other: &Self) -> bool {
-            self.1.eq(&other.1)
-        }
-    }
-    impl<T: Ord> PartialOrd for Pair<T> {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            self.1.partial_cmp(&other.1)
-        }
-    }
-    impl<T: Ord> Eq for Pair<T> {}
-    impl<T: Ord> Ord for Pair<T> {
-        fn cmp(&self, other: &Self) -> Ordering {
-            self.1.cmp(&other.1)
+/// Get the indices of the highest `k` values. The indices themselves are sorted from high to low as well.
+/// `NaN` values are allowed but considered higher then any others, to ensure they don't go unnoticed.
+pub fn top_k_indices_sorted(values: &[f32], k: usize) -> Vec<usize> {
+    fn compare(a: f32, b: f32) -> Ordering {
+        let ord = a.partial_cmp(&b);
+        let eq = a == b || (a.is_nan() && b.is_nan());
+        let first_nan = a.is_nan();
+
+        match (ord, eq, first_nan) {
+            (Some(ord), _, _) => ord,
+            (None, true, _) => Ordering::Equal,
+            (None, false, true) => Ordering::Greater,
+            (None, false, false) => Ordering::Less,
         }
     }
 
-    // keep only top-n by popping lowest
-    let mut heap = BinaryHeap::new();
-    for (i, v) in values.into_iter().enumerate() {
-        heap.push(Pair(i, Reverse(v)));
-        if heap.len() > n {
-            heap.pop();
-        }
-    }
+    // using a heap turned out to be a lot slower than just sorting the full vec
+    let mut indices = (0..values.len()).collect_vec();
+    indices.sort_by(|&i, &j| compare(values[i], values[j]).reverse());
+    indices.truncate(k);
+    indices
+}
 
-    // collect, sorted from high to low
-    let mut result = heap.iter().map(|w| w.0).collect_vec();
-    result.reverse();
-    result
+#[cfg(test)]
+mod test {
+    use crate::top_k_indices_sorted;
+
+    #[test]
+    fn top_k() {
+        assert_eq!(top_k_indices_sorted(&[0.0, 2.0, 1.0], 2), vec![1, 2]);
+        assert_eq!(top_k_indices_sorted(&[1.0, 2.0, 3.0], 20), vec![2, 1, 0]);
+        assert_eq!(top_k_indices_sorted(&[1.0, 2.0, 3.0], 0), vec![]);
+        assert_eq!(top_k_indices_sorted(&[f32::NAN, 2.0, 1.0], 2), vec![0, 1]);
+
+        let result = top_k_indices_sorted(&[f32::NAN, 2.0, f32::NAN], 2);
+        assert!(result == vec![0, 2] || result == vec![2, 0]);
+    }
 }
