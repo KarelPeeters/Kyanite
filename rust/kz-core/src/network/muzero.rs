@@ -229,12 +229,10 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
         );
 
         unsafe {
-            let stream = self.expand_exec.handles.cudnn.stream();
-
             // copy and encode inputs
             self.input_buffer.clear();
             for (i, &(ref prev_state, mv_index)) in pairs.iter().enumerate() {
-                prev_state.launch_copy_to_simple_tensor(&self.expand_exec.inputs[0].index(0, i), stream);
+                prev_state.copy_from_simple_tensor(&self.expand_exec.inputs[0].index(0, i));
                 self.mapper.encode_mv(&mut self.input_buffer, mv_index);
             }
             self.input_buffer
@@ -279,7 +277,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
             .map(|bi| {
                 let state = states.index(0, bi);
                 let state_quant = QuantizedStorage::alloc(device, state.shape.size());
-                state_quant.launch_copy_from_simple_tensor(&state, stream);
+                state_quant.copy_to_simple_tensor(&state);
 
                 let scalars = &self.output_scalars_buffer[5 * bi..5 * (bi + 1)];
                 let mut policy = self.output_policy_buffer[policy_len * bi..policy_len * (bi + 1)].to_vec();

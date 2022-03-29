@@ -48,7 +48,19 @@ extern "C" {
         output: *mut f32,
     ) -> cudaError;
 
-    pub fn quantize(stream: cudaStream_t, length: i32, input: *const f32, output: *mut u8) -> cudaError;
+    pub fn quantize(
+        stream: cudaStream_t,
+        batch_size: i32,
+        length: i32,
+        input: *const f32,
+        outputs: *mut *mut u8,
+    ) -> cudaError;
 
-    pub fn unquantize(stream: cudaStream_t, length: i32, input: *const u8, output: *mut f32) -> cudaError;
+    pub fn unquantize(
+        stream: cudaStream_t,
+        batch_size: i32,
+        length: i32,
+        inputs: *const *const u8,
+        output: *mut f32,
+    ) -> cudaError;
 }

@@ -186,7 +186,6 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
 #[test]
 fn quantize() {
     let device = Device::new(0);
-    let stream = CudaStream::new(device);
 
     #[rustfmt::skip]
         let input_data = vec![0.0, 1.0, -1.0, 1.1, -1.1, 0.9, 0.8, -500.1, 500.1, 0.999, -0.999, -0.2, 0.2, 0.16];
@@ -206,9 +205,8 @@ fn quantize() {
     unsafe {
         input.copy_simple_from_host(&input_data);
 
-        quant.launch_copy_from_simple_tensor(&input, &stream);
-        quant.launch_copy_to_simple_tensor(&output, &stream);
-        stream.synchronize();
+        quant.copy_from_simple_tensor(&input);
+        quant.copy_to_simple_tensor(&output);
 
         quant.ptr().copy_linear_to_host(&mut quant_data);
         output.copy_simple_to_host(&mut output_data);

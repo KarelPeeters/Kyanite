@@ -15,9 +15,10 @@ int ceil_div(int x, int y) {
     return (x + y - 1) / y;
 }
 
+template<class T>
 __host__ __device__
 
-float clamp(float x, float min_value, float max_value) {
+T clamp(T x, T min_value, T max_value) {
     return min(max(x, min_value), max_value);
 }
 
