@@ -20,6 +20,7 @@ lazy_static = "1.4.0"
 internal-iterator = "0.2.0"
 rand = "0.8.5"
 ndarray = "0.15.4"
+bytemuck = "1.7.3"
 
 # TODO switch to nanoserde or similar, we just want basic json deserialization
 serde = { version = "1.0.136", features = ["derive"] }

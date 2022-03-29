@@ -7,6 +7,7 @@ edition = "2021"
 board-game = { version = "0.4.1", path = "../../../board-game-rs" }
 pgn-reader = { path = "../pgn-reader" }
 cuda-nn-eval = { path = "../cuda-nn-eval" }
+cuda-sys = { path = "../cuda-sys" }
 nn-graph = { path = "../nn-graph" }
 
 kz-core = { path = "../kz-core" }

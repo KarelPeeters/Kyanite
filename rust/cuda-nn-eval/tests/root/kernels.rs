@@ -198,15 +198,15 @@ fn quantize() {
     let mut quant_data: Vec<u8> = vec![0; length];
     let mut output_data: Vec<f32> = vec![0.0; length];
 
-    let input = DeviceTensor::alloc_simple(device, vec![length]);
+    let input = DeviceTensor::alloc_simple(device, vec![1, length]);
     let quant = QuantizedStorage::alloc(device, length);
-    let output = DeviceTensor::alloc_simple(device, vec![length]);
+    let output = DeviceTensor::alloc_simple(device, vec![1, length]);
 
     unsafe {
         input.copy_simple_from_host(&input_data);
 
-        quant.copy_from_simple_tensor(&input);
-        quant.copy_to_simple_tensor(&output);
+        quant.quantize_from(&input);
+        quant.unquantize_to(&output);
 
         quant.ptr().copy_linear_to_host(&mut quant_data);
         output.copy_simple_to_host(&mut output_data);

@@ -29,7 +29,7 @@ unsafe fn main_impl() {
     let device = Device::new(0);
 
     println!("Loading graphs");
-    let path = "C:/Documents/Programming/STTT/AlphaZero/data/muzero/limit64_reshead/models_8000_";
+    let path = "D:/Documents/A0/muzero/limit64_reshead/models_8000_";
 
     let graphs = MuZeroGraphs::load(&path, mapper);
 
@@ -113,8 +113,6 @@ unsafe fn main_impl() {
         representation.handles.cudnn.stream().synchronize();
         state_tensor.copy_from(&representation.outputs[0]);
 
-        let stream = CudaStream::new(device);
-
         for (i, mv) in moves.iter().enumerate() {
             println!("\n============");
             println!("Running iteration {} before move {}", i, mv);
@@ -181,12 +179,11 @@ unsafe fn main_impl() {
 
             // copy + fake quantize state
             let slice_range = SliceRange::simple(0, graphs.info.state_channels_saved);
-            stream.synchronize();
-            saved_state_quant.launch_copy_from_simple_tensor(&state_tensor.slice(0, slice_range), &stream);
-            saved_state_quant.launch_copy_to_simple_tensor(&dynamics.inputs[0], &stream);
-            stream.synchronize();
+            saved_state_quant.quantize_from(&state_tensor.slice(0, slice_range));
+            saved_state_quant.unquantize_to(&dynamics.inputs[0]);
 
             // actually run dynamics
+            dynamics.handles.cudnn.stream().synchronize();
             dynamics.run_async();
             dynamics.handles.cudnn.stream().synchronize();
             state_tensor.copy_from(&dynamics.outputs[0]);

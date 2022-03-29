@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::max;
 use std::fs::File;
 use std::marker::PhantomData;
 
@@ -7,7 +8,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 
 use cuda_nn_eval::executor::CudaExecutor;
-use cuda_nn_eval::quant::QuantizedStorage;
+use cuda_nn_eval::quant::{BatchQuantizer, QuantizedStorage};
 use cuda_sys::wrapper::handle::Device;
 use kz_util::Pad;
 use nn_graph::graph::{Graph, SliceRange};
@@ -69,6 +70,8 @@ pub struct MuZeroFusedExecutors<B: Board, M: BoardMapper<B>> {
     pub expand_exec: CudaExecutor,
 
     input_buffer: Vec<f32>,
+    quantizer: BatchQuantizer,
+
     output_scalars_buffer: Vec<f32>,
     output_policy_buffer: Vec<f32>,
 
@@ -168,6 +171,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedGraphs<B, M> {
         root_batch_size: usize,
         expand_batch_size: usize,
     ) -> MuZeroFusedExecutors<B, M> {
+        let max_batch_size = max(root_batch_size, expand_batch_size);
+
         MuZeroFusedExecutors {
             mapper: self.mapper,
             info: self.info.clone(),
@@ -176,6 +181,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedGraphs<B, M> {
             expand_exec: CudaExecutor::new(device, &self.expand, expand_batch_size),
 
             input_buffer: vec![],
+            quantizer: BatchQuantizer::new(device, max_batch_size),
+
             output_scalars_buffer: vec![],
             output_policy_buffer: vec![],
 
@@ -219,32 +226,38 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
         &mut self,
         pairs: &[(QuantizedStorage, usize)],
     ) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
-        let batch_size = self.expand_exec.batch_size;
+        let max_batch_size = self.expand_exec.batch_size;
+        let batch_size = pairs.len();
 
         assert!(
-            pairs.len() <= batch_size,
-            "Batch size is {}, but got {} boards",
-            batch_size,
-            pairs.len()
+            batch_size <= max_batch_size,
+            "Max batch size is {}, but got {} pairs",
+            max_batch_size,
+            batch_size
         );
 
         unsafe {
-            // copy and encode inputs
+            // encode inputs
             self.input_buffer.clear();
-            for (i, &(ref prev_state, mv_index)) in pairs.iter().enumerate() {
-                prev_state.copy_from_simple_tensor(&self.expand_exec.inputs[0].index(0, i));
-                self.mapper.encode_mv(&mut self.input_buffer, mv_index);
+            for (_, mv_index) in pairs {
+                self.mapper.encode_mv(&mut self.input_buffer, *mv_index);
             }
-            self.input_buffer
-                .pad(self.mapper.encoded_mv_len() * batch_size, f32::NAN);
+
+            // copy inputs to device mem
+            let max_input_size = self.mapper.encoded_mv_len() * max_batch_size;
+            self.input_buffer.pad(max_input_size, f32::NAN);
             self.expand_exec.inputs[1].copy_from_host_staged(&self.input_buffer);
+
+            // unquantize inputs
+            let stream = self.expand_exec.handles.cudnn.stream();
+            self.quantizer
+                .launch_unquantize(stream, pairs.iter().map(|p| &p.0), &self.expand_exec.inputs[0]);
 
             // run model (on the same stream as the quantizations, so no sync necessary)
             self.expand_exec.run_async();
-            self.expand_exec.handles.cudnn.stream().synchronize();
 
             // get the result
-            self.copy_and_decode_outputs(pairs.len(), false)
+            self.copy_and_decode_outputs(batch_size, false)
         }
     }
 
@@ -268,17 +281,22 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
         self.output_policy_buffer.pad(policy_len * batch_size, f32::NAN);
 
         // copy outputs back
+        stream.synchronize();
         let states = &exec.outputs[0];
         exec.outputs[1].copy_simple_to_host(&mut self.output_scalars_buffer);
         exec.outputs[2].copy_simple_to_host(&mut self.output_policy_buffer);
 
-        // decode outputs
-        let result = (0..count)
-            .map(|bi| {
-                let state = states.index(0, bi);
-                let state_quant = QuantizedStorage::alloc(device, state.shape.size());
-                state_quant.copy_to_simple_tensor(&state);
+        let state_saved_size = self.info.state_saved_shape(self.mapper).eval(1).size();
+        let states_quant = (0..count)
+            .map(|_| QuantizedStorage::alloc(device, state_saved_size))
+            .collect_vec();
+        self.quantizer.launch_quantize(&stream, states, states_quant.iter());
 
+        // decode outputs
+        let result = states_quant
+            .into_iter()
+            .enumerate()
+            .map(|(bi, state_quant)| {
                 let scalars = &self.output_scalars_buffer[5 * bi..5 * (bi + 1)];
                 let mut policy = self.output_policy_buffer[policy_len * bi..policy_len * (bi + 1)].to_vec();
 

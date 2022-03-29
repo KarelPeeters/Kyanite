@@ -15,7 +15,7 @@ use kz_core::muzero::step::{
 };
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
-use kz_core::network::common::{normalize_in_place, softmax_in_place};
+use kz_core::network::common::normalize_in_place;
 use kz_core::network::muzero::{MuZeroFusedExecutors, MuZeroGraphs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;

@@ -826,6 +826,10 @@ impl SliceRange {
         Self::new(index, index + 1, 1)
     }
 
+    pub fn empty() -> Self {
+        Self::new(0, 0, 1)
+    }
+
     pub fn assert_valid(self) {
         assert!(
             self.end >= self.start,
