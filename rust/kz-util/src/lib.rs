@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
@@ -211,11 +211,27 @@ pub fn top_k_indices_sorted(values: &[f32], k: usize) -> Vec<usize> {
         }
     }
 
-    // using a heap turned out to be a lot slower than just sorting the full vec
-    let mut indices = (0..values.len()).collect_vec();
-    indices.sort_by(|&i, &j| compare(values[i], values[j]).reverse());
-    indices.truncate(k);
-    indices
+    let k = min(k, values.len());
+    let mut result = Vec::with_capacity(k + 1);
+
+    // full sort the first k items
+    result.extend(0..k);
+    result.sort_by(|&i, &j| compare(values[i], values[j]).reverse());
+
+    // switch to partial insertion sort
+    for (i_rel, &v) in values[k..].iter().enumerate() {
+        let i = k + i_rel;
+
+        let (Ok(r) | Err(r)) = result.binary_search_by(|&j| compare(values[j], v).reverse());
+        result.insert(r, i);
+
+        // drop lowest element if we have too many
+        if result.len() > k {
+            result.pop();
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
