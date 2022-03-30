@@ -1,9 +1,9 @@
-use std::cmp::{min, Ordering};
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
 
-use itertools::zip;
+use itertools::{zip, Itertools};
 use rand::{Error, Rng, RngCore};
 
 /// An Rng implementation that panics as soon as it is called.
@@ -32,7 +32,7 @@ impl RngCore for PanicRng {
 /// Similar to [rand::seq::IteratorRandom::choose] but will only pick items with the maximum key.
 /// Equivalent to first finding the max key, then filtering items matching that key and then choosing a random element,
 /// but implemented in a single pass over the iterator.
-pub fn choose_max_by_key<T, I: IntoIterator<Item=T>, K: Ord, F: FnMut(&T) -> K>(
+pub fn choose_max_by_key<T, I: IntoIterator<Item = T>, K: Ord, F: FnMut(&T) -> K>(
     iter: I,
     mut key: F,
     rng: &mut impl Rng,
@@ -68,7 +68,7 @@ pub trait IndexOf<T> {
     fn index_of(self, element: T) -> Option<usize>;
 }
 
-impl<T: PartialEq, I: Iterator<Item=T>> IndexOf<T> for I {
+impl<T: PartialEq, I: Iterator<Item = T>> IndexOf<T> for I {
     fn index_of(mut self, element: I::Item) -> Option<usize> {
         self.position(|cand| cand == element)
     }
@@ -110,11 +110,11 @@ pub fn kdl_divergence(p: &[f32], q: &[f32]) -> f32 {
 }
 
 pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI>
-    where
-        L: IntoIterator<IntoIter=LI>,
-        R: IntoIterator<IntoIter=RI>,
-        LI: ExactSizeIterator,
-        RI: ExactSizeIterator,
+where
+    L: IntoIterator<IntoIter = LI>,
+    R: IntoIterator<IntoIter = RI>,
+    LI: ExactSizeIterator,
+    RI: ExactSizeIterator,
 {
     let left = left.into_iter();
     let right = right.into_iter();
@@ -211,25 +211,15 @@ pub fn top_k_indices_sorted(values: &[f32], k: usize) -> Vec<usize> {
         }
     }
 
-    let k = min(k, values.len());
-    let mut result = Vec::with_capacity(k + 1);
+    let compare_index = |&i: &usize, &j: &usize| compare(values[i], values[j]).reverse();
 
-    // full sort the first k items
-    result.extend(0..k);
-    result.sort_by(|&i, &j| compare(values[i], values[j]).reverse());
-
-    // switch to partial insertion sort
-    for (i_rel, &v) in values[k..].iter().enumerate() {
-        let i = k + i_rel;
-
-        let (Ok(r) | Err(r)) = result.binary_search_by(|&j| compare(values[j], v).reverse());
-        result.insert(r, i);
-
-        // drop lowest element if we have too many
-        if result.len() > k {
-            result.pop();
-        }
+    let n = values.len();
+    let mut result = (0..n).collect_vec();
+    if k < n {
+        result.select_nth_unstable_by(k, compare_index);
+        result.truncate(k);
     }
+    result.sort_by(compare_index);
 
     result
 }
