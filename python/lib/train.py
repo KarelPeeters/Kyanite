@@ -297,7 +297,7 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         picked_logs[values == -1] = -np.inf
 
         top_index = torch.argmax(logits, dim=1)
-        batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1))
+        batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
         batch_top_mass = has_valid * np.nan
 
         predicted = torch.softmax(logits, 1)
