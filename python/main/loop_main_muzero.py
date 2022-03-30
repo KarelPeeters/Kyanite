@@ -54,7 +54,7 @@ def main():
         clip_norm=20.0,
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
-        mask_policy=True,
+        mask_policy=False,
     )
 
     def build_network(depth: int, channels: int, saved_channels: int):

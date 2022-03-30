@@ -175,7 +175,7 @@ class TrainSettings:
         logger.log("acc-policy", f"{log_prefix} acc", eval_policy.norm_acc)
         logger.log("acc-policy", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
 
-        if self.mask_policy:
+        if not self.mask_policy:
             logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
 
         if log_policy_norm:
