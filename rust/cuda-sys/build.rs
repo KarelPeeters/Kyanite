@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
+#[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
     let path = std::env::var(name).unwrap_or_else(|e| match e {
         VarError::NotPresent => panic!("Environment variable {} is not defined", name),
