@@ -3,6 +3,7 @@
 
 use board_game::board::{Board, BoardMoves};
 use board_game::games::chess::ChessBoard;
+use board_game::games::ttt::TTTBoard;
 use internal_iterator::InternalIterator;
 
 use cuda_nn_eval::executor::CudaExecutor;
@@ -10,7 +11,8 @@ use cuda_nn_eval::quant::QuantizedStorage;
 use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use kz_core::mapping::chess::ChessStdMapper;
-use kz_core::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
+use kz_core::mapping::ttt::TTTStdMapper;
+use kz_core::mapping::{BoardMapper, InputMapper, MuZeroMapper, PolicyMapper};
 use kz_core::muzero::wrapper::MuZeroSettings;
 use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::MuZeroGraphs;
@@ -21,16 +23,34 @@ use nn_graph::graph::SliceRange;
 use nn_graph::optimizer::OptimizerSettings;
 
 fn main() {
-    unsafe { main_impl() }
+    unsafe { main_impl_ttt() }
 }
 
-unsafe fn main_impl() {
+unsafe fn main_impl_ttt() {
+    let mapper = TTTStdMapper;
+    let path = r#"C:\Documents\Programming\STTT\AlphaZero\data\loop_mu\ttt\test\training\gen_3567\model_"#;
+    let board = TTTBoard::default();
+
+    // let mv = board.parse_move("e2e4").unwrap();
+
+    main_inner(path, board, mapper, &[]);
+}
+
+unsafe fn main_impl_chess() {
     let mapper = ChessStdMapper;
+    let path = r#"D:/Documents/A0/muzero/limit64_reshead/models_8000_"#;
+    let board = ChessBoard::default();
+
+    let mv = board.parse_move("e2e4").unwrap();
+
+    main_inner(path, board, mapper, &[mv]);
+}
+
+unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: M, moves: &[B::Move]) {
+    let mut moves = moves.into_iter();
     let device = Device::new(0);
 
     println!("Loading graphs");
-    let path = "D:/Documents/A0/muzero/limit64_reshead/models_8000_";
-
     let graphs = MuZeroGraphs::load(&path, mapper);
 
     println!("Optimizing graphs");
@@ -42,10 +62,10 @@ unsafe fn main_impl() {
     println!("Building executors");
     let mut exec = fused.executors(device, 1, 1);
 
-    let mut board = ChessBoard::default();
+    let mut board = board;
 
     println!("Available moves:");
-    board.available_moves().for_each(|mv| {
+    board.available_moves().for_each(|mv: B::Move| {
         println!("  {} => {}", mv, display_option(mapper.move_to_index(&board, mv)));
     });
 
@@ -95,8 +115,6 @@ unsafe fn main_impl() {
         println!("\n\n==== Prediction: ");
         println!("{:?}", prediction);
 
-        let moves = ["e2e4", ""];
-
         let state_shape = graphs.info.state_shape(mapper).eval(1);
         let state_tensor = DeviceTensor::alloc_simple(device, state_shape.dims.clone());
         let saved_state_shape = graphs.info.state_saved_shape(mapper).eval(1);
@@ -113,9 +131,9 @@ unsafe fn main_impl() {
         representation.handles.cudnn.stream().synchronize();
         state_tensor.copy_from(&representation.outputs[0]);
 
-        for (i, mv) in moves.iter().enumerate() {
-            println!("\n============");
-            println!("Running iteration {} before move {}", i, mv);
+        for i in 0.. {
+            let mv = moves.next();
+            println!("Running iteration {} before move {}", i, display_option(mv));
 
             let mut state = vec![f32::NAN; state_shape.size()];
             state_tensor.copy_to_host_staged(&mut state);
@@ -163,14 +181,14 @@ unsafe fn main_impl() {
             println!("  * true {}", available_mass);
             println!("  * false {}", non_available_mass);
 
-            if mv.is_empty() {
-                break;
-            }
+            let &mv = match mv {
+                Some(mv) => mv,
+                None => break,
+            };
 
             println!("Dynamics (playing mv {})", mv);
 
             // encode moves
-            let mv = board.parse_move(mv).unwrap();
             let mv_index = mapper.move_to_index(&board, mv).unwrap();
 
             let mut move_encoded = vec![];
@@ -189,6 +207,8 @@ unsafe fn main_impl() {
             state_tensor.copy_from(&dynamics.outputs[0]);
 
             board.play(mv);
+
+            println!("============\n");
         }
     }
 }
