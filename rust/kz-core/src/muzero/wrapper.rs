@@ -5,7 +5,7 @@ use board_game::board::Board;
 use crate::mapping::BoardMapper;
 use crate::muzero::step::{muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse};
 use crate::muzero::tree::MuTree;
-use crate::network::muzero::MuZeroFusedExecutors;
+use crate::network::muzero::{MuZeroExpandExecutor, MuZeroRootExecutor};
 use crate::zero::node::UctWeights;
 use crate::zero::step::FpuMode;
 
@@ -35,11 +35,14 @@ impl MuZeroSettings {
     pub fn build_tree<B: Board, M: BoardMapper<B>>(
         self,
         root_board: &B,
-        networks: &mut MuZeroFusedExecutors<B, M>,
+        root_exec: &mut MuZeroRootExecutor<B, M>,
+        expand_exec: &mut MuZeroExpandExecutor<B, M>,
         stop: impl FnMut(&MuTree<B>) -> bool,
     ) -> MuTree<B> {
-        let mut tree = MuTree::new(root_board.clone(), networks.mapper.policy_len());
-        self.expand_tree(&mut tree, networks, stop);
+        assert_eq!(root_exec.mapper, expand_exec.mapper);
+
+        let mut tree = MuTree::new(root_board.clone(), root_exec.mapper.policy_len());
+        self.expand_tree(&mut tree, root_exec, expand_exec, stop);
         tree
     }
 
@@ -47,12 +50,10 @@ impl MuZeroSettings {
     pub fn expand_tree<B: Board, M: BoardMapper<B>>(
         self,
         tree: &mut MuTree<B>,
-        network: &mut MuZeroFusedExecutors<B, M>,
+        root_exec: &mut MuZeroRootExecutor<B, M>,
+        expand_exec: &mut MuZeroExpandExecutor<B, M>,
         mut stop: impl FnMut(&MuTree<B>) -> bool,
     ) {
-        assert_eq!(network.root_exec.batch_size, 1);
-        assert_eq!(network.expand_exec.batch_size, 1);
-
         'outer: loop {
             if stop(tree) {
                 break 'outer;
@@ -65,7 +66,7 @@ impl MuZeroSettings {
             if let Some(request) = request {
                 let response = match request {
                     MuZeroRequest::Root { node, board } => {
-                        let (state, eval) = network.eval_root(&[board]).remove(0);
+                        let (state, eval) = root_exec.eval_root(&[board]).remove(0);
                         MuZeroResponse { node, state, eval }
                     }
                     MuZeroRequest::Expand(MuZeroExpandRequest {
@@ -73,13 +74,13 @@ impl MuZeroSettings {
                         state,
                         move_index,
                     }) => {
-                        let (state, eval) = network.eval_expand(&[(state, move_index)]).remove(0);
+                        let (state, eval) = expand_exec.eval_expand(&[(state, move_index)]).remove(0);
                         MuZeroResponse { node, state, eval }
                     }
                 };
 
                 // apply response
-                muzero_step_apply(tree, self.top_moves, response, network.mapper);
+                muzero_step_apply(tree, self.top_moves, response, root_exec.mapper);
             };
         }
     }

@@ -13,7 +13,7 @@ pub mod sttt;
 pub mod ttt;
 
 /// A way to encode a board as a tensor.
-pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
+pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
     fn input_bool_shape(&self) -> [usize; 3];
     fn input_scalar_count(&self) -> usize;
 
@@ -61,7 +61,7 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUn
 }
 
 /// A way to encode and decode moves on a board into a tensor.
-pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
+pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
     fn policy_shape(&self) -> &[usize];
 
     fn policy_len(&self) -> usize {
@@ -78,7 +78,7 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
 }
 
 //TODO update the docs in the file
-pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe {
+pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
     fn state_board_size(&self) -> usize;
 
     fn encoded_move_shape(&self) -> [usize; 3];
@@ -96,7 +96,7 @@ pub trait BoardMapper<B: Board>: InputMapper<B> + PolicyMapper<B> + MuZeroMapper
 impl<B: Board, M: InputMapper<B> + PolicyMapper<B> + MuZeroMapper<B>> BoardMapper<B> for M {}
 
 /// A [BoardMapper] composed of separate input and policy mappers.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ComposedMapper<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> {
     input_mapper: I,
     policy_mapper: P,

@@ -4,7 +4,7 @@ use board_game::games::ttt::{Coord, TTTBoard};
 use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TTTStdMapper;
 
 impl InputMapper<TTTBoard> for TTTStdMapper {

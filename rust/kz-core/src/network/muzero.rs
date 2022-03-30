@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::max;
 use std::fs::File;
 use std::marker::PhantomData;
 
@@ -62,20 +61,41 @@ pub struct MuZeroFusedGraphs<B: Board, M: BoardMapper<B>> {
     pub ph: PhantomData<B>,
 }
 
-pub struct MuZeroFusedExecutors<B: Board, M: BoardMapper<B>> {
+#[derive(Debug)]
+pub struct MuZeroRootExecutor<B: Board, M: BoardMapper<B>> {
     pub mapper: M,
-    pub info: MuZeroNetworkInfo,
+    ph: PhantomData<B>,
 
+    pub info: MuZeroNetworkInfo,
     pub root_exec: CudaExecutor,
+
+    input_buffer: Vec<f32>,
+    output_decoder: MuZeroOutputDecoder<B, M>,
+}
+
+// TODO test whether these executers work properly with the wrong batch size
+#[derive(Debug)]
+pub struct MuZeroExpandExecutor<B: Board, M: BoardMapper<B>> {
+    pub mapper: M,
+    ph: PhantomData<B>,
+
+    pub info: MuZeroNetworkInfo,
     pub expand_exec: CudaExecutor,
 
     input_buffer: Vec<f32>,
+    output_decoder: MuZeroOutputDecoder<B, M>,
+}
+
+#[derive(Debug)]
+pub struct MuZeroOutputDecoder<B: Board, M: BoardMapper<B>> {
+    mapper: M,
+    info: MuZeroNetworkInfo,
+    ph: PhantomData<B>,
+
     quantizer: BatchQuantizer,
 
     output_scalars_buffer: Vec<f32>,
     output_policy_buffer: Vec<f32>,
-
-    pub ph: PhantomData<B>,
 }
 
 impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
@@ -165,33 +185,34 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> MuZeroFusedGraphs<B, M> {
-    pub fn executors(
-        &self,
-        device: Device,
-        root_batch_size: usize,
-        expand_batch_size: usize,
-    ) -> MuZeroFusedExecutors<B, M> {
-        let max_batch_size = max(root_batch_size, expand_batch_size);
-
-        MuZeroFusedExecutors {
+    pub fn root_executor(&self, device: Device, max_batch_size: usize) -> MuZeroRootExecutor<B, M> {
+        MuZeroRootExecutor {
             mapper: self.mapper,
+            ph: Default::default(),
             info: self.info.clone(),
 
-            root_exec: CudaExecutor::new(device, &self.root, root_batch_size),
-            expand_exec: CudaExecutor::new(device, &self.expand, expand_batch_size),
+            root_exec: CudaExecutor::new(device, &self.root, max_batch_size),
 
             input_buffer: vec![],
-            quantizer: BatchQuantizer::new(device, max_batch_size),
+            output_decoder: MuZeroOutputDecoder::new(device, max_batch_size, self.mapper, self.info.clone()),
+        }
+    }
 
-            output_scalars_buffer: vec![],
-            output_policy_buffer: vec![],
-
+    pub fn expand_executor(&self, device: Device, max_batch_size: usize) -> MuZeroExpandExecutor<B, M> {
+        MuZeroExpandExecutor {
+            mapper: self.mapper,
             ph: Default::default(),
+            info: self.info.clone(),
+
+            expand_exec: CudaExecutor::new(device, &self.expand, max_batch_size),
+
+            input_buffer: vec![],
+            output_decoder: MuZeroOutputDecoder::new(device, max_batch_size, self.mapper, self.info.clone()),
         }
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
+impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
     pub fn eval_root(&mut self, boards: &[B]) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
         let batch_size = self.root_exec.batch_size;
         assert!(
@@ -215,13 +236,15 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
 
             // run model
             self.root_exec.run_async();
-            self.expand_exec.handles.cudnn.stream().synchronize();
 
             // get the result
-            self.copy_and_decode_outputs(boards.len(), true)
+            self.output_decoder
+                .copy_and_decode_outputs(&mut self.root_exec, boards.len())
         }
     }
+}
 
+impl<B: Board, M: BoardMapper<B>> MuZeroExpandExecutor<B, M> {
     pub fn eval_expand(
         &mut self,
         pairs: &[(QuantizedStorage, usize)],
@@ -248,26 +271,42 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedExecutors<B, M> {
             self.input_buffer.pad(max_input_size, f32::NAN);
             self.expand_exec.inputs[1].copy_from_host_staged(&self.input_buffer);
 
-            // unquantize inputs
+            // unquantize inputs (using the output decoder's quantizer, it's not doing anything else yet)
             let stream = self.expand_exec.handles.cudnn.stream();
-            self.quantizer
-                .launch_unquantize(stream, pairs.iter().map(|p| &p.0), &self.expand_exec.inputs[0]);
+            self.output_decoder.quantizer.launch_unquantize(
+                stream,
+                pairs.iter().map(|p| &p.0),
+                &self.expand_exec.inputs[0],
+            );
 
             // run model (on the same stream as the quantizations, so no sync necessary)
             self.expand_exec.run_async();
 
             // get the result
-            self.copy_and_decode_outputs(batch_size, false)
+            self.output_decoder
+                .copy_and_decode_outputs(&mut self.expand_exec, batch_size)
+        }
+    }
+}
+
+impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
+    fn new(device: Device, max_batch_size: usize, mapper: M, info: MuZeroNetworkInfo) -> Self {
+        Self {
+            mapper,
+            info,
+            ph: PhantomData,
+
+            quantizer: BatchQuantizer::new(device, max_batch_size),
+            output_scalars_buffer: vec![],
+            output_policy_buffer: vec![],
         }
     }
 
     unsafe fn copy_and_decode_outputs(
         &mut self,
+        exec: &mut CudaExecutor,
         count: usize,
-        is_root: bool,
     ) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
-        // get the right executor
-        let exec = if is_root { &self.root_exec } else { &self.expand_exec };
         let device = exec.handles.cudnn.device();
         let stream = exec.handles.cudnn.stream();
 

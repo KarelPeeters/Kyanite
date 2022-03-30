@@ -1,9 +1,9 @@
 use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
 
-use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
+use crate::mapping::bit_buffer::BitBuffer;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct AtaxxStdMapper {
     size: u8,
     policy_shape: [usize; 3],

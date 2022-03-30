@@ -4,19 +4,19 @@ use board_game::board::Board;
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
-use rand::rngs::ThreadRng;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use rand_distr::Dirichlet;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::BoardMapper;
+use kz_core::muzero::MuZeroEvaluation;
 use kz_core::muzero::step::{
     muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse,
 };
 use kz_core::muzero::tree::MuTree;
-use kz_core::muzero::MuZeroEvaluation;
 use kz_core::network::common::normalize_in_place;
-use kz_core::network::muzero::{MuZeroFusedExecutors, MuZeroGraphs};
+use kz_core::network::muzero::{MuZeroExpandExecutor, MuZeroGraphs, MuZeroRootExecutor};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
 use kz_util::zip_eq_exact;
@@ -69,15 +69,18 @@ pub fn generator_muzero_main<B: Board>(
                 let graphs = MuZeroGraphs::load(&path, mapper);
                 let graphs = graphs.optimize(OptimizerSettings::default());
                 let fused = graphs.fuse(OptimizerSettings::default());
-                let exec = fused.executors(device, 1, batch_size);
 
-                executors = Some(exec);
+                //TODO consider larger batch size for root (maybe 4?) when moving it to a separate thread
+                let root_exec = fused.root_executor(device, 1);
+                let expand_exec = fused.expand_executor(device, batch_size);
+
+                executors = Some((root_exec, expand_exec));
             }
         }
 
         // advance generator
         if let Some(settings) = &settings {
-            if let Some(executors) = &mut executors {
+            if let Some((root_exec, expand_exec)) = &mut executors {
                 let mut ctx = Context {
                     thread_id,
                     next_index,
@@ -85,7 +88,7 @@ pub fn generator_muzero_main<B: Board>(
                     rng: &mut rng,
                     mapper,
                 };
-                state.step(&mut ctx, &start_pos, executors, &sender)?;
+                state.step(&mut ctx, &start_pos, root_exec, expand_exec, &sender)?;
                 next_index = ctx.next_index;
             }
         }
@@ -153,16 +156,17 @@ impl<B: Board> GeneratorState<B> {
         &mut self,
         ctx: &mut Context<M>,
         start_pos: impl Fn() -> B,
-        executors: &mut MuZeroFusedExecutors<B, M>,
+        root_exec: &mut MuZeroRootExecutor<B, M>,
+        expand_exec: &mut MuZeroExpandExecutor<B, M>,
         sender: &UpdateSender<B>,
     ) -> Result<(), SendError<GeneratorUpdate<B>>> {
         let mut counter = Counter::default();
-        let requests = self.collect_requests(ctx, &mut counter, executors, sender, start_pos);
+        let requests = self.collect_requests(ctx, &mut counter, root_exec, sender, start_pos);
         assert_eq!(requests.len(), self.batch_size);
 
         // evaluate the requests
         let pairs = requests.iter().map(|r| (r.state.clone(), r.move_index)).collect_vec();
-        let evals = executors.eval_expand(&pairs);
+        let evals = expand_exec.eval_expand(&pairs);
 
         // store the responses for next step
         assert!(self.responses.is_empty());
@@ -188,7 +192,7 @@ impl<B: Board> GeneratorState<B> {
         &mut self,
         ctx: &mut Context<M>,
         counter: &mut Counter,
-        executors: &mut MuZeroFusedExecutors<B, M>,
+        root_exec: &mut MuZeroRootExecutor<B, M>,
         sender: &UpdateSender<B>,
         start_pos: impl Fn() -> B,
     ) -> Vec<MuZeroExpandRequest> {
@@ -199,7 +203,7 @@ impl<B: Board> GeneratorState<B> {
                                    games: &mut Vec<GameState<B>>,
                                    mut game: GameState<B>,
                                    response: Option<MuZeroResponse>| {
-            let result = game.step(ctx, response, executors, sender, counter);
+            let result = game.step(ctx, response, root_exec, sender, counter);
 
             match result {
                 StepResult::Done => {}
@@ -242,7 +246,7 @@ impl<B: Board> GameState<B> {
         &mut self,
         ctx: &mut Context<M>,
         initial_response: Option<MuZeroResponse>,
-        executors: &mut MuZeroFusedExecutors<B, M>,
+        root_exec: &mut MuZeroRootExecutor<B, M>,
         sender: &UpdateSender<B>,
         counter: &mut Counter,
     ) -> StepResult<MuZeroExpandRequest> {
@@ -255,7 +259,7 @@ impl<B: Board> GameState<B> {
                 StepResult::Request(request) => {
                     match request {
                         MuZeroRequest::Root { node, board } => {
-                            let mut result = executors.eval_root(&[board]);
+                            let mut result = root_exec.eval_root(&[board]);
                             assert_eq!(result.len(), 1);
                             let (state, eval) = result.remove(0);
 

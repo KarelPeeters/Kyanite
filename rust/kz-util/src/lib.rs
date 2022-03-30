@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
 
-use itertools::{zip, Itertools};
+use itertools::zip;
 use rand::{Error, Rng, RngCore};
 
 /// An Rng implementation that panics as soon as it is called.
@@ -32,7 +32,7 @@ impl RngCore for PanicRng {
 /// Similar to [rand::seq::IteratorRandom::choose] but will only pick items with the maximum key.
 /// Equivalent to first finding the max key, then filtering items matching that key and then choosing a random element,
 /// but implemented in a single pass over the iterator.
-pub fn choose_max_by_key<T, I: IntoIterator<Item = T>, K: Ord, F: FnMut(&T) -> K>(
+pub fn choose_max_by_key<T, I: IntoIterator<Item=T>, K: Ord, F: FnMut(&T) -> K>(
     iter: I,
     mut key: F,
     rng: &mut impl Rng,
@@ -68,7 +68,7 @@ pub trait IndexOf<T> {
     fn index_of(self, element: T) -> Option<usize>;
 }
 
-impl<T: PartialEq, I: Iterator<Item = T>> IndexOf<T> for I {
+impl<T: PartialEq, I: Iterator<Item=T>> IndexOf<T> for I {
     fn index_of(mut self, element: I::Item) -> Option<usize> {
         self.position(|cand| cand == element)
     }
@@ -110,11 +110,11 @@ pub fn kdl_divergence(p: &[f32], q: &[f32]) -> f32 {
 }
 
 pub fn zip_eq_exact<L, R, LI, RI>(left: L, right: R) -> Zip<LI, RI>
-where
-    L: IntoIterator<IntoIter = LI>,
-    R: IntoIterator<IntoIter = RI>,
-    LI: ExactSizeIterator,
-    RI: ExactSizeIterator,
+    where
+        L: IntoIterator<IntoIter=LI>,
+        R: IntoIterator<IntoIter=RI>,
+        LI: ExactSizeIterator,
+        RI: ExactSizeIterator,
 {
     let left = left.into_iter();
     let right = right.into_iter();

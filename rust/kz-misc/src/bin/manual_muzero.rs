@@ -1,7 +1,7 @@
 #![allow(unreachable_code)]
 #![allow(dead_code)]
 
-use board_game::board::{Board, BoardMoves};
+use board_game::board::Board;
 use board_game::games::chess::ChessBoard;
 use board_game::games::ttt::TTTBoard;
 use internal_iterator::InternalIterator;
@@ -9,10 +9,10 @@ use internal_iterator::InternalIterator;
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::quant::QuantizedStorage;
 use cuda_nn_eval::tensor::DeviceTensor;
-use cuda_sys::wrapper::handle::{CudaStream, Device};
+use cuda_sys::wrapper::handle::Device;
+use kz_core::mapping::BoardMapper;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
-use kz_core::mapping::{BoardMapper, InputMapper, MuZeroMapper, PolicyMapper};
 use kz_core::muzero::wrapper::MuZeroSettings;
 use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::MuZeroGraphs;
@@ -28,7 +28,7 @@ fn main() {
 
 unsafe fn main_impl_ttt() {
     let mapper = TTTStdMapper;
-    let path = r#"C:\Documents\Programming\STTT\AlphaZero\data\loop_mu\ttt\test\training\gen_3567\model_"#;
+    let path = r#"C:\Documents\Programming\STTT\AlphaZero\data\loop_mu\ttt\nomask\training\gen_301\model_"#;
     let board = TTTBoard::default();
 
     // let mv = board.parse_move("e2e4").unwrap();
@@ -60,7 +60,8 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
     let fused = graphs.fuse(OptimizerSettings::default());
 
     println!("Building executors");
-    let mut exec = fused.executors(device, 1, 1);
+    let mut root_exec = fused.root_executor(device, 1);
+    let mut expand_exec = fused.expand_executor(device, 1);
 
     let mut board = board;
 
@@ -75,7 +76,9 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
         let top_moves = 100;
         let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent, top_moves);
         let visits = 600;
-        let tree = settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
+        let tree = settings.build_tree(&board, &mut root_exec, &mut expand_exec, |tree| {
+            tree.root_visits() >= visits
+        });
 
         println!("{}", tree.display(2, true, 10, false));
 
@@ -97,7 +100,9 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
         let mut tp = PrintThroughput::new("trees");
 
         loop {
-            settings.build_tree(&board, &mut exec, |tree| tree.root_visits() >= visits);
+            settings.build_tree(&board, &mut root_exec, &mut expand_exec, |tree| {
+                tree.root_visits() >= visits
+            });
             tp.update_delta(1);
         }
 
