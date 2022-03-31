@@ -1,7 +1,6 @@
 extern crate core;
 
 use std::env;
-use std::env::VarError;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
@@ -10,6 +9,7 @@ use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 #[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
+    use std::env::VarError;
     let path = std::env::var(name).unwrap_or_else(|e| match e {
         VarError::NotPresent => panic!("Environment variable {} is not defined", name),
         VarError::NotUnicode(_) => panic!("Environment variable {} contains non-unicode path", name),
