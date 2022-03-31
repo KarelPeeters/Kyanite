@@ -32,7 +32,7 @@ impl BatchQuantizer {
 
     //TODO maybe it's enough to synchronize only another stream? careful about the CPU if they become async though!
     /// Wait for previous quantization to complete if any.
-    /// This is necccesary to ensure the device memory is no longer being used by the previous kernel launch.
+    /// This is necessary to ensure the device memory is no longer being used by the previous kernel launch.
     pub fn synchronize(&mut self) {
         if let Some(event) = self.last_event.take() {
             unsafe {
@@ -54,7 +54,7 @@ impl BatchQuantizer {
         let size = tensor.shape.shape()[1..].iter().product::<usize>();
 
         // collect pointers
-        let mut actual_batch_size = 0;
+        let mut q_batch_size = 0;
         self.pointers.clear();
 
         for q in quantized {
@@ -66,13 +66,15 @@ impl BatchQuantizer {
             assert_eq!(q.device(), self.device());
 
             self.pointers.push(q.ptr.ptr() as usize);
-            actual_batch_size += 1;
+            q_batch_size += 1;
         }
 
         assert_eq!(
-            batch_size, actual_batch_size,
-            "Batch size mismatch, {:?} but got {}",
-            tensor, actual_batch_size
+            batch_size,
+            q_batch_size,
+            "Batch size mismatch, tensor {:?} but got {} quantized storages",
+            tensor.shape.shape(),
+            q_batch_size
         );
 
         assert!(

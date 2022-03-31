@@ -9,16 +9,17 @@ from typing import Union, Optional
 
 @dataclass
 class StartupSettings:
-    output_folder: str
-    first_gen: int
-
     game: str
     muzero: bool
 
-    threads_per_device: int
-    batch_size: int
+    first_gen: int
+    output_folder: str
     games_per_gen: int
-    reorder_games: bool
+
+    gpu_threads_per_device: int
+    cpu_threads_per_device: int
+    gpu_batch_size: int
+    cpu_batch_size: int
 
     def as_dict(self):
         return dataclasses.asdict(self)

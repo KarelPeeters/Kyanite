@@ -207,9 +207,20 @@ impl<B: Board> GeneratorState<B> {
         }
 
         // start new games until we have enough of them
+        let mut started_any = false;
         while self.games.len() < ctx.batch_size {
             let game = GameState::new(ctx);
             step_and_append(ctx, &mut self.games, game, None);
+            started_any = true;
+        }
+
+        if started_any {
+            ctx.update_sender
+                .send(GeneratorUpdate::StartedSimulations {
+                    thread_id: ctx.thread_id,
+                    next_index: *ctx.next_index,
+                })
+                .unwrap()
         }
 
         assert_eq!(requests.len(), self.games.len());

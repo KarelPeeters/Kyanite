@@ -36,19 +36,22 @@ pub fn collector_main<B: Board>(
     let mut curr_game_count = 0;
     let mut estimator = ThroughputEstimator::new();
 
-    let mut indices_next_max = vec![(0, 0); thread_count];
+    let mut indices_min_max = vec![(0, 0); thread_count];
 
     for update in update_receiver {
         match update {
             GeneratorUpdate::Stop => break,
+            GeneratorUpdate::StartedSimulations { thread_id, next_index: last_index } => {
+                let next_index = &mut indices_min_max[thread_id].0;
+                assert!(last_index >= *next_index);
+                *next_index = last_index + 1;
+            }
             GeneratorUpdate::FinishedSimulation {
                 thread_id,
                 index,
                 simulation,
             } => {
-                let (next_index, max_index) = &mut indices_next_max[thread_id];
-                assert_eq!(*next_index, index);
-                *next_index = index + 1;
+                let max_index = &mut indices_min_max[thread_id].1;
                 *max_index = max(*max_index, index);
 
                 estimator.add_game();
@@ -80,7 +83,7 @@ pub fn collector_main<B: Board>(
                 root_evals,
                 moves,
             } => {
-                estimator.update(real_evals, cached_evals, root_evals, moves, &indices_next_max);
+                estimator.update(real_evals, cached_evals, root_evals, moves, &indices_min_max);
             }
         }
     }

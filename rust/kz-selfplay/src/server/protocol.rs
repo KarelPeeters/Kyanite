@@ -9,17 +9,16 @@ use crate::simulation::Simulation;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartupSettings {
     pub game: String,
+    pub muzero: bool,
+
+    pub first_gen: u32,
     pub output_folder: String,
+    pub games_per_gen: usize,
 
     pub gpu_threads_per_device: usize,
     pub cpu_threads_per_device: usize,
-
     pub gpu_batch_size: usize,
     pub cpu_batch_size: usize,
-
-    pub games_per_gen: usize,
-    pub first_gen: u32,
-    pub muzero: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +34,11 @@ pub enum Command {
 #[derive(Debug)]
 pub enum GeneratorUpdate<B: Board> {
     Stop,
+
+    StartedSimulations {
+        thread_id: usize,
+        next_index: u64,
+    },
 
     FinishedSimulation {
         thread_id: usize,

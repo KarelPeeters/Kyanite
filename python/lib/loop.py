@@ -29,21 +29,24 @@ class FixedSelfplaySettings:
     game: Game
     muzero: bool
 
-    threads_per_device: int
-    batch_size: int
     games_per_gen: int
-    reorder_games: bool
+
+    gpu_threads_per_device: int
+    cpu_threads_per_device: int
+    gpu_batch_size: int
+    cpu_batch_size: int
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
-            output_folder=os.path.abspath(output_folder),
-            first_gen=first_gen,
             game=self.game.name,
             muzero=self.muzero,
-            threads_per_device=self.threads_per_device,
-            batch_size=self.batch_size,
+            first_gen=first_gen,
+            output_folder=os.path.abspath(output_folder),
             games_per_gen=self.games_per_gen,
-            reorder_games=self.reorder_games,
+            gpu_threads_per_device=self.gpu_threads_per_device,
+            cpu_threads_per_device=self.cpu_threads_per_device,
+            gpu_batch_size=self.gpu_batch_size,
+            cpu_batch_size=self.cpu_batch_size,
         )
 
 

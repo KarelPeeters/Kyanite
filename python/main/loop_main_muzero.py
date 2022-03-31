@@ -20,11 +20,13 @@ def main():
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
-        threads_per_device=1,
-        batch_size=256,
-        games_per_gen=200,
-        reorder_games=False,
         muzero=True,
+        games_per_gen=200,
+
+        cpu_threads_per_device=4,
+        gpu_threads_per_device=2,
+        gpu_batch_size=512,
+        cpu_batch_size=256,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -93,7 +95,7 @@ def main():
 
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop_mu/{game.name}/test/",
+        root_path=f"data/loop_mu/{game.name}/new/",
 
         dummy_network=None,
         initial_network=initial_network,

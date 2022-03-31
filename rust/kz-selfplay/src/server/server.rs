@@ -1,5 +1,6 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::Arc;
 
 use board_game::board::Board;
@@ -39,9 +40,25 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
+    let cpu_games = startup_settings.cpu_batch_size * startup_settings.cpu_threads_per_device;
+    let gpu_games = startup_settings.gpu_batch_size * startup_settings.gpu_threads_per_device;
     assert!(
-        startup_settings.cpu_batch_size * startup_settings.cpu_threads_per_device >= startup_settings.gpu_batch_size,
-        "Not enough CPU games to fill gpu batch, this will deadlock"
+        cpu_games >= gpu_games,
+        "Not enough CPU games {} to fill potential concurrent GPU games {}",
+        cpu_games,
+        gpu_games,
+    );
+
+    let output_folder = Path::new(&startup_settings.output_folder);
+    assert!(
+        output_folder.exists(),
+        "Output folder does not exist, got '{}'",
+        startup_settings.output_folder
+    );
+    assert!(
+        output_folder.is_absolute(),
+        "Output folder is not an absolute path, got '{}'",
+        startup_settings.output_folder
     );
 
     let game =
@@ -163,7 +180,8 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
     let (root_client, root_server) = job_pair(2);
     let (rebatcher, expand_client, expand_server) = Rebatcher::new(2, startup.cpu_batch_size, startup.gpu_batch_size);
 
-    let gpu_batch_size = startup.gpu_batch_size;
+    let gpu_expand_batch_size = startup.gpu_batch_size;
+    let gpu_root_batch_size = 1;
 
     // spawn cpu threads
     for local_id in 0..startup.cpu_threads_per_device {
@@ -205,7 +223,7 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
         s.builder()
             .name(format!("gpu-expand-{}-{}", device_id, local_id))
             .spawn(move |_| {
-                executor_loop_expander(device, gpu_batch_size, graph_receiver, expand_server);
+                executor_loop_expander(device, gpu_expand_batch_size, graph_receiver, expand_server);
             })
             .unwrap();
     }
@@ -220,7 +238,7 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
         s.builder()
             .name(format!("gpu-root-{}", device_id))
             .spawn(move |_| {
-                executor_loop_root(device, gpu_batch_size, graph_receiver, root_server);
+                executor_loop_root(device, gpu_root_batch_size, graph_receiver, root_server);
             })
             .unwrap();
     }
