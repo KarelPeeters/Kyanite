@@ -4,118 +4,118 @@ use board_game::board::Board;
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use rand_distr::Dirichlet;
 
-use cuda_nn_eval::Device;
 use kz_core::mapping::BoardMapper;
-use kz_core::muzero::MuZeroEvaluation;
 use kz_core::muzero::step::{
     muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse,
 };
 use kz_core::muzero::tree::MuTree;
+use kz_core::muzero::MuZeroEvaluation;
 use kz_core::network::common::normalize_in_place;
-use kz_core::network::muzero::{MuZeroExpandExecutor, MuZeroGraphs, MuZeroRootExecutor};
+use kz_core::network::muzero::{EvalResponsePair, ExpandArgs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
 use kz_util::zip_eq_exact;
-use nn_graph::optimizer::OptimizerSettings;
 
 use crate::move_selector::MoveSelector;
-use crate::server::protocol::{Command, GeneratorUpdate, Settings};
+use crate::server::job_channel::JobClient;
+use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::simulation::{Position, Simulation};
+
+type RootClient<B> = JobClient<Vec<B>, Vec<EvalResponsePair>>;
+type ExpandClient = JobClient<Vec<ExpandArgs>, Vec<EvalResponsePair>>;
+
+type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
+type RngType = ThreadRng;
 
 //TODO support max moves somehow?
 pub fn generator_muzero_main<B: Board>(
     thread_id: usize,
     mapper: impl BoardMapper<B>,
     start_pos: impl Fn() -> B,
-    device: Device,
     batch_size: usize,
-    cmd_receiver: Receiver<Command>,
-    sender: UpdateSender<B>,
+    settings_receiver: Receiver<Settings>,
+    root_client: RootClient<B>,
+    expand_client: ExpandClient,
+    update_sender: UpdateSender<B>,
 ) -> Result<(), SendError<GeneratorUpdate<B>>> {
-    let mut state = GeneratorState::new(batch_size);
+    let mut state = GeneratorState::new();
 
-    //TODO try with a different(faster) rng
     let mut rng = RngType::default();
 
     let mut settings = None;
-    let mut executors = None;
     let mut next_index = 0;
 
     loop {
-        // If we don't yet have settings and an executor, block until we get a message.
-        // Otherwise only check for new messages without blocking.
-        let cmd = if settings.is_some() && executors.is_some() {
-            cmd_receiver.try_recv()
+        // if we don't have settings yet, block
+        let new_settings = if settings.is_some() {
+            settings_receiver.try_recv()
         } else {
-            cmd_receiver.recv().map_err(|_| TryRecvError::Disconnected)
+            settings_receiver.recv().map_err(|_| TryRecvError::Disconnected)
         };
 
-        match cmd {
+        match new_settings {
+            Ok(new_settings) => settings = Some(new_settings),
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
-            Ok(Command::StartupSettings(_)) => panic!("Already received startup settings"),
-            Ok(Command::Stop) => break,
-            Ok(Command::WaitForNewNetwork) => {
-                executors = None;
-            }
-            Ok(Command::NewSettings(new_settings)) => settings = Some(new_settings),
-            Ok(Command::NewNetwork(path)) => {
-                println!("Generator thread loading new network {:?}", path);
-
-                let graphs = MuZeroGraphs::load(&path, mapper);
-                let graphs = graphs.optimize(OptimizerSettings::default());
-                let fused = graphs.fuse(OptimizerSettings::default());
-
-                //TODO consider larger batch size for root (maybe 4?) when moving it to a separate thread
-                let root_exec = fused.root_executor(device, 1);
-                let expand_exec = fused.expand_executor(device, batch_size);
-
-                executors = Some((root_exec, expand_exec));
-            }
+            Err(TryRecvError::Disconnected) => panic!("Settings channel disconnected"),
         }
 
-        // advance generator
         if let Some(settings) = &settings {
-            if let Some((root_exec, expand_exec)) = &mut executors {
-                let mut ctx = Context {
-                    thread_id,
-                    next_index,
-                    settings,
-                    rng: &mut rng,
-                    mapper,
-                };
-                state.step(&mut ctx, &start_pos, root_exec, expand_exec, &sender)?;
-                next_index = ctx.next_index;
-            }
+            let mut counter = Counter::default();
+
+            let mut ctx = Context {
+                thread_id,
+                mapper,
+                start_pos: &start_pos,
+                batch_size,
+
+                settings,
+                root_client: &root_client,
+                expand_client: &expand_client,
+                update_sender: &update_sender,
+
+                rng: &mut rng,
+                next_index: &mut next_index,
+                counter: &mut counter,
+            };
+
+            state.step(&mut ctx)?;
+
+            // report progress
+            update_sender.send(GeneratorUpdate::Progress {
+                cached_evals: 0,
+                root_evals: counter.root_evals,
+                real_evals: counter.expand_evals,
+                moves: counter.move_count,
+            })?;
         }
     }
-
-    Ok(())
 }
 
-type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
-type RngType = ThreadRng;
-
 #[derive(Debug)]
-struct Context<'a, M> {
+struct Context<'a, B: Board, M, F> {
     thread_id: usize,
-    next_index: u64,
+    mapper: M,
+    start_pos: &'a F,
+    batch_size: usize,
 
     settings: &'a Settings,
-    rng: &'a mut RngType,
+    root_client: &'a RootClient<B>,
+    expand_client: &'a ExpandClient,
+    update_sender: &'a UpdateSender<B>,
 
-    mapper: M,
+    rng: &'a mut RngType,
+    next_index: &'a mut u64,
+    counter: &'a mut Counter,
 }
 
 #[derive(Debug)]
 struct GeneratorState<B: Board> {
     games: Vec<GameState<B>>,
     responses: Vec<MuZeroResponse<'static>>,
-    batch_size: usize,
 }
 
 #[derive(Debug)]
@@ -140,33 +140,31 @@ enum StepResult<R> {
 
 #[derive(Debug, Default)]
 struct Counter {
+    root_evals: u64,
+    expand_evals: u64,
     move_count: u64,
 }
 
 impl<B: Board> GeneratorState<B> {
-    fn new(batch_size: usize) -> Self {
+    fn new() -> Self {
         GeneratorState {
             games: vec![],
             responses: vec![],
-            batch_size,
         }
     }
 
-    fn step<M: BoardMapper<B>>(
+    fn step<M: BoardMapper<B>, F: Fn() -> B>(
         &mut self,
-        ctx: &mut Context<M>,
-        start_pos: impl Fn() -> B,
-        root_exec: &mut MuZeroRootExecutor<B, M>,
-        expand_exec: &mut MuZeroExpandExecutor<B, M>,
-        sender: &UpdateSender<B>,
+        ctx: &mut Context<B, M, F>,
     ) -> Result<(), SendError<GeneratorUpdate<B>>> {
-        let mut counter = Counter::default();
-        let requests = self.collect_requests(ctx, &mut counter, root_exec, sender, start_pos);
-        assert_eq!(requests.len(), self.batch_size);
+        let requests = self.collect_requests(ctx);
+        assert_eq!(requests.len(), ctx.batch_size);
 
         // evaluate the requests
         let pairs = requests.iter().map(|r| (r.state.clone(), r.move_index)).collect_vec();
-        let evals = expand_exec.eval_expand(&pairs);
+        let evals = ctx.expand_client.map_blocking(pairs);
+
+        ctx.counter.expand_evals += evals.len() as u64;
 
         // store the responses for next step
         assert!(self.responses.is_empty());
@@ -178,32 +176,21 @@ impl<B: Board> GeneratorState<B> {
             }),
         );
 
-        // report progress
-        sender.send(GeneratorUpdate::Progress {
-            cached_evals: 0,
-            real_evals: self.batch_size as u64,
-            moves: counter.move_count,
-        })?;
-
         Ok(())
     }
 
-    fn collect_requests<M: BoardMapper<B>>(
+    fn collect_requests<M: BoardMapper<B>, F: Fn() -> B>(
         &mut self,
-        ctx: &mut Context<M>,
-        counter: &mut Counter,
-        root_exec: &mut MuZeroRootExecutor<B, M>,
-        sender: &UpdateSender<B>,
-        start_pos: impl Fn() -> B,
+        ctx: &mut Context<B, M, F>,
     ) -> Vec<MuZeroExpandRequest> {
         let mut requests = vec![];
         let existing_games = std::mem::take(&mut self.games);
 
-        let mut step_and_append = |ctx: &mut Context<M>,
+        let mut step_and_append = |ctx: &mut Context<B, M, F>,
                                    games: &mut Vec<GameState<B>>,
                                    mut game: GameState<B>,
                                    response: Option<MuZeroResponse>| {
-            let result = game.step(ctx, response, root_exec, sender, counter);
+            let result = game.step(ctx, response);
 
             match result {
                 StepResult::Done => {}
@@ -220,8 +207,8 @@ impl<B: Board> GeneratorState<B> {
         }
 
         // start new games until we have enough of them
-        while self.games.len() < self.batch_size {
-            let game = GameState::new(ctx, start_pos());
+        while self.games.len() < ctx.batch_size {
+            let game = GameState::new(ctx);
             step_and_append(ctx, &mut self.games, game, None);
         }
 
@@ -231,10 +218,13 @@ impl<B: Board> GeneratorState<B> {
 }
 
 impl<B: Board> GameState<B> {
-    fn new<M: BoardMapper<B>>(ctx: &mut Context<M>, start_pos: B) -> Self {
+    fn new<M: BoardMapper<B>, F: Fn() -> B>(ctx: &mut Context<B, M, F>) -> Self {
+        let start_pos = (ctx.start_pos)();
         let tree = MuTree::new(start_pos, ctx.mapper.policy_len());
-        let index = ctx.next_index;
-        ctx.next_index += 1;
+
+        let index = *ctx.next_index;
+        *ctx.next_index += 1;
+
         GameState {
             index,
             search: SearchState::new(ctx, tree),
@@ -242,13 +232,10 @@ impl<B: Board> GameState<B> {
         }
     }
 
-    fn step<M: BoardMapper<B>>(
+    fn step<M: BoardMapper<B>, F: Fn() -> B>(
         &mut self,
-        ctx: &mut Context<M>,
+        ctx: &mut Context<B, M, F>,
         initial_response: Option<MuZeroResponse>,
-        root_exec: &mut MuZeroRootExecutor<B, M>,
-        sender: &UpdateSender<B>,
-        counter: &mut Counter,
     ) -> StepResult<MuZeroExpandRequest> {
         let mut response = initial_response;
 
@@ -259,9 +246,11 @@ impl<B: Board> GameState<B> {
                 StepResult::Request(request) => {
                     match request {
                         MuZeroRequest::Root { node, board } => {
-                            let mut result = root_exec.eval_root(&[board]);
+                            let mut result = ctx.root_client.map_blocking(vec![board]);
                             assert_eq!(result.len(), 1);
                             let (state, eval) = result.remove(0);
+
+                            ctx.counter.root_evals += 1;
 
                             response = Some(MuZeroResponse { node, state, eval })
                             // continue the loop with the new root response
@@ -272,8 +261,8 @@ impl<B: Board> GameState<B> {
                     }
                 }
                 StepResult::Done => {
-                    counter.move_count += 1;
-                    if self.search_done_step(ctx, sender) {
+                    ctx.counter.move_count += 1;
+                    if self.search_done_step(ctx) {
                         return StepResult::Done;
                     }
                 }
@@ -281,7 +270,7 @@ impl<B: Board> GameState<B> {
         }
     }
 
-    fn search_done_step<M: BoardMapper<B>>(&mut self, ctx: &mut Context<M>, sender: &UpdateSender<B>) -> bool {
+    fn search_done_step<M: BoardMapper<B>, F>(&mut self, ctx: &mut Context<B, M, F>) -> bool {
         let settings = ctx.settings;
 
         let tree = &self.search.tree;
@@ -316,7 +305,7 @@ impl<B: Board> GameState<B> {
                 outcome,
                 positions: std::mem::take(&mut self.positions),
             };
-            sender
+            ctx.update_sender
                 .send(GeneratorUpdate::FinishedSimulation {
                     thread_id: ctx.thread_id,
                     index: self.index,
@@ -338,7 +327,7 @@ impl<B: Board> GameState<B> {
 }
 
 impl<B: Board> SearchState<B> {
-    fn new<M: BoardMapper<B>>(ctx: &mut Context<M>, tree: MuTree<B>) -> Self {
+    fn new<M: BoardMapper<B>, F>(ctx: &mut Context<B, M, F>, tree: MuTree<B>) -> Self {
         SearchState {
             tree,
             is_full_search: ctx.rng.gen_bool(ctx.settings.full_search_prob),
@@ -346,9 +335,9 @@ impl<B: Board> SearchState<B> {
         }
     }
 
-    fn step<M: BoardMapper<B>>(
+    fn step<M: BoardMapper<B>, F>(
         &mut self,
-        ctx: &mut Context<M>,
+        ctx: &mut Context<B, M, F>,
         response: Option<MuZeroResponse>,
     ) -> StepResult<MuZeroRequest<B>> {
         let settings = ctx.settings;
@@ -390,7 +379,7 @@ impl<B: Board> SearchState<B> {
     }
 }
 
-fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(ctx: &mut Context<M>, board: &B, policy: &mut [f32]) {
+fn add_dirichlet_noise<B: Board, M: BoardMapper<B>, F>(ctx: &mut Context<B, M, F>, board: &B, policy: &mut [f32]) {
     let alpha = ctx.settings.dirichlet_alpha;
     let eps = ctx.settings.dirichlet_eps;
 

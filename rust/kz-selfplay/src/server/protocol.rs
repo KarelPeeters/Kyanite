@@ -2,6 +2,7 @@ use board_game::board::Board;
 use serde::{Deserialize, Serialize};
 
 use kz_core::zero::node::UctWeights;
+use std::fmt::{Display, Formatter};
 
 use crate::simulation::Simulation;
 
@@ -9,11 +10,15 @@ use crate::simulation::Simulation;
 pub struct StartupSettings {
     pub game: String,
     pub output_folder: String,
-    pub threads_per_device: usize,
-    pub batch_size: usize,
+
+    pub gpu_threads_per_device: usize,
+    pub cpu_threads_per_device: usize,
+
+    pub gpu_batch_size: usize,
+    pub cpu_batch_size: usize,
+
     pub games_per_gen: usize,
     pub first_gen: u32,
-    pub reorder_games: bool,
     pub muzero: bool,
 }
 
@@ -43,6 +48,8 @@ pub enum GeneratorUpdate<B: Board> {
         cached_evals: u64,
         // the number of evaluations that did not hit the cache
         real_evals: u64,
+        // the number of root muzero evals
+        root_evals: u64,
         // the number of moves played
         moves: u64,
     },
@@ -55,6 +62,7 @@ pub enum ServerUpdate {
     FinishedFile { index: u32 },
 }
 
+//TODO split this into AlphaZero and MuZero structs, the overlap is getting pretty small
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -98,6 +106,45 @@ impl Weights {
             moves_left_weight: self.moves_left_weight.unwrap_or(default.moves_left_weight),
             moves_left_clip: self.moves_left_clip.unwrap_or(default.moves_left_clip),
             moves_left_sharpness: self.moves_left_sharpness.unwrap_or(default.moves_left_sharpness),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Game {
+    TTT,
+    STTT,
+    Chess,
+    Ataxx { size: u8 },
+}
+
+impl Game {
+    pub fn parse(str: &str) -> Option<Game> {
+        match str {
+            "ttt" => return Some(Game::TTT),
+            "sttt" => return Some(Game::STTT),
+            "chess" => return Some(Game::Chess),
+            "ataxx" => return Some(Game::Ataxx { size: 7 }),
+            _ => {}
+        };
+
+        let start = "ataxx-";
+        if let Some(size) = str.strip_prefix(start) {
+            let size: u8 = size.parse().ok()?;
+            return Some(Game::Ataxx { size });
+        }
+
+        None
+    }
+}
+
+impl Display for Game {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Game::TTT => write!(f, "ttt"),
+            Game::STTT => write!(f, "sttt"),
+            Game::Chess => write!(f, "chess"),
+            Game::Ataxx { size } => write!(f, "ataxx-{}", size),
         }
     }
 }

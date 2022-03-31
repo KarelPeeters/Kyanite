@@ -212,8 +212,11 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedGraphs<B, M> {
     }
 }
 
+pub type ExpandArgs = (QuantizedStorage, usize);
+pub type EvalResponsePair = (QuantizedStorage, MuZeroEvaluation<'static>);
+
 impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
-    pub fn eval_root(&mut self, boards: &[B]) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
+    pub fn eval_root(&mut self, boards: &[B]) -> Vec<EvalResponsePair> {
         let batch_size = self.root_exec.batch_size;
         assert!(
             boards.len() <= batch_size,
@@ -245,10 +248,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> MuZeroExpandExecutor<B, M> {
-    pub fn eval_expand(
-        &mut self,
-        pairs: &[(QuantizedStorage, usize)],
-    ) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
+    pub fn eval_expand(&mut self, pairs: &[ExpandArgs]) -> Vec<EvalResponsePair> {
         let max_batch_size = self.expand_exec.batch_size;
         let batch_size = pairs.len();
 

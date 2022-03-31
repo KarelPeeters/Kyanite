@@ -1,44 +1,58 @@
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
 use std::str;
+use std::sync::Arc;
 
 use board_game::board::Board;
 use crossbeam::channel::Sender;
 
-use cuda_nn_eval::tester::check_cudnn;
-use nn_graph::onnx::load_graph_from_onnx_path;
-use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
+use kz_core::mapping::BoardMapper;
+use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
+use nn_graph::optimizer::OptimizerSettings;
 
-use crate::server::protocol::{Command, GeneratorUpdate};
+use crate::server::protocol::{Command, GeneratorUpdate, Settings};
 
-pub fn commander_main<B: Board>(
+pub fn commander_main<B: Board, M: BoardMapper<B>>(
     mut reader: BufReader<impl Read>,
-    cmd_senders: Vec<Sender<Command>>,
+    mapper: M,
+    settings_senders: Vec<Sender<Settings>>,
+    graph_senders: Vec<Sender<Arc<MuZeroFusedGraphs<B, M>>>>,
     update_sender: Sender<GeneratorUpdate<B>>,
 ) {
     loop {
         let cmd = read_command(&mut reader);
 
-        if let Command::NewNetwork(path) = &cmd {
-            let path_bin = PathBuf::from(path).with_extension("bin");
-            if path_bin.exists() {
-                println!("Commander checking new network {}", path);
-
-                let loaded_graph = load_graph_from_onnx_path(path);
-                let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
-
-                let check_data = std::fs::read(path_bin).expect("Failed to read check data");
-                check_cudnn(&graph, &check_data);
+        match cmd {
+            Command::StartupSettings(_) => panic!("Already received startup settings"),
+            Command::NewSettings(settings) => {
+                for sender in &settings_senders {
+                    sender.send(settings.clone()).unwrap();
+                }
             }
-        }
+            Command::NewNetwork(path) => {
+                //TODO implement non-muzero support again
 
-        for s in &cmd_senders {
-            s.send(cmd.clone()).unwrap();
-        }
+                println!("Commander loading & optimizing new network {:?}", path);
+                let graphs = MuZeroGraphs::load(&path, mapper);
+                let graphs = graphs.optimize(OptimizerSettings::default());
+                let fused = graphs.fuse(OptimizerSettings::default());
 
-        if let Command::Stop = cmd {
-            update_sender.send(GeneratorUpdate::Stop).unwrap();
-            break;
+                // put it in an arc so we don't need to clone it a bunch of times
+                let fused = Arc::new(fused);
+
+                println!("Sending new network to executors");
+                for sender in &graph_senders {
+                    sender.send(Arc::clone(&fused)).unwrap();
+                }
+            }
+            Command::WaitForNewNetwork => {
+                //TODO implement this again, maybe only send to the relevant GPU?
+                eprintln!("Waiting for new network is currently not implemented");
+            }
+            Command::Stop => {
+                //TODO this is probably not enoug any more, we need to stop the gpu executors, cpu threads and rebatchers as well
+                update_sender.send(GeneratorUpdate::Stop).unwrap();
+                break;
+            }
         }
     }
 }

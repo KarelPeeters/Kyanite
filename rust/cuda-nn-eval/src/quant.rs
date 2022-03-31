@@ -48,6 +48,7 @@ impl BatchQuantizer {
     ) -> (usize, usize) {
         assert!(tensor.shape.has_simple_strides());
         assert!(tensor.shape.rank() >= 2, "Tensor must have at least rank 2");
+        assert_eq!(tensor.device(), self.device());
 
         let batch_size = tensor.shape.shape()[0];
         let size = tensor.shape.shape()[1..].iter().product::<usize>();
@@ -62,6 +63,7 @@ impl BatchQuantizer {
                 "Size mismatch: got size {}, but expected {} for tensor shape {:?}",
                 q.size, size, tensor.shape
             );
+            assert_eq!(q.device(), self.device());
 
             self.pointers.push(q.ptr.ptr() as usize);
             actual_batch_size += 1;

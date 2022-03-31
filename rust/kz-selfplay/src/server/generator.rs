@@ -177,6 +177,7 @@ impl<B: Board> GeneratorState<B> {
         sender.send(GeneratorUpdate::Progress {
             cached_evals: counter.cache_hits,
             real_evals: self.batch_size as u64,
+            root_evals: 0,
             moves: counter.move_count,
         })?;
 

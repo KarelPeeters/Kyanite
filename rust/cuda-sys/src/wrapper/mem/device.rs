@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyKind};
 use crate::wrapper::handle::Device;
@@ -13,7 +13,7 @@ use crate::wrapper::status::Status;
 /// Cloning this type does not copy the underlying memory.
 #[derive(Debug, Clone)]
 pub struct DevicePtr {
-    buffer: Rc<DeviceBuffer>,
+    buffer: Arc<DeviceBuffer>,
     offset: isize,
 }
 
@@ -24,6 +24,12 @@ struct DeviceBuffer {
     base_ptr: *mut c_void,
     len_bytes: isize,
 }
+
+// TODO is this correct? We've don't even attempt device-side memory safety, but can this cause cpu-side issues?
+// TODO should we implement Sync? It's probably never a good idea to actually share pointers between threads...
+unsafe impl Send for DeviceBuffer {}
+
+unsafe impl Sync for DeviceBuffer {}
 
 impl Drop for DeviceBuffer {
     fn drop(&mut self) {
@@ -48,7 +54,7 @@ impl DevicePtr {
                 len_bytes: len_bytes as isize,
             };
             DevicePtr {
-                buffer: Rc::new(inner),
+                buffer: Arc::new(inner),
                 offset: 0,
             }
         }
@@ -69,7 +75,7 @@ impl DevicePtr {
         );
 
         DevicePtr {
-            buffer: Rc::clone(&self.buffer),
+            buffer: Arc::clone(&self.buffer),
             offset: new_offset,
         }
     }
