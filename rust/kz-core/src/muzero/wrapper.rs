@@ -37,12 +37,13 @@ impl MuZeroSettings {
         root_board: &B,
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
+        draw_depth: u32,
         stop: impl FnMut(&MuTree<B>) -> bool,
     ) -> MuTree<B> {
         assert_eq!(root_exec.mapper, expand_exec.mapper);
 
         let mut tree = MuTree::new(root_board.clone(), root_exec.mapper.policy_len());
-        self.expand_tree(&mut tree, root_exec, expand_exec, stop);
+        self.expand_tree(&mut tree, root_exec, expand_exec, draw_depth, stop);
         tree
     }
 
@@ -52,6 +53,7 @@ impl MuZeroSettings {
         tree: &mut MuTree<B>,
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
+        draw_depth: u32,
         mut stop: impl FnMut(&MuTree<B>) -> bool,
     ) {
         'outer: loop {
@@ -60,7 +62,7 @@ impl MuZeroSettings {
             }
 
             // gather next request
-            let request = muzero_step_gather(tree, self.weights, self.use_value, self.fpu_mode);
+            let request = muzero_step_gather(tree, self.weights, self.use_value, self.fpu_mode, draw_depth);
 
             // evaluate request
             if let Some(request) = request {

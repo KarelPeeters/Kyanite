@@ -10,9 +10,9 @@ use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::quant::QuantizedStorage;
 use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
-use kz_core::mapping::BoardMapper;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
+use kz_core::mapping::BoardMapper;
 use kz_core::muzero::wrapper::MuZeroSettings;
 use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::MuZeroGraphs;
@@ -76,7 +76,7 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
         let top_moves = 100;
         let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent, top_moves);
         let visits = 600;
-        let tree = settings.build_tree(&board, &mut root_exec, &mut expand_exec, |tree| {
+        let tree = settings.build_tree(&board, &mut root_exec, &mut expand_exec, u32::MAX, |tree| {
             tree.root_visits() >= visits
         });
 
@@ -100,7 +100,7 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
         let mut tp = PrintThroughput::new("trees");
 
         loop {
-            settings.build_tree(&board, &mut root_exec, &mut expand_exec, |tree| {
+            settings.build_tree(&board, &mut root_exec, &mut expand_exec, u32::MAX, |tree| {
                 tree.root_visits() >= visits
             });
             tp.update_delta(1);

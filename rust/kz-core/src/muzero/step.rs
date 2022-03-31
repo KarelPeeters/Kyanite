@@ -36,10 +36,11 @@ pub struct MuZeroResponse<'a> {
 }
 
 pub fn muzero_step_gather<B: Board>(
-    tree: &MuTree<B>,
+    tree: &mut MuTree<B>,
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
+    draw_depth: u32,
 ) -> Option<MuZeroRequest<B>> {
     if tree[0].inner.is_none() {
         return Some(MuZeroRequest::Root {
@@ -50,11 +51,18 @@ pub fn muzero_step_gather<B: Board>(
 
     let mut curr_node = 0;
     let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0);
+    let mut depth = 0;
 
     let mut last_move_index = None;
     let mut last_state: Option<QuantizedStorage> = None;
 
     loop {
+        if depth >= draw_depth {
+            //TODO what value to use for moves_left?
+            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0));
+            return None;
+        }
+
         let inner = if let Some(inner) = &tree[curr_node].inner {
             inner
         } else {
@@ -92,6 +100,8 @@ pub fn muzero_step_gather<B: Board>(
 
         last_move_index = Some(selected_index);
         last_state = Some(inner.state.clone());
+
+        depth += 1;
     }
 }
 
@@ -105,7 +115,7 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
     mapper: M,
 ) {
     assert!(top_moves != 0);
-    
+
     let MuZeroResponse {
         node,
         state,

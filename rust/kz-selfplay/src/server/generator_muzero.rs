@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use board_game::board::Board;
+use board_game::board::{Board, Outcome};
 use crossbeam::channel::{Receiver, SendError, TryRecvError};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
@@ -122,6 +122,7 @@ struct GeneratorState<B: Board> {
 struct GameState<B: Board> {
     index: u64,
     search: SearchState<B>,
+    mv_count: u32,
     positions: Vec<Position<B>>,
 }
 
@@ -238,6 +239,7 @@ impl<B: Board> GameState<B> {
 
         GameState {
             index,
+            mv_count: 0,
             search: SearchState::new(ctx, tree),
             positions: vec![],
         }
@@ -251,7 +253,7 @@ impl<B: Board> GameState<B> {
         let mut response = initial_response;
 
         loop {
-            let result = self.search.step(ctx, response.take());
+            let result = self.search.step(ctx, self.mv_count, response.take());
 
             match result {
                 StepResult::Request(request) => {
@@ -309,8 +311,15 @@ impl<B: Board> GameState<B> {
 
         let mut next_board = tree.root_board().clone();
         next_board.play(picked_move);
+        self.mv_count += 1;
 
-        if let Some(outcome) = next_board.outcome() {
+        let outcome = if self.mv_count >= ctx.settings.max_game_length as u32 {
+            Some(Outcome::Draw)
+        } else {
+            next_board.outcome()
+        };
+
+        if let Some(outcome) = outcome {
             // record this game
             let simulation = Simulation {
                 outcome,
@@ -349,6 +358,7 @@ impl<B: Board> SearchState<B> {
     fn step<M: BoardMapper<B>, F>(
         &mut self,
         ctx: &mut Context<B, M, F>,
+        mv_count: u32,
         response: Option<MuZeroResponse>,
     ) -> StepResult<MuZeroRequest<B>> {
         let settings = ctx.settings;
@@ -377,12 +387,14 @@ impl<B: Board> SearchState<B> {
                 return StepResult::Done;
             }
 
-            //TODO use an oracle here (based on a boolean or maybe path setting)
+            let draw_depth = ctx.settings.max_game_length as u32 - mv_count;
+
             if let Some(request) = muzero_step_gather(
                 &mut self.tree,
                 settings.weights.to_uct(),
                 settings.use_value,
                 FpuMode::Parent,
+                draw_depth,
             ) {
                 return StepResult::Request(request);
             }
