@@ -169,7 +169,7 @@ impl CudnnHandle {
         self.stream.device()
     }
 
-    pub unsafe fn stream(&self) -> &CudaStream {
+    pub fn stream(&self) -> &CudaStream {
         &self.stream
     }
 

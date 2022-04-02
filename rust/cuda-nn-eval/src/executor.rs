@@ -4,7 +4,7 @@ use std::time::Instant;
 use itertools::{zip, Itertools};
 
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
-use cuda_sys::wrapper::handle::{CublasHandle, CudnnHandle, Device};
+use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::status::Status;
 use nn_graph::graph::Graph;
 
@@ -99,20 +99,24 @@ impl CudaExecutor {
         }
     }
 
+    pub fn stream(&self) -> &CudaStream {
+        self.handles.stream()
+    }
+
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
         assert_eq!(inputs.len(), self.inputs.len());
 
         unsafe {
             // copy inputs
-            self.handles.cudnn.stream().synchronize();
+            self.stream().synchronize();
             for (tensor, buffer) in zip(&self.inputs, inputs) {
                 tensor.copy_from_host_staged(buffer);
             }
 
             // run the steps
-            self.handles.cudnn.stream().synchronize();
+            self.stream().synchronize();
             self.run_async();
-            self.handles.cudnn.stream().synchronize();
+            self.stream().synchronize();
 
             // initialize output buffers if this is the first time we need them
             let outputs = &self.outputs;
@@ -127,8 +131,8 @@ impl CudaExecutor {
             assert_eq!(output_buffers.len(), self.outputs.len());
             for (tensor, buffer) in zip(&self.outputs, output_buffers) {
                 tensor.copy_to_host_staged(buffer);
-                self.handles.cudnn.stream().synchronize();
             }
+            self.handles.stream().synchronize();
 
             // cannot be None, we just initialized this
             self.output_buffers.as_ref().unwrap()
@@ -150,20 +154,20 @@ impl CudaExecutor {
             let start_all;
             let end_all;
 
-            start_all = self.handles.cudnn.stream().record_new_event();
+            start_all = self.stream().record_new_event();
 
             for step in &self.steps {
-                let start = self.handles.cudnn.stream().record_new_event();
+                let start = self.stream().record_new_event();
                 step.run(&self.handles);
-                let end = self.handles.cudnn.stream().record_new_event();
+                let end = self.stream().record_new_event();
 
                 if self.profile {
                     timers.push((step, start, end));
                 }
             }
 
-            end_all = self.handles.cudnn.stream().record_new_event();
-            self.handles.cudnn.stream().synchronize();
+            end_all = self.stream().record_new_event();
+            self.stream().synchronize();
 
             let end_cpu = Instant::now();
 
@@ -254,6 +258,12 @@ impl Step {
                 .unwrap();
             }
         }
+    }
+}
+
+impl Handles {
+    pub fn stream(&self) -> &CudaStream {
+        self.cudnn.stream()
     }
 }
 
