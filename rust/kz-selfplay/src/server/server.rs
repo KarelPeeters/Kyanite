@@ -180,8 +180,8 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
     let (root_client, root_server) = job_pair(2);
     let (rebatcher, expand_client, expand_server) = Rebatcher::new(2, startup.cpu_batch_size, startup.gpu_batch_size);
 
-    let gpu_expand_batch_size = startup.gpu_batch_size;
-    let gpu_root_batch_size = 1;
+    let gpu_batch_size_expand = startup.gpu_batch_size;
+    let gpu_batch_size_root = startup.gpu_batch_size_root;
 
     // spawn cpu threads
     for local_id in 0..startup.cpu_threads_per_device {
@@ -223,7 +223,7 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
         s.builder()
             .name(format!("gpu-expand-{}-{}", device_id, local_id))
             .spawn(move |_| {
-                executor_loop_expander(device, gpu_expand_batch_size, graph_receiver, expand_server);
+                executor_loop_expander(device, gpu_batch_size_expand, graph_receiver, expand_server);
             })
             .unwrap();
     }
@@ -238,7 +238,7 @@ fn spawn_device_threads<'s, B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B 
         s.builder()
             .name(format!("gpu-root-{}", device_id))
             .spawn(move |_| {
-                executor_loop_root(device, gpu_root_batch_size, graph_receiver, root_server);
+                executor_loop_root(device, gpu_batch_size_root, graph_receiver, root_server);
             })
             .unwrap();
     }

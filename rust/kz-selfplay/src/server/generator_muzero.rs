@@ -25,7 +25,7 @@ use crate::server::job_channel::JobClient;
 use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::simulation::{Position, Simulation};
 
-type RootClient<B> = JobClient<Vec<B>, Vec<EvalResponsePair>>;
+type RootClient<B> = JobClient<B, EvalResponsePair>;
 type ExpandClient = JobClient<Vec<ExpandArgs>, Vec<EvalResponsePair>>;
 
 type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
@@ -259,12 +259,8 @@ impl<B: Board> GameState<B> {
                 StepResult::Request(request) => {
                     match request {
                         MuZeroRequest::Root { node, board } => {
-                            let mut result = ctx.root_client.map_blocking(vec![board]);
-                            assert_eq!(result.len(), 1);
-                            let (state, eval) = result.remove(0);
-
+                            let (state, eval) = ctx.root_client.map_blocking(board);
                             ctx.counter.root_evals += 1;
-
                             response = Some(MuZeroResponse { node, state, eval })
                             // continue the loop with the new root response
                         }

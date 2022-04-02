@@ -16,10 +16,11 @@ class StartupSettings:
     output_folder: str
     games_per_gen: int
 
-    gpu_threads_per_device: int
     cpu_threads_per_device: int
-    gpu_batch_size: int
+    gpu_threads_per_device: int
     cpu_batch_size: int
+    gpu_batch_size: int
+    gpu_batch_size_root: int
 
     def as_dict(self):
         return dataclasses.asdict(self)

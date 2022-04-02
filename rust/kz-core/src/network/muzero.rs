@@ -217,11 +217,12 @@ pub type EvalResponsePair = (QuantizedStorage, MuZeroEvaluation<'static>);
 
 impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
     pub fn eval_root(&mut self, boards: &[B]) -> Vec<EvalResponsePair> {
-        let batch_size = self.root_exec.batch_size;
+        let max_batch_size = self.root_exec.batch_size;
+
         assert!(
-            boards.len() <= batch_size,
-            "Batch size is {}, but got {} boards",
-            batch_size,
+            boards.len() <= max_batch_size,
+            "Max batch size is {}, but got {} boards",
+            max_batch_size,
             boards.len()
         );
 
@@ -231,7 +232,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
             self.mapper.encode_input_full(&mut self.input_buffer, board);
         }
         self.input_buffer
-            .pad(self.mapper.input_full_len() * batch_size, f32::NAN);
+            .pad(self.mapper.input_full_len() * max_batch_size, f32::NAN);
 
         unsafe {
             // copy inputs
@@ -305,13 +306,12 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
     unsafe fn copy_and_decode_outputs(
         &mut self,
         exec: &mut CudaExecutor,
-        count: usize,
+        batch_size: usize,
     ) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
         let device = exec.handles.cudnn.device();
         let stream = exec.handles.cudnn.stream();
 
         let policy_len = self.mapper.policy_len();
-        let batch_size = exec.batch_size;
 
         // prepare output buffers
         self.output_scalars_buffer.clear();
@@ -321,15 +321,21 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
 
         // copy outputs back
         stream.synchronize();
-        let states = &exec.outputs[0];
-        exec.outputs[1].copy_simple_to_host(&mut self.output_scalars_buffer);
-        exec.outputs[2].copy_simple_to_host(&mut self.output_policy_buffer);
+
+        let slice = SliceRange::simple(0, batch_size);
+        let device_states = exec.outputs[0].slice(0, slice);
+        let device_scalars = exec.outputs[1].slice(0, slice);
+        let device_policy = exec.outputs[2].slice(0, slice);
+
+        device_scalars.copy_simple_to_host(&mut self.output_scalars_buffer);
+        device_policy.copy_simple_to_host(&mut self.output_policy_buffer);
 
         let state_saved_size = self.info.state_saved_shape(self.mapper).eval(1).size();
-        let states_quant = (0..count)
+        let states_quant = (0..batch_size)
             .map(|_| QuantizedStorage::alloc(device, state_saved_size))
             .collect_vec();
-        self.quantizer.launch_quantize(&stream, states, states_quant.iter());
+        self.quantizer
+            .launch_quantize(&stream, &device_states, states_quant.iter());
 
         // decode outputs
         let result = states_quant

@@ -23,10 +23,11 @@ def main():
         muzero=True,
         games_per_gen=200,
 
-        cpu_threads_per_device=4,
-        gpu_threads_per_device=2,
-        gpu_batch_size=512,
+        cpu_threads_per_device=2,
+        gpu_threads_per_device=1,
         cpu_batch_size=256,
+        gpu_batch_size=512,
+        gpu_batch_size_root=2,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -89,19 +90,19 @@ def main():
         return build_network(1, 32, 32)
 
     def initial_network():
-        return build_network(8, 128, 64)
+        return build_network(16, 256, 64)
 
     initial_files_pattern = ""
 
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop_mu/{game.name}/first/",
+        root_path=f"data/loop_mu/{game.name}/profile/",
 
         dummy_network=None,
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
-        only_generate=False,
+        only_generate=True,
 
         min_buffer_size=500_000,
         max_buffer_size=1_000_000,

@@ -69,6 +69,8 @@ impl BatchQuantizer {
             q_batch_size += 1;
         }
 
+        // it it not our responsibility to support a smaller batch size here,
+        // the user should just slice the tensor instead
         assert_eq!(
             batch_size,
             q_batch_size,

@@ -15,10 +15,11 @@ pub struct StartupSettings {
     pub output_folder: String,
     pub games_per_gen: usize,
 
-    pub gpu_threads_per_device: usize,
     pub cpu_threads_per_device: usize,
-    pub gpu_batch_size: usize,
+    pub gpu_threads_per_device: usize,
     pub cpu_batch_size: usize,
+    pub gpu_batch_size: usize,
+    pub gpu_batch_size_root: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

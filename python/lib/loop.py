@@ -31,10 +31,11 @@ class FixedSelfplaySettings:
 
     games_per_gen: int
 
-    gpu_threads_per_device: int
     cpu_threads_per_device: int
-    gpu_batch_size: int
+    gpu_threads_per_device: int
     cpu_batch_size: int
+    gpu_batch_size: int
+    gpu_batch_size_root: int
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
@@ -43,10 +44,11 @@ class FixedSelfplaySettings:
             first_gen=first_gen,
             output_folder=os.path.abspath(output_folder),
             games_per_gen=self.games_per_gen,
-            gpu_threads_per_device=self.gpu_threads_per_device,
             cpu_threads_per_device=self.cpu_threads_per_device,
-            gpu_batch_size=self.gpu_batch_size,
+            gpu_threads_per_device=self.gpu_threads_per_device,
             cpu_batch_size=self.cpu_batch_size,
+            gpu_batch_size=self.gpu_batch_size,
+            gpu_batch_size_root=self.gpu_batch_size_root,
         )
 
 
