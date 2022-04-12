@@ -154,26 +154,35 @@ impl PrintThroughput {
         let now = Instant::now();
         let delta = now - self.last_print;
 
-        if delta.as_secs() >= 1 && self.update_count >= 10 {
-            let throughput = self.delta_count as f32 / delta.as_secs_f32();
-            println!(
-                "{:.3} {}/s => {:.3} {}",
-                throughput, self.name, self.total_count, self.name
-            );
-
-            self.last_print = now;
-            self.delta_count = 0;
-            self.update_count = 0;
-
-            true
-        } else {
-            false
+        let print = delta.as_secs() >= 1 && self.update_count >= 10;
+        if print {
+            self.print_tp(now);
         }
+        print
     }
 
     pub fn update_total(&mut self, count: u64) -> bool {
         assert!(count >= self.total_count, "Count must be increasing");
         self.update_delta(count - self.total_count)
+    }
+
+    fn print_tp(&mut self, now: Instant) {
+        let delta = now - self.last_print;
+        let throughput = self.delta_count as f32 / delta.as_secs_f32();
+        println!(
+            "{:.3} {}/s => {:.3} {}",
+            throughput, self.name, self.total_count, self.name
+        );
+
+        self.last_print = now;
+        self.delta_count = 0;
+        self.update_count = 0;
+    }
+}
+
+impl Drop for PrintThroughput {
+    fn drop(&mut self) {
+        self.print_tp(Instant::now());
     }
 }
 
