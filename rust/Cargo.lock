@@ -1218,6 +1218,7 @@ dependencies = [
  "bytemuck",
  "bzip2",
  "chess",
+ "clap 3.1.5",
  "crossbeam",
  "cuda-nn-eval",
  "cuda-sys",

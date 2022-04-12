@@ -29,3 +29,4 @@ tar = "0.4.38"
 bzip2 = "0.4.3"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 lru = "0.7.3"
+clap = { version = "3.1.5", features = ["derive"] }
