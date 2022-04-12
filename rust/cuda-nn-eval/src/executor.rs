@@ -150,11 +150,11 @@ impl CudaExecutor {
             self.last_profile = None
         } else {
             let mut timers = vec![];
-            let start_cpu = Instant::now();
-            let start_all;
-            let end_all;
 
-            start_all = self.stream().record_new_event();
+            let start_gpu = self.stream().record_new_event();
+            start_gpu.synchronize();
+
+            let start_cpu = Instant::now();
 
             for step in &self.steps {
                 let start = self.stream().record_new_event();
@@ -166,7 +166,7 @@ impl CudaExecutor {
                 }
             }
 
-            end_all = self.stream().record_new_event();
+            let end_gpu = self.stream().record_new_event();
             self.stream().synchronize();
 
             let end_cpu = Instant::now();
@@ -189,7 +189,7 @@ impl CudaExecutor {
             }
 
             let overhead_end = Instant::now();
-            profile.total_gpu = end_all.time_elapsed_since(&start_all);
+            profile.total_gpu = end_gpu.time_elapsed_since(&start_gpu);
             profile.total_cpu = (end_cpu - start_cpu).as_secs_f32();
             profile.timing_overhead = (overhead_end - end_cpu).as_secs_f32();
 
