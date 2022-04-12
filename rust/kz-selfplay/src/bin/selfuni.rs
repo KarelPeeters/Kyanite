@@ -1,8 +1,10 @@
+use board_game::ai::solver::solve_all_moves;
 use board_game::board::{Board, Outcome};
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
+use board_game::wdl::OutcomeWDL;
 use clap::Parser;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::mapping::chess::ChessStdMapper;
@@ -20,6 +22,7 @@ use kz_core::network::ZeroEvaluation;
 use kz_core::zero::node::ZeroValues;
 use kz_selfplay::simulation::{Position, Simulation};
 use kz_util::PrintThroughput;
+use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 #[derive(Debug, Parser)]
@@ -30,6 +33,8 @@ struct Args {
     max_game_length: u64,
     #[clap(long)]
     game_count: u64,
+    #[clap(long)]
+    solver_depth: u32,
 
     bin_path: PathBuf,
 }
@@ -53,6 +58,7 @@ fn main_impl<B: Board, M: BoardMapper<B>>(mut start_pos: impl FnMut() -> B, mapp
         max_game_length,
         game_count,
         bin_path,
+        solver_depth,
     } = args;
 
     let mut rng = thread_rng();
@@ -68,12 +74,29 @@ fn main_impl<B: Board, M: BoardMapper<B>>(mut start_pos: impl FnMut() -> B, mapp
                 break;
             }
 
-            let mv = board.random_available_move(&mut rng);
-            let available_moves = board.available_moves().count();
-
-            let eval = ZeroEvaluation {
+            let net_eval = ZeroEvaluation {
                 values: uniform_values(),
-                policy: Cow::Owned(uniform_policy(available_moves)),
+                policy: Cow::Owned(uniform_policy(board.available_moves().count())),
+            };
+
+            let solution = solve_all_moves(&board, solver_depth);
+            let (zero_eval, mv) = if let Some(moves) = solution.best_move {
+                let outcome = solution.value.to_outcome_wdl().unwrap_or(OutcomeWDL::Draw);
+                let policy = board
+                    .available_moves()
+                    .map(|mv: B::Move| moves.contains(&mv) as u8 as f32 / moves.len() as f32)
+                    .collect();
+
+                let zero_eval = ZeroEvaluation {
+                    values: ZeroValues::from_outcome(outcome, 0.0),
+                    policy: Cow::Owned(policy),
+                };
+
+                let mv = *moves.choose(&mut rng).unwrap();
+
+                (zero_eval, mv)
+            } else {
+                (net_eval.clone(), board.random_available_move(&mut rng))
             };
 
             let position = Position {
@@ -81,8 +104,8 @@ fn main_impl<B: Board, M: BoardMapper<B>>(mut start_pos: impl FnMut() -> B, mapp
                 should_store: true,
                 played_mv: mv,
                 zero_visits: 0,
-                zero_evaluation: eval.clone(),
-                net_evaluation: eval,
+                zero_evaluation: zero_eval,
+                net_evaluation: net_eval,
             };
             positions.push(position);
 
