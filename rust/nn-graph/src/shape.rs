@@ -10,18 +10,18 @@ macro_rules! shape {
     };
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Shape {
     pub dims: Vec<Size>,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Size {
     batch_exp: u32,
     fixed_factor: usize,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ConcreteShape {
     pub dims: Vec<usize>,
 }

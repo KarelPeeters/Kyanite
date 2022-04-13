@@ -1,16 +1,18 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use itertools::{zip, Itertools};
+use itertools::zip;
 
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
+use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
-use crate::planner::Planner;
+
+use crate::planner::{Plan, Planner};
+use crate::step::{GatherArgs, Step};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -20,7 +22,7 @@ pub struct CudaExecutor {
     pub outputs: Vec<DeviceTensor>,
 
     pub batch_size: usize,
-    steps: Vec<Step>,
+    steps: Vec<Step<DevicePtr>>,
 
     profile: bool,
     last_profile: Option<Profile>,
@@ -32,25 +34,6 @@ pub struct CudaExecutor {
 pub struct Handles {
     pub cudnn: CudnnHandle,
     pub cublas: CublasHandle,
-}
-
-#[derive(Debug)]
-pub enum Step {
-    Conv {
-        args: FusedConvolutionArgs,
-    },
-    MatMul {
-        args: BatchedMatMulArgs,
-    },
-    TensorOp {
-        args: TensorOpArgs,
-    },
-    Gather {
-        input: DeviceTensor,
-        axis: usize,
-        indices: DeviceTensor,
-        output: DeviceTensor,
-    },
 }
 
 #[derive(Default, Debug, Clone)]
@@ -73,26 +56,15 @@ impl CudaExecutor {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
         };
-        let mut planner = Planner::new(&handles, graph, batch_size);
 
-        // allocate inputs
-        let inputs = graph.inputs().iter().map(|&input| planner.visit(input)).collect_vec();
-
-        // plan operations and collect outputs
-        let outputs = graph
-            .outputs()
-            .iter()
-            .map(|&output| planner.visit_ensure_simple_strides(output))
-            .collect_vec();
-
-        let steps = planner.finish();
+        let Plan { inputs, outputs, steps } = Planner::plan(&handles, graph, batch_size);
 
         CudaExecutor {
             handles,
-            steps,
+            batch_size,
             inputs,
             outputs,
-            batch_size,
+            steps,
             profile: false,
             last_profile: None,
             output_buffers: None,
@@ -206,33 +178,33 @@ impl CudaExecutor {
     }
 }
 
-impl Step {
+impl Step<DevicePtr> {
     unsafe fn run(&self, handles: &Handles) {
         match self {
-            Step::Conv { args } => {
+            Step::Conv(args) => {
                 args.run(&handles.cudnn);
             }
-            Step::MatMul { args } => {
-                // schedule blas wait for cuda
+            Step::MatMul(args) => {
+                // schedule blas wait for cudnn
                 let cuda_event = handles.cudnn.stream().record_new_event();
                 handles.cublas.stream().wait_for_event(&cuda_event);
 
                 // schedule operation on blas
                 args.run(&handles.cublas);
 
-                // schedule cuda wait for blas
+                // schedule cudnn wait for blas
                 let blas_event = handles.cublas.stream().record_new_event();
                 handles.cudnn.stream().wait_for_event(&blas_event);
             }
-            Step::TensorOp { args } => {
+            Step::TensorOp(args) => {
                 args.run(&handles.cudnn);
             }
-            Step::Gather {
+            Step::Gather(GatherArgs {
                 input,
                 axis,
                 indices,
                 output,
-            } => {
+            }) => {
                 assert!(
                     *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
@@ -262,6 +234,10 @@ impl Step {
 }
 
 impl Handles {
+    pub fn device(&self) -> Device {
+        self.stream().device()
+    }
+
     pub fn stream(&self) -> &CudaStream {
         self.cudnn.stream()
     }

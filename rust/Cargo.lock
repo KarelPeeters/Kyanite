@@ -616,6 +616,7 @@ dependencies = [
  "cc",
  "criterion",
  "cuda-sys",
+ "internal-iterator",
  "itertools",
  "nn-graph",
  "rand 0.8.5",

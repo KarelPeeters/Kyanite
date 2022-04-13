@@ -41,7 +41,10 @@ pub fn collector_main<B: Board>(
     for update in update_receiver {
         match update {
             GeneratorUpdate::Stop => break,
-            GeneratorUpdate::StartedSimulations { thread_id, next_index: last_index } => {
+            GeneratorUpdate::StartedSimulations {
+                thread_id,
+                next_index: last_index,
+            } => {
                 let next_index = &mut indices_min_max[thread_id].0;
                 assert!(last_index >= *next_index);
                 *next_index = last_index + 1;

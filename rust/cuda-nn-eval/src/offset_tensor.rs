@@ -1,4 +1,6 @@
 use crate::shape::StridedShape;
+use cuda_sys::bindings::cublasOperation_t;
+use cuda_sys::wrapper::group::MatMulOperand;
 use nn_graph::graph::SliceRange;
 use std::fmt::Debug;
 
@@ -28,6 +30,10 @@ impl<P> PtrTensor<P> {
 
     pub fn shape(&self) -> &StridedShape {
         &self.shape
+    }
+
+    pub fn map_inner<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
+        PtrTensor::from_parts(f(self.ptr), self.shape)
     }
 }
 
@@ -78,5 +84,39 @@ impl<P: OffsetPtr> PtrTensor<P> {
         };
 
         self.offset(offset, result_shape)
+    }
+}
+
+impl<P: Clone> PtrTensor<P> {
+    //TODO move this somewhere else, this is pretty random
+    pub fn to_mat_mul_arg(&self) -> MatMulOperand<P> {
+        assert_eq!(self.shape().rank(), 3);
+
+        let inner_shape = StridedShape::new(self.shape().shape()[1..].to_vec(), self.shape().strides()[1..].to_vec());
+
+        // whether the strides are col-major (true) or row-major (false)
+        let col_major = if inner_shape.has_simple_strides() {
+            false
+        } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
+            true
+        } else {
+            panic!(
+                "GPU matmul operand must be either col- or row-major, got {:?}",
+                self.shape
+            )
+        };
+
+        let lead_axis = if col_major { 1 } else { 2 };
+
+        MatMulOperand {
+            ptr: self.ptr().clone(),
+            trans: if col_major {
+                cublasOperation_t::CUBLAS_OP_N
+            } else {
+                cublasOperation_t::CUBLAS_OP_T
+            },
+            ld: self.shape().shape()[lead_axis] as i32,
+            stride: self.shape().strides()[0] as i64,
+        }
     }
 }

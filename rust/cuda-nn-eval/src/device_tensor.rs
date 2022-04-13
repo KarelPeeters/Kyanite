@@ -1,9 +1,9 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
-use cuda_sys::bindings::{cublasOperation_t, cudnnOpTensorOp_t};
+use cuda_sys::bindings::cudnnOpTensorOp_t;
 use cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{MatMulArg, TensorOpArgs};
+use cuda_sys::wrapper::group::TensorOpArgs;
 use cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 
@@ -159,37 +159,6 @@ impl DeviceTensor {
             let stage = DeviceTensor::alloc_simple(self.device(), self.shape().shape().to_vec());
             stage.copy_from(self);
             stage.copy_simple_to_host(buffer);
-        }
-    }
-
-    pub fn to_mat_mul_arg(&self) -> MatMulArg {
-        assert_eq!(self.shape().rank(), 3);
-
-        let inner_shape = StridedShape::new(self.shape().shape()[1..].to_vec(), self.shape().strides()[1..].to_vec());
-
-        // whether the strides are col-major (true) or row-major (false)
-        let col_major = if inner_shape.has_simple_strides() {
-            false
-        } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
-            true
-        } else {
-            panic!(
-                "For now GPU matmul operand must be either col- or row-major, got {:?}",
-                self
-            )
-        };
-
-        let lead_axis = if col_major { 1 } else { 2 };
-
-        MatMulArg {
-            ptr: self.ptr().clone(),
-            trans: if col_major {
-                cublasOperation_t::CUBLAS_OP_N
-            } else {
-                cublasOperation_t::CUBLAS_OP_T
-            },
-            ld: self.shape().shape()[lead_axis] as i32,
-            stride: self.shape().strides()[0] as i64,
         }
     }
 }

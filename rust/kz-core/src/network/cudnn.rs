@@ -58,8 +58,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
         for board in boards {
             self.mapper.encode_input_full(&mut self.input, board.borrow())
         }
-        self.input
-            .pad(max_batch_size * self.mapper.input_full_len(), f32::NAN);
+        self.input.pad(max_batch_size * self.mapper.input_full_len(), f32::NAN);
 
         // run the actual computation
         let outputs = self.executor.evaluate(&[&self.input]);
