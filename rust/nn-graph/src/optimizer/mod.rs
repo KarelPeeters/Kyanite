@@ -1,9 +1,8 @@
 use crate::graph::Graph;
-pub use crate::optimizer::core::find_single_use_values;
 use crate::optimizer::core::Optimizer;
 
 mod affine;
-mod core;
+pub mod core;
 
 #[derive(Debug, Copy, Clone)]
 pub struct OptimizerSettings {

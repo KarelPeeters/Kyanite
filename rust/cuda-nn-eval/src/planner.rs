@@ -8,7 +8,7 @@ use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor,
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
-use nn_graph::optimizer::find_single_use_values;
+use nn_graph::optimizer::core::find_hidden_values_used_once;
 use nn_graph::shape::{ConcreteShape, Size};
 
 use crate::device_tensor::DeviceTensor;
@@ -20,7 +20,7 @@ pub(crate) struct Planner<'a> {
     batch_size: usize,
 
     // all values that are only used once in the graph (and are thus candidates for fusing)
-    single_use: HashSet<Value>,
+    fuse_candidates: HashSet<Value>,
 
     map: HashMap<Value, DeviceTensor>,
     plan: Vec<Step>,
@@ -28,13 +28,13 @@ pub(crate) struct Planner<'a> {
 
 impl<'a> Planner<'a> {
     pub(crate) fn new(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Self {
-        let single_use = find_single_use_values(graph);
+        let fuse_candidates = find_hidden_values_used_once(graph).collect();
 
         Planner {
             handles,
             graph,
             batch_size,
-            single_use,
+            fuse_candidates,
             map: Default::default(),
             plan: vec![],
         }
@@ -192,7 +192,7 @@ impl<'a> Planner<'a> {
             op: ElementOp::Max,
         } = &graph[curr].operation
         {
-            if !self.single_use.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
+            if !self.fuse_candidates.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
                 return None;
             }
             curr = left;
@@ -210,7 +210,7 @@ impl<'a> Planner<'a> {
             op: ElementOp::Add,
         } = &graph[curr].operation
         {
-            if !self.single_use.contains(&left) {
+            if !self.fuse_candidates.contains(&left) {
                 return None;
             }
 
