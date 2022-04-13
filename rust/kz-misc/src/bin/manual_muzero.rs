@@ -6,9 +6,9 @@ use board_game::games::chess::ChessBoard;
 use board_game::games::ttt::TTTBoard;
 use internal_iterator::InternalIterator;
 
+use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;

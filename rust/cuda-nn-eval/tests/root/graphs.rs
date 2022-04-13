@@ -1,3 +1,5 @@
+use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
 use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
@@ -100,6 +102,9 @@ fn flip_conv() {
 
 #[test]
 fn repeat() {
+    let tensor = DeviceTensor::alloc_simple(Device::new(0), vec![0]);
+    println!("{:?}", unsafe { tensor.ptr().ptr() });
+
     let mut graph = Graph::new();
 
     let x = graph.constant(shape![2, 3], linspace_vec(6));

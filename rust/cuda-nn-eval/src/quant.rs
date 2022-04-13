@@ -5,8 +5,8 @@ use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::status::Status;
 
+use crate::device_tensor::DeviceTensor;
 use crate::kernels;
-use crate::tensor::DeviceTensor;
 
 #[derive(Debug)]
 pub struct BatchQuantizer {
@@ -46,12 +46,12 @@ impl BatchQuantizer {
         tensor: &DeviceTensor,
         quantized: impl Iterator<Item = &'a QuantizedStorage>,
     ) -> (usize, usize) {
-        assert!(tensor.shape.has_simple_strides());
-        assert!(tensor.shape.rank() >= 2, "Tensor must have at least rank 2");
+        assert!(tensor.shape().has_simple_strides());
+        assert!(tensor.shape().rank() >= 2, "Tensor must have at least rank 2");
         assert_eq!(tensor.device(), self.device());
 
-        let batch_size = tensor.shape.shape()[0];
-        let size = tensor.shape.shape()[1..].iter().product::<usize>();
+        let batch_size = tensor.shape().shape()[0];
+        let size = tensor.shape().shape()[1..].iter().product::<usize>();
 
         // collect pointers
         let mut q_batch_size = 0;
@@ -59,9 +59,12 @@ impl BatchQuantizer {
 
         for q in quantized {
             assert_eq!(
-                q.size, size,
+                q.size,
+                size,
                 "Size mismatch: got size {}, but expected {} for tensor shape {:?}",
-                q.size, size, tensor.shape
+                q.size,
+                size,
+                tensor.shape()
             );
             assert_eq!(q.device(), self.device());
 
@@ -75,7 +78,7 @@ impl BatchQuantizer {
             batch_size,
             q_batch_size,
             "Batch size mismatch, tensor {:?} but got {} quantized storages",
-            tensor.shape.shape(),
+            tensor.shape().shape(),
             q_batch_size
         );
 
@@ -106,7 +109,7 @@ impl BatchQuantizer {
             stream.inner(),
             batch_size as i32,
             size as i32,
-            source.ptr.ptr() as *const f32,
+            source.ptr().ptr() as *const f32,
             self.pointers_device.ptr() as *mut *mut u8,
         )
         .unwrap();
@@ -132,7 +135,7 @@ impl BatchQuantizer {
             batch_size as i32,
             size as i32,
             self.pointers_device.ptr() as *const *const u8,
-            dest.ptr.ptr() as *mut f32,
+            dest.ptr().ptr() as *mut f32,
         )
         .unwrap();
 

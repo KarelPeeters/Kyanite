@@ -3,8 +3,8 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
+use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_nn_eval::{kernels, Device};
 use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;

@@ -11,8 +11,8 @@ use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
 use nn_graph::optimizer::find_single_use_values;
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::device_tensor::DeviceTensor;
 use crate::executor::{Handles, Step};
-use crate::tensor::DeviceTensor;
 
 pub(crate) struct Planner<'a> {
     handles: &'a Handles,
@@ -47,7 +47,7 @@ impl<'a> Planner<'a> {
     pub fn visit_ensure_simple_strides(&mut self, value: Value) -> DeviceTensor {
         let result = self.visit(value);
 
-        if result.shape.has_simple_strides() {
+        if result.shape().has_simple_strides() {
             result
         } else {
             self.plan_restride_tensor(&result)
@@ -111,7 +111,7 @@ impl<'a> Planner<'a> {
                 let mut curr_start = 0;
 
                 for input in inputs {
-                    let curr_size = input.shape.shape()[axis];
+                    let curr_size = input.shape().shape()[axis];
                     let curr_range = SliceRange::simple(curr_start, curr_start + curr_size);
 
                     let curr_result = result.slice(axis, curr_range);
@@ -130,11 +130,11 @@ impl<'a> Planner<'a> {
                 let left = self.visit(left);
                 let right = self.visit(right);
 
-                assert!(left.shape.rank() == 3 && right.shape.rank() == 3);
-                let batch_size = left.shape.shape()[0];
-                let m = left.shape.shape()[1];
-                let k = left.shape.shape()[2];
-                let n = right.shape.shape()[2];
+                assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
+                let batch_size = left.shape().shape()[0];
+                let m = left.shape().shape()[1];
+                let k = left.shape().shape()[2];
+                let n = right.shape().shape()[2];
 
                 // construct a result tensor with col-major strides
                 let result_transposed = self.alloc_tensor(ConcreteShape::new(vec![batch_size, n, m]));
@@ -171,7 +171,7 @@ impl<'a> Planner<'a> {
         };
 
         assert_eq!(
-            result.shape.shape(),
+            result.shape().shape(),
             result_info.shape.eval(self.batch_size).dims,
             "Got wrong result shape"
         );
@@ -254,8 +254,8 @@ impl<'a> Planner<'a> {
 
             if let Some(res) = &res {
                 assert_eq!(
-                    res.shape.shape(),
-                    input.shape.shape(),
+                    res.shape().shape(),
+                    input.shape().shape(),
                     "Input and res must have the same shape"
                 );
             };
@@ -268,9 +268,9 @@ impl<'a> Planner<'a> {
             let output_shape = graph[curr].shape.eval(self.batch_size);
             let output = self.alloc_tensor(output_shape);
 
-            let input_desc = input.shape.descriptor();
-            let output_desc = output.shape.descriptor();
-            let filter_desc = filter.shape.filter_descriptor();
+            let input_desc = input.shape().descriptor();
+            let output_desc = output.shape().descriptor();
+            let filter_desc = filter.shape().filter_descriptor();
 
             let conv_desc = ConvolutionDescriptor::new(details.padding_y as i32, details.padding_x as i32, 1, 1, 1, 1);
 
@@ -287,15 +287,15 @@ impl<'a> Planner<'a> {
                 work_ptr,
                 work_size_bytes: work_size,
                 filter_desc,
-                filter_ptr: filter.ptr,
+                filter_ptr: filter.ptr(),
                 input_desc,
-                input_ptr: input.ptr,
-                res_ptr: res.map(|res| res.ptr),
-                bias_desc: bias.shape.descriptor(),
-                bias_ptr: bias.ptr,
+                input_ptr: input.ptr(),
+                res_ptr: res.map(|res| res.ptr()),
+                bias_desc: bias.shape().descriptor(),
+                bias_ptr: bias.ptr(),
                 act_desc,
                 output_desc,
-                output_ptr: output.ptr.clone(),
+                output_ptr: output.ptr().clone(),
             };
 
             self.plan.push(Step::Conv { args });
@@ -324,14 +324,14 @@ impl<'a> Planner<'a> {
         let args = TensorOpArgs {
             op_desc,
             alpha_1: 1.0,
-            input_1_desc: left.shape.descriptor(),
-            input_1_ptr: left.ptr.clone(),
+            input_1_desc: left.shape().descriptor(),
+            input_1_ptr: left.ptr().clone(),
             alpha_2,
-            input_2_desc: right.shape.descriptor(),
-            input_2_ptr: right.ptr.clone(),
+            input_2_desc: right.shape().descriptor(),
+            input_2_ptr: right.ptr().clone(),
             beta: 0.0,
-            output_desc: output.shape.descriptor(),
-            output_ptr: output.ptr.clone(),
+            output_desc: output.shape().descriptor(),
+            output_ptr: output.ptr().clone(),
         };
 
         self.plan.push(Step::TensorOp { args });
@@ -339,7 +339,7 @@ impl<'a> Planner<'a> {
     }
 
     fn plan_restride_tensor(&mut self, old: &DeviceTensor) -> DeviceTensor {
-        let new = self.alloc_tensor(ConcreteShape::new(old.shape.shape().to_vec()));
+        let new = self.alloc_tensor(ConcreteShape::new(old.shape().shape().to_vec()));
 
         let args = new.copy_from_as_tensor_op(&old);
         self.plan.push(Step::TensorOp { args });
@@ -354,7 +354,7 @@ impl<'a> Planner<'a> {
     fn alloc_zero_tensor(&mut self, shape: ConcreteShape) -> DeviceTensor {
         let result = self.alloc_tensor(shape);
         unsafe {
-            result.copy_simple_from_host(&vec![0.0; result.shape.size()]);
+            result.copy_simple_from_host(&vec![0.0; result.shape().size()]);
         }
         result
     }

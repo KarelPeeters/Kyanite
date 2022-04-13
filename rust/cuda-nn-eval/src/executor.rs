@@ -8,9 +8,9 @@ use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::status::Status;
 use nn_graph::graph::Graph;
 
+use crate::device_tensor::DeviceTensor;
 use crate::kernels;
 use crate::planner::Planner;
-use crate::tensor::DeviceTensor;
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -123,7 +123,7 @@ impl CudaExecutor {
             let output_buffers = self.output_buffers.get_or_insert_with(|| {
                 outputs
                     .iter()
-                    .map(|tensor| vec![f32::NAN; tensor.shape.size()])
+                    .map(|tensor| vec![f32::NAN; tensor.shape().size()])
                     .collect()
             });
 
@@ -234,26 +234,26 @@ impl Step {
                 output,
             } => {
                 assert!(
-                    *axis == 1 && input.shape.rank() == 2,
+                    *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
-                    input.shape,
+                    input.shape(),
                     axis
                 );
                 assert!(
-                    indices.shape.rank() == 1 && indices.shape.has_simple_strides(),
+                    indices.shape().rank() == 1 && indices.shape().has_simple_strides(),
                     "Gather indices must be rank-1 tensor with simple strides",
                 );
 
                 kernels::gather2dAxis1FloatFloat(
                     handles.cudnn.stream().inner(),
-                    input.shape.shape()[0] as i32,
-                    input.shape.shape()[1] as i32,
-                    input.shape.strides()[0] as i32,
-                    input.shape.strides()[1] as i32,
-                    indices.shape.size() as i32,
-                    input.ptr.ptr() as *const f32,
-                    indices.ptr.ptr() as *const f32,
-                    output.ptr.ptr() as *mut f32,
+                    input.shape().shape()[0] as i32,
+                    input.shape().shape()[1] as i32,
+                    input.shape().strides()[0] as i32,
+                    input.shape().strides()[1] as i32,
+                    indices.shape().size() as i32,
+                    input.ptr().ptr() as *const f32,
+                    indices.ptr().ptr() as *const f32,
+                    output.ptr().ptr() as *mut f32,
                 )
                 .unwrap();
             }

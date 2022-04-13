@@ -64,15 +64,19 @@ impl DevicePtr {
         self.buffer.device
     }
 
-    pub fn offset(&self, offset: isize) -> DevicePtr {
+    pub fn offset_bytes(&self, offset: isize) -> DevicePtr {
         let new_offset = self.offset + offset;
 
-        assert!(
-            (0..self.buffer.len_bytes as isize).contains(&new_offset),
-            "Offset {} is out of range on {:?}",
-            offset,
-            self
-        );
+        if self.buffer.len_bytes == 0 {
+            assert_eq!(offset, 0, "Non-zero offset not allowed on empty buffer");
+        } else {
+            assert!(
+                (0..self.buffer.len_bytes as isize).contains(&new_offset),
+                "Offset {} is out of range on {:?}",
+                offset,
+                self
+            );
+        }
 
         DevicePtr {
             buffer: Arc::clone(&self.buffer),
