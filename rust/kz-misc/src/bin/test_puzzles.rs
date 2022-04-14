@@ -10,7 +10,7 @@ use itertools::Itertools;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
-use kz_core::network::cudnn::CudnnNetwork;
+use kz_core::network::cudnn::CudaNetwork;
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
@@ -28,7 +28,7 @@ fn main() {
     let visits = 10_000;
 
     let mapper = ChessStdMapper;
-    let mut network = CudnnNetwork::new(mapper, graph, settings.batch_size, Device::new(0));
+    let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
 
     let puzzle_path = "../data/lichess/lichess_db_puzzle.csv";
     let puzzle_read = BufReader::new(File::open(puzzle_path).unwrap());

@@ -14,7 +14,7 @@ use vampirc_uci::UciMessage;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
-use kz_core::network::cudnn::CudnnNetwork;
+use kz_core::network::cudnn::CudaNetwork;
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
@@ -38,7 +38,7 @@ fn main() -> std::io::Result<()> {
     let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent);
 
     let graph = load_graph_from_onnx_path(path);
-    let mut network = CudnnNetwork::new(ChessStdMapper, graph, batch_size, Device::new(0));
+    let mut network = CudaNetwork::new(ChessStdMapper, &graph, batch_size, Device::new(0));
 
     // state
     let mut tree = None;

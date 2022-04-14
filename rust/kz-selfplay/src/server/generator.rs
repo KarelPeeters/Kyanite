@@ -11,7 +11,7 @@ use rand_distr::Dirichlet;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::BoardMapper;
-use kz_core::network::cudnn::CudnnNetwork;
+use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::symmetry::RandomSymmetryNetwork;
 use kz_core::network::{Network, ZeroEvaluation};
 use kz_core::oracle::DummyOracle;
@@ -65,7 +65,7 @@ pub fn generator_main<B: Board>(
                 println!("Generator thread loading new network {:?}", path);
                 let loaded_graph = load_graph_from_onnx_path(path);
                 let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
-                network = Some(CudnnNetwork::new(mapper, graph, batch_size, device));
+                network = Some(CudaNetwork::new(mapper, &graph, batch_size, device));
 
                 state.clear_caches();
             }

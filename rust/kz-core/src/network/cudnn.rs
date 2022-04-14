@@ -14,7 +14,7 @@ use crate::mapping::BoardMapper;
 use crate::network::common::{check_graph_shapes, decode_output};
 use crate::network::{Network, ZeroEvaluation};
 
-pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
+pub struct CudaNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,
     max_batch_size: usize,
 
@@ -24,16 +24,15 @@ pub struct CudnnNetwork<B: Board, M: BoardMapper<B>> {
     ph: PhantomData<B>,
 }
 
-impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
-    //TODO change this to &Graph
-    pub fn new(mapper: M, graph: Graph, max_batch_size: usize, device: Device) -> Self {
-        check_graph_shapes(mapper, &graph);
+impl<B: Board, M: BoardMapper<B>> CudaNetwork<B, M> {
+    pub fn new(mapper: M, graph: &Graph, max_batch_size: usize, device: Device) -> Self {
+        check_graph_shapes(mapper, graph);
 
-        let executor = CudaExecutor::new(device, &graph, max_batch_size);
+        let executor = CudaExecutor::new(device, graph, max_batch_size);
 
         let input = vec![0.0; max_batch_size * mapper.input_full_len()];
 
-        CudnnNetwork {
+        CudaNetwork {
             max_batch_size,
             mapper,
             executor,
@@ -47,7 +46,7 @@ impl<B: Board, M: BoardMapper<B>> CudnnNetwork<B, M> {
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
+impl<B: Board, M: BoardMapper<B>> Network<B> for CudaNetwork<B, M> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let batch_size = boards.len();
         let max_batch_size = self.max_batch_size;
@@ -78,7 +77,7 @@ impl<B: Board, M: BoardMapper<B>> Network<B> for CudnnNetwork<B, M> {
 }
 
 //TODO figure out a better debug format, maybe something which includes network input and output dims
-impl<B: Board, M: BoardMapper<B>> Debug for CudnnNetwork<B, M> {
+impl<B: Board, M: BoardMapper<B>> Debug for CudaNetwork<B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CudnnNetwork")
             .field("mapper", &self.mapper)
