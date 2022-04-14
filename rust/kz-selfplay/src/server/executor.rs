@@ -4,8 +4,11 @@ use crossbeam::channel::{Receiver, TryRecvError};
 use crossbeam::select;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
+use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::muzero::{EvalResponsePair, ExpandArgs, MuZeroFusedGraphs};
+use kz_core::network::{Network, ZeroEvaluation};
 use kz_util::zip_eq_exact;
+use nn_graph::graph::Graph;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -21,6 +24,31 @@ fn receiver_executor_message<G, X, Y>(
     select! {
         recv(graph_receiver) -> graph => ExecutorMessage::Graph(graph.unwrap()),
         recv(server.receiver()) -> job => ExecutorMessage::Job(job.unwrap()),
+    }
+}
+
+pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
+    device: Device,
+    batch_size: usize,
+    mapper: M,
+    graph_receiver: Receiver<Arc<Graph>>,
+    server: JobServer<Vec<B>, Vec<ZeroEvaluation>>,
+) {
+    // wait for the initial graph
+    let graph = graph_receiver.recv().unwrap();
+    let mut network = CudaNetwork::new(mapper, &graph, batch_size, device);
+
+    // handle incoming messages
+    loop {
+        match receiver_executor_message(&graph_receiver, &server) {
+            ExecutorMessage::Graph(graph) => {
+                drop(network);
+                network = CudaNetwork::new(mapper, &graph, batch_size, device);
+            }
+            ExecutorMessage::Job(job) => {
+                job.run(|x| network.evaluate_batch(&x));
+            }
+        }
     }
 }
 

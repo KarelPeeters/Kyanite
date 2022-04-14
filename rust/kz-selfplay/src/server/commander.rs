@@ -5,18 +5,14 @@ use std::sync::Arc;
 use board_game::board::Board;
 use crossbeam::channel::Sender;
 
-use kz_core::mapping::BoardMapper;
-use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
-use nn_graph::optimizer::OptimizerSettings;
-
 use crate::server::protocol::{Command, GeneratorUpdate, Settings};
 
-pub fn commander_main<B: Board, M: BoardMapper<B>>(
+pub fn commander_main<B: Board, G>(
     mut reader: BufReader<impl Read>,
-    mapper: M,
     settings_senders: Vec<Sender<Settings>>,
-    graph_senders: Vec<Sender<Arc<MuZeroFusedGraphs<B, M>>>>,
+    graph_senders: Vec<Sender<Arc<G>>>,
     update_sender: Sender<GeneratorUpdate<B>>,
+    load_graph: impl Fn(&str) -> G,
 ) {
     loop {
         let cmd = read_command(&mut reader);
@@ -24,6 +20,11 @@ pub fn commander_main<B: Board, M: BoardMapper<B>>(
         match cmd {
             Command::StartupSettings(_) => panic!("Already received startup settings"),
             Command::NewSettings(settings) => {
+                assert!(
+                    !settings.random_symmetries,
+                    "Random symmetries are currently not supported"
+                );
+
                 for sender in &settings_senders {
                     sender.send(settings.clone()).unwrap();
                 }
@@ -32,12 +33,10 @@ pub fn commander_main<B: Board, M: BoardMapper<B>>(
                 //TODO implement non-muzero support again
 
                 println!("Commander loading & optimizing new network {:?}", path);
-                let graphs = MuZeroGraphs::load(&path, mapper);
-                let graphs = graphs.optimize(OptimizerSettings::default());
-                let fused = graphs.fuse(OptimizerSettings::default());
+                let graph = load_graph(&path);
 
                 // put it in an arc so we don't need to clone it a bunch of times
-                let fused = Arc::new(fused);
+                let fused = Arc::new(graph);
 
                 println!("Sending new network to executors");
                 for sender in &graph_senders {
@@ -49,7 +48,7 @@ pub fn commander_main<B: Board, M: BoardMapper<B>>(
                 eprintln!("Waiting for new network is currently not implemented");
             }
             Command::Stop => {
-                //TODO this is probably not enoug any more, we need to stop the gpu executors, cpu threads and rebatchers as well
+                //TODO this is probably not enough any more, we need to stop the gpu executors, cpu threads and rebatchers as well
                 update_sender.send(GeneratorUpdate::Stop).unwrap();
                 break;
             }

@@ -9,84 +9,62 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use rand_distr::Dirichlet;
 
-use cuda_nn_eval::Device;
-use kz_core::mapping::BoardMapper;
-use kz_core::network::cudnn::CudaNetwork;
-use kz_core::network::symmetry::RandomSymmetryNetwork;
-use kz_core::network::{Network, ZeroEvaluation};
+use kz_core::network::ZeroEvaluation;
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest, ZeroResponse};
 use kz_core::zero::tree::Tree;
 use kz_util::zip_eq_exact;
-use nn_graph::onnx::load_graph_from_onnx_path;
-use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 use crate::move_selector::MoveSelector;
-use crate::server::protocol::{Command, GeneratorUpdate, Settings};
+use crate::server::job_channel::JobClient;
+use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::simulation::{Position, Simulation};
 
-pub fn generator_main<B: Board>(
+type EvalClient<B> = JobClient<Vec<B>, Vec<ZeroEvaluation<'static>>>;
+
+pub fn generator_alphazero_main<B: Board>(
     thread_id: usize,
-    mapper: impl BoardMapper<B>,
     start_pos: impl Fn() -> B,
-    device: Device,
     batch_size: usize,
-    cmd_receiver: Receiver<Command>,
-    sender: UpdateSender<B>,
+    settings_receiver: Receiver<Settings>,
+    eval_client: EvalClient<B>,
+    update_sender: UpdateSender<B>,
 ) -> Result<(), SendError<GeneratorUpdate<B>>> {
     let mut state = GeneratorState::new(batch_size);
 
     //TODO try with a different(faster) rng
+    //  really? can the rng be that significant?
     let mut rng = RngType::default();
 
     let mut settings = None;
-    let mut network = None;
     let mut next_index = 0;
 
     loop {
-        // If we don't yet have settings and an executor, block until we get a message.
-        // Otherwise only check for new messages without blocking.
-        let cmd = if settings.is_some() && network.is_some() {
-            cmd_receiver.try_recv()
+        // if we don't have settings yet, block
+        let new_settings = if settings.is_some() {
+            settings_receiver.try_recv()
         } else {
-            cmd_receiver.recv().map_err(|_| TryRecvError::Disconnected)
+            settings_receiver.recv().map_err(|_| TryRecvError::Disconnected)
         };
 
-        match cmd {
+        match new_settings {
+            Ok(new_settings) => settings = Some(new_settings),
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
-            Ok(Command::StartupSettings(_)) => panic!("Already received startup settings"),
-            Ok(Command::Stop) => break,
-            Ok(Command::WaitForNewNetwork) => {
-                network = None;
-            }
-            Ok(Command::NewSettings(new_settings)) => settings = Some(new_settings),
-            Ok(Command::NewNetwork(path)) => {
-                println!("Generator thread loading new network {:?}", path);
-                let loaded_graph = load_graph_from_onnx_path(path);
-                let graph = optimize_graph(&loaded_graph, OptimizerSettings::default());
-                network = Some(CudaNetwork::new(mapper, &graph, batch_size, device));
-
-                state.clear_caches();
-            }
+            Err(TryRecvError::Disconnected) => panic!("Settings channel disconnected"),
         }
 
         // advance generator
         if let Some(settings) = &settings {
-            if let Some(network) = &mut network {
-                let mut ctx = Context {
-                    thread_id,
-                    next_index,
-                    settings,
-                    rng: &mut rng,
-                };
-                state.step(&mut ctx, &start_pos, network, &sender)?;
-                next_index = ctx.next_index;
-            }
+            let mut ctx = Context {
+                thread_id,
+                next_index,
+                settings,
+                rng: &mut rng,
+            };
+            state.step(&mut ctx, &start_pos, &eval_client, &update_sender)?;
+            next_index = ctx.next_index;
         }
     }
-
-    Ok(())
 }
 
 type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
@@ -145,7 +123,9 @@ impl<B: Board> GeneratorState<B> {
         }
     }
 
-    fn clear_caches(&mut self) {
+    //TODO call this function again at some point
+    //  we need to be notified when a new network is loaded
+    fn _clear_caches(&mut self) {
         for game in &mut self.games {
             game.cache.clear();
         }
@@ -155,7 +135,7 @@ impl<B: Board> GeneratorState<B> {
         &mut self,
         ctx: &mut Context,
         start_pos: impl Fn() -> B,
-        network: impl Network<B>,
+        eval_client: &EvalClient<B>,
         sender: &UpdateSender<B>,
     ) -> Result<(), SendError<GeneratorUpdate<B>>> {
         let mut counter = Counter::default();
@@ -164,9 +144,8 @@ impl<B: Board> GeneratorState<B> {
 
         // evaluate the requests
         //TODO kind of sketchy that the network doesn't get to see the move counter, is that okay?
-        let boards = requests.iter().map(|r| r.board.inner()).collect_vec();
-        let evals =
-            RandomSymmetryNetwork::new(network, &mut ctx.rng, ctx.settings.random_symmetries).evaluate_batch(&boards);
+        let boards = requests.iter().map(|r| r.board.inner().clone()).collect_vec();
+        let evals = eval_client.map_blocking(boards);
 
         // store the responses for next step
         assert!(self.responses.is_empty());
