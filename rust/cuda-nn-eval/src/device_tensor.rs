@@ -1,6 +1,6 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use crate::offset_tensor::OffsetTensor;
+use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use cuda_sys::bindings::{cublasOperation_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
 use cuda_sys::wrapper::group::{MatMulArg, TensorOpArgs};
@@ -9,21 +9,23 @@ use cuda_sys::wrapper::mem::device::DevicePtr;
 
 use crate::shape::StridedShape;
 
-pub type DeviceTensor = OffsetTensor<DevicePtr>;
+pub type DeviceTensor = PtrTensor<DevicePtr>;
+
+impl OffsetPtr for DevicePtr {
+    fn offset_bytes(self, offset: isize) -> Self {
+        DevicePtr::offset_bytes(self, offset)
+    }
+}
 
 impl DeviceTensor {
     pub fn alloc_simple(device: Device, shape: Vec<usize>) -> Self {
         let size = shape.iter().product::<usize>();
         let ptr = DevicePtr::alloc(device, size * 4);
-        DeviceTensor::from_parts(ptr, 0, StridedShape::new_simple(shape))
-    }
-
-    pub fn ptr(&self) -> DevicePtr {
-        self.inner().offset_bytes(4 * self.offset())
+        DeviceTensor::from_parts(ptr, StridedShape::new_simple(shape))
     }
 
     pub fn device(&self) -> Device {
-        self.inner().device()
+        self.ptr().device()
     }
 
     pub fn deep_clone(&self) -> DeviceTensor {

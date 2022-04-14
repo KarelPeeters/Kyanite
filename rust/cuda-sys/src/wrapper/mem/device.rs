@@ -64,7 +64,7 @@ impl DevicePtr {
         self.buffer.device
     }
 
-    pub fn offset_bytes(&self, offset: isize) -> DevicePtr {
+    pub fn offset_bytes(self, offset: isize) -> DevicePtr {
         let new_offset = self.offset + offset;
 
         if self.buffer.len_bytes == 0 {
@@ -79,7 +79,7 @@ impl DevicePtr {
         }
 
         DevicePtr {
-            buffer: Arc::clone(&self.buffer),
+            buffer: self.buffer,
             offset: new_offset,
         }
     }

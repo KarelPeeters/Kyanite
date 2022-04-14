@@ -1,25 +1,29 @@
 use crate::shape::StridedShape;
 use nn_graph::graph::SliceRange;
+use std::fmt::Debug;
+
+pub trait OffsetPtr: Debug + Clone {
+    fn offset_bytes(self, offset: isize) -> Self;
+}
 
 /// A generic Tensor representation.
 #[derive(Debug, Clone)]
-pub struct OffsetTensor<I> {
-    inner: I,
-    offset: isize,
+pub struct PtrTensor<P> {
+    ptr: P,
     shape: StridedShape,
 }
 
-impl<I> OffsetTensor<I> {
-    pub fn from_parts(inner: I, offset: isize, shape: StridedShape) -> Self {
-        OffsetTensor { inner, offset, shape }
+impl<P> PtrTensor<P> {
+    pub fn from_parts(ptr: P, shape: StridedShape) -> Self {
+        PtrTensor { ptr, shape }
     }
 
-    pub fn inner(&self) -> &I {
-        &self.inner
+    pub fn into_ptr(self) -> P {
+        self.ptr
     }
 
-    pub fn offset(&self) -> isize {
-        self.offset
+    pub fn ptr(&self) -> &P {
+        &self.ptr
     }
 
     pub fn shape(&self) -> &StridedShape {
@@ -27,18 +31,17 @@ impl<I> OffsetTensor<I> {
     }
 }
 
-impl<I: Clone> OffsetTensor<I> {
-    //TODO find a better name for this
-    fn delta(&self, offset: isize, shape: StridedShape) -> Self {
-        Self::from_parts(self.inner.clone(), self.offset + offset, shape)
+impl<P: OffsetPtr> PtrTensor<P> {
+    fn offset(&self, offset: isize, shape: StridedShape) -> Self {
+        Self::from_parts(self.ptr.clone().offset_bytes(4 * offset), shape)
     }
 
     pub fn permute(&self, permutation: &[usize]) -> Self {
-        self.delta(0, self.shape.permute(permutation))
+        self.offset(0, self.shape.permute(permutation))
     }
 
     pub fn view(&self, new_shape: Vec<usize>) -> Self {
-        self.delta(0, self.shape.view(new_shape.clone()).unwrap())
+        self.offset(0, self.shape.view(new_shape.clone()).unwrap())
     }
 
     pub fn slice(&self, axis: usize, range: SliceRange) -> Self {
@@ -52,7 +55,7 @@ impl<I: Clone> OffsetTensor<I> {
             0
         };
 
-        self.delta(offset, result_shape)
+        self.offset(offset, result_shape)
     }
 
     pub fn index(&self, axis: usize, index: usize) -> Self {
@@ -74,6 +77,6 @@ impl<I: Clone> OffsetTensor<I> {
             0
         };
 
-        self.delta(offset, result_shape)
+        self.offset(offset, result_shape)
     }
 }

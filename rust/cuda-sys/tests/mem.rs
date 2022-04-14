@@ -5,9 +5,9 @@ fn mem_slice() {
     let device = Device::new(0);
 
     let ptr = device.alloc(512);
-    let a = ptr.offset_bytes(0);
-    let b = ptr.offset_bytes(128);
-    let c = ptr.offset_bytes(256);
+    let a = ptr.clone().offset_bytes(0);
+    let b = ptr.clone().offset_bytes(128);
+    let c = ptr.clone().offset_bytes(256);
 
     unsafe {
         a.copy_linear_from_host(&vec![0; 512]);
