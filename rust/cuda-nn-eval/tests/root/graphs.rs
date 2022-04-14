@@ -1,7 +1,9 @@
+use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
-use nn_graph::graph::{ElementOp, Graph, Value};
-use nn_graph::ndarray::s;
+use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
+use nn_graph::ndarray::Array1;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -41,23 +43,83 @@ fn slice() {
     let mut graph = Graph::new();
 
     let input = graph.input(shape![10, 4]);
-    let indexed = graph.index(input, 1, 0);
-    let sliced = graph.slice(input, 0, 0, 2);
-    let both = graph.slice(indexed, 0, 0, 2);
-    graph.output_all(&[indexed, sliced, both]);
-
     let input_tensor = linspace_tensor((10, 4));
+
+    let indexed = graph.index(input, 1, 0);
+    let outputs = [
+        // start:end slicing
+        indexed,
+        graph.slice(input, 0, SliceRange::new(0, 2, 1)),
+        graph.slice(indexed, 0, SliceRange::new(0, 2, 1)),
+    ];
+
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[input_tensor.into_dyn()], None)
+}
+
+#[test]
+fn flip() {
+    let mut graph = Graph::new();
+
+    let x = graph.constant(shape![2, 3].clone(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    let first_once = graph.flip(x, 0);
+    let first_twice = graph.flip(first_once, 0);
+
+    let other_once = graph.flip(x, 1);
+    let other_twice = graph.flip(other_once, 1);
+
+    let combined = graph.flip(first_once, 1);
+
+    graph.output_all(&[first_once, first_twice, other_once, other_twice, combined]);
 
     test_all(
         &graph,
         0,
-        &[input_tensor.to_shared().into_dyn()],
+        &[],
         Some(&[
-            input_tensor.slice(s![.., 0]).into_dyn().to_shared(),
-            input_tensor.slice(s![0..2, ..]).into_dyn().to_shared(),
-            input_tensor.slice(s![0..2, 0]).into_dyn().to_shared(),
+            manual_tensor((2, 3), vec![3.0, 4.0, 5.0, 0.0, 1.0, 2.0]),
+            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor((2, 3), vec![2.0, 1.0, 0.0, 5.0, 4.0, 3.0]),
+            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor((2, 3), vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0]),
         ]),
-    )
+    );
+}
+
+#[test]
+fn flip_conv() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![2, 4, 8, 8]);
+    let flipped = graph.flip(input, 3);
+
+    let weight = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
+    let result = graph.conv(flipped, weight, 1, 1);
+
+    graph.output(result);
+    test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
+fn repeat() {
+    let tensor = DeviceTensor::alloc_simple(Device::new(0), vec![0]);
+    println!("{:?}", unsafe { tensor.ptr().ptr() });
+
+    let mut graph = Graph::new();
+
+    let x = graph.constant(shape![2, 3], linspace_vec(6));
+
+    let outputs = [
+        graph.repeat(x, 0, 0),
+        graph.repeat(x, 0, 2),
+        graph.repeat(x, 1, 0),
+        graph.repeat(x, 1, 2),
+    ];
+
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[], None);
 }
 
 #[test]
@@ -258,6 +320,27 @@ fn affine_single_element() {
 }
 
 #[test]
+fn affine_add_twice() {
+    let mut graph = Graph::new();
+
+    let x = graph.input(shape![Size::BATCH, 1, 1, 1]);
+    let w1 = graph.constant(shape![1, 1, 1, 1], vec![1.0]);
+    let w2 = graph.constant(shape![1, 1, 1, 1], vec![2.0]);
+
+    let y1 = graph.add(x, w1);
+    let y2 = graph.add(y1, w2);
+
+    graph.output(y2);
+
+    test_all(
+        &graph,
+        2,
+        &[manual_tensor((2, 1, 1, 1), vec![0.0, 1.0])],
+        Some(&[manual_tensor((2, 1, 1, 1), vec![3.0, 4.0])]),
+    )
+}
+
+#[test]
 fn affine_single_div() {
     let mut graph = Graph::new();
 
@@ -402,7 +485,7 @@ fn concat() {
     let b = graph.constant(shape![2, 1, 4], linspace_vec(2 * 1 * 4));
     let c = graph.constant(shape![2, 8, 4], linspace_vec(2 * 8 * 4));
 
-    let result = graph.concat(vec![a, b, c], 1);
+    let result = graph.concat(vec![a, b, c], 1, None);
     graph.output(result);
 
     test_all(&graph, 0, &[], None);
@@ -450,4 +533,29 @@ fn chain() {
         &[manual_tensor(2, vec![1.0, 2.0])],
         Some(&[manual_tensor(2, vec![8.0, 10.0])]),
     )
+}
+
+#[test]
+fn repeated_conv() {
+    let mut graph = Graph::new();
+
+    // weights must be different, otherwise the graph builder already deduplicates nodes
+    let weight0 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-1.0, 1.0, 4 * 4 * 3 * 3).to_vec());
+    let weight1 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-2.0, 2.0, 4 * 4 * 3 * 3).to_vec());
+
+    let input = graph.input(shape!(Size::BATCH, 4, 8, 8));
+
+    let x1 = graph.conv(input, weight0, 1, 1);
+    let x2 = graph.conv(x1, weight0, 1, 1);
+    let x3 = graph.conv(x2, weight0, 1, 1);
+    let x4 = graph.conv(x3, weight0, 1, 1);
+
+    let y1 = graph.conv(input, weight1, 1, 1);
+    let y2 = graph.conv(y1, weight1, 1, 1);
+    let y3 = graph.conv(y2, weight1, 1, 1);
+    let y4 = graph.conv(y3, weight1, 1, 1);
+
+    graph.output_all(&[x4, y4]);
+
+    test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
 }

@@ -2,12 +2,16 @@
 
 pub use cuda_sys::wrapper::handle::Device;
 
+pub mod device_tensor;
 pub mod executor;
+pub mod quant;
+pub mod shape;
 pub mod tester;
+pub mod util;
 
 mod planner;
-mod shape;
-mod tensor;
 
 //TODO make this private again?
 pub mod kernels;
+mod offset_tensor;
+mod step;

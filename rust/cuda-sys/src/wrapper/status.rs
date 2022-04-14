@@ -1,15 +1,19 @@
 use std::ffi::CStr;
+use std::ptr::null;
 
-use crate::bindings::{cublasStatus_t, cudaError, cudaGetErrorString};
+use crate::bindings::{
+    cuGetErrorName, cublasStatus_t, cudaError, cudaGetErrorString, nvrtcGetErrorString, nvrtcResult, CUresult,
+};
 use crate::bindings::{cudnnGetErrorString, cudnnStatus_t};
 
 pub trait Status {
     fn as_string(&self) -> &'static str;
+
+    #[track_caller]
     fn unwrap(&self);
 
     /// Alternative to `unwrap` that only panics if `!std::thread::panicking()`.
     /// This is useful to avoid double panics in [Drop] implementations.
-    #[track_caller]
     fn unwrap_in_drop(&self) {
         if !std::thread::panicking() {
             self.unwrap();
@@ -22,7 +26,6 @@ impl Status for cudaError {
         unsafe { CStr::from_ptr(cudaGetErrorString(*self)) }.to_str().unwrap()
     }
 
-    #[track_caller]
     fn unwrap(&self) {
         if *self != cudaError::cudaSuccess {
             panic!("Cuda operation returned error {:?}", self.as_string());
@@ -35,7 +38,6 @@ impl Status for cudnnStatus_t {
         unsafe { CStr::from_ptr(cudnnGetErrorString(*self)) }.to_str().unwrap()
     }
 
-    #[track_caller]
     fn unwrap(&self) {
         if *self != cudnnStatus_t::CUDNN_STATUS_SUCCESS {
             panic!("Cudnn operation returned error {:?}", self);
@@ -59,10 +61,40 @@ impl Status for cublasStatus_t {
         }
     }
 
-    #[track_caller]
     fn unwrap(&self) {
         if *self != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
             panic!("Cublas operation returned error {:?}", self.as_string());
+        }
+    }
+}
+
+impl Status for nvrtcResult {
+    fn as_string(&self) -> &'static str {
+        unsafe { CStr::from_ptr(nvrtcGetErrorString(*self)) }.to_str().unwrap()
+    }
+
+    fn unwrap(&self) {
+        if *self != nvrtcResult::NVRTC_SUCCESS {
+            panic!("NVRTC operation returned error {:?}", self.as_string())
+        }
+    }
+}
+
+impl Status for CUresult {
+    fn as_string(&self) -> &'static str {
+        unsafe {
+            let mut ptr = null();
+            let result = cuGetErrorName(*self, &mut ptr as *mut _);
+            if result != CUresult::CUDA_SUCCESS {
+                panic!("Error '{:?}' while getting name of error '{:?}'", result, self);
+            }
+            CStr::from_ptr(ptr).to_str().unwrap()
+        }
+    }
+
+    fn unwrap(&self) {
+        if *self != CUresult::CUDA_SUCCESS {
+            panic!("CU driver operation returned error {:?}", self.as_string())
         }
     }
 }

@@ -46,8 +46,8 @@ impl TensorDescriptor {
         assert_eq!(rank, strides.len());
 
         assert!(
-            (0..rank).all(|i| shape[i] > 0 && strides[i] > 0),
-            "Shape and strides must must be strictly positive, got shape {:?} with strides {:?}",
+            shape.iter().all(|&x| x > 0),
+            "Shape cannot be negative, got shape {:?} with strides {:?}",
             shape,
             strides,
         );
@@ -83,6 +83,10 @@ impl TensorDescriptor {
             cudnnGetTensorSizeInBytes(self.inner, &mut result as *mut _).unwrap();
             result
         }
+    }
+
+    pub fn has_positive_strides(&self) -> bool {
+        self.strides.iter().all(|&s| s > 0)
     }
 }
 
@@ -205,6 +209,12 @@ impl ConvolutionDescriptor {
             &self.output_shape(input, filter)[..],
             &output.shape,
             "Output shape mismatch"
+        );
+
+        assert!(
+            input.has_positive_strides(),
+            "Conv input should have positive strides, got {:?}",
+            input
         );
 
         let mut workspace: usize = 0;

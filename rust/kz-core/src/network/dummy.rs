@@ -78,7 +78,7 @@ impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
     }
 }
 
-fn uniform_values() -> ZeroValues {
+pub fn uniform_values() -> ZeroValues {
     ZeroValues {
         value: 0.0,
         wdl: WDL {
@@ -90,7 +90,7 @@ fn uniform_values() -> ZeroValues {
     }
 }
 
-fn uniform_policy(available_moves: usize) -> Vec<f32> {
+pub fn uniform_policy(available_moves: usize) -> Vec<f32> {
     vec![1.0 / available_moves as f32; available_moves]
 }
 

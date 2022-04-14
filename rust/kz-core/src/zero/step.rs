@@ -60,6 +60,7 @@ pub fn zero_step_gather<B: Board>(
         // if the board is done backpropagate the real value
         if let Some(outcome) = oracle.best_outcome(&curr_board) {
             let outcome = outcome.pov(curr_board.next_player());
+            //TODO what value to use for moves_left?
             tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome, 0.0));
             return None;
         }

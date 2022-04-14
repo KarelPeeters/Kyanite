@@ -3,8 +3,8 @@ use itertools::Itertools;
 use num_traits::cast;
 use prost::Message;
 
-use crate::graph::ElementOp;
 pub use crate::graph::Graph;
+use crate::graph::{ElementOp, SliceRange};
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
@@ -210,7 +210,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 // figure out the shapes
                 let input_shape = &graph[input].shape;
                 assert!(input_shape.rank() >= 2, "BN input must have at least rank 2");
-                let const_shape = input_shape.all_ones_except(1);
+                let index = 1;
+                let const_shape = input_shape.keep(index, Size::ONE);
 
                 let channels = input_shape[1].unwrap_fixed("BN channel count must be fixed");
                 assert!(
@@ -339,15 +340,44 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::with_same_type(result, input)
             }
             "Slice" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0];
+                let (input, starts, ends, axes, steps) = match inputs.len() {
+                    1 => {
+                        let input = inputs[0];
 
-                let axes = attrs.take_ints("axes");
-                let starts = attrs.take_ints("starts");
-                let ends = attrs.take_ints("ends");
+                        let starts = attrs.take_ints("starts").to_vec();
+                        let ends = attrs.take_ints("ends").to_vec();
+                        let axes = attrs.maybe_take_ints("axes").map(|v| v.to_vec());
+                        let steps = attrs.maybe_take_ints("steps").map(|v| v.to_vec());
+
+                        (input, starts, ends, axes, steps)
+                    }
+                    3 | 4 | 5 => {
+                        let unwrap = |v: &&TypedValue| {
+                            graph
+                                .as_const(v.unwrap_int())
+                                .unwrap()
+                                .iter()
+                                .map(|&f| f as i64)
+                                .collect_vec()
+                        };
+
+                        let input = inputs[0];
+                        let starts = unwrap(&inputs[1]);
+                        let ends = unwrap(&inputs[2]);
+                        let axes = inputs.get(3).map(unwrap);
+                        let steps = inputs.get(4).map(unwrap);
+
+                        (input, starts, ends, axes, steps)
+                    }
+                    len => panic!("Unexpected number of arguments to Slice operator: {}", len),
+                };
+
+                let slice_rank = starts.len();
+                let axes = axes.unwrap_or_else(|| (0..slice_rank as i64).collect_vec());
+                let steps = steps.unwrap_or_else(|| vec![1; slice_rank]);
 
                 assert!(
-                    axes.len() == starts.len() && axes.len() == ends.len(),
+                    slice_rank == ends.len() && slice_rank == axes.len() && slice_rank == steps.len(),
                     "Inconsistent axes count"
                 );
                 assert!(
@@ -358,7 +388,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 match input {
                     TypedValue::Shape(shape) => {
-                        assert_eq!(axes.len(), 1, "Slicing shape can only be on axis 0");
+                        assert_eq!(slice_rank, 1, "Shape slicing can only happen on a single axis");
+                        assert_eq!(axes[0], 0, "Shape slicing can only happen along axis 0");
+                        assert_eq!(steps[0], 1, "Shape slicing only works with step 1 for now");
 
                         let start = abs_axis(starts[0], shape.len());
                         let end = abs_axis(ends[0], shape.len());
@@ -368,11 +400,26 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     &TypedValue::FloatTensor(input_tensor) | &TypedValue::IntTensor(input_tensor) => {
                         let input_shape = graph[input_tensor].shape.clone();
 
-                        let result = (0..axes.len()).fold(input_tensor, |curr, i| {
+                        let result = (0..slice_rank).fold(input_tensor, |curr, i| {
                             let axis = abs_axis(axes[i], input_shape.rank());
                             let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
 
-                            graph.slice(curr, axis, abs_axis(starts[i], axis_size), abs_axis(ends[i], axis_size))
+                            let step = steps[i];
+                            assert_ne!(step, 0, "Step cannot be 0");
+
+                            if step > 0 {
+                                let start = abs_axis(starts[i], axis_size);
+                                let end = abs_axis(ends[i], axis_size);
+
+                                let range = SliceRange::new(start, end, step as usize);
+                                graph.slice(curr, axis, range)
+                            } else {
+                                assert!(
+                                    starts[i] == -1 && ends[i] == i64::MIN && steps[i] == -1,
+                                    "Only simple flip negative stride supported for now"
+                                );
+                                graph.flip(curr, axis)
+                            }
                         });
                         TypedValue::with_same_type(result, input)
                     }
@@ -400,7 +447,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     TypedValue::Shape(shape)
                 } else {
                     let input_tensors = inputs.iter().map(|v| v.unwrap_tensor()).collect_vec();
-                    let result = graph.concat(input_tensors, axis);
+                    let result = graph.concat(input_tensors, axis, None);
 
                     if any_float {
                         assert!(

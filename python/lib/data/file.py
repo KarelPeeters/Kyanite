@@ -11,7 +11,7 @@ OFFSET_SIZE_IN_BYTES = 8
 
 class DataFileInfo:
     def __init__(self, game: Game, meta: dict, bin_path: Path, off_path: Path, final_offset: int, timestamp: float):
-        assert meta["game"] == game.name
+        assert meta["game"] == game.name, f"Expected game {game.name}, got {meta['game']}"
         assert meta["input_bool_shape"] == list(game.input_bool_shape)
         assert meta["input_scalar_count"] == game.input_scalar_channels
         assert meta["policy_shape"] == list(game.policy_shape)
@@ -68,7 +68,7 @@ class DataFile:
 
         # wrap everything up
         info = DataFileInfo(game, meta, bin_path, off_path, final_offset, timestamp)
-        assert info.position_count == offset_count, "Mismatch between offset and position counts"
+        assert info.position_count == offset_count, f"Mismatch between offset and position counts for '{path}'"
         return DataFile(info, bin_handle, off_handle)
 
     def with_new_handle(self) -> 'DataFile':

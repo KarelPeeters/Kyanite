@@ -17,7 +17,7 @@ pub struct ZeroValues {
 // TODO look at the size of this struct and think about making it smaller
 //   (but first try padding it so see if that makes it slower)
 pub struct Node<M> {
-    // Potentially update Tree::keep_moves when this struct gets new fields.<
+    // Potentially update Tree::keep_moves when this struct gets new fields.
     /// The parent node.
     pub parent: Option<usize>,
     /// The move that was just made to get to this node. Is `None` only for the root node.

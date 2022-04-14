@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
 use nn_graph::graph::Graph;
 use nn_graph::shape::Shape;
@@ -26,7 +26,7 @@ fn bench_copy(c: &mut Criterion) {
         println!("{}", graph);
 
         let device = Device::new(0);
-        let mut executor = CudnnExecutor::new(device, &graph, 1, false);
+        let mut executor = CudaExecutor::new(device, &graph, 1);
 
         println!("{:?}", executor);
 

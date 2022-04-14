@@ -36,7 +36,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
         // encore the input
         let mut input = vec![];
         for board in boards {
-            self.mapper.encode_full(&mut input, board.borrow())
+            self.mapper.encode_input_full(&mut input, board.borrow())
         }
         let input_len = input.len();
 

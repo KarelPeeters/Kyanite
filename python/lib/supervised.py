@@ -39,20 +39,21 @@ def supervised_loop(
             for group in optimizer.param_groups:
                 group["lr"] = lr
 
-        settings.train_step(train_sampler, network, optimizer, logger)
+        train_batch = train_sampler.next_batch()
+        settings.train_step(train_batch, network, optimizer, logger)
 
         if bi % test_steps == 0:
             network.eval()
 
             train_batch = train_sampler.next_batch()
-            settings.evaluate_batch(network, "test-train", logger, train_batch, settings.value_target)
+            settings.evaluate_batch(network, train_batch, "test-train", logger)
 
             test_batch = test_sampler.next_batch()
-            settings.evaluate_batch(network, "test-test", logger, test_batch, settings.value_target)
+            settings.evaluate_batch(network, train_batch, "test-test", logger)
 
             # compare to just predicting the mean value
-            train_batch_wdl = settings.value_target.pick(final=train_batch.wdl_final, zero=train_batch.wdl_zero)
-            test_batch_wdl = settings.value_target.pick(final=test_batch.wdl_final, zero=test_batch.wdl_zero)
+            train_batch_wdl = settings.scalar_target.pick(final=train_batch.wdl_final, zero=train_batch.wdl_zero)
+            test_batch_wdl = settings.scalar_target.pick(final=test_batch.wdl_final, zero=test_batch.wdl_zero)
 
             mean_wdl = train_batch_wdl.mean(axis=0, keepdims=True)
             mean_value = mean_wdl[0, 0] - mean_wdl[0, 2]

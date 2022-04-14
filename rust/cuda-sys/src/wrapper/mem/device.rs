@@ -1,164 +1,145 @@
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::rc::Rc;
+use std::sync::Arc;
 
-use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyAsync, cudaMemcpyKind, cudaMemset};
-use crate::wrapper::handle::{CudaStream, Device};
+use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyKind};
+use crate::wrapper::handle::Device;
 use crate::wrapper::status::Status;
 
-/// A view on (part of) a device buffer.
-/// Multiple views can share the same underlying buffer,
-/// consequently all functions that read or write from this view are marked `unsafe`.
-/// The underlying buffer is freed when all views on it have been dropped.
-#[derive(Debug)]
-pub struct DeviceMem {
-    inner: Rc<DeviceMemInner>,
+/// A pointer pointing somewhere inside of a [DeviceBuffer].
+/// The inner [DeviceBuffer] is automatically freed when there are no [DevicePtr] any more that refer to it.
+/// Since the memory may be shared all accessor methods are marked unsafe.
+///
+/// Cloning this type does not copy the underlying memory.
+#[derive(Debug, Clone)]
+pub struct DevicePtr {
+    buffer: Arc<DeviceBuffer>,
     offset: isize,
-    len: usize,
 }
 
-/// The underlying device buffer.
+/// A device allocation as returned by cudaMalloc.
 #[derive(Debug)]
-struct DeviceMemInner {
+struct DeviceBuffer {
     device: Device,
-    dev_ptr: *mut c_void,
+    base_ptr: *mut c_void,
+    len_bytes: isize,
 }
 
-impl Drop for DeviceMemInner {
+// TODO is this correct? We've don't even attempt device-side memory safety, but can this cause cpu-side issues?
+// TODO should we implement Sync? It's probably never a good idea to actually share pointers between threads...
+unsafe impl Send for DeviceBuffer {}
+
+unsafe impl Sync for DeviceBuffer {}
+
+impl Drop for DeviceBuffer {
     fn drop(&mut self) {
         unsafe {
             self.device.switch_to();
-            cudaFree(self.dev_ptr).unwrap_in_drop()
+            cudaFree(self.base_ptr).unwrap_in_drop()
         }
     }
 }
 
-impl DeviceMem {
-    pub fn alloc(size_in_bytes: usize, device: Device) -> Self {
-        let inner = unsafe {
-            let mut dev_ptr = null_mut();
+impl DevicePtr {
+    pub fn alloc(device: Device, len_bytes: usize) -> Self {
+        unsafe {
+            let mut device_ptr = null_mut();
+
             device.switch_to();
-            cudaMalloc(&mut dev_ptr as *mut _, size_in_bytes).unwrap();
+            cudaMalloc(&mut device_ptr as *mut _, len_bytes).unwrap();
 
-            DeviceMemInner { device, dev_ptr }
-        };
-
-        DeviceMem {
-            inner: Rc::new(inner),
-            offset: 0,
-            len: size_in_bytes,
+            let inner = DeviceBuffer {
+                device,
+                base_ptr: device_ptr,
+                len_bytes: len_bytes as isize,
+            };
+            DevicePtr {
+                buffer: Arc::new(inner),
+                offset: 0,
+            }
         }
-    }
-
-    pub fn len_bytes(&self) -> usize {
-        self.len
     }
 
     pub fn device(&self) -> Device {
-        self.inner.device
+        self.buffer.device
     }
 
-    /// Return a shallow clone of this value, the inner memory will be shared.
-    pub fn view(&self) -> Self {
-        DeviceMem {
-            inner: Rc::clone(&self.inner),
-            offset: self.offset,
-            len: self.len,
+    pub fn offset_bytes(self, offset: isize) -> DevicePtr {
+        let new_offset = self.offset + offset;
+
+        if self.buffer.len_bytes == 0 {
+            assert_eq!(offset, 0, "Non-zero offset not allowed on empty buffer");
+        } else {
+            assert!(
+                (0..self.buffer.len_bytes as isize).contains(&new_offset),
+                "Offset {} is out of range on {:?}",
+                offset,
+                self
+            );
         }
-    }
 
-    pub fn slice_bytes(&self, start: usize, len: usize) -> DeviceMem {
-        assert!(
-            start < self.len && start + len <= self.len,
-            "Slice indices must be in bounds, got start {} len {} for mem of len {}",
-            start,
-            len,
-            self.len,
-        );
-
-        DeviceMem {
-            inner: Rc::clone(&self.inner),
-            offset: self.offset + start as isize,
-            len,
+        DevicePtr {
+            buffer: self.buffer,
+            offset: new_offset,
         }
     }
 
     pub unsafe fn ptr(&self) -> *mut c_void {
-        self.inner.dev_ptr.offset(self.offset)
+        self.buffer.base_ptr.offset(self.offset)
     }
 
-    pub unsafe fn fill_with_byte(&self, value: u8) {
-        self.inner.device.switch_to();
-        cudaMemset(self.ptr(), value as i32, self.len).unwrap()
-    }
+    pub unsafe fn copy_linear_from_host(&self, buffer: &[u8]) {
+        self.assert_linear_in_bounds(buffer.len());
 
-    pub unsafe fn copy_from_host_async(&self, buffer: &[u8], stream: &mut CudaStream) {
-        assert_eq!(self.len, buffer.len(), "copy buffer size mismatch");
-        self.inner.device.switch_to();
-        cudaMemcpyAsync(
-            self.ptr(),
-            buffer.as_ptr() as *const c_void,
-            self.len,
-            cudaMemcpyKind::cudaMemcpyHostToDevice,
-            stream.inner(),
-        )
-        .unwrap()
-    }
-
-    pub unsafe fn copy_to_host_async(&self, buffer: &mut [u8], stream: &mut CudaStream) {
-        assert_eq!(self.len, buffer.len(), "copy buffer size mismatch");
-
-        self.inner.device.switch_to();
-        cudaMemcpyAsync(
-            buffer.as_mut_ptr() as *mut c_void,
-            self.ptr(),
-            self.len,
-            cudaMemcpyKind::cudaMemcpyDeviceToHost,
-            stream.inner(),
-        )
-        .unwrap()
-    }
-
-    pub unsafe fn copy_from_host(&self, buffer: &[u8]) {
-        assert_eq!(self.len, buffer.len(), "copy buffer size mismatch");
-
-        self.inner.device.switch_to();
+        self.device().switch_to();
         cudaMemcpy(
             self.ptr(),
-            buffer.as_ptr() as *const c_void,
-            self.len,
+            buffer as *const _ as *const _,
+            buffer.len(),
             cudaMemcpyKind::cudaMemcpyHostToDevice,
         )
-        .unwrap()
+        .unwrap();
     }
 
-    pub unsafe fn copy_to_host(&self, buffer: &mut [u8]) {
-        assert_eq!(self.len, buffer.len(), "copy buffer size mismatch");
+    pub unsafe fn copy_linear_to_host(&self, buffer: &mut [u8]) {
+        self.assert_linear_in_bounds(buffer.len());
 
-        self.inner.device.switch_to();
+        self.device().switch_to();
         cudaMemcpy(
-            buffer.as_mut_ptr() as *mut c_void,
+            buffer as *mut _ as *mut _,
             self.ptr(),
-            self.len,
+            buffer.len(),
             cudaMemcpyKind::cudaMemcpyDeviceToHost,
         )
-        .unwrap()
+        .unwrap();
     }
 
-    pub unsafe fn copy_from_device(&self, other: &DeviceMem) {
-        assert_eq!(self.len, other.len, "Buffer size mismatch");
+    pub unsafe fn copy_linear_from_device(&self, other: &DevicePtr, len_bytes: usize) {
         assert_eq!(
-            self.inner.device, other.inner.device,
-            "Buffers are on different devices"
+            self.device(),
+            other.device(),
+            "Can only copy between tensors on the same device"
         );
 
-        self.inner.device.switch_to();
+        self.assert_linear_in_bounds(len_bytes);
+        other.assert_linear_in_bounds(len_bytes);
+
+        self.device().switch_to();
         cudaMemcpy(
             self.ptr(),
             other.ptr(),
-            self.len,
+            len_bytes,
             cudaMemcpyKind::cudaMemcpyDeviceToDevice,
         )
-        .unwrap()
+        .unwrap();
+    }
+
+    fn assert_linear_in_bounds(&self, len: usize) {
+        assert!(
+            (self.offset + len as isize) <= self.buffer.len_bytes,
+            "Linear slice with length {} out of bounds for {:?}",
+            len,
+            self
+        );
     }
 }

@@ -1,4 +1,4 @@
-use cuda_nn_eval::executor::CudnnExecutor;
+use cuda_nn_eval::executor::CudaExecutor;
 use cuda_sys::wrapper::handle::Device;
 use nn_graph::graph::Graph;
 use nn_graph::shape;
@@ -6,7 +6,7 @@ use nn_graph::shape::Size;
 
 fn main() {
     for io_size in [8, 9, 10] {
-        println!("{}", profile_conv(128, 128, 128, io_size, 3, true));
+        println!("{}", profile_conv(128, 128, 128, io_size, 3));
     }
 }
 
@@ -16,7 +16,6 @@ fn profile_conv(
     output_channels: usize,
     io_size: usize,
     kernel_size: usize,
-    use_graph: bool,
 ) -> f32 {
     let input_shape = shape![Size::BATCH, input_channels, io_size, io_size];
     let kernel_shape = shape![output_channels, input_channels, kernel_size, kernel_size];
@@ -31,7 +30,7 @@ fn profile_conv(
     let input = vec![2.0; input_shape.size().eval(batch_size)];
 
     let device = Device::new(0);
-    let mut exec = CudnnExecutor::new(device, &graph, batch_size, use_graph);
+    let mut exec = CudaExecutor::new(device, &graph, batch_size);
 
     let samples = 1000;
 

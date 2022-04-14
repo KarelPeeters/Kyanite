@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 from typing import Optional
@@ -10,7 +9,7 @@ from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
+from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
 from lib.plotter import LogPlotter, run_with_plotter
 from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
@@ -32,11 +31,16 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 
 
 def main(plotter: LogPlotter):
-    output_folder = "../../data/supervised/moves_left/added"
+    output_folder = "../../data/supervised/derp"
 
-    train_pattern = "../../data/loop/chess/simple_unbalanced/selfplay/*.json"
-    test_pattern = "../../data/loop/chess/simple_unbalanced/selfplay/*.json"
-    limit_file_count = 100
+    paths = [
+        fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
+        for i in range(2600, 3600)
+    ]
+
+    train_paths = paths
+    test_paths = paths
+    limit_file_count: Optional[int] = None
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
@@ -54,46 +58,29 @@ def main(plotter: LogPlotter):
         policy_weight=1.0,
         moves_left_delta=20,
         moves_left_weight=0.0001,
-        clip_norm=20.0,
-        value_target=ScalarTarget.Final,
+        clip_norm=5.0,
+        scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
+        mask_policy=True,
     )
 
     def initial_network():
-        old_network = torch.jit.load(
-            "C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/simple_unbalanced/training/gen_462/network.pt")
         channels = 32
-        new_network = PostActNetwork(
-            game, 8, channels,
-            PostActScalarHead(game, channels, 4, 32),
-            PostActAttentionPolicyHead(game, channels, channels),
+        return PredictionHeads(
+            common=ResTower(8, game.full_input_channels, channels),
+            scalar_head=ScalarHead(game.board_size, channels, 4, 32),
+            policy_head=AttentionPolicyHead(game, channels, channels),
         )
 
-        old_params = list(old_network.named_parameters())
-        new_params = list(new_network.named_parameters())
-        assert len(old_params) == len(new_params)
-
-        for (new_name, new_param), (old_name, old_param) in zip(new_params, old_params):
-            old_name = old_name.replace("value_head", "scalar_head")
-            assert new_name == old_name, f"Name mismatch: {new_name} vs {old_name}"
-
-            if new_name == old_name:
-                if new_param.shape == old_param.shape:
-                    new_param.data.copy_(old_param)
-                else:
-                    print(f"Skipping shape mismatch {new_name}: new {new_param.shape} old {old_param.shape}")
-
-        return new_network
-
-    train_files = sorted((DataFile.open(game, p) for p in glob.glob(train_pattern)), key=lambda f: f.info.timestamp)
-    test_files = sorted((DataFile.open(game, p) for p in glob.glob(test_pattern)), key=lambda f: f.info.timestamp)
+    train_files = sorted((DataFile.open(game, p) for p in train_paths), key=lambda f: f.info.timestamp)
+    test_files = sorted((DataFile.open(game, p) for p in test_paths), key=lambda f: f.info.timestamp)
 
     if limit_file_count is not None:
         train_files = train_files[-min(limit_file_count, len(train_files)):]
         test_files = test_files[-min(limit_file_count, len(train_files)):]
 
-    train_sampler = FileListSampler(game, train_files, batch_size)
-    test_sampler = FileListSampler(game, test_files, batch_size)
+    train_sampler = FileListSampler(game, train_files, batch_size, None, threads=1)
+    test_sampler = FileListSampler(game, test_files, batch_size, None, threads=1)
 
     print(f"Train file count: {len(train_files)}")
     print(f"Train file game count: {sum(f.info.game_count for f in train_files)}")

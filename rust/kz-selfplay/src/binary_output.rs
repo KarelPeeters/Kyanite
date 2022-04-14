@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use board_game::board::Board;
 use board_game::wdl::{POV, WDL};
+use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
-use safe_transmute::transmute_to_bytes;
 use serde::Serialize;
 
 use kz_core::mapping::bit_buffer::BitBuffer;
@@ -35,6 +35,7 @@ struct MetaData<'a> {
     scalar_names: &'static [&'static str],
 }
 
+//TODO include terminal position in output?
 #[derive(Debug)]
 pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     game: String,
@@ -161,7 +162,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             let final_values = ZeroValues::from_outcome(outcome.pov(player), moves_left);
 
             // board
-            self.mapper.encode(&mut board_bools, &mut board_scalars, board);
+            self.mapper.encode_input(&mut board_bools, &mut board_scalars, board);
 
             assert_eq!(self.mapper.input_bool_len(), board_bools.len());
             assert_eq!(self.mapper.input_scalar_count(), board_scalars.len());
@@ -211,14 +212,14 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             self.off_write.write_all(&self.next_offset.to_le_bytes())?;
 
             // actually write stuff to the bin file
-            let data_to_write = [
-                transmute_to_bytes(&scalars),
-                transmute_to_bytes(board_bools.storage()),
-                transmute_to_bytes(&board_scalars),
-                transmute_to_bytes(&policy_indices),
-                transmute_to_bytes(if !forced_pass { &zero_evaluation.policy } else { &[] }),
+            let data_to_write: &[&[u8]] = &[
+                cast_slice(&scalars),
+                cast_slice(board_bools.storage()),
+                cast_slice(&board_scalars),
+                cast_slice(&policy_indices),
+                cast_slice(if !forced_pass { &zero_evaluation.policy } else { &[] }),
             ];
-            for data in data_to_write {
+            for &data in data_to_write {
                 self.bin_write.write_all(data)?;
                 self.next_offset += data.len() as u64;
             }

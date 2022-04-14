@@ -1,7 +1,7 @@
 import itertools
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Iterator, List
@@ -15,30 +15,40 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
 from lib.plotter import LogPlotter, run_with_plotter
-from lib.save_onnx import save_onnx
+from lib.save_onnx import save_onnx, save_muzero_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings
-from lib.util import DEVICE, print_param_count
-from main.write_test_networks import CHECK_BATCH_SIZE
+from lib.util import DEVICE, print_param_count, clean_folder
+
+CHECK_BATCH_SIZE = 2
+SAVE_BATCH_SIZE = 2
 
 
 @dataclass
 class FixedSelfplaySettings:
     game: Game
-    threads_per_device: int
-    batch_size: int
+    muzero: bool
+
     games_per_gen: int
-    reorder_games: bool
+
+    cpu_threads_per_device: int
+    gpu_threads_per_device: int
+    cpu_batch_size: int
+    gpu_batch_size: int
+    gpu_batch_size_root: int
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
-            output_folder=os.path.abspath(output_folder),
-            first_gen=first_gen,
             game=self.game.name,
-            threads_per_device=self.threads_per_device,
-            batch_size=self.batch_size,
+            muzero=self.muzero,
+            first_gen=first_gen,
+            output_folder=os.path.abspath(output_folder),
             games_per_gen=self.games_per_gen,
-            reorder_games=self.reorder_games,
+            cpu_threads_per_device=self.cpu_threads_per_device,
+            gpu_threads_per_device=self.gpu_threads_per_device,
+            cpu_batch_size=self.cpu_batch_size,
+            gpu_batch_size=self.gpu_batch_size,
+            gpu_batch_size_root=self.gpu_batch_size_root,
         )
 
 
@@ -69,26 +79,23 @@ class LoopSettings:
     selfplay_settings: Optional[SelfplaySettings]
     train_settings: TrainSettings
 
-    # TODO compact these properties somehow
-    @property
-    def dummy_network_path_onnx(self):
-        return os.path.join(self.root_path, "dummy_network.onnx")
+    muzero_steps: Optional[int]
 
-    @property
-    def initial_network_path_onnx(self):
-        return os.path.join(self.root_path, "initial_network.onnx")
+    muzero: bool = field(init=False)
 
-    @property
-    def log_path(self):
-        return os.path.join(self.root_path, "log.npz")
+    log_path: str = field(init=False)
+    selfplay_path: str = field(init=False)
+    training_path: str = field(init=False)
+    tmp_path: str = field(init=False)
 
-    @property
-    def selfplay_path(self):
-        return os.path.join(self.root_path, "selfplay")
+    def __post_init__(self):
+        self.muzero = self.muzero_steps is not None
+        assert self.muzero == self.fixed_settings.muzero, f"Muzero state mismatch, got steps {self.muzero_steps} but fixed settings {self.fixed_settings.muzero}"
 
-    @property
-    def training_path(self):
-        return os.path.join(self.root_path, "training")
+        self.log_path = os.path.join(self.root_path, "log.npz")
+        self.selfplay_path = os.path.join(self.root_path, "selfplay")
+        self.training_path = os.path.join(self.root_path, "training")
+        self.tmp_path = os.path.join(self.root_path, "tmp")
 
     def calc_batch_count_per_gen(self) -> int:
         game = self.fixed_settings.game
@@ -96,7 +103,9 @@ class LoopSettings:
 
         # this does not depend on gens_in_buffer since that divides itself away
         positions_per_gen = game.estimate_moves_per_game * self.fixed_settings.games_per_gen
-        batch_count = self.samples_per_position * positions_per_gen / self.train_batch_size
+
+        samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
+        batch_count = self.samples_per_position * positions_per_gen / samples_per_batch
 
         batch_count_int = round(batch_count)
         if batch_count_int == 0:
@@ -117,6 +126,7 @@ class LoopSettings:
         print(f"    {games_in_buffer:.4} games")
         print(f"    {positions_in_buffer} positions")
         print(f"  Sampling rate:")
+        print(f"    {samples_per_batch} /batch")
         print(f"    {samples_per_gen:.4} /gen")
         print(f"    {samples_per_game:.4} /game")
         print(f"    {self.samples_per_position:.4} /position")
@@ -131,9 +141,9 @@ class LoopSettings:
 
         os.makedirs(self.selfplay_path, exist_ok=True)
         os.makedirs(self.training_path, exist_ok=True)
+        clean_folder(self.tmp_path)
 
-        start_gen, buffer, logger, network, network_path_onnx = self.load_start_state()
-        print_param_count(network)
+        start_gen, buffer, logger, network = self.load_start_state()
 
         def target(plotter: Optional[LogPlotter]):
             if plotter is not None:
@@ -141,7 +151,7 @@ class LoopSettings:
                 # plotter.set_title(f"loop: {self.root_path}")
                 plotter.set_can_pause(False)
 
-            self.run_loop_inner(start_gen, buffer, logger, plotter, network, network_path_onnx)
+            self.run_loop_inner(start_gen, buffer, logger, plotter, network)
 
         if self.gui:
             run_with_plotter(target)
@@ -152,8 +162,11 @@ class LoopSettings:
             self,
             start_gen: 'Generation', buffer: 'LoopBuffer',
             logger: Logger, plotter: Optional[LogPlotter],
-            network: nn.Module, network_path_onnx: str
+            network: nn.Module,
     ):
+        print("Main network parameters:")
+        print_param_count(network)
+
         game = self.fixed_settings.game
         optimizer = self.optimizer(network.parameters())
         batch_count_per_gen = self.calc_batch_count_per_gen()
@@ -163,14 +176,22 @@ class LoopSettings:
             first_gen=start_gen.gi,
         )
 
+        if buffer.position_count < self.min_buffer_size:
+            if self.dummy_network is None:
+                initial_onnx_path = self.save_tmp_onnx_network(network, "network_initial")
+            else:
+                dummy_network = torch.jit.script(self.dummy_network())
+                print("Dummy network parameters:")
+                print_param_count(dummy_network)
+
+                initial_onnx_path = self.save_tmp_onnx_network(dummy_network, "network_dummy")
+        else:
+            initial_onnx_path = self.save_tmp_onnx_network(network, f"network_{start_gen.gi}")
+
         client = SelfplayClient()
         client.send_startup_settings(startup_settings)
         client.send_new_settings(self.selfplay_settings)
-
-        if self.dummy_network is not None and network_path_onnx == self.initial_network_path_onnx:
-            client.send_new_network(self.dummy_network_path_onnx)
-        else:
-            client.send_new_network(network_path_onnx)
+        client.send_new_network(initial_onnx_path)
 
         for gi in itertools.count(start_gen.gi):
             if plotter is not None:
@@ -196,13 +217,12 @@ class LoopSettings:
             buffer.append(logger, DataFile.open(game, gen.games_path))
 
             if buffer.position_count < self.min_buffer_size:
-                print(
-                    f"Not training new network yet, only got {buffer.position_count}/{self.min_buffer_size} positions")
+                print(f"Not training new network yet, only {buffer.position_count}/{self.min_buffer_size} positions")
             else:
                 client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
-                train_sampler = buffer.sampler_full(self.train_batch_size)
+                train_sampler = buffer.sampler_full(self.train_batch_size, self.muzero_steps)
                 print(f"Training network on buffer with size {len(train_sampler)}")
                 train_start = time.perf_counter()
 
@@ -210,19 +230,21 @@ class LoopSettings:
                     if bi != 0:
                         logger.start_batch()
 
-                    self.train_settings.train_step(train_sampler, network, optimizer, logger)
+                    train_batch = train_sampler.next_batch_either()
+                    self.train_settings.train_step(train_batch, network, optimizer, logger)
                 train_sampler.close()
 
                 logger.log("time", "train", time.perf_counter() - train_start)
 
                 torch.jit.save(network, gen.network_path_pt)
-                save_onnx(game, gen.network_path_onnx, network, CHECK_BATCH_SIZE)
-                client.send_new_network(gen.network_path_onnx)
+
+                curr_onnx_path = self.save_tmp_onnx_network(network, f"network_{gen.gi}")
+                client.send_new_network(curr_onnx_path)
 
             logger.save(self.log_path)
             Path(gen.finished_path).touch()
 
-    def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module, str]:
+    def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module]:
         game = self.fixed_settings.game
         buffer = LoopBuffer(game, self.max_buffer_size)
 
@@ -234,56 +256,48 @@ class LoopSettings:
             gen = Generation.from_gi(self, gi)
             prev = gen.prev
 
-            if not os.path.exists(gen.finished_path):
+            if os.path.exists(gen.finished_path):
+                print(f"Found finished generation {gi}")
+                try:
+                    buffer.append(None, DataFile.open(game, gen.games_path))
+                except FileNotFoundError:
+                    print(f"Could not find games file for gen {gi}, skipping")
+            else:
                 if prev is None:
                     print("Starting new run")
                     logger = Logger()
-
-                    # test if the network actually even works
-                    network_raw = self.initial_network()
-                    network_raw.to(DEVICE)
-                    network_raw(torch.randn(CHECK_BATCH_SIZE, *game.full_input_shape, device=DEVICE))
-                    torch.cuda.synchronize()
-
-                    # convert and save the network
-                    network = torch.jit.script(network_raw)
-                    network.to(DEVICE)
-
-                    prev_network_path_onnx = self.initial_network_path_onnx
-                    save_onnx(game, prev_network_path_onnx, network, CHECK_BATCH_SIZE)
-
-                    # save the dummy network too if there is one
-                    if self.dummy_network is not None:
-                        dummy_network = self.dummy_network()
-                        save_onnx(game, self.dummy_network_path_onnx, dummy_network, CHECK_BATCH_SIZE)
+                    network = torch.jit.script(self.initial_network())
                 else:
                     print(f"Continuing run, first gen {gi}")
                     logger = Logger.load(self.log_path)
-
                     network = torch.jit.load(prev.network_path_pt)
-                    network.to(DEVICE)
+                network.to(DEVICE)
+                return gen, buffer, logger, network
 
-                    prev_network_path_onnx = prev.network_path_onnx
-
-                return gen, buffer, logger, network, prev_network_path_onnx
-
-            print(f"Found finished generation {gi}")
-            try:
-                buffer.append(None, DataFile.open(game, gen.games_path))
-            except FileNotFoundError:
-                print(f"Could not find games file for gen {gi}, skipping")
-
-    def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network: nn.Module):
+    def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network):
         setups = [
-            ("eval-test-buffer", buffer.sampler_full(self.train_batch_size)),
-            ("eval-test-last", buffer.sampler_last(self.train_batch_size)),
+            ("test-buffer", buffer.sampler_full(self.train_batch_size, self.muzero_steps)),
+            ("test-last", buffer.sampler_last(self.train_batch_size, self.muzero_steps)),
         ]
 
         network.eval()
         for prefix, sampler in setups:
-            batch = sampler.next_batch()
-            self.train_settings.evaluate_batch(network, prefix, logger, batch, self.train_settings.value_target)
+            batch = sampler.next_batch_either()
+            self.train_settings.evaluate_either_batch(batch, network, logger, prefix)
             sampler.close()
+
+    def save_tmp_onnx_network(self, network, name: str) -> str:
+        curr_folder = os.path.join(self.tmp_path, "curr_network")
+        clean_folder(curr_folder)
+
+        if self.muzero:
+            path = os.path.join(curr_folder, f"{name}_")
+            save_muzero_onnx(self.fixed_settings.game, path, network, None)
+        else:
+            path = os.path.join(curr_folder, f"{name}.onnx")
+            save_onnx(self.fixed_settings.game, path, network, None)
+
+        return path
 
 
 @dataclass
@@ -293,7 +307,6 @@ class Generation:
     games_path: str
     train_path: str
     network_path_pt: str
-    network_path_onnx: str
     finished_path: str
 
     @classmethod
@@ -307,7 +320,6 @@ class Generation:
             games_path=games_path,
             train_path=train_path,
             network_path_pt=os.path.join(train_path, "network.pt"),
-            network_path_onnx=os.path.join(train_path, "network.onnx"),
             finished_path=os.path.join(train_path, "finished.txt"),
         )
 
@@ -361,8 +373,8 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", info.root_wdl[1])
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
-    def sampler_full(self, batch_size: int):
-        return FileListSampler(self.game, self.files, batch_size)
+    def sampler_full(self, batch_size: int, unroll_steps: Optional[int]):
+        return FileListSampler(self.game, self.files, batch_size, unroll_steps=unroll_steps, threads=1)
 
-    def sampler_last(self, batch_size: int):
-        return FileListSampler(self.game, [self.files[-1]], batch_size)
+    def sampler_last(self, batch_size: int, unroll_steps: Optional[int]):
+        return FileListSampler(self.game, [self.files[-1]], batch_size, unroll_steps=unroll_steps, threads=1)

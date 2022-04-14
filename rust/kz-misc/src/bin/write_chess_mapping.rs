@@ -27,21 +27,22 @@ impl Display for FullMove {
     }
 }
 
-fn main() {
-    std::fs::create_dir_all("ignored/chess_mapping").unwrap();
+fn main() -> std::io::Result<()> {
+    std::fs::create_dir_all("ignored/chess_mapping")?;
 
     let moves = generate_all_flat_moves_pov();
 
-    let output = &mut File::create("ignored/chess_mapping/list.csv").unwrap();
-    writeln!(output, "str, flat_i, conv_i, att_from, att_to, att_i").unwrap();
+    let output = &mut File::create("ignored/chess_mapping/list.csv")?;
+    writeln!(output, "str, flat_i, conv_i, att_from, att_to, att_i")?;
 
     let mut flat_to_conv = vec![];
     let mut flat_to_att = vec![];
+    let mut flat_to_move_input = vec![];
 
     let dummy_board = ChessBoard::default();
 
     for (flat_i, &mv_pov) in moves.iter().enumerate() {
-        // moves are already POV, and that's the only reason ChessStdMapper needs the move anyway, so this is fine
+        // moves are already POV, and that's the only reason ChessStdMapper needs the board anyway, so this is fine
         // also queen promotion doesn't matter, so just keep none for that
         let conv_i = ChessLegacyConvPolicyMapper.move_to_index(&dummy_board, mv_pov).unwrap();
 
@@ -67,33 +68,46 @@ fn main() {
             output,
             "{}, {}, {}, {}, {}, {},",
             mv_pov, flat_i, conv_i, att_from, att_to, att_i
-        )
-        .unwrap();
+        )?;
 
         flat_to_conv.push(conv_i);
         flat_to_att.push(att_i);
+
+        let prom = mv_pov.get_promotion();
+
+        flat_to_move_input.push(vec![
+            mv_pov.get_source().to_index(),
+            mv_pov.get_dest().to_index(),
+            0,
+            (prom == Some(Piece::Queen)) as usize,
+            (prom == Some(Piece::Rook)) as usize,
+            (prom == Some(Piece::Bishop)) as usize,
+            (prom == Some(Piece::Knight)) as usize,
+            (prom == None) as usize,
+        ]);
     }
 
-    write_lines(
-        File::create("ignored/chess_mapping/flat_to_conv.txt").unwrap(),
-        &flat_to_conv,
-    )
-    .unwrap();
-
-    write_lines(
-        File::create("ignored/chess_mapping/flat_to_att.txt").unwrap(),
-        &flat_to_att,
-    )
-    .unwrap();
-
-    println!("Found {} different full moves", moves.len());
-    println!("LC0 move count: 1858");
-}
-
-fn write_lines(mut writer: impl Write, values: &[usize]) -> std::io::Result<()> {
-    for &v in values {
+    let mut writer = File::create("ignored/chess_mapping/flat_to_conv.txt")?;
+    for &v in &flat_to_conv {
         writeln!(writer, "{}", v)?;
     }
+
+    let mut writer = File::create("ignored/chess_mapping/flat_to_att.txt")?;
+    for &v in &flat_to_att {
+        writeln!(writer, "{}", v)?;
+    }
+
+    let mut writer = File::create("ignored/chess_mapping/flat_to_move_input.txt")?;
+    for row in &flat_to_move_input {
+        for &v in row {
+            write!(writer, "{},", v)?;
+        }
+        writeln!(writer)?;
+    }
+
+    println!("Found {} different full moves", moves.len());
+    println!("Without knight promotions: {}", moves.len() - (8 + 7 + 7));
+    println!("LC0 move count: 1858");
 
     Ok(())
 }

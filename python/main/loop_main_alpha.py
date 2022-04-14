@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import PostActNetwork, PostActScalarHead, PostActAttentionPolicyHead
+from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
@@ -16,10 +16,14 @@ def main():
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
-        threads_per_device=2,
-        batch_size=256,
+        muzero=False,
         games_per_gen=200,
-        reorder_games=False,
+
+        cpu_threads_per_device=2,
+        gpu_threads_per_device=1,
+        cpu_batch_size=256,
+        gpu_batch_size=512,
+        gpu_batch_size_root=2,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -34,8 +38,9 @@ def main():
         full_iterations=200,
         part_iterations=20,
         weights=UctWeights.default(),
-        random_symmetries=True,
+        random_symmetries=False,
         cache_size=200,
+        top_moves=0,
     )
 
     train_settings = TrainSettings(
@@ -46,31 +51,30 @@ def main():
         moves_left_delta=20,
         moves_left_weight=0.0001,
         clip_norm=20.0,
-        value_target=ScalarTarget.Final,
+        scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
+        mask_policy=True,
     )
 
-    def dummy_network():
-        return PostActNetwork(
-            game, 1, 8,
-            PostActScalarHead(game, 8, 2, 16),
-            PostActAttentionPolicyHead(game, 8, 4),
+    def build_network(depth: int, channels: int):
+        return PredictionHeads(
+            common=ResTower(depth, game.full_input_channels, channels),
+            scalar_head=ScalarHead(game.board_size, channels, 8, 128),
+            policy_head=AttentionPolicyHead(game, channels, channels),
         )
 
+    def dummy_network():
+        return build_network(1, 8)
+
     def initial_network():
-        channels = 64
-        return PostActNetwork(
-            game, 8, channels,
-            PostActScalarHead(game, channels, 4, 64),
-            PostActAttentionPolicyHead(game, channels, channels),
-        )
+        return build_network(16, 256)
 
     initial_files_pattern = ""
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop/{game.name}/real-64-re/",
+        root_path=f"data/loop/{game.name}/profile/",
 
         dummy_network=dummy_network,
         initial_network=initial_network,
@@ -89,9 +93,11 @@ def main():
         fixed_settings=fixed_settings,
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
+
+        muzero_steps=None
     )
 
-    settings.calc_batch_count_per_gen()
+    # settings.calc_batch_count_per_gen()
     settings.run_loop()
 
 

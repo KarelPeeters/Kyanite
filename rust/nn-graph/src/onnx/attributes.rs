@@ -16,17 +16,26 @@ impl<'a> Attributes<'a> {
         Attributes { inner }
     }
 
+    pub fn maybe_take(&mut self, key: &str, ty: AttributeType) -> Option<&'a AttributeProto> {
+        self.inner.remove(key).map(|attribute| {
+            assert_eq!(ty, attribute.r#type(), "Expected type {:?}", ty);
+            attribute
+        })
+    }
+
     pub fn take(&mut self, key: &str, ty: AttributeType) -> &'a AttributeProto {
-        let attribute = self.inner.remove(key).unwrap_or_else(|| {
+        self.maybe_take(key, ty).unwrap_or_else(|| {
             let available = self.inner.keys().collect_vec();
             panic!("Missing attribute {}, available: {:?}", key, available)
-        });
-        assert_eq!(ty, attribute.r#type(), "Expected type {:?}", ty);
-        attribute
+        })
     }
 
     pub fn take_int(&mut self, key: &str) -> i64 {
         self.take(key, AttributeType::Int).i
+    }
+
+    pub fn maybe_take_ints(&mut self, key: &str) -> Option<&'a [i64]> {
+        self.maybe_take(key, AttributeType::Ints).map(|a| &*a.ints)
     }
 
     pub fn take_ints(&mut self, key: &str) -> &'a [i64] {

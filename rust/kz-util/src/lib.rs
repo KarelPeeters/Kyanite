@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::Zip;
 use std::time::Instant;
 
-use itertools::zip;
+use itertools::{zip, Itertools};
 use rand::{Error, Rng, RngCore};
 
 /// An Rng implementation that panics as soon as it is called.
@@ -154,25 +154,97 @@ impl PrintThroughput {
         let now = Instant::now();
         let delta = now - self.last_print;
 
-        if delta.as_secs() >= 1 && self.update_count >= 10 {
-            let throughput = self.delta_count as f32 / delta.as_secs_f32();
-            println!(
-                "{:.3} {}/s => {:.3} {}",
-                throughput, self.name, self.total_count, self.name
-            );
-
-            self.last_print = now;
-            self.delta_count = 0;
-            self.update_count = 0;
-
-            true
-        } else {
-            false
+        let print = delta.as_secs() >= 1 && self.update_count >= 10;
+        if print {
+            self.print_tp(now);
         }
+        print
     }
 
     pub fn update_total(&mut self, count: u64) -> bool {
         assert!(count >= self.total_count, "Count must be increasing");
         self.update_delta(count - self.total_count)
+    }
+
+    fn print_tp(&mut self, now: Instant) {
+        let delta = now - self.last_print;
+        let throughput = self.delta_count as f32 / delta.as_secs_f32();
+        println!(
+            "{:.3} {}/s => {:.3} {}",
+            throughput, self.name, self.total_count, self.name
+        );
+
+        self.last_print = now;
+        self.delta_count = 0;
+        self.update_count = 0;
+    }
+}
+
+impl Drop for PrintThroughput {
+    fn drop(&mut self) {
+        self.print_tp(Instant::now());
+    }
+}
+
+pub trait Pad {
+    type T;
+    fn pad(&mut self, result_size: usize, value: Self::T);
+}
+
+impl<T: Clone> Pad for Vec<T> {
+    type T = T;
+    fn pad(&mut self, result_size: usize, value: T) {
+        assert!(
+            result_size >= self.len(),
+            "Cannot pad to smaller size, curr {} target {}",
+            self.len(),
+            result_size
+        );
+        self.resize(result_size, value)
+    }
+}
+
+/// Get the indices of the highest `k` values. The indices themselves are sorted from high to low as well.
+/// `NaN` values are allowed but considered higher then any others, to ensure they don't go unnoticed.
+pub fn top_k_indices_sorted(values: &[f32], k: usize) -> Vec<usize> {
+    fn compare(a: f32, b: f32) -> Ordering {
+        let ord = a.partial_cmp(&b);
+        let eq = a == b || (a.is_nan() && b.is_nan());
+        let first_nan = a.is_nan();
+
+        match (ord, eq, first_nan) {
+            (Some(ord), _, _) => ord,
+            (None, true, _) => Ordering::Equal,
+            (None, false, true) => Ordering::Greater,
+            (None, false, false) => Ordering::Less,
+        }
+    }
+
+    let compare_index = |&i: &usize, &j: &usize| compare(values[i], values[j]).reverse();
+
+    let n = values.len();
+    let mut result = (0..n).collect_vec();
+    if k < n {
+        result.select_nth_unstable_by(k, compare_index);
+        result.truncate(k);
+    }
+    result.sort_by(compare_index);
+
+    result
+}
+
+#[cfg(test)]
+mod test {
+    use crate::top_k_indices_sorted;
+
+    #[test]
+    fn top_k() {
+        assert_eq!(top_k_indices_sorted(&[0.0, 2.0, 1.0], 2), vec![1, 2]);
+        assert_eq!(top_k_indices_sorted(&[1.0, 2.0, 3.0], 20), vec![2, 1, 0]);
+        assert_eq!(top_k_indices_sorted(&[1.0, 2.0, 3.0], 0), vec![]);
+        assert_eq!(top_k_indices_sorted(&[f32::NAN, 2.0, 1.0], 2), vec![0, 1]);
+
+        let result = top_k_indices_sorted(&[f32::NAN, 2.0, f32::NAN], 2);
+        assert!(result == vec![0, 2] || result == vec![2, 0]);
     }
 }

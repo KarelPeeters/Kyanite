@@ -1,3 +1,4 @@
+pub mod muzero;
 pub mod zero;
 
 pub mod mapping;

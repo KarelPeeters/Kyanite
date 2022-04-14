@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::env;
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -5,20 +7,46 @@ use std::path::PathBuf;
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
-//TODO rewrite this thing again to find cuda automatically (env Var & default location),
-// and verify that cudnn is installed
+#[cfg(target_family = "windows")]
+fn get_var_path(name: &str) -> PathBuf {
+    use std::env::VarError;
+    let path = std::env::var(name).unwrap_or_else(|e| match e {
+        VarError::NotPresent => panic!("Environment variable {} is not defined", name),
+        VarError::NotUnicode(_) => panic!("Environment variable {} contains non-unicode path", name),
+    });
+
+    println!("Using {}={:?}", name, path);
+
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        panic!("Path {}={:?} does not exist", name, path);
+    }
+
+    path
+}
 
 #[cfg(target_family = "windows")]
 fn link_cuda(builder: Builder) -> Builder {
-    println!("cargo:rustc-link-search=native=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.3\\lib\\x64\\");
+    let cuda_path = get_var_path("CUDA_PATH");
+    let cudnn_path = get_var_path("CUDNN_PATH");
+
+    for path in [&cuda_path, &cudnn_path] {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            path.join("lib/x64").to_str().unwrap()
+        );
+    }
+
     println!("cargo:rustc-link-lib=dylib=cuda");
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
     println!("cargo:rustc-link-lib=dylib=cublas");
+    println!("cargo:rustc-link-lib=dylib=nvrtc");
 
     builder
-        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include")
-        .clang_arg("-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.3/include/nvtx3")
+        .clang_arg(format!("-I{}", cuda_path.join("include").to_str().unwrap()))
+        .clang_arg(format!("-I{}", cuda_path.join("include/nvtx3").to_str().unwrap()))
+        .clang_arg(format!("-I{}", cudnn_path.join("include").to_str().unwrap()))
 }
 
 #[cfg(target_family = "unix")]
@@ -28,6 +56,7 @@ fn link_cuda(builder: Builder) -> Builder {
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
     println!("cargo:rustc-link-lib=dylib=cublas");
+    println!("cargo:rustc-link-lib=dylib=nvrtc");
 
     builder
         .clang_arg("-I/usr/local/cuda/include/")

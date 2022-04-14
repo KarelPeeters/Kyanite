@@ -1,9 +1,9 @@
-use decorum::cmp::FloatEq;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
+use decorum::cmp::FloatEq;
 use itertools::{zip_eq, Itertools};
 use rand::{thread_rng, Rng};
 
@@ -34,11 +34,8 @@ pub struct ValueInfo {
 #[derive(Clone)]
 pub struct ConstantData(Vec<f32>);
 
-/// The core set of operations.
-/// Many other operations can be implemented as combinations of these operators, a few examples:
-/// * `ReLU` -> `Clip`
-/// * `BatchNorm` -> `Bias,Conv,Bias,Conv` (can be fused into adjacent conv too)
-/// * `Gemm` -> `Conv,Bias`
+/// The core set of graph operations.
+/// Some attempt was made to keep operations orthogonal but flexible, so they can be composed easily.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Operation {
     /// A runtime-variable input.
@@ -46,17 +43,20 @@ pub enum Operation {
     /// A constant build into the network.
     Constant { data: ConstantData },
 
+    //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
     View { input: Value },
     /// Change the order of axis in the shape.
     Permute { input: Value, permutation: Vec<usize> },
-    /// Slice the last three axis of a value, each with range `start[i]..end[i]`
+    /// Slice along the given `axis` with range `start..end`.
     Slice {
         input: Value,
         axis: usize,
-        start: usize,
-        end: usize,
+        range: SliceRange,
     },
+    /// Flip the given axis.
+    Flip { input: Value, axis: usize },
+
     /// Gather values from `input` at the indices in `index` on the given axis.
     Gather { input: Value, axis: usize, indices: Value },
 
@@ -74,6 +74,13 @@ pub enum Operation {
 
     /// Elementwise operation between two operands, with broadcasting on the right.
     Element { left: Value, right: Value, op: ElementOp },
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct SliceRange {
+    pub start: usize,
+    pub end: usize,
+    pub step: usize,
 }
 
 /// An elementwise operation.
@@ -97,9 +104,9 @@ impl Operation {
             &Operation::Slice {
                 input,
                 axis: _,
-                start: _,
-                end: _,
+                range: _,
             } => vec![input],
+            &Operation::Flip { input, axis: _ } => vec![input],
             &Operation::Gather {
                 input,
                 axis: _,
@@ -125,17 +132,12 @@ impl Operation {
                 input: f(input),
                 permutation: permutation.clone(),
             },
-            &Operation::Slice {
-                input,
-                axis,
-                start,
-                end,
-            } => Operation::Slice {
+            &Operation::Slice { input, axis, range } => Operation::Slice {
                 input: f(input),
                 axis,
-                start,
-                end,
+                range,
             },
+            &Operation::Flip { input, axis } => Operation::Flip { input: f(input), axis },
             &Operation::Gather { input, axis, indices } => Operation::Gather {
                 input: f(input),
                 axis,
@@ -235,7 +237,7 @@ impl Graph {
         let right_shape = &self[right].shape;
 
         if right_shape.rank() == 0 {
-            let new_right_shape = left_shape.all_ones();
+            let new_right_shape = Shape::ones(left_shape.rank());
             self.view(right, new_right_shape)
         } else {
             assert_eq!(
@@ -270,8 +272,16 @@ impl Graph {
         &self.inputs
     }
 
+    pub fn input_shapes(&self) -> Vec<Shape> {
+        self.inputs().iter().map(|&v| self[v].shape.clone()).collect()
+    }
+
     pub fn outputs(&self) -> &[Value] {
         &self.outputs
+    }
+
+    pub fn output_shapes(&self) -> Vec<Shape> {
+        self.outputs().iter().map(|&v| self[v].shape.clone()).collect()
     }
 
     pub fn outputs_mut(&mut self) -> &mut Vec<Value> {
@@ -332,8 +342,9 @@ impl Graph {
         assert_eq!(
             expected_len,
             data.len() as usize,
-            "Shape {:?} and data size {} mismatch",
+            "{:?} has size {}, but got data with size {}",
             shape,
+            expected_len,
             data.len()
         );
 
@@ -417,51 +428,36 @@ impl Graph {
         self.push(result_shape, Operation::Permute { input, permutation })
     }
 
-    /// View part of an existing value.
+    /// Slice a value along an axis. See [slice_range] for a more general version.
     #[must_use]
-    pub fn slice(&mut self, input: Value, axis: usize, start: usize, end: usize) -> Value {
-        let old_shape = &self[input].shape;
+    pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
+        range.assert_valid();
 
+        let old_shape = &self[input].shape;
         assert!(
             axis < old_shape.rank(),
-            "Input rank {} too low for axis {}",
-            old_shape.rank(),
-            axis
+            "Slice axis {} out of bounds for {:?}",
+            axis,
+            old_shape,
         );
 
-        let mut new_shape = old_shape.clone();
-        let dim = new_shape[axis].unwrap_fixed_mut("Slice axis size");
+        let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
+        let new_size = (range.end - range.start) / range.step;
 
-        if start == 0 && end == *dim {
+        // skip trivial slice
+        if range == SliceRange::new(0, old_size, 1) {
             return input;
         }
 
-        assert!(
-            start < *dim && end <= *dim,
-            "Slice range {}..{} out of bounds for axis {} with size {}",
-            start,
-            end,
-            axis,
-            *dim,
-        );
-
-        *dim = end - start;
-        self.push(
-            new_shape,
-            Operation::Slice {
-                input,
-                axis,
-                start,
-                end,
-            },
-        )
+        let new_shape = old_shape.replace(axis, Size::fixed(new_size));
+        self.push(new_shape, Operation::Slice { input, axis, range })
     }
 
     /// Index along a given axis.
     /// Similar to slice with a 1-sized interval except that the the resulting value doesn't have the extra axis.
     #[must_use]
     pub fn index(&mut self, input: Value, axis: usize, index: usize) -> Value {
-        let sliced = self.slice(input, axis, index, index + 1);
+        let sliced = self.slice(input, axis, SliceRange::single(index));
 
         let mut new_shape = self[input].shape.clone();
         new_shape.dims.remove(axis);
@@ -469,7 +465,23 @@ impl Graph {
         self.view(sliced, new_shape)
     }
 
-    /// Index along the given axis with indices given by `index`.
+    /// Flip the given `axis`.
+    pub fn flip(&mut self, input: Value, axis: usize) -> Value {
+        let shape = self[input].shape.clone();
+        assert!(axis <= shape.rank(), "Axis {} out of bounds for {:?}", axis, shape);
+
+        self.push(shape, Operation::Flip { input, axis })
+    }
+
+    /// Repeat `input` along a given `axis`, `count` times.
+    pub fn repeat(&mut self, input: Value, axis: usize, count: usize) -> Value {
+        //TODO introduce separate (optimized) operation for this?
+        //TODO special-case length-0 axis to some kind of restride operation
+        let base_shape = self[input].shape.replace(axis, Size::ZERO);
+        self.concat(vec![input; count], axis, Some(base_shape))
+    }
+
+    /// Index along the given `axis` with indices given by `index`.
     #[must_use]
     pub fn gather(&mut self, input: Value, axis: usize, indices: Value) -> Value {
         let input_shape = &self[input].shape;
@@ -481,20 +493,25 @@ impl Graph {
         self.push(result_shape, Operation::Gather { input, axis, indices })
     }
 
-    /// Concatenate values along an axis.
+    /// Concatenate `inputs` along `axis`.
+    /// `base_shape` can be provided to allow the result shape to be inferred in case `inputs` is empty.
     #[must_use]
-    pub fn concat(&mut self, inputs: Vec<Value>, axis: usize) -> Value {
-        assert!(!inputs.is_empty(), "Must concatenate at least one value");
-
-        let base_shape = self[inputs[0]].shape.with_one_at(axis);
+    pub fn concat(&mut self, inputs: Vec<Value>, axis: usize, base_shape: Option<Shape>) -> Value {
+        let base_shape = base_shape.unwrap_or_else(|| {
+            assert!(
+                !inputs.is_empty(),
+                "Cannot infer concatenation shape without any values"
+            );
+            self[inputs[0]].shape.replace(axis, Size::ZERO)
+        });
 
         let size_along_axis = inputs
             .iter()
             .map(|&v| {
                 assert_eq!(
-                    self[v].shape.with_one_at(axis),
+                    self[v].shape.replace(axis, Size::ZERO),
                     base_shape,
-                    "All concatenated values must match base shape"
+                    "All concatenated values must match base shape on non-concatenated axes"
                 );
                 self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
             })
@@ -606,7 +623,7 @@ impl Graph {
     #[must_use]
     pub fn clamp(&mut self, input: Value, min: f32, max: f32) -> Value {
         // careful, min/max are intentionally flipped to yield MAX(MIN(x, max), min)
-        let right_shape = self[input].shape.all_ones();
+        let right_shape = Shape::ones(self[input].shape.rank());
 
         let mut curr = input;
 
@@ -729,6 +746,8 @@ impl Display for Graph {
         writeln!(f, "Graph {{")?;
 
         writeln!(f, "  check: {},", self.check)?;
+        writeln!(f, "  inputs: {:?},", inputs)?;
+        writeln!(f, "  outputs: {:?},", outputs)?;
 
         writeln!(f, "  values: [")?;
         for (i, info) in values.iter().enumerate() {
@@ -743,9 +762,6 @@ impl Display for Graph {
             )?;
         }
         writeln!(f, "  ],")?;
-
-        writeln!(f, "  inputs: {:?},", inputs)?;
-        writeln!(f, "  outputs: {:?},", outputs)?;
 
         writeln!(f, "}}")?;
 
@@ -793,5 +809,42 @@ impl Debug for Value {
         } else {
             write!(f, "Value({})", index)
         }
+    }
+}
+
+impl SliceRange {
+    pub fn new(start: usize, end: usize, step: usize) -> Self {
+        let result = Self { start, end, step };
+        result.assert_valid();
+        result
+    }
+
+    pub fn simple(start: usize, end: usize) -> Self {
+        Self::new(start, end, 1)
+    }
+
+    pub fn single(index: usize) -> Self {
+        Self::new(index, index + 1, 1)
+    }
+
+    pub fn empty() -> Self {
+        Self::new(0, 0, 1)
+    }
+
+    pub fn assert_valid(self) {
+        assert!(
+            self.end >= self.start,
+            "Invalid range {:?}: bounds cannot be decreasing",
+            self,
+        );
+
+        assert_ne!(self.step, 0, "Invalid range {:?}: step cannot be 0", self);
+
+        assert_eq!(
+            (self.end - self.start) % self.step,
+            0,
+            "Invalid range {:?}: bounds must differ by a multiple of step",
+            self
+        );
     }
 }

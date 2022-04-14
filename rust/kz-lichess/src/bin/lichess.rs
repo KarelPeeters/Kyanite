@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
-use kz_core::network::cudnn::CudnnNetwork;
+use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::Network;
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::UctWeights;
@@ -38,7 +38,7 @@ fn main() {
     println!("Loading graph & constructing network");
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
-    let mut network = CudnnNetwork::new(ChessStdMapper, graph, settings.batch_size, Device::new(0));
+    let mut network = CudaNetwork::new(ChessStdMapper, &graph, settings.batch_size, Device::new(0));
 
     let mut cache = Cache::default();
 

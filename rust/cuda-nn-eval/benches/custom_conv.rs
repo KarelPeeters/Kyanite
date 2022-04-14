@@ -4,7 +4,6 @@ use rand::{Fill, SeedableRng};
 
 use cuda_nn_eval::kernels;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::mem::device::DeviceMem;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::cpu::convolution;
 use nn_graph::graph::ConvDetails;
@@ -101,13 +100,13 @@ unsafe fn test_custom_conv(
 
     let device = Device::new(0);
 
-    let input_mem = DeviceMem::alloc(input.len() * 4, device);
-    let filter_mem = DeviceMem::alloc(filter.len() * 4, device);
-    let output_mem = DeviceMem::alloc(output_len * 4, device);
+    let input_mem = device.alloc(input.len() * 4);
+    let filter_mem = device.alloc(filter.len() * 4);
+    let output_mem = device.alloc(output_len * 4);
 
-    input_mem.copy_from_host(cast_slice(input.as_slice().unwrap()));
-    filter_mem.copy_from_host(cast_slice(filter.as_slice().unwrap()));
-    output_mem.fill_with_byte(0);
+    input_mem.copy_linear_from_host(cast_slice(input.as_slice().unwrap()));
+    filter_mem.copy_linear_from_host(cast_slice(filter.as_slice().unwrap()));
+    output_mem.copy_linear_from_host(cast_slice(&vec![0.0; output_len]));
 
     let launch = |stream: &mut CudaStream| {
         kernels::conv8x3Float(
@@ -137,7 +136,7 @@ unsafe fn test_custom_conv(
     stream.synchronize();
 
     let mut output_vec = vec![0f32; output_len];
-    output_mem.copy_to_host(cast_slice_mut(&mut output_vec));
+    output_mem.copy_linear_to_host(cast_slice_mut(&mut output_vec));
 
     let warmup_delta = start.time_elapsed_since(&warmup) / warmup_iter as f32;
     let bench_delta = end.time_elapsed_since(&start) / bench_iter as f32;

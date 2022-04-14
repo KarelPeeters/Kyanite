@@ -108,6 +108,11 @@ pub fn softmax_in_place(slice: &mut [f32]) {
     }
 }
 
+pub fn normalize_in_place(slice: &mut [f32]) {
+    let total = slice.iter().sum::<f32>();
+    slice.iter_mut().for_each(|f| *f /= total);
+}
+
 pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph) {
     // input
     let inputs = graph.inputs();
@@ -137,5 +142,22 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
                 len
             );
         }
+    }
+}
+
+pub fn zero_values_from_scalars(scalars: &[f32]) -> ZeroValues {
+    assert_eq!(scalars.len(), 5, "Expected 5 scalars, got len {}", scalars.len());
+
+    let value = scalars[0].tanh();
+
+    let mut wdl = [scalars[1], scalars[2], scalars[3]];
+    softmax_in_place(&mut wdl);
+
+    let moves_left = scalars[4];
+
+    ZeroValues {
+        value,
+        wdl: WDL::new(wdl[0], wdl[1], wdl[2]),
+        moves_left,
     }
 }

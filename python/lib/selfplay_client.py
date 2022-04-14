@@ -9,14 +9,18 @@ from typing import Union, Optional
 
 @dataclass
 class StartupSettings:
-    output_folder: str
-    first_gen: int
-
     game: str
-    threads_per_device: int
-    batch_size: int
+    muzero: bool
+
+    first_gen: int
+    output_folder: str
     games_per_gen: int
-    reorder_games: bool
+
+    cpu_threads_per_device: int
+    gpu_threads_per_device: int
+    cpu_batch_size: int
+    gpu_batch_size: int
+    gpu_batch_size_root: int
 
     def as_dict(self):
         return dataclasses.asdict(self)
@@ -54,6 +58,7 @@ class SelfplaySettings:
     full_search_prob: float
     full_iterations: int
     part_iterations: int
+    top_moves: int
     cache_size: int
 
     def as_dict(self):

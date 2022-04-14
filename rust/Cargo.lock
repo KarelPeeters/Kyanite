@@ -616,6 +616,7 @@ dependencies = [
  "cc",
  "criterion",
  "cuda-sys",
+ "internal-iterator",
  "itertools",
  "nn-graph",
  "rand 0.8.5",
@@ -1145,8 +1146,10 @@ name = "kz-core"
 version = "0.1.0"
 dependencies = [
  "board-game",
+ "bytemuck",
  "chess",
  "cuda-nn-eval",
+ "cuda-sys",
  "decorum",
  "internal-iterator",
  "itertools",
@@ -1156,6 +1159,7 @@ dependencies = [
  "nn-graph",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "shakmaty",
  "shakmaty-syzygy",
 ]
@@ -1212,10 +1216,13 @@ name = "kz-selfplay"
 version = "0.1.0"
 dependencies = [
  "board-game",
+ "bytemuck",
  "bzip2",
  "chess",
+ "clap 3.1.5",
  "crossbeam",
  "cuda-nn-eval",
+ "cuda-sys",
  "decorum",
  "internal-iterator",
  "itertools",
@@ -1226,7 +1233,6 @@ dependencies = [
  "pgn-reader",
  "rand 0.8.5",
  "rand_distr",
- "safe-transmute",
  "serde",
  "serde_json",
  "tar",
@@ -1236,6 +1242,7 @@ dependencies = [
 name = "kz-util"
 version = "0.1.0"
 dependencies = [
+ "decorum",
  "itertools",
  "rand 0.8.5",
 ]
@@ -2224,12 +2231,6 @@ name = "ryu"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
-
-[[package]]
-name = "safe-transmute"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
 
 [[package]]
 name = "same-file"

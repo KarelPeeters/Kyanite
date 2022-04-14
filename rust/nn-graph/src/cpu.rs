@@ -41,14 +41,23 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 let input = &map.get(&input).unwrap().tensor;
                 input.view().permuted_axes(permutation.clone()).to_shared()
             }
-            &Operation::Slice {
-                input,
-                axis,
-                start,
-                end,
-            } => {
+            &Operation::Slice { input, axis, range } => {
                 let input = &map.get(&input).unwrap().tensor;
-                let info = slice_info(input.ndim(), axis, start, end);
+
+                let info = slice_info(
+                    input.ndim(),
+                    axis,
+                    range.start as isize,
+                    Some(range.end as isize),
+                    range.step as isize,
+                );
+                input.slice(info).to_shared()
+            }
+            &Operation::Flip { input, axis } => {
+                let input = &map.get(&input).unwrap().tensor;
+
+                // slice with negative step (ndarray convention is different from python)
+                let info = slice_info(input.ndim(), axis, 0, None, -1);
                 input.slice(info).to_shared()
             }
             &Operation::Gather { input, axis, indices } => {
@@ -62,7 +71,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                         let i = f as usize;
                         assert_eq!(i as f32, f);
 
-                        input.slice(slice_info(input.ndim(), axis, i, i + 1))
+                        input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
                     })
                     .collect_vec();
 
@@ -70,7 +79,12 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
             }
             Operation::Concat { inputs, axis } => {
                 let inputs = inputs.iter().map(|x| map.get(x).unwrap().tensor.view()).collect_vec();
-                ndarray::concatenate(Axis(*axis), &inputs).unwrap().into_shared()
+
+                if inputs.is_empty() {
+                    Tensor::zeros(output_shape_dyn)
+                } else {
+                    ndarray::concatenate(Axis(*axis), &inputs).unwrap().into_shared()
+                }
             }
             &Operation::Conv {
                 input,
@@ -189,16 +203,20 @@ where
     result
 }
 
-pub fn slice_info(rank: usize, axis: usize, start: usize, end: usize) -> SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn> {
+pub fn slice_info(
+    rank: usize,
+    axis: usize,
+    start: isize,
+    end: Option<isize>,
+    step: isize,
+) -> SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn> {
+    assert_ne!(step, 0);
+
     let vec = (0..rank)
         .map(|r| {
             if r == axis {
                 // grab the relevant range
-                SliceInfoElem::Slice {
-                    start: start as isize,
-                    end: Some(end as isize),
-                    step: 1,
-                }
+                SliceInfoElem::Slice { start, end, step }
             } else {
                 // grab everything
                 SliceInfoElem::Slice {
