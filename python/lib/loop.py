@@ -184,7 +184,7 @@ class LoopSettings:
                 print("Dummy network parameters:")
                 print_param_count(dummy_network)
 
-                initial_onnx_path = self.save_tmp_onnx_network(network, "network_dummy")
+                initial_onnx_path = self.save_tmp_onnx_network(dummy_network, "network_dummy")
         else:
             initial_onnx_path = self.save_tmp_onnx_network(network, f"network_{start_gen.gi}")
 
