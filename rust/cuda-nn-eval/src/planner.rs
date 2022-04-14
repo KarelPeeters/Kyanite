@@ -150,6 +150,9 @@ impl<'a> Planner<'a> {
 
         // allocate (single) zero tensor
         let zero_allocation = device.alloc(4 * planner.max_zero_size);
+        unsafe {
+            zero_allocation.copy_linear_from_host(cast_slice(&vec![0f32; planner.max_zero_size]));
+        }
 
         // realize planned tensors and steps
         let ctx = RealizationContext {
