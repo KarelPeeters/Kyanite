@@ -42,7 +42,7 @@ def main():
         full_iterations=400,
         part_iterations=20,
         weights=UctWeights.default(),
-        random_symmetries=True,
+        random_symmetries=False,
         cache_size=200,
         top_moves=100,
     )

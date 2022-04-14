@@ -42,7 +42,6 @@ def main(plotter: LogPlotter):
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
         mask_policy=False,
-        muzero=True,
     )
 
     output_path = "../../data/muzero/derp"
