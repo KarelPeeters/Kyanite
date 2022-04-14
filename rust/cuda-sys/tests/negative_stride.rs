@@ -36,7 +36,7 @@ fn test_negative_stride() {
             &op_desc,
             1.0,
             &input_desc,
-            &input.offset(4 * 8 - 4),
+            &input.offset_bytes(4 * 8 - 4),
             0.0,
             &zero_desc,
             &zero,

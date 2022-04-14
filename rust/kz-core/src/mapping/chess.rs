@@ -8,8 +8,8 @@ use lazy_static::lazy_static;
 
 use kz_util::IndexOf;
 
-use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
+use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ChessStdMapper;

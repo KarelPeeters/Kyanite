@@ -1,6 +1,9 @@
+use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
 use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
+use nn_graph::ndarray::Array1;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -100,6 +103,9 @@ fn flip_conv() {
 
 #[test]
 fn repeat() {
+    let tensor = DeviceTensor::alloc_simple(Device::new(0), vec![0]);
+    println!("{:?}", unsafe { tensor.ptr().ptr() });
+
     let mut graph = Graph::new();
 
     let x = graph.constant(shape![2, 3], linspace_vec(6));
@@ -527,4 +533,29 @@ fn chain() {
         &[manual_tensor(2, vec![1.0, 2.0])],
         Some(&[manual_tensor(2, vec![8.0, 10.0])]),
     )
+}
+
+#[test]
+fn repeated_conv() {
+    let mut graph = Graph::new();
+
+    // weights must be different, otherwise the graph builder already deduplicates nodes
+    let weight0 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-1.0, 1.0, 4 * 4 * 3 * 3).to_vec());
+    let weight1 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-2.0, 2.0, 4 * 4 * 3 * 3).to_vec());
+
+    let input = graph.input(shape!(Size::BATCH, 4, 8, 8));
+
+    let x1 = graph.conv(input, weight0, 1, 1);
+    let x2 = graph.conv(x1, weight0, 1, 1);
+    let x3 = graph.conv(x2, weight0, 1, 1);
+    let x4 = graph.conv(x3, weight0, 1, 1);
+
+    let y1 = graph.conv(input, weight1, 1, 1);
+    let y2 = graph.conv(y1, weight1, 1, 1);
+    let y3 = graph.conv(y2, weight1, 1, 1);
+    let y4 = graph.conv(y3, weight1, 1, 1);
+
+    graph.output_all(&[x4, y4]);
+
+    test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
 }

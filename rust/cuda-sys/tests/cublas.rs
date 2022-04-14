@@ -1,7 +1,7 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use cuda_sys::bindings::cublasOperation_t;
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, MatMulArg};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, MatMulOperand};
 use cuda_sys::wrapper::handle::{CublasHandle, Device};
 
 #[test]
@@ -18,19 +18,19 @@ fn simple() {
     let mut c_data: Vec<f32> = vec![0.0, 0.0, 0.0];
     let expected_result = vec![23.0, 67.0, 127.0];
 
-    let a_mat = MatMulArg {
+    let a_mat = MatMulOperand {
         ptr: a.clone(),
         trans: cublasOperation_t::CUBLAS_OP_N,
         ld: 1,
         stride: 2,
     };
-    let b_mat = MatMulArg {
+    let b_mat = MatMulOperand {
         ptr: b.clone(),
         trans: cublasOperation_t::CUBLAS_OP_N,
         ld: 2,
         stride: 2,
     };
-    let c_mat = MatMulArg {
+    let c_mat = MatMulOperand {
         ptr: c.clone(),
         trans: cublasOperation_t::CUBLAS_OP_N,
         ld: 1,

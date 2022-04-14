@@ -1,9 +1,9 @@
 use bytemuck::cast_slice;
 use itertools::Itertools;
 
+use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::kernels;
 use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_nn_eval::tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::status::Status;
 
@@ -35,7 +35,7 @@ unsafe fn main_inner() {
             batch_size as i32,
             elements as i32,
             quantized_pointers_device.ptr() as *const *const u8,
-            target.ptr.ptr() as *mut f32,
+            target.ptr().ptr() as *mut f32,
         )
         .unwrap();
     }

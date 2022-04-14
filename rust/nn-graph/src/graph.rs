@@ -342,8 +342,9 @@ impl Graph {
         assert_eq!(
             expected_len,
             data.len() as usize,
-            "Shape {:?} and data size {} mismatch",
+            "{:?} has size {}, but got data with size {}",
             shape,
+            expected_len,
             data.len()
         );
 
