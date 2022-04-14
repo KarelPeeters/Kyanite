@@ -22,6 +22,7 @@ pub struct CudaExecutor {
     pub outputs: Vec<DeviceTensor>,
 
     pub batch_size: usize,
+    pub bytes_allocated: usize,
     steps: Vec<Step<DevicePtr>>,
 
     profile: bool,
@@ -57,11 +58,17 @@ impl CudaExecutor {
             cublas: CublasHandle::new(device),
         };
 
-        let Plan { inputs, outputs, steps } = Planner::plan(&handles, graph, batch_size);
+        let Plan {
+            inputs,
+            outputs,
+            steps,
+            bytes_allocated,
+        } = Planner::plan(&handles, graph, batch_size);
 
         CudaExecutor {
             handles,
             batch_size,
+            bytes_allocated,
             inputs,
             outputs,
             steps,
