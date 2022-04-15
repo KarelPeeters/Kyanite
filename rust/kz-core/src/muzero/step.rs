@@ -4,10 +4,10 @@ use decorum::N32;
 use internal_iterator::{InternalIterator, IteratorExt};
 use itertools::Itertools;
 
-use crate::mapping::BoardMapper;
 use cuda_nn_eval::quant::QuantizedStorage;
 use kz_util::top_k_indices_sorted;
 
+use crate::mapping::BoardMapper;
 use crate::muzero::node::{MuNode, MuNodeInner};
 use crate::muzero::tree::MuTree;
 use crate::muzero::MuZeroEvaluation;
@@ -17,8 +17,14 @@ use crate::zero::step::FpuMode;
 
 #[derive(Debug)]
 pub enum MuZeroRequest<B> {
-    Root { node: usize, board: B },
+    Root(MuZeroRootRequest<B>),
     Expand(MuZeroExpandRequest),
+}
+
+#[derive(Debug)]
+pub struct MuZeroRootRequest<B> {
+    pub node: usize,
+    pub board: B,
 }
 
 #[derive(Debug)]
@@ -43,10 +49,10 @@ pub fn muzero_step_gather<B: Board>(
     draw_depth: u32,
 ) -> Option<MuZeroRequest<B>> {
     if tree[0].inner.is_none() {
-        return Some(MuZeroRequest::Root {
+        return Some(MuZeroRequest::Root(MuZeroRootRequest {
             node: 0,
             board: tree.root_board().clone(),
-        });
+        }));
     }
 
     let mut curr_node = 0;

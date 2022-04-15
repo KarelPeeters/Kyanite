@@ -2,7 +2,6 @@ use crate::server::executor::{executor_loop_expander, executor_loop_root};
 use crate::server::generator_muzero::generator_muzero_main;
 use crate::server::job_channel::job_pair;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
-use crate::server::rebatcher::Rebatcher;
 use crate::server::server::ZeroSpecialization;
 use board_game::board::Board;
 use crossbeam::channel;
@@ -36,9 +35,9 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
         let mut graph_senders: Vec<Sender<Arc<MuZeroFusedGraphs<B, M>>>> = vec![];
 
-        // TODO consider adding (non-blocking/best effort) rebatching to root executor as well
-        let (root_client, root_server) = job_pair(2);
-        let (rebatcher, expand_client, expand_server) = Rebatcher::new(2, cpu_batch_size, startup.gpu_batch_size);
+        // TODO is it worth it to have a rebatcher again? it might take some CPU load from the GPU thread
+        let (root_client, root_server) = job_pair(gpu_batch_size_root);
+        let (expand_client, expand_server) = job_pair(gpu_batch_size_expand);
 
         // spawn cpu threads
         for local_id in 0..startup.cpu_threads_per_device {
@@ -97,14 +96,6 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                 })
                 .unwrap();
         }
-
-        // spawn rebatcher thread
-        s.builder()
-            .name(format!("rebatcher-{}", device_id))
-            .spawn(move |_| {
-                rebatcher.run_loop();
-            })
-            .unwrap();
 
         (settings_senders, graph_senders)
     }

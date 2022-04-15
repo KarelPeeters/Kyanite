@@ -1,16 +1,15 @@
 use std::borrow::Cow;
 
 use board_game::board::{Board, Outcome};
-use crossbeam::channel::{Receiver, SendError, TryRecvError};
+use crossbeam::channel::{Receiver, Select, SendError, TryRecvError};
 use internal_iterator::InternalIterator;
-use itertools::Itertools;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use rand_distr::Dirichlet;
 
 use kz_core::mapping::BoardMapper;
 use kz_core::muzero::step::{
-    muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse,
+    muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse, MuZeroRootRequest,
 };
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
@@ -18,7 +17,6 @@ use kz_core::network::common::normalize_in_place;
 use kz_core::network::muzero::{EvalResponsePair, ExpandArgs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
-use kz_util::zip_eq_exact;
 
 use crate::move_selector::MoveSelector;
 use crate::server::job_channel::JobClient;
@@ -26,7 +24,7 @@ use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::simulation::{Position, Simulation};
 
 type RootClient<B> = JobClient<B, EvalResponsePair>;
-type ExpandClient = JobClient<Vec<ExpandArgs>, Vec<EvalResponsePair>>;
+type ExpandClient = JobClient<ExpandArgs, EvalResponsePair>;
 
 type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
 type RngType = ThreadRng;
@@ -51,6 +49,8 @@ pub fn generator_muzero_main<B: Board>(
 
     loop {
         // if we don't have settings yet, block
+        // TODO maybe add this to the big select lower down?
+        //   meh, this should have higher priority than others
         let new_settings = if settings.is_some() {
             settings_receiver.try_recv()
         } else {
@@ -82,7 +82,7 @@ pub fn generator_muzero_main<B: Board>(
                 counter: &mut counter,
             };
 
-            state.step(&mut ctx)?;
+            state.step(&mut ctx);
 
             // report progress
             update_sender.send(GeneratorUpdate::Progress {
@@ -100,6 +100,7 @@ struct Context<'a, B: Board, M, F> {
     thread_id: usize,
     mapper: M,
     start_pos: &'a F,
+    // TODO rename this to something else, we're not really batching any more
     batch_size: usize,
 
     settings: &'a Settings,
@@ -114,8 +115,14 @@ struct Context<'a, B: Board, M, F> {
 
 #[derive(Debug)]
 struct GeneratorState<B: Board> {
-    games: Vec<GameState<B>>,
-    responses: Vec<MuZeroResponse<'static>>,
+    games: Vec<GameTuple<B>>,
+}
+
+#[derive(Debug)]
+struct GameTuple<B: Board> {
+    state: GameState<B>,
+    receiver: Receiver<EvalResponsePair>,
+    node: usize,
 }
 
 #[derive(Debug)]
@@ -148,70 +155,47 @@ struct Counter {
 
 impl<B: Board> GeneratorState<B> {
     fn new() -> Self {
-        GeneratorState {
-            games: vec![],
-            responses: vec![],
-        }
+        GeneratorState { games: vec![] }
     }
 
-    fn step<M: BoardMapper<B>, F: Fn() -> B>(
+    fn step_and_append<M: BoardMapper<B>, F: Fn() -> B>(
         &mut self,
         ctx: &mut Context<B, M, F>,
-    ) -> Result<(), SendError<GeneratorUpdate<B>>> {
-        let requests = self.collect_requests(ctx);
-        assert_eq!(requests.len(), ctx.batch_size);
+        mut state: GameState<B>,
+        response: Option<MuZeroResponse>,
+    ) {
+        let result = state.step(ctx, response);
 
-        // evaluate the requests
-        let pairs = requests.iter().map(|r| (r.state.clone(), r.move_index)).collect_vec();
-        let evals = ctx.expand_client.map_blocking(pairs);
+        match result {
+            StepResult::Done => {}
+            StepResult::Request(request) => {
+                let (node, receiver) = match request {
+                    MuZeroRequest::Root(MuZeroRootRequest { node, board }) => {
+                        ctx.counter.root_evals += 1;
+                        (node, ctx.root_client.map(board))
+                    }
+                    MuZeroRequest::Expand(MuZeroExpandRequest {
+                        node,
+                        state,
+                        move_index,
+                    }) => {
+                        ctx.counter.expand_evals += 1;
+                        (node, ctx.expand_client.map((state, move_index)))
+                    }
+                };
 
-        ctx.counter.expand_evals += evals.len() as u64;
-
-        // store the responses for next step
-        assert!(self.responses.is_empty());
-        self.responses.extend(
-            zip_eq_exact(requests, evals).map(|(req, (state, eval))| MuZeroResponse {
-                node: req.node,
-                state,
-                eval,
-            }),
-        );
-
-        Ok(())
-    }
-
-    fn collect_requests<M: BoardMapper<B>, F: Fn() -> B>(
-        &mut self,
-        ctx: &mut Context<B, M, F>,
-    ) -> Vec<MuZeroExpandRequest> {
-        let mut requests = vec![];
-        let existing_games = std::mem::take(&mut self.games);
-
-        let mut step_and_append = |ctx: &mut Context<B, M, F>,
-                                   games: &mut Vec<GameState<B>>,
-                                   mut game: GameState<B>,
-                                   response: Option<MuZeroResponse>| {
-            let result = game.step(ctx, response);
-
-            match result {
-                StepResult::Done => {}
-                StepResult::Request(request) => {
-                    games.push(game);
-                    requests.push(request);
-                }
+                self.games.push(GameTuple { state, receiver, node })
             }
-        };
-
-        // step all existing games
-        for (game, response) in zip_eq_exact(existing_games, self.responses.drain(..)) {
-            step_and_append(ctx, &mut self.games, game, Some(response))
         }
+    }
 
+    fn step<M: BoardMapper<B>, F: Fn() -> B>(&mut self, ctx: &mut Context<B, M, F>) {
         // start new games until we have enough of them
+        // do this before waiting for receivers so we don't block on an empty list
         let mut started_any = false;
         while self.games.len() < ctx.batch_size {
-            let game = GameState::new(ctx);
-            step_and_append(ctx, &mut self.games, game, None);
+            let state = GameState::new(ctx);
+            self.step_and_append(ctx, state, None);
             started_any = true;
         }
 
@@ -221,11 +205,40 @@ impl<B: Board> GeneratorState<B> {
                     thread_id: ctx.thread_id,
                     next_index: *ctx.next_index,
                 })
-                .unwrap()
+                .unwrap();
         }
 
-        assert_eq!(requests.len(), self.games.len());
-        requests
+        // wait for any receiver to become ready
+        let mut select = Select::new();
+        for t in &self.games {
+            select.recv(&t.receiver);
+        }
+        select.ready();
+
+        // update all existing games
+        // this happens in bulk so we don't waste time repeatedly selecting on all receivers
+        // TODO this could just use retain_mut when that becomes stable
+        let prev_tuples = std::mem::take(&mut self.games);
+
+        for tuple in prev_tuples {
+            let response_pair = match tuple.receiver.try_recv() {
+                Ok(response_pair) => response_pair,
+                Err(TryRecvError::Empty) => {
+                    // no luck, just put it back into the queue
+                    self.games.push(tuple);
+                    continue;
+                }
+                Err(TryRecvError::Disconnected) => panic!("Receiver disconnected"),
+            };
+
+            let response = MuZeroResponse {
+                node: tuple.node,
+                state: response_pair.0,
+                eval: response_pair.1,
+            };
+
+            self.step_and_append(ctx, tuple.state, Some(response));
+        }
     }
 }
 
@@ -249,7 +262,7 @@ impl<B: Board> GameState<B> {
         &mut self,
         ctx: &mut Context<B, M, F>,
         initial_response: Option<MuZeroResponse>,
-    ) -> StepResult<MuZeroExpandRequest> {
+    ) -> StepResult<MuZeroRequest<B>> {
         let mut response = initial_response;
 
         loop {
@@ -257,17 +270,7 @@ impl<B: Board> GameState<B> {
 
             match result {
                 StepResult::Request(request) => {
-                    match request {
-                        MuZeroRequest::Root { node, board } => {
-                            let (state, eval) = ctx.root_client.map_blocking(board);
-                            ctx.counter.root_evals += 1;
-                            response = Some(MuZeroResponse { node, state, eval })
-                            // continue the loop with the new root response
-                        }
-                        MuZeroRequest::Expand(req) => {
-                            return StepResult::Request(req);
-                        }
-                    }
+                    return StepResult::Request(request);
                 }
                 StepResult::Done => {
                     ctx.counter.move_count += 1;

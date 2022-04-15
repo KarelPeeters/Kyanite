@@ -46,14 +46,7 @@ pub fn selfplay_server_main() {
         );
     }
 
-    let cpu_games = startup_settings.cpu_batch_size * startup_settings.cpu_threads_per_device;
-    let gpu_games = startup_settings.gpu_batch_size * startup_settings.gpu_threads_per_device;
-    assert!(
-        cpu_games >= gpu_games,
-        "Not enough CPU games {} to fill potential concurrent GPU games {}",
-        cpu_games,
-        gpu_games,
-    );
+    //TODO rewrite proper batch size & thread count asserts to ensure there are no deadlocks
 
     let output_folder = Path::new(&startup_settings.output_folder);
     assert!(

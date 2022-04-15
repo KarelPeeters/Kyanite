@@ -25,9 +25,9 @@ def main():
 
         cpu_threads_per_device=2,
         gpu_threads_per_device=1,
-        cpu_batch_size=256,
+        cpu_batch_size=512,
         gpu_batch_size=512,
-        gpu_batch_size_root=2,
+        gpu_batch_size_root=8,
     )
 
     selfplay_settings = SelfplaySettings(
