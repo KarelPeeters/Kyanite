@@ -86,11 +86,11 @@ def main():
             prediction=prediction,
         )
 
-    def dummy_network():
-        return build_network(1, 32, 32)
+    # def dummy_network():
+    #     return build_network(1, 32, 32)
 
     def initial_network():
-        return build_network(16, 256, 64)
+        return build_network(16, 128, 64)
 
     initial_files_pattern = ""
 
@@ -102,7 +102,7 @@ def main():
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
-        only_generate=True,
+        only_generate=False,
 
         min_buffer_size=500_000,
         max_buffer_size=1_000_000,

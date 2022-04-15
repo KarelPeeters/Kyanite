@@ -63,11 +63,11 @@ def main():
             policy_head=AttentionPolicyHead(game, channels, channels),
         )
 
-    def dummy_network():
-        return build_network(1, 8)
+    # def dummy_network():
+    #     return build_network(1, 8)
 
     def initial_network():
-        return build_network(16, 256)
+        return build_network(16, 128)
 
     initial_files_pattern = ""
 
@@ -76,7 +76,7 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop/{game.name}/profile/",
 
-        dummy_network=dummy_network,
+        dummy_network=None,
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
