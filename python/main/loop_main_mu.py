@@ -25,8 +25,8 @@ def main():
 
         cpu_threads_per_device=2,
         gpu_threads_per_device=1,
-        cpu_batch_size=512,
-        gpu_batch_size=512,
+        cpu_batch_size=1024,
+        gpu_batch_size=1024,
         gpu_batch_size_root=8,
     )
 
@@ -34,16 +34,16 @@ def main():
         temperature=1.0,
         zero_temp_move_count=30,
         use_value=False,
-        max_game_length=300,
+        max_game_length=400,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
-        full_iterations=400,
+        full_iterations=200,
         part_iterations=20,
         weights=UctWeights.default(),
         random_symmetries=False,
-        cache_size=200,
+        cache_size=0,
         top_moves=100,
     )
 
@@ -86,8 +86,8 @@ def main():
             prediction=prediction,
         )
 
-    # def dummy_network():
-    #     return build_network(1, 32, 32)
+    def dummy_network():
+        return build_network(1, 64, 64)
 
     def initial_network():
         return build_network(16, 128, 64)
@@ -98,17 +98,17 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop_mu/{game.name}/profile/",
 
-        dummy_network=None,
+        dummy_network=dummy_network,
         initial_network=initial_network,
         initial_data_files=[DataFile.open(game, path) for path in glob.glob(initial_files_pattern)],
 
         only_generate=False,
 
-        min_buffer_size=500_000,
+        min_buffer_size=200_000,
         max_buffer_size=1_000_000,
 
         train_batch_size=128,
-        samples_per_position=0.3,
+        samples_per_position=0.5,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 
