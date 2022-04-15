@@ -11,7 +11,7 @@ use nn_graph::graph::Graph;
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
 
-use crate::planner::{Plan, Planner};
+use crate::planner::{MemoryUsage, Plan, Planner};
 use crate::step::{GatherArgs, Step};
 use crate::util::debug_vec_multiline;
 
@@ -22,7 +22,7 @@ pub struct CudaExecutor {
     pub outputs: Vec<DeviceTensor>,
 
     pub batch_size: usize,
-    pub bytes_allocated: usize,
+    pub mem_usage: MemoryUsage,
     steps: Vec<Step<DevicePtr>>,
 
     profile: bool,
@@ -62,13 +62,13 @@ impl CudaExecutor {
             inputs,
             outputs,
             steps,
-            bytes_allocated,
+            mem_usage,
         } = Planner::plan(&handles, graph, batch_size);
 
         CudaExecutor {
             handles,
             batch_size,
-            bytes_allocated,
+            mem_usage,
             inputs,
             outputs,
             steps,

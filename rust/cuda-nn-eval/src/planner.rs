@@ -52,14 +52,22 @@ pub(crate) struct Planner<'a> {
     map: HashMap<Value, PlanTensor>,
     plan: Vec<PlanStep>,
 
-    bytes_allocated: usize,
+    dedicated_bytes: usize,
 }
 
+#[derive(Debug)]
 pub struct Plan {
     pub inputs: Vec<DeviceTensor>,
     pub outputs: Vec<DeviceTensor>,
     pub steps: Vec<Step<DevicePtr>>,
-    pub bytes_allocated: usize,
+    pub mem_usage: MemoryUsage,
+}
+
+#[derive(Debug)]
+pub struct MemoryUsage {
+    pub dedicated_bytes: usize,
+    pub shared_bytes: usize,
+    pub zero_bytes: usize,
 }
 
 impl<'a> Planner<'a> {
@@ -78,7 +86,7 @@ impl<'a> Planner<'a> {
 
         let buffer_count = planner.shared_buffers_size_in_bytes.len();
         let step_count = planner.plan.len();
-        let mut bytes_allocated = planner.bytes_allocated;
+        let mut shared_bytes = 0;
 
         // determine live ranges for shared tensors
         let live_ranges = {
@@ -126,7 +134,7 @@ impl<'a> Planner<'a> {
                     let size_bytes = planner.shared_buffers_size_in_bytes[ti];
                     let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
                     let ptr = vec.pop().unwrap_or_else(|| {
-                        bytes_allocated += size_bytes;
+                        shared_bytes += size_bytes;
                         device.alloc(size_bytes)
                     });
 
@@ -155,18 +163,24 @@ impl<'a> Planner<'a> {
                 ptr.unwrap_or_else(|| {
                     // allocate leftover buffers that are never used before the end (eg. empty concat output tensors)
                     let size_bytes = planner.shared_buffers_size_in_bytes[i];
-                    bytes_allocated += size_bytes;
+                    shared_bytes += size_bytes;
                     device.alloc(size_bytes)
                 })
             })
             .collect_vec();
 
         // allocate (single) zero tensor
-        bytes_allocated += 4 * planner.max_zero_size;
-        let zero_allocation = device.alloc(4 * planner.max_zero_size);
+        let zero_bytes = 4 * planner.max_zero_size;
+        let zero_allocation = device.alloc(zero_bytes);
         unsafe {
             zero_allocation.copy_linear_from_host(cast_slice(&vec![0f32; planner.max_zero_size]));
         }
+
+        let mem_usage = MemoryUsage {
+            dedicated_bytes: planner.dedicated_bytes,
+            shared_bytes,
+            zero_bytes,
+        };
 
         // realize planned tensors and steps
         let ctx = RealizationContext {
@@ -182,7 +196,7 @@ impl<'a> Planner<'a> {
                 .into_iter()
                 .map(|step| ctx.realize_step(step))
                 .collect_vec(),
-            bytes_allocated,
+            mem_usage,
         }
     }
 
@@ -198,7 +212,7 @@ impl<'a> Planner<'a> {
             map: Default::default(),
             plan: vec![],
             max_zero_size: 0,
-            bytes_allocated: 0,
+            dedicated_bytes: 0,
         }
     }
 
@@ -515,7 +529,7 @@ impl<'a> Planner<'a> {
     }
 
     fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {
-        self.bytes_allocated += 4 * shape.size();
+        self.dedicated_bytes += 4 * shape.size();
         DeviceTensor::alloc_simple(self.device(), shape.dims)
     }
 
