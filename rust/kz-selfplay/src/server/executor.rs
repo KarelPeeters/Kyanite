@@ -39,12 +39,14 @@ pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
 ) {
     // wait for the initial graph
     let graph = graph_receiver.recv().unwrap();
+    println!("{} loading new network", std::thread::current().name().unwrap());
     let mut network = CudaNetwork::new(mapper, &graph, batch_size, device);
 
     // handle incoming messages
     loop {
         match receiver_executor_message(&graph_receiver, &server) {
             ExecutorMessage::Graph(graph) => {
+                println!("{} loading new network", std::thread::current().name().unwrap());
                 drop(network);
                 network = CudaNetwork::new(mapper, &graph, batch_size, device);
             }
@@ -63,12 +65,14 @@ pub fn executor_loop_root<B: Board, M: BoardMapper<B>>(
 ) {
     // wait for the initial graph
     let graph = graph_receiver.recv().unwrap();
+    println!("{} loading new network", std::thread::current().name().unwrap());
     let mut executor = graph.root_executor(device, batch_size);
 
     // handle incoming messages
     loop {
         match receiver_executor_message(&graph_receiver, &server) {
             ExecutorMessage::Graph(graph) => {
+                println!("{} loading new network", std::thread::current().name().unwrap());
                 drop(executor);
                 executor = graph.root_executor(device, batch_size);
             }
@@ -85,12 +89,14 @@ pub fn executor_loop_expander<B: Board, M: BoardMapper<B>>(
 ) {
     // wait for the initial graph
     let graph = graph_receiver.recv().unwrap();
+    println!("{} loading new network", std::thread::current().name().unwrap());
     let mut executor = graph.expand_executor(device, batch_size);
 
     // handle incoming messages
     loop {
         match receiver_executor_message(&graph_receiver, &server) {
             ExecutorMessage::Graph(graph) => {
+                println!("{} loading new network", std::thread::current().name().unwrap());
                 drop(executor);
                 executor = graph.expand_executor(device, batch_size);
             }
