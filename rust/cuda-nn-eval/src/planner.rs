@@ -66,12 +66,8 @@ impl<'a> Planner<'a> {
     pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Plan {
         let mut planner = Planner::new(&handles, graph, batch_size);
 
-        // allocate inputs
-        let inputs = graph
-            .inputs()
-            .iter()
-            .map(|&input| planner.allocate_input(input))
-            .collect_vec();
+        // allocate inputs (even if they're not actually used)
+        let inputs = graph.inputs().iter().map(|&input| planner.visit(input)).collect_vec();
 
         // collect outputs, this recursively plans all the necessary operations
         let outputs = graph
@@ -103,6 +99,14 @@ impl<'a> Planner<'a> {
                 if let &PlanBuffer::Shared { index } = &output.ptr().buffer {
                     let (_, upper) = &mut live_ranges[index];
                     *upper = step_count;
+                }
+            }
+
+            // consider inputs live at the start
+            for input in &inputs {
+                if let &PlanBuffer::Shared { index } = &input.ptr().buffer {
+                    let (lower, _) = &mut live_ranges[index];
+                    *lower = 0;
                 }
             }
 
@@ -198,16 +202,6 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn allocate_input(&mut self, value: Value) -> PlanTensor {
-        let info = &self.graph[value];
-        assert!(matches!(info.operation, Operation::Input { index: _ }));
-
-        let shape = info.shape.eval(self.batch_size);
-        let result = self.alloc_tensor_dedicated(shape).map_inner(PlanPtr::from);
-        self.insert_mapping(value, result.clone());
-        result
-    }
-
     fn visit_ensure_simple_strides(&mut self, value: Value) -> PlanTensor {
         let result = self.visit(value);
 
@@ -238,9 +232,7 @@ impl<'a> Planner<'a> {
         let result_shape = result_info.shape.eval(self.batch_size);
 
         let result: PlanTensor = match &result_info.operation {
-            &Operation::Input { index: _ } => {
-                unreachable!("inputs should have been visited separately");
-            }
+            &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape),
             Operation::Constant { data } => {
                 let result = self.alloc_tensor_dedicated(result_shape);
                 unsafe {
