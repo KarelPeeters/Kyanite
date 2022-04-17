@@ -40,11 +40,11 @@ impl MuZeroSettings {
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
         draw_depth: u32,
-        stop: impl FnMut(&MuTree<B>) -> bool,
-    ) -> MuTree<B> {
+        stop: impl FnMut(&MuTree<B, M>) -> bool,
+    ) -> MuTree<B, M> {
         assert_eq!(root_exec.mapper, expand_exec.mapper);
 
-        let mut tree = MuTree::new(root_board.clone(), root_exec.mapper.policy_len());
+        let mut tree = MuTree::new(root_board.clone(), root_exec.mapper);
         self.expand_tree(&mut tree, root_exec, expand_exec, draw_depth, stop);
         tree
     }
@@ -52,11 +52,11 @@ impl MuZeroSettings {
     // Continue expanding an existing tree.
     pub fn expand_tree<B: Board, M: BoardMapper<B>>(
         self,
-        tree: &mut MuTree<B>,
+        tree: &mut MuTree<B, M>,
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
         draw_depth: u32,
-        mut stop: impl FnMut(&MuTree<B>) -> bool,
+        mut stop: impl FnMut(&MuTree<B, M>) -> bool,
     ) {
         'outer: loop {
             if stop(tree) {
@@ -84,7 +84,7 @@ impl MuZeroSettings {
                 };
 
                 // apply response
-                muzero_step_apply(tree, self.top_moves, response, root_exec.mapper);
+                muzero_step_apply(tree, self.top_moves, response);
             };
         }
     }

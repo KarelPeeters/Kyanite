@@ -6,6 +6,7 @@ use board_game::board::{Board, Outcome};
 use board_game::wdl::Flip;
 use itertools::Itertools;
 
+use crate::mapping::BoardMapper;
 use crate::muzero::node::MuNode;
 use kz_util::display_option;
 
@@ -14,9 +15,9 @@ use crate::zero::node::ZeroValues;
 
 /// The result of a zero search.
 #[derive(Debug)]
-pub struct MuTree<B: Board> {
+pub struct MuTree<B, M> {
     pub(super) root_board: B,
-    pub(super) mapper_policy_len: usize,
+    pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
 }
 
@@ -26,14 +27,14 @@ pub enum KeepMoveError {
     NotVisitedYet { depth: u32 },
 }
 
-impl<B: Board> MuTree<B> {
-    pub fn new(root_board: B, mapper_policy_len: usize) -> Self {
+impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
+    pub fn new(root_board: B, mapper: M) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
 
         let root_node = MuNode::new(None, None, f32::NAN);
         MuTree {
             root_board,
-            mapper_policy_len,
+            mapper,
             nodes: vec![root_node],
         }
     }
@@ -118,7 +119,7 @@ impl<B: Board> MuTree<B> {
     }
 
     #[must_use]
-    pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> MuTreeDisplay<B> {
+    pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> MuTreeDisplay<B, M> {
         MuTreeDisplay {
             tree: self,
             node: 0,
@@ -132,8 +133,8 @@ impl<B: Board> MuTree<B> {
 }
 
 #[derive(Debug)]
-pub struct MuTreeDisplay<'a, B: Board> {
-    tree: &'a MuTree<B>,
+pub struct MuTreeDisplay<'a, B, M> {
+    tree: &'a MuTree<B, M>,
     node: usize,
     curr_depth: usize,
     max_depth: usize,
@@ -154,7 +155,7 @@ impl Display for PolicyDisplay {
     }
 }
 
-impl<B: Board> Display for MuTreeDisplay<'_, B> {
+impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tree = self.tree;
 
@@ -270,7 +271,7 @@ impl<B: Board> Display for MuTreeDisplay<'_, B> {
     }
 }
 
-impl<B: Board> Index<usize> for MuTree<B> {
+impl<B, M> Index<usize> for MuTree<B, M> {
     type Output = MuNode;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -278,7 +279,7 @@ impl<B: Board> Index<usize> for MuTree<B> {
     }
 }
 
-impl<B: Board> IndexMut<usize> for MuTree<B> {
+impl<B, M> IndexMut<usize> for MuTree<B, M> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.nodes[index]
     }

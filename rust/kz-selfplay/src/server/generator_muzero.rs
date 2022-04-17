@@ -114,28 +114,28 @@ struct Context<'a, B: Board, M, F> {
 }
 
 #[derive(Debug)]
-struct GeneratorState<B: Board> {
-    games: Vec<GameTuple<B>>,
+struct GeneratorState<B: Board, M> {
+    games: Vec<GameTuple<B, M>>,
 }
 
 #[derive(Debug)]
-struct GameTuple<B: Board> {
-    state: GameState<B>,
+struct GameTuple<B: Board, M> {
+    state: GameState<B, M>,
     receiver: Receiver<EvalResponsePair>,
     node: usize,
 }
 
 #[derive(Debug)]
-struct GameState<B: Board> {
+struct GameState<B: Board, M> {
     index: u64,
-    search: SearchState<B>,
+    search: SearchState<B, M>,
     mv_count: u32,
     positions: Vec<Position<B>>,
 }
 
 #[derive(Debug)]
-struct SearchState<B: Board> {
-    tree: MuTree<B>,
+struct SearchState<B, M> {
+    tree: MuTree<B, M>,
     is_full_search: bool,
     root_net_eval: Option<ZeroEvaluation<'static>>,
 }
@@ -153,15 +153,15 @@ struct Counter {
     move_count: u64,
 }
 
-impl<B: Board> GeneratorState<B> {
+impl<B: Board, M: BoardMapper<B>> GeneratorState<B, M> {
     fn new() -> Self {
         GeneratorState { games: vec![] }
     }
 
-    fn step_and_append<M: BoardMapper<B>, F: Fn() -> B>(
+    fn step_and_append<F: Fn() -> B>(
         &mut self,
         ctx: &mut Context<B, M, F>,
-        mut state: GameState<B>,
+        mut state: GameState<B, M>,
         response: Option<MuZeroResponse>,
     ) {
         let result = state.step(ctx, response);
@@ -189,7 +189,7 @@ impl<B: Board> GeneratorState<B> {
         }
     }
 
-    fn step<M: BoardMapper<B>, F: Fn() -> B>(&mut self, ctx: &mut Context<B, M, F>) {
+    fn step<F: Fn() -> B>(&mut self, ctx: &mut Context<B, M, F>) {
         // start new games until we have enough of them
         // do this before waiting for receivers so we don't block on an empty list
         let mut started_any = false;
@@ -242,10 +242,10 @@ impl<B: Board> GeneratorState<B> {
     }
 }
 
-impl<B: Board> GameState<B> {
-    fn new<M: BoardMapper<B>, F: Fn() -> B>(ctx: &mut Context<B, M, F>) -> Self {
+impl<B: Board, M: BoardMapper<B>> GameState<B, M> {
+    fn new<F: Fn() -> B>(ctx: &mut Context<B, M, F>) -> Self {
         let start_pos = (ctx.start_pos)();
-        let tree = MuTree::new(start_pos, ctx.mapper.policy_len());
+        let tree = MuTree::new(start_pos, ctx.mapper);
 
         let index = *ctx.next_index;
         *ctx.next_index += 1;
@@ -258,7 +258,7 @@ impl<B: Board> GameState<B> {
         }
     }
 
-    fn step<M: BoardMapper<B>, F: Fn() -> B>(
+    fn step<F: Fn() -> B>(
         &mut self,
         ctx: &mut Context<B, M, F>,
         initial_response: Option<MuZeroResponse>,
@@ -282,7 +282,7 @@ impl<B: Board> GameState<B> {
         }
     }
 
-    fn search_done_step<M: BoardMapper<B>, F>(&mut self, ctx: &mut Context<B, M, F>) -> bool {
+    fn search_done_step<F>(&mut self, ctx: &mut Context<B, M, F>) -> bool {
         let settings = ctx.settings;
 
         let tree = &self.search.tree;
@@ -336,7 +336,7 @@ impl<B: Board> GameState<B> {
             true
         } else {
             // continue playing this game, either by keeping part of the tree or starting a new one on the next board
-            let next_tree = MuTree::new(next_board, ctx.mapper.policy_len());
+            let next_tree = MuTree::new(next_board, ctx.mapper);
             self.search = SearchState::new(ctx, next_tree);
 
             // report that this game is not done
@@ -345,8 +345,8 @@ impl<B: Board> GameState<B> {
     }
 }
 
-impl<B: Board> SearchState<B> {
-    fn new<M: BoardMapper<B>, F>(ctx: &mut Context<B, M, F>, tree: MuTree<B>) -> Self {
+impl<B: Board, M: BoardMapper<B>> SearchState<B, M> {
+    fn new<F>(ctx: &mut Context<B, M, F>, tree: MuTree<B, M>) -> Self {
         SearchState {
             tree,
             is_full_search: ctx.rng.gen_bool(ctx.settings.full_search_prob),
@@ -354,7 +354,7 @@ impl<B: Board> SearchState<B> {
         }
     }
 
-    fn step<M: BoardMapper<B>, F>(
+    fn step<F>(
         &mut self,
         ctx: &mut Context<B, M, F>,
         mv_count: u32,
@@ -373,7 +373,7 @@ impl<B: Board> SearchState<B> {
             } else {
                 ctx.settings.top_moves
             };
-            muzero_step_apply(&mut self.tree, top_moves, response, ctx.mapper);
+            muzero_step_apply(&mut self.tree, top_moves, response);
         }
 
         loop {

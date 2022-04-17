@@ -41,8 +41,8 @@ pub struct MuZeroResponse<'a> {
     pub eval: MuZeroEvaluation<'a>,
 }
 
-pub fn muzero_step_gather<B: Board>(
-    tree: &mut MuTree<B>,
+pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
+    tree: &mut MuTree<B, M>,
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
@@ -115,12 +115,11 @@ pub fn muzero_step_gather<B: Board>(
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
 pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
-    tree: &mut MuTree<B>,
+    tree: &mut MuTree<B, M>,
     top_moves: usize,
     response: MuZeroResponse,
-    mapper: M,
 ) {
-    assert!(top_moves != 0);
+    assert_ne!(top_moves, 0);
 
     let MuZeroResponse {
         node,
@@ -128,18 +127,13 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
         eval: MuZeroEvaluation { values, policy },
     } = response;
 
-    let lengths = [tree.mapper_policy_len, mapper.policy_len(), policy.len()];
-    assert!(
-        lengths.iter().all(|&x| x == policy.len()),
-        "Mismatching policy lengths: {:?}",
-        lengths
-    );
+    assert_eq!(tree.mapper.policy_len(), policy.len());
 
     // create children
     let children = if node == 0 {
         // only keep available moves for root node
         let board = &tree.root_board;
-        let indices = board.available_moves().map(|mv| mapper.move_to_index(&board, mv));
+        let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
         create_child_nodes(&mut tree.nodes, node, indices, &policy)
     } else {
         // keep all moves deeper in the tree
@@ -187,7 +181,7 @@ fn create_child_nodes(
 }
 
 /// Propagate the given `values` up to the root.
-fn tree_propagate_values<B: Board>(tree: &mut MuTree<B>, node: usize, mut values: ZeroValues) {
+fn tree_propagate_values<B: Board, M>(tree: &mut MuTree<B, M>, node: usize, mut values: ZeroValues) {
     values = values.flip();
     let mut curr_index = node;
 
