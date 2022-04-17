@@ -124,6 +124,8 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
             tree: self,
             node: 0,
             curr_depth: 0,
+            curr_board: Some(self.root_board.clone()),
+            last_mv: None,
             max_depth,
             max_children,
             sort,
@@ -133,10 +135,12 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
 }
 
 #[derive(Debug)]
-pub struct MuTreeDisplay<'a, B, M> {
+pub struct MuTreeDisplay<'a, B: Board, M> {
     tree: &'a MuTree<B, M>,
     node: usize,
     curr_depth: usize,
+    curr_board: Option<B>,
+    last_mv: Option<B::Move>,
     max_depth: usize,
     max_children: usize,
     sort: bool,
@@ -211,9 +215,10 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
 
         writeln!(
             f,
-            "{} {}: {} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
+            "{} {}: {} {} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
             player.to_char(),
             display_option(node.last_move_index),
+            display_option(self.last_mv),
             node.visits,
             node_values,
             zero_policy,
@@ -254,10 +259,24 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
                     self.curr_depth + 1
                 };
 
+                let (child_board, child_mv) = match (&self.curr_board, tree[child].last_move_index) {
+                    (Some(curr_board), Some(child_mv_index)) => {
+                        let child_mv = tree
+                            .mapper
+                            .index_to_move(curr_board, child_mv_index)
+                            .filter(|&mv| curr_board.is_available_move(mv));
+                        let child_board = child_mv.map(|child_mv| curr_board.clone_and_play(child_mv));
+                        (child_board, child_mv)
+                    }
+                    _ => (None, None),
+                };
+
                 let child_display = MuTreeDisplay {
                     tree: self.tree,
                     node: child,
                     curr_depth: self.curr_depth + 1,
+                    curr_board: child_board,
+                    last_mv: child_mv,
                     max_depth: next_max_depth,
                     max_children: self.max_children,
                     sort: self.sort,
