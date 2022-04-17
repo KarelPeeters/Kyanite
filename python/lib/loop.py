@@ -147,8 +147,7 @@ class LoopSettings:
 
         def target(plotter: Optional[LogPlotter]):
             if plotter is not None:
-                # TODO why does this crash the plotter?
-                # plotter.set_title(f"loop: {self.root_path}")
+                plotter.set_title(f"loop: {self.root_path}")
                 plotter.set_can_pause(False)
 
             self.run_loop_inner(start_gen, buffer, logger, plotter, network)

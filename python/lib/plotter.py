@@ -6,7 +6,7 @@ import darkdetect
 import numpy as np
 import pyqtgraph as pg
 import scipy.signal
-from PyQt5.QtCore import pyqtSignal, QObject, Qt
+from PyQt5.QtCore import pyqtSignal, QObject, Qt, QTimer
 from PyQt5.QtGui import QColor, QColorConstants
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QTabWidget, \
     QSlider, QLabel, QApplication
@@ -40,6 +40,7 @@ class LogPlotter(QObject):
         self.update_control_slot.connect(self.on_update_control)
 
         self.create_window()
+        self.title = None
 
         self.plot_widgets: Dict[str, PlotWidget] = {}
         self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
@@ -47,7 +48,12 @@ class LogPlotter(QObject):
         self.on_update_control()
 
     def set_title(self, title: str):
-        self.window.setWindowTitle(f"kZero: {title}")
+        self.title = title
+        QTimer.singleShot(0, self._actually_set_title)
+
+    def _actually_set_title(self):
+        if self.title is not None:
+            self.window.setWindowTitle(self.title)
 
     def set_can_pause(self, can_pause: bool):
         self.pauseButton.setEnabled(can_pause)
