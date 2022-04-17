@@ -21,16 +21,16 @@ def main():
 
         cpu_threads_per_device=2,
         gpu_threads_per_device=1,
-        cpu_batch_size=256,
-        gpu_batch_size=512,
-        gpu_batch_size_root=2,
+        cpu_batch_size=1024,
+        gpu_batch_size=1024,
+        gpu_batch_size_root=8,
     )
 
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
         zero_temp_move_count=30,
         use_value=False,
-        max_game_length=300,
+        max_game_length=400,
         keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
@@ -40,7 +40,7 @@ def main():
         weights=UctWeights.default(),
         random_symmetries=False,
         cache_size=200,
-        top_moves=0,
+        top_moves=100,
     )
 
     train_settings = TrainSettings(
@@ -50,7 +50,7 @@ def main():
         policy_weight=1.0,
         moves_left_delta=20,
         moves_left_weight=0.0001,
-        clip_norm=20.0,
+        clip_norm=5.0,
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
         mask_policy=True,
