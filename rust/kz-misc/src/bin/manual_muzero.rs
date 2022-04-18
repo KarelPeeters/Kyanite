@@ -4,7 +4,6 @@
 use board_game::board::Board;
 use board_game::games::chess::ChessBoard;
 use board_game::games::ttt::TTTBoard;
-use internal_iterator::InternalIterator;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::executor::CudaExecutor;
@@ -64,11 +63,6 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
     let mut expand_exec = fused.expand_executor(device, 1);
 
     let mut board = board;
-
-    println!("Available moves:");
-    board.available_moves().for_each(|mv: B::Move| {
-        println!("  {} => {}", mv, display_option(mapper.move_to_index(&board, mv)));
-    });
 
     let tree = true;
     if tree {
