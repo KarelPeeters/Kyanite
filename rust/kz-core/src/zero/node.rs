@@ -195,6 +195,7 @@ impl ZeroValues {
         }
     }
 
+    // TODO move this method into the tree search, this is a strange place for it
     pub fn add_virtual(&self, virtual_visits: u64) -> Self {
         let virtual_visits = virtual_visits as f32;
         ZeroValues {
@@ -203,6 +204,10 @@ impl ZeroValues {
             //TODO make sure this behaves correctly in the full impl
             moves_left: self.moves_left,
         }
+    }
+
+    pub fn to_slice(&self) -> [f32; 5] {
+        [self.value, self.wdl.win, self.wdl.draw, self.wdl.loss, self.moves_left]
     }
 }
 

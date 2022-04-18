@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use board_game::board::{Board, Outcome};
+use board_game::board::Board;
 use crossbeam::channel::{Receiver, Select, SendError, TryRecvError};
 use internal_iterator::InternalIterator;
 use rand::rngs::ThreadRng;
@@ -301,7 +301,7 @@ impl<B: Board, M: BoardMapper<B>> GameState<B, M> {
         // store this position
         self.positions.push(Position {
             board: tree.root_board().clone(),
-            should_store: self.search.is_full_search,
+            is_full_search: self.search.is_full_search,
             played_mv: picked_move,
             zero_visits: tree.root_visits(),
             net_evaluation,
@@ -312,17 +312,11 @@ impl<B: Board, M: BoardMapper<B>> GameState<B, M> {
         next_board.play(picked_move);
         self.mv_count += 1;
 
-        let outcome = if self.mv_count >= ctx.settings.max_game_length as u32 {
-            Some(Outcome::Draw)
-        } else {
-            next_board.outcome()
-        };
-
-        if let Some(outcome) = outcome {
+        if next_board.is_done() || self.mv_count >= ctx.settings.max_game_length as u32 {
             // record this game
             let simulation = Simulation {
-                outcome,
                 positions: std::mem::take(&mut self.positions),
+                final_board: next_board,
             };
             ctx.update_sender
                 .send(GeneratorUpdate::FinishedSimulation {

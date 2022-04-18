@@ -26,6 +26,11 @@ pub struct Filter {
 
 // TODO the filtering removes resigned games, which may introduce bias.
 //   Maybe we should keep games where the engine eval agrees with the resignation?
+// TODO since the redesign the outcome must match the final board, so how can we deal with non-terminal games?
+//   where do they come from anyway? do resignations even get through?
+#[allow(unreachable_code)]
+#[allow(dead_code)]
+#[allow(unused_assignments)]
 pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
     input_pgn: impl BufferedReader<()>,
     binary_output: &mut BinaryOutput<ChessBoard, M>,
@@ -52,7 +57,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
             let mut positions = vec![];
             let mut board = ChessBoard::default_with_rules(Rules::unlimited());
 
-            let outcome = match game.result() {
+            let _outcome = match game.result() {
                 PgnResult::WinWhite => Outcome::WonBy(Player::A),
                 PgnResult::WinBlack => Outcome::WonBy(Player::B),
                 PgnResult::Draw => Outcome::Draw,
@@ -84,7 +89,10 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 skip = true;
             } else {
                 position_count = positions.len();
-                binary_output.append(&Simulation { outcome, positions })?;
+                binary_output.append(&Simulation {
+                    positions,
+                    final_board: todo!(),
+                })?;
             }
 
             time_output += time_since(&mut prev);
@@ -220,7 +228,7 @@ fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, move
 
     Position {
         board: board.clone(),
-        should_store: true,
+        is_full_search: true,
         played_mv: mv,
         zero_visits: 0,
         net_evaluation: ZeroEvaluation {

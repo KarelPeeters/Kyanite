@@ -13,6 +13,7 @@ use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::simulation::{Position, Simulation};
 use kz_util::PrintThroughput;
 
+// TODO remove either this or the selfuni bin, make sure to combine the best choices
 pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
     start: &B,
     count: usize,
@@ -26,11 +27,7 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
         let mut board = start.clone();
         let mut positions = vec![];
 
-        let outcome = loop {
-            if let Some(outcome) = board.outcome() {
-                break outcome;
-            }
-
+        while !board.is_done() {
             let mv_count = board.available_moves().count();
 
             let (mv, policy) = if solver_depth != 0 {
@@ -55,7 +52,7 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
 
             positions.push(Position {
                 board: board.clone(),
-                should_store: true,
+                is_full_search: true,
                 played_mv: mv,
                 zero_visits: 0,
                 net_evaluation: ZeroEvaluation {
@@ -69,9 +66,12 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
             });
 
             board.play(mv);
-        };
+        }
 
-        bin.append(&Simulation { outcome, positions })?;
+        bin.append(&Simulation {
+            positions,
+            final_board: board,
+        })?;
         pt.update_delta(1);
     }
 

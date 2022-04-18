@@ -31,28 +31,6 @@ impl ZeroEvaluation<'_> {
             policy: Cow::Borrowed(self.policy.borrow()),
         }
     }
-
-    pub fn assert_normalized_or_nan(&self) {
-        let policy_sum = self.policy.iter().copied().sum::<f32>();
-        if !policy_sum.is_nan() {
-            assert!(
-                (policy_sum - 1.0).abs() < 0.001,
-                "Expected normalized policy, got {:?} with sum {}",
-                self.policy,
-                policy_sum
-            );
-        }
-
-        let wdl_sum = self.values.wdl.sum();
-        if !wdl_sum.is_nan() {
-            assert!(
-                (wdl_sum - 1.0).abs() < 0.001,
-                "Expected normalized wdl, got {:?} with sum {}",
-                wdl_sum,
-                policy_sum
-            );
-        }
-    }
 }
 
 //TODO maybe remove the debug bound on networks? are we using it anywhere?

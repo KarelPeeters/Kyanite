@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use board_game::ai::solver::solve_all_moves;
-use board_game::board::{Board, Outcome};
+use board_game::board::Board;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
@@ -136,7 +136,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
 
             let position = Position {
                 board: board.clone(),
-                should_store: true,
+                is_full_search: true,
                 played_mv: mv,
                 zero_visits: 0,
                 zero_evaluation: zero_eval,
@@ -147,8 +147,10 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
             board.play(mv);
         }
 
-        let outcome = board.outcome().unwrap_or(Outcome::Draw);
-        let sim = Simulation { outcome, positions };
+        let sim = Simulation {
+            positions,
+            final_board: board,
+        };
 
         match sender.send(sim) {
             Ok(()) => {}

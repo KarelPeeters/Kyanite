@@ -275,7 +275,7 @@ impl<B: Board> GameState<B> {
         // store this position
         self.positions.push(Position {
             board: tree.root_board().inner().clone(),
-            should_store: self.search.is_full_search,
+            is_full_search: self.search.is_full_search,
             played_mv: picked_move,
             zero_visits: tree.root_visits(),
             net_evaluation,
@@ -285,11 +285,11 @@ impl<B: Board> GameState<B> {
         let mut next_board = tree.root_board().clone();
         next_board.play(picked_move);
 
-        if let Some(outcome) = next_board.outcome() {
+        if next_board.is_done() {
             //record this game
             let simulation = Simulation {
-                outcome,
                 positions: std::mem::take(&mut self.positions),
+                final_board: next_board.inner().clone(),
             };
             sender
                 .send(GeneratorUpdate::FinishedSimulation {
