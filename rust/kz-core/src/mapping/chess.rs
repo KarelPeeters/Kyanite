@@ -48,8 +48,8 @@ impl InputMapper<ChessBoard> for ChessStdMapper {
         }
 
         // counters
-        scalars.push(board.repetitions as f32);
-        scalars.push(board.non_pawn_or_capture_moves as f32);
+        scalars.push(board.repetitions() as f32);
+        scalars.push(board.non_pawn_or_capture_moves() as f32);
 
         //pieces
         for &color in &pov_colors {
