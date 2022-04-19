@@ -1,4 +1,5 @@
-use std::fmt::Debug;
+use board_game::ai::Bot;
+use std::fmt::{Debug, Formatter};
 
 use board_game::board::Board;
 
@@ -87,5 +88,55 @@ impl MuZeroSettings {
                 muzero_step_apply(tree, self.top_moves, response);
             };
         }
+    }
+}
+
+pub struct MuZeroBot<B: Board, M: BoardMapper<B>> {
+    settings: MuZeroSettings,
+    visits: u64,
+    mapper: M,
+    root_exec: MuZeroRootExecutor<B, M>,
+    expand_exec: MuZeroExpandExecutor<B, M>,
+}
+
+impl<B: Board, M: BoardMapper<B>> Debug for MuZeroBot<B, M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MuZeroBot")
+            .field("settings", &self.settings)
+            .field("visits", &self.visits)
+            .field("mapper", &self.mapper)
+            .finish()
+    }
+}
+
+impl<B: Board, M: BoardMapper<B>> MuZeroBot<B, M> {
+    pub fn new(
+        settings: MuZeroSettings,
+        visits: u64,
+        mapper: M,
+        root_exec: MuZeroRootExecutor<B, M>,
+        expand_exec: MuZeroExpandExecutor<B, M>,
+    ) -> Self {
+        Self {
+            settings,
+            visits,
+            mapper,
+            root_exec,
+            expand_exec,
+        }
+    }
+}
+
+impl<B: Board, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
+    fn select_move(&mut self, board: &B) -> B::Move {
+        let tree = self
+            .settings
+            .build_tree(board, &mut self.root_exec, &mut self.expand_exec, u32::MAX, |tree| {
+                tree.root_visits() >= self.visits
+            });
+        let index = tree.best_move_index().unwrap();
+        // the root move index is always valid
+        let mv = self.mapper.index_to_move(board, index).unwrap();
+        mv
     }
 }

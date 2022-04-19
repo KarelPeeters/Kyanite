@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 use std::fmt::{Display, Formatter};
 use std::ops::{Index, IndexMut};
 
-use board_game::board::{Board, Outcome};
+use board_game::board::Board;
 use board_game::wdl::Flip;
 use itertools::Itertools;
 
@@ -19,12 +19,6 @@ pub struct MuTree<B, M> {
     pub(super) root_board: B,
     pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum KeepMoveError {
-    Outcome { depth: u32, outcome: Outcome },
-    NotVisitedYet { depth: u32 },
 }
 
 impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
@@ -57,6 +51,7 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
         })
     }
 
+    //TODO change this back to best_move, since root moves are always valid anyway
     pub fn best_move_index(&self) -> Option<usize> {
         self.best_child(0).map(|c| self[c].last_move_index.unwrap())
     }
