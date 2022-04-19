@@ -24,12 +24,12 @@ def main(plotter: LogPlotter):
     game = Game.find("chess")
 
     paths = [
-        fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
-        for i in range(2600, 3600)
+        fr"C:\Documents\Programming\STTT\AlphaZero\data\selfuni\test_final.json"
     ]
     files = [DataFile.open(game, p) for p in paths]
 
-    sampler = FileListSampler(game, files, batch_size=64, unroll_steps=5, threads=1)
+    include_final = True
+    sampler = FileListSampler(game, files, batch_size=128, unroll_steps=5, include_final=include_final, threads=1)
 
     train = TrainSettings(
         game=game,
@@ -44,10 +44,10 @@ def main(plotter: LogPlotter):
         mask_policy=False,
     )
 
-    output_path = "../../data/muzero/derp"
+    output_path = "../../data/muzero/derp_final"
     os.makedirs(output_path, exist_ok=False)
 
-    channels = 256
+    channels = 128
     depth = 16
     saved_channels = 64
 

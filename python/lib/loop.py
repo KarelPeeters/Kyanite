@@ -2,7 +2,6 @@ import itertools
 import os
 import time
 from dataclasses import dataclass, field
-from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Iterator, List
 
@@ -80,6 +79,7 @@ class LoopSettings:
     train_settings: TrainSettings
 
     muzero_steps: Optional[int]
+    include_final: bool
 
     muzero: bool = field(init=False)
 
@@ -221,7 +221,7 @@ class LoopSettings:
                 client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
-                train_sampler = buffer.sampler_full(self.train_batch_size, self.muzero_steps)
+                train_sampler = buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)
                 print(f"Training network on buffer with size {len(train_sampler)}")
                 train_start = time.perf_counter()
 
@@ -275,8 +275,8 @@ class LoopSettings:
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network):
         setups = [
-            ("test-buffer", buffer.sampler_full(self.train_batch_size, self.muzero_steps)),
-            ("test-last", buffer.sampler_last(self.train_batch_size, self.muzero_steps)),
+            ("test-buffer", buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)),
+            ("test-last", buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, True)),
         ]
 
         network.eval()
@@ -332,7 +332,6 @@ class Generation:
 class LoopBuffer:
     def __init__(self, game: Game, target_positions: int):
         self.game = game
-        self.pool = ThreadPool(2)
         self.target_positions = target_positions
 
         self.position_count = 0
@@ -372,8 +371,6 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", info.root_wdl[1])
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
-    def sampler_full(self, batch_size: int, unroll_steps: Optional[int]):
-        return FileListSampler(self.game, self.files, batch_size, unroll_steps=unroll_steps, threads=1)
-
-    def sampler_last(self, batch_size: int, unroll_steps: Optional[int]):
-        return FileListSampler(self.game, [self.files[-1]], batch_size, unroll_steps=unroll_steps, threads=1)
+    def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool):
+        files = [self.files[-1]] if only_last else self.files
+        return FileListSampler(self.game, files, batch_size, unroll_steps=unroll_steps, include_final=include_final, threads=1)

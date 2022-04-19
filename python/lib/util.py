@@ -1,5 +1,6 @@
 import os.path
 import shutil
+from typing import TypeVar, Optional, Callable
 
 import numpy as np
 import torch
@@ -71,3 +72,15 @@ def clean_folder(path):
     if os.path.exists(path):
         shutil.rmtree(path)
     os.makedirs(path)
+
+
+X = TypeVar('X')
+Y = TypeVar('Y')
+
+
+def map_none(x: Optional[X], f: Callable[[X], Y]) -> Optional[Y]:
+    return f(x) if x is not None else None
+
+
+def map_none_or(x: Optional[X], f: Callable[[X], Y], y: Y) -> Y:
+    return f(x) if x is not None else y

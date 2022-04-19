@@ -1,12 +1,12 @@
 import random
-from typing import List
+from typing import List, Optional, TypeVar, Callable
 
 import numpy as np
 import torch
 
 from lib.data.taker import Taker
 from lib.games import Game
-from lib.util import DEVICE, prod
+from lib.util import DEVICE, prod, map_none, map_none_or
 
 
 class Position:
@@ -23,8 +23,11 @@ class Position:
         self.zero_visits = int(scalars.pop("zero_visits"))
         self.available_mv_count = int(scalars.pop("available_mv_count"))
 
-        played_mv_float = scalars.pop("played_mv", None)
-        self.played_mv = int(played_mv_float) if played_mv_float is not None else None
+        self.played_mv = map_none(scalars.pop("played_mv", None), int)
+        self.is_full_search = map_none_or(scalars.pop("is_full_search", None), bool, True)
+        self.is_final_position = map_none_or(scalars.pop("is_final_position", None), bool, False)
+        self.is_terminal = map_none_or(scalars.pop("is_terminal", None), bool, False)
+        self.hit_move_limit = map_none(scalars.pop("hit_move_limit", None), bool)
 
         self.kdl_policy = float(scalars.pop("kdl_policy"))
 

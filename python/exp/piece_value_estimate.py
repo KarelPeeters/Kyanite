@@ -27,7 +27,7 @@ def collect_training_data(data_gens, network_gens, batch_size: int, positions: i
         DataFile.open(game, f"C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/selfplay/games_{gi}")
         for gi in data_gens
     ]
-    sampler = FileListSampler(game, files, batch_size)
+    sampler = FileListSampler(game, files, batch_size, None, False, 1)
 
     networks = []
     for gi in network_gens:

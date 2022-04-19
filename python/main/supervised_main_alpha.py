@@ -63,6 +63,7 @@ def main(plotter: LogPlotter):
         train_in_eval_mode=False,
         mask_policy=True,
     )
+    include_final: bool = False
 
     def initial_network():
         channels = 32
@@ -79,8 +80,8 @@ def main(plotter: LogPlotter):
         train_files = train_files[-min(limit_file_count, len(train_files)):]
         test_files = test_files[-min(limit_file_count, len(train_files)):]
 
-    train_sampler = FileListSampler(game, train_files, batch_size, None, threads=1)
-    test_sampler = FileListSampler(game, test_files, batch_size, None, threads=1)
+    train_sampler = FileListSampler(game, train_files, batch_size, None, include_final, threads=1)
+    test_sampler = FileListSampler(game, test_files, batch_size, None, include_final, threads=1)
 
     print(f"Train file count: {len(train_files)}")
     print(f"Train file game count: {sum(f.info.game_count for f in train_files)}")
