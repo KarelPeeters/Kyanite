@@ -57,10 +57,22 @@ impl InputMapper<ChessBoard> for ChessHistoryMapper {
         let en_passant = BitBoard::from_maybe_square(inner.en_passant()).unwrap_or_default();
         bools.push_block(pov_ranks(en_passant, pov));
 
-        // boards
+        // current board
         append_board(bools, scalars, board, board.inner());
-        for h in board.history() {
+
+        // history, reversed to keep order consistent
+        let empty_boards = self.length.saturating_sub(board.history().len());
+        let start_history = board.history().len().saturating_sub(self.length);
+
+        for h in board.history()[start_history..].iter().rev() {
             append_board(bools, scalars, board, h);
+        }
+
+        for _ in 0..empty_boards {
+            for _ in 0..2 * 6 {
+                bools.push_block(0);
+            }
+            scalars.push(0.0);
         }
     }
 }
