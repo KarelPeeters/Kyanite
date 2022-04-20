@@ -88,9 +88,9 @@ fn append_board(bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoar
         }
     }
 
-    // repetition counter
+    // repetition counter, add one to distinguish from padded boards
     let count = board.repetitions_for(inner);
-    scalars.push(count as f32);
+    scalars.push(1.0 + count as f32);
 }
 
 impl PolicyMapper<ChessBoard> for ChessHistoryMapper {
