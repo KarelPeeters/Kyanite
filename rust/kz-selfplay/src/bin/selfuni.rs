@@ -16,7 +16,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 use kz_core::mapping::ataxx::AtaxxStdMapper;
-use kz_core::mapping::chess::ChessStdMapper;
+use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
 use kz_core::mapping::BoardMapper;
@@ -55,6 +55,7 @@ fn main() {
         Game::STTT => main_impl(&args, STTTBoard::default, STTTStdMapper),
         Game::Chess => main_impl(&args, ChessBoard::default, ChessStdMapper),
         Game::Ataxx { size } => main_impl(&args, || AtaxxBoard::diagonal(size), AtaxxStdMapper::new(size)),
+        Game::ChessHist { length } => main_impl(&args, ChessBoard::default, ChessHistoryMapper::new(length)),
     }
 }
 

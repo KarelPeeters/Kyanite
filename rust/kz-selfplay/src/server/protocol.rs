@@ -120,6 +120,7 @@ pub enum Game {
     TTT,
     STTT,
     Chess,
+    ChessHist { length: usize },
     Ataxx { size: u8 },
 }
 
@@ -133,10 +134,13 @@ impl Game {
             _ => {}
         };
 
-        let start = "ataxx-";
-        if let Some(size) = str.strip_prefix(start) {
+        if let Some(size) = str.strip_prefix("ataxx-") {
             let size: u8 = size.parse().ok()?;
             return Some(Game::Ataxx { size });
+        }
+        if let Some(length) = str.strip_prefix("chess-hist-") {
+            let length: usize = length.parse().ok()?;
+            return Some(Game::ChessHist { length });
         }
 
         None
@@ -149,6 +153,7 @@ impl Display for Game {
             Game::TTT => write!(f, "ttt"),
             Game::STTT => write!(f, "sttt"),
             Game::Chess => write!(f, "chess"),
+            Game::ChessHist { length } => write!(f, "chess-hist-{}", length),
             Game::Ataxx { size } => write!(f, "ataxx-{}", size),
         }
     }

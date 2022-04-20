@@ -15,7 +15,7 @@ use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
-use kz_core::mapping::chess::ChessStdMapper;
+use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
 use kz_core::mapping::BoardMapper;
@@ -63,7 +63,7 @@ pub fn selfplay_server_main() {
     let game =
         Game::parse(&startup_settings.game).unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
 
-    //TODO static dispatch this early means we're generating a lot of code 4 times
+    //TODO static dispatch this early means we're generating a lot of code N times
     //  is it actually that much? -> investigate with objdump or similar
     //  would it be relatively easy to this dispatch some more?
     match game {
@@ -89,6 +89,14 @@ pub fn selfplay_server_main() {
             startup_settings,
             ChessBoard::default,
             ChessStdMapper,
+            reader,
+            writer,
+        ),
+        Game::ChessHist { length } => selfplay_start(
+            game,
+            startup_settings,
+            ChessBoard::default,
+            ChessHistoryMapper::new(length),
             reader,
             writer,
         ),
