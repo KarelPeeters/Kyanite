@@ -3,7 +3,8 @@ use std::panic::resume_unwind;
 use board_game::board::Board;
 use internal_iterator::InternalIterator;
 
-use kz_core::mapping::PolicyMapper;
+use kz_core::mapping::bit_buffer::BitBuffer;
+use kz_core::mapping::{BoardMapper, InputMapper, PolicyMapper};
 use kz_util::display_option;
 
 mod ataxx;
@@ -11,11 +12,26 @@ mod chess_flat_gen;
 mod chess_manual_conv;
 mod chess_random;
 
-pub fn test_valid_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
-    println!("Testing {:?} on {:?}", mapper, board);
+pub fn test_valid_mapping<B: Board, M: BoardMapper<B>>(mapper: M, board: &B) {
+    if !board.is_done() {
+        test_valid_policy_mapping(mapper, board);
+    }
+
+    test_valid_input_mapping(mapper, board);
+}
+
+pub fn test_valid_input_mapping<B: Board, M: InputMapper<B>>(mapper: M, board: &B) {
+    let mut bools = BitBuffer::new(mapper.input_bool_len());
+    let mut scalars = vec![];
+    mapper.encode_input(&mut bools, &mut scalars, board);
+    assert_eq!(bools.len(), mapper.input_bool_len());
+    assert_eq!(scalars.len(), mapper.input_scalar_count());
+}
+
+pub fn test_valid_policy_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
+    println!("Testing policy for {:?} on {:?}", mapper, board);
 
     assert!(!board.is_done());
-
     test_move_to_index(mapper, board);
     test_index_to_move(mapper, board);
 }

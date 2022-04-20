@@ -2,11 +2,11 @@ use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 use chess::{ChessMove, Piece, Square};
 
-use kz_core::mapping::chess::{ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
+use kz_core::mapping::chess::{ChessHistoryMapper, ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
 use kz_core::mapping::PolicyMapper;
 use kz_util::display_option;
 
-use crate::mapper::test_valid_mapping;
+use crate::mapper::{test_valid_mapping, test_valid_policy_mapping};
 
 #[test]
 fn basic_board_mapping() {
@@ -408,9 +408,14 @@ fn board(fen: &str) -> ChessBoard {
 }
 
 fn test_conv_policy_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
+    // test other mapper with a variety of chess boards
     test_valid_mapping(ChessStdMapper, board);
-    test_valid_mapping(ChessLegacyConvPolicyMapper, board);
+    test_valid_policy_mapping(ChessLegacyConvPolicyMapper, board);
+    for length in [0, 1, 8] {
+        test_valid_mapping(ChessHistoryMapper::new(length), board);
+    }
 
+    // do the actual conv mapper test
     let mapper = ChessLegacyConvPolicyMapper;
 
     println!("Running on board\n  {}", board);

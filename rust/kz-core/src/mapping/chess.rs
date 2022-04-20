@@ -12,10 +12,102 @@ use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct ChessHistoryMapper {
+    pub length: usize,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ChessStdMapper;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ChessLegacyConvPolicyMapper;
+
+impl ChessHistoryMapper {
+    pub fn new(length: usize) -> Self {
+        Self { length }
+    }
+}
+
+impl InputMapper<ChessBoard> for ChessHistoryMapper {
+    fn input_bool_shape(&self) -> [usize; 3] {
+        let c = 1 + (self.length + 1) * (2 * 6);
+        [c, 8, 8]
+    }
+
+    fn input_scalar_count(&self) -> usize {
+        7 + (self.length + 1)
+    }
+
+    fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard) {
+        let inner = board.inner();
+        let pov = inner.side_to_move();
+
+        // common scalars
+        for color in chess::ALL_COLORS {
+            scalars.push((pov == color) as u8 as f32);
+        }
+        for &color in &[pov, !pov] {
+            let rights = inner.castle_rights(color);
+            scalars.push(rights.has_kingside() as u8 as f32);
+            scalars.push(rights.has_queenside() as u8 as f32);
+        }
+        scalars.push(board.non_pawn_or_capture_moves() as f32);
+
+        //en passant
+        let en_passant = BitBoard::from_maybe_square(inner.en_passant()).unwrap_or_default();
+        bools.push_block(pov_ranks(en_passant, pov));
+
+        // boards
+        append_board(bools, scalars, board, board.inner());
+        for h in board.history() {
+            append_board(bools, scalars, board, h);
+        }
+    }
+}
+
+fn append_board(bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &ChessBoard, inner: &chess::Board) {
+    let pov = board.inner().side_to_move();
+
+    //pieces
+    for &color in &[pov, !pov] {
+        for piece in chess::ALL_PIECES {
+            let color_piece = inner.color_combined(color) & inner.pieces(piece);
+            bools.push_block(pov_ranks(color_piece, pov));
+        }
+    }
+
+    // repetition counter
+    let count = board.repetitions_for(inner);
+    scalars.push(count as f32);
+}
+
+impl PolicyMapper<ChessBoard> for ChessHistoryMapper {
+    fn policy_shape(&self) -> &[usize] {
+        ChessStdMapper.policy_shape()
+    }
+
+    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> Option<usize> {
+        ChessStdMapper.move_to_index(board, mv)
+    }
+
+    fn index_to_move(&self, board: &ChessBoard, index: usize) -> Option<ChessMove> {
+        ChessStdMapper.index_to_move(board, index)
+    }
+}
+
+impl MuZeroMapper<ChessBoard> for ChessHistoryMapper {
+    fn state_board_size(&self) -> usize {
+        ChessStdMapper.state_board_size()
+    }
+
+    fn encoded_move_shape(&self) -> [usize; 3] {
+        ChessStdMapper.encoded_move_shape()
+    }
+
+    fn encode_mv(&self, result: &mut Vec<f32>, mv_index: usize) {
+        ChessStdMapper.encode_mv(result, mv_index)
+    }
+}
 
 impl InputMapper<ChessBoard> for ChessStdMapper {
     fn input_bool_shape(&self) -> [usize; 3] {
