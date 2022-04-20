@@ -117,6 +117,7 @@ def main():
         train_settings=train_settings,
 
         muzero_steps=5,
+        include_final=True,
     )
 
     # settings.calc_batch_count_per_gen()

@@ -94,7 +94,9 @@ def main():
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
 
-        muzero_steps=None
+        muzero_steps=None,
+        # TODO should alphazero training include the final position?
+        include_final=False,
     )
 
     # settings.calc_batch_count_per_gen()

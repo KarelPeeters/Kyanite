@@ -79,6 +79,8 @@ def main(plotter: LogPlotter):
     logger = Logger()
     optimizer = AdamW(networks.parameters(), weight_decay=1e-5)
 
+    plotter.set_can_pause(True)
+
     print("Start training")
     for bi in itertools.count():
         if bi % 100 == 0:
@@ -86,6 +88,7 @@ def main(plotter: LogPlotter):
         if bi % 500 == 0:
             torch.jit.save(torch.jit.script(networks), f"{output_path}/models_{bi}.pb")
 
+        plotter.block_while_paused()
         print(f"bi: {bi}")
         logger.start_batch()
 
