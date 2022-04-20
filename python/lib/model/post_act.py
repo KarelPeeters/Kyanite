@@ -47,7 +47,7 @@ class ConvPolicyHead(nn.Module):
 class AttentionPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int, query_channels: int):
         super().__init__()
-        assert game.name == "chess", "Attention policy head only works for chess for now"
+        assert game.name == "chess" or game.name.startswith("chess-hist"), "Attention policy head only works for chess for now"
 
         self.query_channels = query_channels
         self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
