@@ -1,7 +1,4 @@
-use crossbeam::channel::Receiver as CReceiver;
-use crossbeam::channel::Sender as CSender;
-use futures::channel::oneshot::Sender as FSender;
-
+use flume::{Receiver, Sender};
 use futures::executor::ThreadPoolBuilder;
 use std::future::Future;
 use std::iter::zip;
@@ -11,18 +8,18 @@ use futures::FutureExt;
 
 #[derive(Clone)]
 struct GpuClient {
-    job_sender: CSender<(u32, FSender<u32>)>,
+    job_sender: Sender<(u32, Sender<u32>)>,
 }
 
 impl GpuClient {
     fn map(&self, x: u32) -> impl Future<Output = u32> {
-        let (sender, receiver) = futures::channel::oneshot::channel();
+        let (sender, receiver) = flume::bounded(1);
         self.job_sender.send((x, sender)).unwrap();
-        receiver.map(|r| r.unwrap())
+        receiver.into_recv_async().map(|r| r.unwrap())
     }
 }
 
-fn gpu_main(job_receiver: CReceiver<(u32, FSender<u32>)>, batch_size: usize) {
+fn gpu_main(job_receiver: Receiver<(u32, Sender<u32>)>, batch_size: usize) {
     loop {
         // collect jobs
         let mut batch_x = vec![];
@@ -50,7 +47,7 @@ fn main() {
     let future_count = 256;
     let channel_capacity = future_count;
 
-    let (job_sender, job_receiver) = crossbeam::channel::bounded(channel_capacity);
+    let (job_sender, job_receiver) = flume::bounded(channel_capacity);
     let client = GpuClient { job_sender };
     let h = std::thread::spawn(move || {
         gpu_main(job_receiver, batch_size);
