@@ -6,11 +6,12 @@ use board_game::board::Board;
 use flume::Sender;
 
 use crate::server::protocol::{Command, GeneratorUpdate, Settings};
+use crate::server::server::GraphSender;
 
 pub fn commander_main<B: Board, G>(
     mut reader: BufReader<impl Read>,
     settings_senders: Vec<Sender<Settings>>,
-    graph_senders: Vec<Sender<Arc<G>>>,
+    graph_senders: Vec<GraphSender<G>>,
     update_sender: Sender<GeneratorUpdate<B>>,
     load_graph: impl Fn(&str) -> G,
 ) {
@@ -30,8 +31,6 @@ pub fn commander_main<B: Board, G>(
                 }
             }
             Command::NewNetwork(path) => {
-                //TODO implement non-muzero support again
-
                 println!("Commander loading & optimizing new network {:?}", path);
                 let graph = load_graph(&path);
 
@@ -40,12 +39,14 @@ pub fn commander_main<B: Board, G>(
 
                 println!("Sending new network to executors");
                 for sender in &graph_senders {
-                    sender.send(Arc::clone(&fused)).unwrap();
+                    sender.send(Some(Arc::clone(&fused))).unwrap();
                 }
             }
             Command::WaitForNewNetwork => {
-                //TODO implement this again, maybe only send to the relevant GPU?
-                eprintln!("Waiting for new network is currently not implemented");
+                println!("Waiting for new network");
+                for sender in &graph_senders {
+                    sender.send(None).unwrap();
+                }
             }
             Command::Stop => {
                 //TODO this is probably not enough any more, we need to stop the gpu executors, cpu threads and rebatchers as well

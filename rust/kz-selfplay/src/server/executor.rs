@@ -1,17 +1,9 @@
-use std::sync::Arc;
-
-use board_game::board::Board;
 use flume::{Receiver, Selector};
 
-use cuda_sys::wrapper::handle::Device;
-use kz_core::mapping::BoardMapper;
-use kz_core::network::cudnn::CudaNetwork;
-use kz_core::network::muzero::{EvalResponsePair, ExpandArgs, MuZeroFusedGraphs};
-use kz_core::network::{Network, ZeroEvaluation};
 use kz_util::zip_eq_exact;
-use nn_graph::graph::Graph;
 
 use crate::server::job_channel::{Job, JobServer};
+use crate::server::server::GraphReceiver;
 
 #[derive(Debug)]
 enum ExecutorMessage<G, X, Y> {
@@ -19,7 +11,49 @@ enum ExecutorMessage<G, X, Y> {
     Job(Job<X, Y>),
 }
 
-fn receiver_executor_message<G, X, Y>(
+pub fn batched_executor_loop<G, N, X, Y>(
+    batch_size: usize,
+    graph_receiver: GraphReceiver<G>,
+    server: JobServer<X, Y>,
+    load_network: impl Fn(&G) -> N,
+    evaluate_batch: impl Fn(&mut N, Vec<X>) -> Vec<Y>,
+) {
+    let thread_name = std::thread::current().name().unwrap().to_owned();
+    let mut network: Option<N> = None;
+
+    loop {
+        let message = if network.is_some() {
+            // wait for either a graph or a request
+            receive_executor_message(&graph_receiver, &server)
+        } else {
+            // block until we get a graph
+            ExecutorMessage::Graph(graph_receiver.recv().unwrap())
+        };
+
+        match message {
+            ExecutorMessage::Graph(graph) => {
+                if network.is_some() {
+                    println!("{} dropping network", thread_name);
+                }
+
+                drop(network);
+
+                network = graph.map(|graph| {
+                    println!("{} loading new network", thread_name);
+                    load_network(&*graph)
+                })
+            }
+            ExecutorMessage::Job(job) => {
+                let network = network.as_mut().unwrap();
+
+                // continue collecting requests until we fill a batch
+                run_job_batch(batch_size, job, server.receiver(), |x| evaluate_batch(network, x));
+            }
+        }
+    }
+}
+
+fn receive_executor_message<G, X, Y>(
     graph_receiver: &Receiver<G>,
     server: &JobServer<X, Y>,
 ) -> ExecutorMessage<G, X, Y> {
@@ -27,83 +61,6 @@ fn receiver_executor_message<G, X, Y>(
         .recv(graph_receiver, |graph| ExecutorMessage::Graph(graph.unwrap()))
         .recv(server.receiver(), |job| ExecutorMessage::Job(job.unwrap()))
         .wait()
-}
-
-pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
-    device: Device,
-    batch_size: usize,
-    mapper: M,
-    graph_receiver: Receiver<Arc<Graph>>,
-    server: JobServer<B, ZeroEvaluation>,
-) {
-    // wait for the initial graph
-    let graph = graph_receiver.recv().unwrap();
-    println!("{} loading new network", std::thread::current().name().unwrap());
-    let mut network = CudaNetwork::new(mapper, &graph, batch_size, device);
-
-    // handle incoming messages
-    loop {
-        match receiver_executor_message(&graph_receiver, &server) {
-            ExecutorMessage::Graph(graph) => {
-                println!("{} loading new network", std::thread::current().name().unwrap());
-                drop(network);
-                network = CudaNetwork::new(mapper, &graph, batch_size, device);
-            }
-            ExecutorMessage::Job(job) => {
-                run_job_batch(batch_size, job, server.receiver(), |x| network.evaluate_batch(&x));
-            }
-        }
-    }
-}
-
-pub fn executor_loop_root<B: Board, M: BoardMapper<B>>(
-    device: Device,
-    batch_size: usize,
-    graph_receiver: Receiver<Arc<MuZeroFusedGraphs<B, M>>>,
-    server: JobServer<B, EvalResponsePair>,
-) {
-    // wait for the initial graph
-    let graph = graph_receiver.recv().unwrap();
-    println!("{} loading new network", std::thread::current().name().unwrap());
-    let mut executor = graph.root_executor(device, batch_size);
-
-    // handle incoming messages
-    loop {
-        match receiver_executor_message(&graph_receiver, &server) {
-            ExecutorMessage::Graph(graph) => {
-                println!("{} loading new network", std::thread::current().name().unwrap());
-                drop(executor);
-                executor = graph.root_executor(device, batch_size);
-            }
-            ExecutorMessage::Job(job) => run_job_batch(batch_size, job, server.receiver(), |x| executor.eval_root(&x)),
-        }
-    }
-}
-
-pub fn executor_loop_expander<B: Board, M: BoardMapper<B>>(
-    device: Device,
-    batch_size: usize,
-    graph_receiver: Receiver<Arc<MuZeroFusedGraphs<B, M>>>,
-    server: JobServer<ExpandArgs, EvalResponsePair>,
-) {
-    // wait for the initial graph
-    let graph = graph_receiver.recv().unwrap();
-    println!("{} loading new network", std::thread::current().name().unwrap());
-    let mut executor = graph.expand_executor(device, batch_size);
-
-    // handle incoming messages
-    loop {
-        match receiver_executor_message(&graph_receiver, &server) {
-            ExecutorMessage::Graph(graph) => {
-                println!("{} loading new network", std::thread::current().name().unwrap());
-                drop(executor);
-                executor = graph.expand_executor(device, batch_size);
-            }
-            ExecutorMessage::Job(job) => {
-                run_job_batch(batch_size, job, server.receiver(), |x| executor.eval_expand(&x))
-            }
-        }
-    }
 }
 
 fn run_job_batch<X, Y>(

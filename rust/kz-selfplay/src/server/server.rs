@@ -9,7 +9,7 @@ use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
 use crossbeam::thread::Scope;
-use flume::Sender;
+use flume::{Receiver, Sender};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::Device;
@@ -133,6 +133,8 @@ fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Send + S
 }
 
 pub type UpdateSender<B> = Sender<GeneratorUpdate<B>>;
+pub type GraphSender<G> = Sender<Option<Arc<G>>>;
+pub type GraphReceiver<G> = Receiver<Option<Arc<G>>>;
 
 pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
     type G: Send + Sync;
@@ -146,7 +148,7 @@ pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
         mapper: M,
         start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
         update_sender: UpdateSender<B>,
-    ) -> (Vec<Sender<Settings>>, Vec<Sender<Arc<Self::G>>>);
+    ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>);
 
     fn load_graph(&self, path: &str, mapper: M) -> Self::G;
 }
@@ -166,7 +168,7 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
     let total_cpu_threads = startup.cpu_threads_per_device * devices.len();
 
     let mut settings_senders = vec![];
-    let mut graph_senders: Vec<Sender<Arc<Z::G>>> = vec![];
+    let mut graph_senders: Vec<GraphSender<Z::G>> = vec![];
     let (update_sender, update_receiver) = flume::bounded(total_cpu_threads);
 
     crossbeam::scope(|s| {

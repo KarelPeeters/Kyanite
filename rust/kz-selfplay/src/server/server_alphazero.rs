@@ -1,21 +1,21 @@
-use std::sync::Arc;
-
 use board_game::board::Board;
 use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
 
+use crate::server::executor::batched_executor_loop;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
+use kz_core::network::cudnn::CudaNetwork;
+use kz_core::network::Network;
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
-use crate::server::executor::executor_loop_alphazero;
 use crate::server::generator_alphazero::generator_alphazero_main;
 use crate::server::job_channel::job_pair;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
-use crate::server::server::ZeroSpecialization;
+use crate::server::server::{GraphSender, ZeroSpecialization};
 
 #[derive(Debug)]
 pub struct AlphaZeroSpecialization;
@@ -32,7 +32,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         mapper: M,
         start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
         update_sender: Sender<GeneratorUpdate<B>>,
-    ) -> (Vec<Sender<Settings>>, Vec<Sender<Arc<Graph>>>) {
+    ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Graph>>) {
         let gpu_batch_size = startup.gpu_batch_size;
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
@@ -40,7 +40,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         println!("Running {} concurrent games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
-        let mut graph_senders: Vec<Sender<Arc<Graph>>> = vec![];
+        let mut graph_senders: Vec<GraphSender<Graph>> = vec![];
 
         let (eval_client, eval_server) = job_pair(gpu_threads * gpu_batch_size);
 
@@ -74,7 +74,13 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
             s.builder()
                 .name(format!("gpu-expand-{}-{}", device_id, local_id))
                 .spawn(move |_| {
-                    executor_loop_alphazero(device, gpu_batch_size, mapper, graph_receiver, eval_server);
+                    batched_executor_loop(
+                        gpu_batch_size,
+                        graph_receiver,
+                        eval_server,
+                        |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),
+                        |network, x| network.evaluate_batch(&x),
+                    );
                 })
                 .unwrap();
         }
