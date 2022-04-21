@@ -6,7 +6,7 @@ use std::time::Instant;
 use board_game::board::{Board, BoardMoves};
 use board_game::games::chess::{ChessBoard, Rules};
 use board_game::wdl::WDL;
-use crossbeam::channel::{Receiver, RecvError, Sender, TryRecvError};
+use flume::{Receiver, RecvError, Sender, TryRecvError};
 use internal_iterator::InternalIterator;
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -26,7 +26,7 @@ const INFO_PERIOD: f32 = 0.5;
 
 fn main() -> std::io::Result<()> {
     // io
-    let (sender, receiver) = crossbeam::channel::unbounded();
+    let (sender, receiver) = flume::unbounded();
     std::thread::spawn(|| io_thread(sender).unwrap());
 
     let mut debug = File::create("kzero_log.txt")?;
@@ -159,7 +159,7 @@ fn receive<T>(receiver: &Receiver<T>, blocking: bool) -> Result<Option<T>, RecvE
         match receiver.try_recv() {
             Ok(value) => Ok(Some(value)),
             Err(TryRecvError::Empty) => Ok(None),
-            Err(TryRecvError::Disconnected) => Err(RecvError),
+            Err(TryRecvError::Disconnected) => Err(RecvError::Disconnected),
         }
     }
 }

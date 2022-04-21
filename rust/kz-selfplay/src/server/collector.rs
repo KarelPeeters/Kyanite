@@ -1,10 +1,9 @@
-use std::cmp::max;
 use std::fs::create_dir_all;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use board_game::board::Board;
-use crossbeam::channel::Receiver;
+use flume::Receiver;
 use std::fmt::Write as fmtWrite;
 
 use kz_core::mapping::BoardMapper;
@@ -20,7 +19,6 @@ pub fn collector_main<B: Board>(
     output_folder: &str,
     mapper: impl BoardMapper<B>,
     update_receiver: Receiver<GeneratorUpdate<B>>,
-    thread_count: usize,
 ) {
     let new_output = |gen: u32| {
         let path = format!("{}/games_{}", output_folder, gen);
@@ -36,27 +34,11 @@ pub fn collector_main<B: Board>(
     let mut curr_game_count = 0;
     let mut estimator = ThroughputEstimator::new();
 
-    let mut indices_min_max = vec![(0, 0); thread_count];
-
     for update in update_receiver {
         match update {
             GeneratorUpdate::Stop => break,
-            GeneratorUpdate::StartedSimulations {
-                thread_id,
-                next_index: last_index,
-            } => {
-                let next_index = &mut indices_min_max[thread_id].0;
-                assert!(last_index >= *next_index);
-                *next_index = last_index + 1;
-            }
-            GeneratorUpdate::FinishedSimulation {
-                thread_id,
-                index,
-                simulation,
-            } => {
-                let max_index = &mut indices_min_max[thread_id].1;
-                *max_index = max(*max_index, index);
-
+            GeneratorUpdate::StartedSimulations { .. } => (),
+            GeneratorUpdate::FinishedSimulation { simulation, .. } => {
                 estimator.add_game();
 
                 curr_output
@@ -86,7 +68,7 @@ pub fn collector_main<B: Board>(
                 root_evals,
                 moves,
             } => {
-                estimator.update(real_evals, cached_evals, root_evals, moves, &indices_min_max);
+                estimator.update(real_evals, cached_evals, root_evals, moves);
             }
         }
     }
@@ -129,14 +111,7 @@ impl ThroughputEstimator {
         self.total_games += 1;
     }
 
-    fn update(
-        &mut self,
-        real_evals: u64,
-        cached_evals: u64,
-        root_evals: u64,
-        moves: u64,
-        indices_next_max: &[(u64, u64)],
-    ) {
+    fn update(&mut self, real_evals: u64, cached_evals: u64, root_evals: u64, moves: u64) {
         self.real_evals += real_evals;
         self.cached_evals += cached_evals;
         self.root_evals += root_evals;
@@ -172,7 +147,6 @@ impl ThroughputEstimator {
                 move_throughput, self.total_moves, game_throughput, self.total_games
             )
             .unwrap();
-            writeln!(&mut info, "  indices: {:?}", indices_next_max).unwrap();
 
             print!("{}", info);
 

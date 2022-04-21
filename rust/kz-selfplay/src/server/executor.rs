@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use board_game::board::Board;
-use crossbeam::channel::Receiver;
-use crossbeam::select;
+use flume::{Receiver, Selector};
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
@@ -24,10 +23,10 @@ fn receiver_executor_message<G, X, Y>(
     graph_receiver: &Receiver<G>,
     server: &JobServer<X, Y>,
 ) -> ExecutorMessage<G, X, Y> {
-    select! {
-        recv(graph_receiver) -> graph => ExecutorMessage::Graph(graph.unwrap()),
-        recv(server.receiver()) -> job => ExecutorMessage::Job(job.unwrap()),
-    }
+    Selector::new()
+        .recv(graph_receiver, |graph| ExecutorMessage::Graph(graph.unwrap()))
+        .recv(server.receiver(), |job| ExecutorMessage::Job(job.unwrap()))
+        .wait()
 }
 
 pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
@@ -35,7 +34,7 @@ pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
     batch_size: usize,
     mapper: M,
     graph_receiver: Receiver<Arc<Graph>>,
-    server: JobServer<Vec<B>, Vec<ZeroEvaluation>>,
+    server: JobServer<B, ZeroEvaluation>,
 ) {
     // wait for the initial graph
     let graph = graph_receiver.recv().unwrap();
@@ -51,7 +50,7 @@ pub fn executor_loop_alphazero<B: Board, M: BoardMapper<B>>(
                 network = CudaNetwork::new(mapper, &graph, batch_size, device);
             }
             ExecutorMessage::Job(job) => {
-                job.run(|x| network.evaluate_batch(&x));
+                run_job_batch(batch_size, job, server.receiver(), |x| network.evaluate_batch(&x));
             }
         }
     }

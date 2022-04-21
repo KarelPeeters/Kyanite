@@ -1,4 +1,6 @@
-use crossbeam::channel::{Receiver, Sender};
+use std::future::Future;
+use flume::{Receiver, Sender};
+use futures::FutureExt;
 
 #[derive(Debug)]
 pub struct JobClient<X, Y> {
@@ -20,12 +22,12 @@ impl<X, Y> Job<X, Y> {
     pub fn run(self, mut f: impl FnMut(X) -> Y) {
         let Job { x, sender } = self;
         let y = f(x);
-        sender.send(y).unwrap();
+        sender.send(y).ok().unwrap();
     }
 }
 
 pub fn job_pair<X, Y>(cap: usize) -> (JobClient<X, Y>, JobServer<X, Y>) {
-    let (sender, receiver) = crossbeam::channel::bounded(cap);
+    let (sender, receiver) = flume::bounded(cap);
 
     let client = JobClient { sender };
     let server = JobServer { receiver };
@@ -33,9 +35,9 @@ pub fn job_pair<X, Y>(cap: usize) -> (JobClient<X, Y>, JobServer<X, Y>) {
     (client, server)
 }
 
-impl<X, Y> JobClient<X, Y> {
+impl<X, Y: 'static> JobClient<X, Y> {
     pub fn map(&self, x: X) -> Receiver<Y> {
-        let (sender, receiver) = crossbeam::channel::bounded(1);
+        let (sender, receiver) = flume::bounded(1);
         let item = Job { x, sender };
         self.sender.send(item).unwrap();
         receiver
@@ -43,6 +45,10 @@ impl<X, Y> JobClient<X, Y> {
 
     pub fn map_blocking(&self, x: X) -> Y {
         self.map(x).recv().unwrap()
+    }
+
+    pub fn map_async(&self, x: X) -> impl Future<Output=Y> {
+        self.map(x).into_recv_async().map(Result::unwrap)
     }
 }
 

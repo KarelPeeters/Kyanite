@@ -3,7 +3,7 @@ use std::str;
 use std::sync::Arc;
 
 use board_game::board::Board;
-use crossbeam::channel::Sender;
+use flume::Sender;
 
 use crate::server::protocol::{Command, GeneratorUpdate, Settings};
 

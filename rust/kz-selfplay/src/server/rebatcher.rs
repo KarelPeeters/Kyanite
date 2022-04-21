@@ -9,7 +9,7 @@ pub struct Rebatcher<X, Y> {
     client_out: JobClient<Vec<X>, Vec<Y>>,
 }
 
-impl<X, Y> Rebatcher<X, Y> {
+impl<X, Y: 'static> Rebatcher<X, Y> {
     pub fn new(
         capacity: usize,
         batch_size_in: usize,

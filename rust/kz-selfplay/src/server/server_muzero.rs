@@ -4,10 +4,10 @@ use crate::server::job_channel::job_pair;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::ZeroSpecialization;
 use board_game::board::Board;
-use crossbeam::channel;
-use crossbeam::channel::Sender;
 use crossbeam::thread::Scope;
 use cuda_sys::wrapper::handle::Device;
+use flume::Sender;
+use futures::executor::ThreadPoolBuilder;
 use kz_core::mapping::BoardMapper;
 use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
 use std::sync::Arc;
@@ -25,12 +25,15 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         device_id: usize,
         startup: &StartupSettings,
         mapper: M,
-        start_pos: &'s (impl Fn() -> B + Sync),
+        start_pos: impl Fn() -> B + Sync + Send + Clone + 'static,
         update_sender: Sender<GeneratorUpdate<B>>,
     ) -> (Vec<Sender<Settings>>, Vec<Sender<Arc<Self::G>>>) {
-        let cpu_batch_size = startup.cpu_batch_size;
-        let gpu_batch_size_expand = startup.gpu_batch_size;
         let gpu_batch_size_root = startup.gpu_batch_size_root;
+        let gpu_batch_size_expand = startup.gpu_batch_size;
+        let cpu_threads = startup.cpu_threads_per_device;
+        let gpu_threads = startup.gpu_threads_per_device;
+        let concurrent_games = (gpu_threads + 1) * gpu_batch_size_expand + 2 * gpu_batch_size_expand;
+        println!("Running {} concurrent games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
         let mut graph_senders: Vec<Sender<Arc<MuZeroFusedGraphs<B, M>>>> = vec![];
@@ -40,36 +43,38 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         let (expand_client, expand_server) = job_pair(gpu_batch_size_expand);
 
         // spawn cpu threads
-        for local_id in 0..startup.cpu_threads_per_device {
-            let thread_id = startup.cpu_threads_per_device * device_id + local_id;
+        let pool = ThreadPoolBuilder::new()
+            .pool_size(cpu_threads)
+            .name_prefix(format!("generator-{}-", device_id))
+            .create()
+            .unwrap();
 
+        for generator_id in 0..concurrent_games {
+            let start_pos = start_pos.clone();
             let root_client = root_client.clone();
             let expand_client = expand_client.clone();
             let update_sender = update_sender.clone();
 
-            let (settings_sender, settings_receiver) = channel::bounded(1);
+            let (settings_sender, settings_receiver) = flume::bounded(1);
             settings_senders.push(settings_sender);
 
-            s.builder()
-                .name(format!("generator-{}-{}", device_id, local_id))
-                .spawn(move |_| {
-                    generator_muzero_main(
-                        thread_id,
-                        mapper,
-                        start_pos,
-                        cpu_batch_size,
-                        settings_receiver,
-                        root_client,
-                        expand_client,
-                        update_sender,
-                    )
-                })
-                .unwrap();
+            pool.spawn_ok(async move {
+                generator_muzero_main(
+                    generator_id,
+                    start_pos,
+                    mapper,
+                    settings_receiver,
+                    root_client,
+                    expand_client,
+                    update_sender,
+                )
+                .await;
+            });
         }
 
         // spawn gpu expand eval threads
-        for local_id in 0..startup.gpu_threads_per_device {
-            let (graph_sender, graph_receiver) = channel::bounded(1);
+        for local_id in 0..gpu_threads {
+            let (graph_sender, graph_receiver) = flume::bounded(1);
             graph_senders.push(graph_sender);
 
             let expand_server = expand_server.clone();
@@ -84,7 +89,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
 
         // spawn gpu root eval thread
         {
-            let (graph_sender, graph_receiver) = channel::bounded(1);
+            let (graph_sender, graph_receiver) = flume::bounded(1);
             graph_senders.push(graph_sender);
 
             let root_server = root_server.clone();

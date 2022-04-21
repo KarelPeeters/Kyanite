@@ -15,9 +15,9 @@ pub struct StartupSettings {
     pub output_folder: String,
     pub games_per_gen: usize,
 
+    // TODO implement some kind of adaptive batch sizing, especially for root
     pub cpu_threads_per_device: usize,
     pub gpu_threads_per_device: usize,
-    pub cpu_batch_size: usize,
     pub gpu_batch_size: usize,
     pub gpu_batch_size_root: usize,
 }
@@ -37,12 +37,12 @@ pub enum GeneratorUpdate<B: Board> {
     Stop,
 
     StartedSimulations {
-        thread_id: usize,
+        generator_id: usize,
         next_index: u64,
     },
 
     FinishedSimulation {
-        thread_id: usize,
+        generator_id: usize,
         index: u64,
         simulation: Simulation<B>,
     },
@@ -72,12 +72,11 @@ pub enum ServerUpdate {
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     // self-play game affecting settings
-    pub max_game_length: i64,
+    pub max_game_length: Option<u64>,
     pub weights: Weights,
     pub use_value: bool,
 
     pub random_symmetries: bool,
-    pub keep_tree: bool,
 
     pub temperature: f32,
     pub zero_temp_move_count: u32,

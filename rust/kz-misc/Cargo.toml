@@ -17,6 +17,7 @@ kz-selfplay = { path = "../kz-selfplay" }
 chess = "3.2.0"
 ndarray = "0.15.4"
 crossbeam = "0.8.1"
+flume = "0.10.12"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 rand = "0.8.5"
 internal-iterator = "0.2.0"

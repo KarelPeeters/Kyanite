@@ -9,8 +9,7 @@ use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
 use board_game::wdl::OutcomeWDL;
 use clap::Parser;
-use crossbeam::channel;
-use crossbeam::channel::{Receiver, Sender};
+use flume::{Receiver, Sender};
 use internal_iterator::InternalIterator;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -63,7 +62,7 @@ fn main_impl<B: Board, M: BoardMapper<B>>(args: &Args, start_pos: impl Fn() -> B
     let thread_count = args.thread_count.unwrap_or(1) as usize;
 
     crossbeam::scope(|s| {
-        let (sender, receiver) = channel::bounded(2 * thread_count);
+        let (sender, receiver) = flume::bounded(2 * thread_count);
 
         // spawn generators
         for i in 0..thread_count {
