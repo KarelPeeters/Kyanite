@@ -1,26 +1,28 @@
 use crossbeam::channel::Receiver as CReceiver;
 use crossbeam::channel::Sender as CSender;
+use futures::channel::oneshot::Sender as FSender;
+
+use futures::executor::ThreadPoolBuilder;
 use std::future::Future;
 use std::iter::zip;
 use std::time::Duration;
-use tokio::sync::oneshot::Sender as TSender;
 
 use futures::FutureExt;
 
 #[derive(Clone)]
 struct GpuClient {
-    job_sender: CSender<(u32, TSender<u32>)>,
+    job_sender: CSender<(u32, FSender<u32>)>,
 }
 
 impl GpuClient {
     fn map(&self, x: u32) -> impl Future<Output = u32> {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let (sender, receiver) = futures::channel::oneshot::channel();
         self.job_sender.send((x, sender)).unwrap();
         receiver.map(|r| r.unwrap())
     }
 }
 
-fn gpu_main(job_receiver: CReceiver<(u32, TSender<u32>)>, batch_size: usize) {
+fn gpu_main(job_receiver: CReceiver<(u32, FSender<u32>)>, batch_size: usize) {
     loop {
         // collect jobs
         let mut batch_x = vec![];
@@ -54,11 +56,15 @@ fn main() {
         gpu_main(job_receiver, batch_size);
     });
 
-    let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+    let pool = ThreadPoolBuilder::new()
+        .pool_size(4)
+        .name_prefix("pool-")
+        .create()
+        .unwrap();
 
     for fi in 0..future_count {
         let client = client.clone();
-        runtime.spawn(async move {
+        pool.spawn_ok(async move {
             for x in 0.. {
                 let before = std::thread::current().id();
                 let y = client.map(x).await;
