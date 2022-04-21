@@ -18,7 +18,6 @@ class StartupSettings:
 
     cpu_threads_per_device: int
     gpu_threads_per_device: int
-    cpu_batch_size: int
     gpu_batch_size: int
     gpu_batch_size_root: int
 
@@ -50,7 +49,6 @@ class SelfplaySettings:
     weights: UctWeights
     use_value: bool
     random_symmetries: bool
-    keep_tree: bool
     temperature: float
     zero_temp_move_count: int
     dirichlet_alpha: float

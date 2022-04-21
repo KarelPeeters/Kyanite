@@ -32,7 +32,6 @@ class FixedSelfplaySettings:
 
     cpu_threads_per_device: int
     gpu_threads_per_device: int
-    cpu_batch_size: int
     gpu_batch_size: int
     gpu_batch_size_root: int
 
@@ -45,7 +44,6 @@ class FixedSelfplaySettings:
             games_per_gen=self.games_per_gen,
             cpu_threads_per_device=self.cpu_threads_per_device,
             gpu_threads_per_device=self.gpu_threads_per_device,
-            cpu_batch_size=self.cpu_batch_size,
             gpu_batch_size=self.gpu_batch_size,
             gpu_batch_size_root=self.gpu_batch_size_root,
         )

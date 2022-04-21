@@ -23,11 +23,10 @@ def main():
         muzero=True,
         games_per_gen=200,
 
-        cpu_threads_per_device=2,
+        cpu_threads_per_device=4,
         gpu_threads_per_device=1,
-        cpu_batch_size=1024,
-        gpu_batch_size=1024,
-        gpu_batch_size_root=8,
+        gpu_batch_size=512,
+        gpu_batch_size_root=64,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -35,7 +34,6 @@ def main():
         zero_temp_move_count=30,
         use_value=False,
         max_game_length=400,
-        keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
