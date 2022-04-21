@@ -297,12 +297,19 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         picked_logs[values == -1] = -np.inf
 
         top_index = torch.argmax(logits, dim=1)
-        batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
-        batch_top_mass = has_valid * np.nan
 
-        predicted = torch.softmax(logits, 1)
-        predicted_invalid = torch.scatter(predicted, 1, indices, (values == -1).float(), reduce="multiply")
-        batch_valid_mass = 1 - predicted_invalid.sum(dim=1)
+        if indices.shape[1] == 0:
+            # we happened to get a batch with no policy logits at all, and this trips up the gather operation
+            # just set things to nan for now
+            batch_acc = torch.full(batch_size, np.nan)
+            batch_valid_mass = torch.full(batch_size, np.nan)
+        else:
+            batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
+            predicted = torch.softmax(logits, 1)
+            predicted_invalid = torch.scatter(predicted, 1, indices, (values == -1).float(), reduce="multiply")
+            batch_valid_mass = 1 - predicted_invalid.sum(dim=1)
+
+        batch_top_mass = has_valid * np.nan
 
     # cross-entropy loss
     loss = -values * picked_logs
