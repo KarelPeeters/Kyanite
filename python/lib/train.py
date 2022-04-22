@@ -172,11 +172,11 @@ class TrainSettings:
         logger.log("acc-value", f"{log_prefix} wdl", acc_wdl)
 
         # log policy info
-        logger.log("acc-policy", f"{log_prefix} acc", eval_policy.norm_acc)
-        logger.log("acc-policy", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
+        logger.log("pol-acc", f"{log_prefix} acc", eval_policy.norm_acc)
+        logger.log("pol-acc", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
 
         if not self.mask_policy:
-            logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
+            logger.log("pol-valid", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
 
         if log_policy_norm:
             logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
