@@ -98,12 +98,13 @@ class LoopSettings:
     def calc_batch_count_per_gen(self) -> int:
         game = self.fixed_settings.game
         positions_in_buffer = self.max_buffer_size
+        samples_per_position = float(self.samples_per_position)
 
         # this does not depend on gens_in_buffer since that divides itself away
         positions_per_gen = game.estimate_moves_per_game * self.fixed_settings.games_per_gen
 
         samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
-        batch_count = self.samples_per_position * positions_per_gen / samples_per_batch
+        batch_count = samples_per_position * positions_per_gen / samples_per_batch
 
         batch_count_int = round(batch_count)
         if batch_count_int == 0:
@@ -112,7 +113,7 @@ class LoopSettings:
         # extra calculations for prints
         gens_in_buffer = positions_in_buffer / positions_per_gen
         games_in_buffer = gens_in_buffer * self.fixed_settings.games_per_gen
-        samples_per_game = self.samples_per_position * game.estimate_moves_per_game
+        samples_per_game = samples_per_position * game.estimate_moves_per_game
         samples_per_gen = samples_per_game * self.fixed_settings.games_per_gen
 
         print("Behaviour estimates:")
@@ -127,7 +128,7 @@ class LoopSettings:
         print(f"    {samples_per_batch} /batch")
         print(f"    {samples_per_gen:.4} /gen")
         print(f"    {samples_per_game:.4} /game")
-        print(f"    {self.samples_per_position:.4} /position")
+        print(f"    {samples_per_position :.4} /position")
         print(f"Calculated {batch_count:.4} -> {batch_count_int} batches per gen")
 
         return batch_count_int
