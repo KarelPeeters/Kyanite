@@ -1,9 +1,11 @@
 use flume::{Receiver, Selector};
+use superluminal_perf::{begin_event_with_color, end_event};
 
 use kz_util::zip_eq_exact;
 
 use crate::server::job_channel::{Job, JobServer};
 use crate::server::server::GraphReceiver;
+use crate::superluminal::{CL_BLUE, CL_GREEN, CL_YELLOW};
 
 #[derive(Debug)]
 enum ExecutorMessage<G, X, Y> {
@@ -22,6 +24,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
     let mut network: Option<N> = None;
 
     loop {
+        begin_event_with_color("wait", CL_YELLOW);
         let message = if network.is_some() {
             // wait for either a graph or a request
             receive_executor_message(&graph_receiver, &server)
@@ -29,9 +32,11 @@ pub fn batched_executor_loop<G, N, X, Y>(
             // block until we get a graph
             ExecutorMessage::Graph(graph_receiver.recv().unwrap())
         };
+        end_event();
 
         match message {
             ExecutorMessage::Graph(graph) => {
+                begin_event_with_color("load", CL_BLUE);
                 if network.is_some() {
                     println!("{} dropping network", thread_name);
                 }
@@ -41,7 +46,8 @@ pub fn batched_executor_loop<G, N, X, Y>(
                 network = graph.map(|graph| {
                     println!("{} loading new network", thread_name);
                     load_network(&*graph)
-                })
+                });
+                end_event();
             }
             ExecutorMessage::Job(job) => {
                 let network = network.as_mut().unwrap();
@@ -69,6 +75,7 @@ fn run_job_batch<X, Y>(
     receiver: &Receiver<Job<X, Y>>,
     f: impl FnOnce(Vec<X>) -> Vec<Y>,
 ) {
+    begin_event_with_color("collect", CL_YELLOW);
     let mut all_x = vec![first.x];
     let mut senders = vec![first.sender];
 
@@ -77,10 +84,15 @@ fn run_job_batch<X, Y>(
         all_x.push(x);
         senders.push(sender);
     }
+    end_event();
 
+    begin_event_with_color("run", CL_GREEN);
     let all_y = f(all_x);
+    end_event();
 
+    begin_event_with_color("reply", CL_YELLOW);
     for (y, sender) in zip_eq_exact(all_y, senders) {
         sender.send(y).unwrap();
     }
+    end_event();
 }

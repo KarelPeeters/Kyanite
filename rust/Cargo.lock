@@ -1291,6 +1291,7 @@ dependencies = [
  "rand_distr",
  "serde",
  "serde_json",
+ "superluminal-perf",
  "tar",
 ]
 
@@ -2589,6 +2590,21 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "superluminal-perf"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80ed8ddf5d2a4a849fa7dc75b3e0be740adb882fe7fee87e79584402ac9b1e60"
+dependencies = [
+ "superluminal-perf-sys",
+]
+
+[[package]]
+name = "superluminal-perf-sys"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0342a02bcc62538822a46f54294130677f026666c2e19d078fc213b7bc07ff16"
 
 [[package]]
 name = "syn"
