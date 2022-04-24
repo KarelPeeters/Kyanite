@@ -18,18 +18,23 @@ pub fn batched_executor_loop<G, N, X, Y>(
     graph_receiver: GraphReceiver<G>,
     server: JobServer<X, Y>,
     load_network: impl Fn(&G) -> N,
-    evaluate_batch: impl Fn(&mut N, Vec<X>) -> Vec<Y>,
+    evaluate_batch: impl Fn(&mut N, &[X]) -> Vec<Y>,
 ) {
     let thread_name = std::thread::current().name().unwrap().to_owned();
+    assert_ne!(batch_size, 0, "Got batch size 0 for {}", thread_name);
+
     let mut network: Option<N> = None;
 
+    let mut batch_x = vec![];
+    let mut batch_senders = vec![];
+
     loop {
+        // Wait for the next message. This is interleaved with filling a batch so we can never deadlock if graphs are coming in quickly.
         begin_event_with_color("wait", CL_YELLOW);
-        let message = if network.is_some() {
-            // wait for either a graph or a request
+        let message = if network.is_some() && batch_x.len() < batch_size {
             receive_executor_message(&graph_receiver, &server)
         } else {
-            // block until we get a graph
+            // the batch is full already, we need a graph
             ExecutorMessage::Graph(graph_receiver.recv().unwrap())
         };
         end_event();
@@ -53,12 +58,27 @@ pub fn batched_executor_loop<G, N, X, Y>(
                     network
                 });
             }
-            ExecutorMessage::Job(job) => {
-                // if there wasn't any graph yet we would have blocked on the graph receiver
-                let network = network.as_mut().unwrap();
+            ExecutorMessage::Job(Job { x, sender }) => {
+                batch_x.push(x);
+                batch_senders.push(sender);
+            }
+        }
 
-                // continue collecting requests until we fill a batch
-                run_job_batch(batch_size, job, server.receiver(), |x| evaluate_batch(network, x));
+        // if we have both a network and a full batch, evaluate it
+        if let Some(network) = &mut network {
+            if batch_x.len() == batch_size {
+                begin_event_with_color("run", CL_GREEN);
+                let batch_y = evaluate_batch(network, &batch_x);
+                end_event();
+
+                begin_event_with_color("reply", CL_YELLOW);
+                for (y, sender) in zip_eq_exact(batch_y, &batch_senders) {
+                    sender.send(y).unwrap();
+                }
+                end_event();
+
+                batch_x.clear();
+                batch_senders.clear();
             }
         }
     }
@@ -72,32 +92,4 @@ fn receive_executor_message<G, X, Y>(
         .recv(graph_receiver, |graph| ExecutorMessage::Graph(graph.unwrap()))
         .recv(server.receiver(), |job| ExecutorMessage::Job(job.unwrap()))
         .wait()
-}
-
-fn run_job_batch<X, Y>(
-    batch_size: usize,
-    first: Job<X, Y>,
-    receiver: &Receiver<Job<X, Y>>,
-    f: impl FnOnce(Vec<X>) -> Vec<Y>,
-) {
-    begin_event_with_color("collect", CL_YELLOW);
-    let mut all_x = vec![first.x];
-    let mut senders = vec![first.sender];
-
-    while all_x.len() < batch_size {
-        let Job { x, sender } = receiver.recv().unwrap();
-        all_x.push(x);
-        senders.push(sender);
-    }
-    end_event();
-
-    begin_event_with_color("run", CL_GREEN);
-    let all_y = f(all_x);
-    end_event();
-
-    begin_event_with_color("reply", CL_YELLOW);
-    for (y, sender) in zip_eq_exact(all_y, senders) {
-        sender.send(y).unwrap();
-    }
-    end_event();
 }
