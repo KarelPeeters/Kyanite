@@ -38,27 +38,27 @@ pub enum Command {
 pub enum GeneratorUpdate<B: Board> {
     Stop,
 
-    StartedSimulations {
+    StartedSimulation {
         generator_id: usize,
-        next_index: u64,
+    },
+
+    FinishedMove {
+        generator_id: usize,
+        curr_game_length: usize,
     },
 
     FinishedSimulation {
         generator_id: usize,
-        index: u64,
         simulation: Simulation<B>,
     },
 
-    // all values since the last progress update
-    Progress {
+    Evals {
         // the number of evaluations that hit the cache
         cached_evals: u64,
-        // the number of evaluations that did not hit the cache
+        // the number of (expand) evaluations that did not hit the cache
         real_evals: u64,
         // the number of root muzero evals
         root_evals: u64,
-        // the number of moves played
-        moves: u64,
     },
 }
 

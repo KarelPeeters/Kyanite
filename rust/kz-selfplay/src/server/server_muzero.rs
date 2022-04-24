@@ -81,6 +81,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
             graph_senders.push(graph_sender);
 
             let expand_server = expand_server.clone();
+            let update_sender = update_sender.clone();
 
             s.builder()
                 .name(format!("gpu-expand-{}-{}", device_id, local_id))
@@ -90,7 +91,17 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                         graph_receiver,
                         expand_server,
                         |graph| graph.expand_executor(device, gpu_batch_size_expand),
-                        |network, x| network.eval_expand(&x),
+                        |network, x| {
+                            let y = network.eval_expand(&x);
+                            update_sender
+                                .send(GeneratorUpdate::Evals {
+                                    cached_evals: 0,
+                                    real_evals: x.len() as u64,
+                                    root_evals: 0,
+                                })
+                                .unwrap();
+                            y
+                        },
                     );
                 })
                 .unwrap();
@@ -102,6 +113,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
             graph_senders.push(graph_sender);
 
             let root_server = root_server.clone();
+            let update_sender = update_sender.clone();
 
             s.builder()
                 .name(format!("gpu-root-{}", device_id))
@@ -111,7 +123,17 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                         graph_receiver,
                         root_server,
                         |graph| graph.root_executor(device, gpu_batch_size_root),
-                        |network, x| network.eval_root(&x),
+                        |network, x| {
+                            let y = network.eval_root(&x);
+                            update_sender
+                                .send(GeneratorUpdate::Evals {
+                                    cached_evals: 0,
+                                    real_evals: 0,
+                                    root_evals: x.len() as u64,
+                                })
+                                .unwrap();
+                            y
+                        },
                     );
                 })
                 .unwrap();

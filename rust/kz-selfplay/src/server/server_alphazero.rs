@@ -70,6 +70,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
             graph_senders.push(graph_sender);
 
             let eval_server = eval_server.clone();
+            let update_sender = update_sender.clone();
 
             s.builder()
                 .name(format!("gpu-expand-{}-{}", device_id, local_id))
@@ -79,7 +80,17 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
                         graph_receiver,
                         eval_server,
                         |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),
-                        |network, x| network.evaluate_batch(&x),
+                        |network, x| {
+                            let y = network.evaluate_batch(&x);
+                            update_sender
+                                .send(GeneratorUpdate::Evals {
+                                    cached_evals: 0,
+                                    real_evals: x.len() as u64,
+                                    root_evals: 0,
+                                })
+                                .unwrap();
+                            y
+                        },
                     );
                 })
                 .unwrap();

@@ -34,8 +34,6 @@ pub async fn generator_alphazero_main<B: Board>(
     //  really? can the rng be that significant?
     let mut rng = StdRng::from_entropy();
 
-    let mut next_index = 0;
-
     loop {
         // possibly get new settings
         match settings_receiver.try_recv() {
@@ -44,22 +42,23 @@ pub async fn generator_alphazero_main<B: Board>(
             Err(TryRecvError::Disconnected) => break,
         }
 
-        let index = next_index;
-        next_index += 1;
-
         update_sender
-            .send(GeneratorUpdate::StartedSimulations {
-                generator_id,
-                next_index,
-            })
+            .send(GeneratorUpdate::StartedSimulation { generator_id })
             .unwrap();
 
-        let simulation = generate_simulation(&settings, &update_sender, &eval_client, start_pos(), &mut rng).await;
+        let simulation = generate_simulation(
+            generator_id,
+            &settings,
+            &update_sender,
+            &eval_client,
+            start_pos(),
+            &mut rng,
+        )
+        .await;
 
         update_sender
             .send(GeneratorUpdate::FinishedSimulation {
                 generator_id,
-                index,
                 simulation,
             })
             .unwrap();
@@ -67,6 +66,7 @@ pub async fn generator_alphazero_main<B: Board>(
 }
 
 async fn generate_simulation<B: Board>(
+    generator_id: usize,
     settings: &Settings,
     update_sender: &UpdateSender<B>,
     eval_client: &EvalClient<B>,
@@ -84,7 +84,6 @@ async fn generate_simulation<B: Board>(
 
     while !curr_board.is_done() {
         // update stats to collect
-        let mut real_evals = 0;
         let mut cached_evals = 0;
 
         // determinate search settings
@@ -116,7 +115,6 @@ async fn generate_simulation<B: Board>(
                     eval.clone()
                 } else {
                     let eval = eval_client.map_async(board.clone()).await;
-                    real_evals += 1;
                     cache.put(board.clone(), eval.clone());
                     eval
                 };
@@ -156,13 +154,20 @@ async fn generate_simulation<B: Board>(
         // actually play the move
         curr_board.play(picked_move);
 
-        // send update
+        // send updates
+        if cached_evals != 0 {
+            update_sender
+                .send(GeneratorUpdate::Evals {
+                    cached_evals: cached_evals,
+                    real_evals: 0,
+                    root_evals: 0,
+                })
+                .unwrap();
+        }
         update_sender
-            .send(GeneratorUpdate::Progress {
-                cached_evals,
-                real_evals,
-                root_evals: 0,
-                moves: 1,
+            .send(GeneratorUpdate::FinishedMove {
+                generator_id,
+                curr_game_length: positions.len(),
             })
             .unwrap();
     }

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
@@ -29,29 +30,50 @@ pub fn collector_main<B: Board>(
     create_dir_all(&output_folder).expect("Failed to create output folder");
 
     let mut curr_gen = first_gen;
+    let mut curr_games = 0;
     let mut curr_output = new_output(curr_gen);
 
-    let mut curr_game_count = 0;
-    let mut estimator = ThroughputEstimator::new();
+    let mut total_games = 0;
+    let mut total_moves = 0;
+    let mut counter = Counter::default();
+
+    let mut last_print_time = Instant::now();
+    let mut curr_game_lengths = HashMap::new();
 
     for update in update_receiver {
         match update {
             GeneratorUpdate::Stop => break,
-            GeneratorUpdate::StartedSimulations { .. } => (),
-            GeneratorUpdate::FinishedSimulation { simulation, .. } => {
-                estimator.add_game();
 
+            GeneratorUpdate::StartedSimulation { generator_id } => {
+                curr_game_lengths.insert(generator_id, 0);
+            }
+
+            GeneratorUpdate::FinishedMove {
+                generator_id,
+                curr_game_length,
+            } => {
+                curr_game_lengths.insert(generator_id, curr_game_length);
+                counter.moves += 1;
+            }
+
+            GeneratorUpdate::FinishedSimulation {
+                generator_id: _,
+                simulation,
+            } => {
+                counter.games += 1;
+
+                // write file to disk, possibly starting a new generation
                 curr_output
                     .append(&simulation)
                     .expect("Error during simulation appending");
-                curr_game_count += 1;
+                curr_games += 1;
 
-                if curr_game_count >= games_per_file {
+                if curr_games >= games_per_file {
                     curr_output.finish().expect("Error while finishing output file");
 
                     let prev_i = curr_gen;
                     curr_gen += 1;
-                    curr_game_count = 0;
+                    curr_games = 0;
                     curr_output = new_output(curr_gen);
 
                     let message = ServerUpdate::FinishedFile { index: prev_i };
@@ -62,14 +84,31 @@ pub fn collector_main<B: Board>(
                     writer.flush().unwrap();
                 }
             }
-            GeneratorUpdate::Progress {
+            GeneratorUpdate::Evals {
                 cached_evals,
                 real_evals,
                 root_evals,
-                moves,
             } => {
-                estimator.update(real_evals, cached_evals, root_evals, moves);
+                counter.cached_evals += cached_evals;
+                counter.real_evals += real_evals;
+                counter.root_evals += root_evals;
             }
+        }
+
+        // periodically print stats
+        let now = Instant::now();
+        let delta = (now - last_print_time).as_secs_f32();
+        if delta >= 1.0 {
+            total_games += counter.games;
+            total_moves += counter.moves;
+
+            let info = counter
+                .to_string(delta, total_moves, total_games, &curr_game_lengths)
+                .unwrap();
+            print!("{}", info);
+
+            counter = Counter::default();
+            last_print_time = now;
         }
     }
 
@@ -80,81 +119,57 @@ pub fn collector_main<B: Board>(
     writer.flush().unwrap()
 }
 
-#[derive(Debug)]
-struct ThroughputEstimator {
-    last_print_time: Instant,
-    real_evals: u64,
-    cached_evals: u64,
-    root_evals: u64,
+#[derive(Default, Debug)]
+struct Counter {
     moves: u64,
     games: u64,
-    total_moves: u64,
-    total_games: u64,
+
+    cached_evals: u64,
+    real_evals: u64,
+    root_evals: u64,
 }
 
-impl ThroughputEstimator {
-    fn new() -> Self {
-        ThroughputEstimator {
-            last_print_time: Instant::now(),
-            real_evals: 0,
-            cached_evals: 0,
-            root_evals: 0,
-            moves: 0,
-            games: 0,
-            total_moves: 0,
-            total_games: 0,
-        }
-    }
+impl Counter {
+    fn to_string(
+        &self,
+        delta: f32,
+        total_moves: u64,
+        total_games: u64,
+        game_lengths: &HashMap<usize, usize>,
+    ) -> Result<String, std::fmt::Error> {
+        let real_eval_throughput = self.real_evals as f32 / delta;
+        let cached_eval_throughput = self.cached_evals as f32 / delta;
+        let root_eval_throughput = self.root_evals as f32 / delta;
+        let move_throughput = self.moves as f32 / delta;
+        let game_throughput = self.games as f32 / delta;
 
-    fn add_game(&mut self) {
-        self.games += 1;
-        self.total_games += 1;
-    }
+        let cache_hit_rate = cached_eval_throughput / (cached_eval_throughput + real_eval_throughput);
 
-    fn update(&mut self, real_evals: u64, cached_evals: u64, root_evals: u64, moves: u64) {
-        self.real_evals += real_evals;
-        self.cached_evals += cached_evals;
-        self.root_evals += root_evals;
-        self.moves += moves;
-        self.total_moves += moves;
+        let min_game_length = game_lengths.values().copied().min().unwrap_or(0);
+        let max_game_length = game_lengths.values().copied().max().unwrap_or(0);
+        let mean_game_length = game_lengths.values().copied().sum::<usize>() as f32 / game_lengths.len() as f32;
 
-        let now = Instant::now();
-        let delta = (now - self.last_print_time).as_secs_f32();
+        let mut result = String::new();
+        let f = &mut result;
 
-        if delta >= 1.0 {
-            self.last_print_time = now;
-            let real_eval_throughput = self.real_evals as f32 / delta;
-            let cached_eval_throughput = self.cached_evals as f32 / delta;
-            let root_eval_throughput = self.root_evals as f32 / delta;
-            let move_throughput = self.moves as f32 / delta;
-            let game_throughput = self.games as f32 / delta;
+        writeln!(f, "Selfplay info:")?;
+        writeln!(
+            f,
+            "  {:.2} gpu evals/s, {:.2} cached evals/s, (hit rate {:.2})",
+            real_eval_throughput, cached_eval_throughput, cache_hit_rate
+        )?;
+        writeln!(f, "  {:.2} root evals/s", root_eval_throughput)?;
+        writeln!(
+            f,
+            "  {:.2} moves/s => {} moves {:.2} games/s => {} games",
+            move_throughput, total_moves, game_throughput, total_games
+        )?;
+        writeln!(
+            f,
+            "  game lengths: min {} max {} mean {:.2}",
+            min_game_length, max_game_length, mean_game_length
+        )?;
 
-            let cache_hit_rate = cached_eval_throughput / (cached_eval_throughput + real_eval_throughput);
-
-            let mut info = String::new();
-
-            writeln!(&mut info, "Selfplay info:").unwrap();
-            writeln!(
-                &mut info,
-                "  {:.2} gpu evals/s, {:.2} cached evals/s, (hit rate {:.2})",
-                real_eval_throughput, cached_eval_throughput, cache_hit_rate
-            )
-            .unwrap();
-            writeln!(&mut info, "  {:.2} root evals/s", root_eval_throughput).unwrap();
-            writeln!(
-                &mut info,
-                "  {:.2} moves/s => {} moves {:.2} games/s => {} games",
-                move_throughput, self.total_moves, game_throughput, self.total_games
-            )
-            .unwrap();
-
-            print!("{}", info);
-
-            self.real_evals = 0;
-            self.cached_evals = 0;
-            self.root_evals = 0;
-            self.moves = 0;
-            self.games = 0;
-        }
+        Ok(result)
     }
 }

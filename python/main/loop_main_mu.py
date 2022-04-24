@@ -9,16 +9,16 @@ from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.layers import Flip
 from lib.model.post_act import ScalarHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
-    ResBlock, AttentionPolicyHead
+    ResBlock, AttentionPolicyHead, ConvPolicyHead
 from lib.networks import MuZeroNetworks
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("chess")
+    game = Game.find("ttt")
 
-    saved_state_channels = 64
+    saved_state_channels = 32
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
@@ -75,8 +75,8 @@ def main():
         prediction = PredictionHeads(
             common=ResBlock(channels),
             scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-            policy_head=AttentionPolicyHead(game, channels, channels)
-            # policy_head=ConvPolicyHead(game, channels)
+            # policy_head=AttentionPolicyHead(game, channels, channels)
+            policy_head=ConvPolicyHead(game, channels)
         )
 
         return MuZeroNetworks(
@@ -92,7 +92,7 @@ def main():
     #     return build_network(1, 64)
 
     def initial_network():
-        return build_network(16, 128)
+        return build_network(8, 32)
 
     initial_files_pattern = ""
 
@@ -106,11 +106,11 @@ def main():
 
         only_generate=False,
 
-        min_buffer_size=1_500_000,
-        max_buffer_size=2_000_000,
+        min_buffer_size=100_000,
+        max_buffer_size=200_000,
 
         train_batch_size=128,
-        samples_per_position=0.5,
+        samples_per_position=10,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 

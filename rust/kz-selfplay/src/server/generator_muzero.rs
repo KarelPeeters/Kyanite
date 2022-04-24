@@ -48,7 +48,6 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
     let mut pool: Option<DevicePool> = None;
 
     let mut rng = StdRng::from_entropy();
-    let mut next_index = 0;
     let state_size = saved_state_channels * mapper.state_board_size() * mapper.state_board_size();
 
     loop {
@@ -68,18 +67,13 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
         let pool = pool.get_or_insert_with(|| DevicePool::new(device, pool_size));
 
         // send an update
-        let index = next_index;
-        next_index += 1;
-
         update_sender
-            .send(GeneratorUpdate::StartedSimulations {
-                generator_id,
-                next_index,
-            })
+            .send(GeneratorUpdate::StartedSimulation { generator_id })
             .unwrap();
 
         // actually generate a full game
         let simulation = generate_simulation(
+            generator_id,
             &settings,
             &update_sender,
             &root_client,
@@ -92,11 +86,10 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
         )
         .await;
 
-        // send another update
+        // send finished simulation
         update_sender
             .send(GeneratorUpdate::FinishedSimulation {
                 generator_id,
-                index,
                 simulation,
             })
             .unwrap();
@@ -104,6 +97,7 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
 }
 
 async fn generate_simulation<B: Board, M: BoardMapper<B>>(
+    generator_id: usize,
     settings: &Settings,
     update_sender: &UpdateSender<B>,
     root_client: &RootClient<B>,
@@ -120,10 +114,6 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
     let mut curr_board = start;
 
     while !curr_board.is_done() {
-        // update stats to collect
-        let mut root_evals = 0;
-        let mut expand_evals = 0;
-
         // determinate search settings
         let is_full_search = rng.gen_bool(settings.full_search_prob);
         let target_visits = if is_full_search {
@@ -158,7 +148,6 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                         };
 
                         let mut eval = root_client.map_async(root_args).await;
-                        root_evals += 1;
 
                         root_net_eval = Some(extract_zero_eval(mapper, &board, &eval));
                         add_dirichlet_noise(eval.policy.to_mut(), settings, &board, mapper, rng);
@@ -180,7 +169,6 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                             output_state: output_state.clone(),
                         };
                         let eval = expand_client.map_async(expand_args).await;
-                        expand_evals += 1;
 
                         MuZeroResponse {
                             node,
@@ -221,11 +209,9 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
 
         // send update
         update_sender
-            .send(GeneratorUpdate::Progress {
-                cached_evals: 0,
-                real_evals: expand_evals,
-                root_evals,
-                moves: 1,
+            .send(GeneratorUpdate::FinishedMove {
+                generator_id,
+                curr_game_length: positions.len(),
             })
             .unwrap();
 
