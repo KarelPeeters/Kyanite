@@ -163,7 +163,7 @@ class UnrolledPositionBatch:
     def __init__(self, game: Game, unroll_steps: int, chains: List[List[Position]], pin_memory: bool):
         assert unroll_steps > 0, "Must contain at least one unroll step"
         for chain in chains:
-            assert len(chain) == unroll_steps + 1
+            assert len(chain) == unroll_steps + 1, f"Expected {unroll_steps + 1} positions, got chain with {len(chain)}"
 
         positions_by_step = [[] for _ in range(unroll_steps + 1)]
 
