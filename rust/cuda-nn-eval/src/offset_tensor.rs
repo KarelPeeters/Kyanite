@@ -11,8 +11,8 @@ pub trait OffsetPtr: Debug + Clone {
 /// A generic Tensor representation.
 #[derive(Debug, Clone)]
 pub struct PtrTensor<P> {
-    ptr: P,
     shape: StridedShape,
+    ptr: P,
 }
 
 impl<P> PtrTensor<P> {

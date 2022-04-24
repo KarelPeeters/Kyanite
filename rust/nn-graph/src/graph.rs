@@ -431,8 +431,6 @@ impl Graph {
     /// Slice a value along an axis. See [slice_range] for a more general version.
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
-        range.assert_valid();
-
         let old_shape = &self[input].shape;
         assert!(
             axis < old_shape.rank(),
@@ -442,6 +440,7 @@ impl Graph {
         );
 
         let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
+        range.assert_in_bounds(old_size);
         let new_size = (range.end - range.start) / range.step;
 
         // skip trivial slice
@@ -846,5 +845,16 @@ impl SliceRange {
             "Invalid range {:?}: bounds must differ by a multiple of step",
             self
         );
+    }
+
+    pub fn assert_in_bounds(self, size: usize) {
+        self.assert_valid();
+
+        assert!(
+            self.start == self.end || (self.start < size && self.end <= size),
+            "{:?} out of bounds for axis of size {}",
+            self,
+            size
+        )
     }
 }

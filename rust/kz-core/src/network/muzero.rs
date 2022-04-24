@@ -146,6 +146,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
     }
 
     pub fn fuse(&self, settings: OptimizerSettings) -> MuZeroFusedGraphs<B, M> {
+        let state_slice_range = SliceRange::simple(0, self.info.state_channels_saved);
+
         let root = {
             let mut root = Graph::new();
 
@@ -153,7 +155,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
 
             let input = root.input(input_shape);
             let state = root.call(&self.representation, &[input])[0];
-            let state_saved = root.slice(state, 1, SliceRange::simple(0, self.info.state_channels_saved));
+            let state_saved = root.slice(state, 1, state_slice_range);
             let outputs = root.call(&self.prediction, &[state]);
             root.output_all(&[state_saved, outputs[0], outputs[1]]);
 
@@ -167,7 +169,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
             let prev_state = expand.input(shape![Size::BATCH, self.info.state_channels_saved, b, b]);
             let mv = expand.input(Shape::fixed(&self.mapper.encoded_move_shape()).batched());
             let state = expand.call(&self.dynamics, &[prev_state, mv])[0];
-            let state_saved = expand.slice(state, 1, SliceRange::simple(0, self.info.state_channels_saved));
+            let state_saved = expand.slice(state, 1, state_slice_range);
             let outputs = expand.call(&self.prediction, &[state]);
             expand.output_all(&[state_saved, outputs[0], outputs[1]]);
 

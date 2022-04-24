@@ -196,7 +196,7 @@ unsafe fn main_inner<B: Board, M: BoardMapper<B>>(path: &str, board: B, mapper: 
 
             // copy + fake quantize state
             let slice_range = SliceRange::simple(0, graphs.info.state_channels_saved);
-            saved_state_quant.quantize_from(&state_tensor.slice(0, slice_range));
+            saved_state_quant.quantize_from(&state_tensor.slice(1, slice_range));
             saved_state_quant.unquantize_to(&dynamics.inputs[0]);
 
             // actually run dynamics
