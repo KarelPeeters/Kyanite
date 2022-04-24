@@ -266,6 +266,7 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
     assert indices.shape == values.shape
     assert len(logits) == len(indices)
 
+    device = logits.device
     (batch_size, max_mv_count) = indices.shape
     logits = logits.flatten(1)
 
@@ -301,8 +302,8 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         if indices.shape[1] == 0:
             # we happened to get a batch with no policy logits at all, and this trips up the gather operation
             # just set things to nan for now
-            batch_acc = torch.full(batch_size, np.nan)
-            batch_valid_mass = torch.full(batch_size, np.nan)
+            batch_acc = torch.full((batch_size,), np.nan, device=device)
+            batch_valid_mass = torch.full((batch_size,), np.nan, device=device)
         else:
             batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
             predicted = torch.softmax(logits, 1)
