@@ -2,9 +2,7 @@ import json
 import os
 from pathlib import Path
 from threading import Lock
-from typing import overload, List, Union
-
-import numpy as np
+from typing import List, Union
 
 from lib.data.position import Position
 from lib.games import Game
@@ -91,7 +89,6 @@ class DataFile:
         if isinstance(item, slice):
             return [self[i] for i in range(len(self))[item]]
 
-        assert isinstance(item, (int, np.intc)), f"Expected int, got {type(item)}"
         if not (0 <= item < len(self)):
             raise IndexError(f"Index {item} out of bounds in file with {len(self)} positions")
 
