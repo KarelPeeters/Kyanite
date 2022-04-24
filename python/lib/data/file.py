@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from threading import Lock
+from typing import overload, List, Union
 
 from lib.data.position import Position
 from lib.games import Game
@@ -81,7 +82,11 @@ class DataFile:
     def __len__(self):
         return self.info.position_count
 
-    def __getitem__(self, item: int) -> Position:
+    def __getitem__(self, item: Union[int, slice]) -> Union[Position, List[Position]]:
+        if isinstance(item, slice):
+            return [self[i] for i in range(len(self))[item]]
+
+        assert isinstance(item, int)
         if not (0 <= item < len(self)):
             raise IndexError(f"Index {item} out of bounds in file with {len(self)} positions")
 
