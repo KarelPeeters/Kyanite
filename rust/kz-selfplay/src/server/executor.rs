@@ -36,20 +36,25 @@ pub fn batched_executor_loop<G, N, X, Y>(
 
         match message {
             ExecutorMessage::Graph(graph) => {
-                begin_event_with_color("load", CL_BLUE);
+                // drop network before loading new one to save some GPU memory
                 if network.is_some() {
+                    begin_event_with_color("drop", CL_BLUE);
                     println!("{} dropping network", thread_name);
+                    drop(network);
+                    end_event();
                 }
 
-                drop(network);
-
+                // load the new network if any
                 network = graph.map(|graph| {
+                    begin_event_with_color("load", CL_BLUE);
                     println!("{} loading new network", thread_name);
-                    load_network(&*graph)
+                    let network = load_network(&*graph);
+                    end_event();
+                    network
                 });
-                end_event();
             }
             ExecutorMessage::Job(job) => {
+                // if there wasn't any graph yet we would have blocked on the graph receiver
                 let network = network.as_mut().unwrap();
 
                 // continue collecting requests until we fill a batch
