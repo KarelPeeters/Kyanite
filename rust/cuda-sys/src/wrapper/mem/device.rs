@@ -88,6 +88,11 @@ impl DevicePtr {
         self.buffer.base_ptr.offset(self.offset)
     }
 
+    /// The number of `DevicePtr` sharing the underlying buffer that are still alive.
+    pub fn shared_count(&self) -> usize {
+        Arc::strong_count(&self.buffer)
+    }
+
     pub unsafe fn copy_linear_from_host(&self, buffer: &[u8]) {
         self.assert_linear_in_bounds(buffer.len());
 

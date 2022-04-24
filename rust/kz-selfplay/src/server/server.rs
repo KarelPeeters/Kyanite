@@ -150,7 +150,7 @@ pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
         update_sender: UpdateSender<B>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>);
 
-    fn load_graph(&self, path: &str, mapper: M) -> Self::G;
+    fn load_graph(&self, path: &str, mapper: M, startup: &StartupSettings) -> Self::G;
 }
 
 fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecialization<B, M> + Send + Sync>(
@@ -166,13 +166,14 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
     assert!(!devices.is_empty(), "No cuda devices found");
 
     let total_cpu_threads = startup.cpu_threads_per_device * devices.len();
+    let startup = &startup;
 
     let mut settings_senders = vec![];
     let mut graph_senders: Vec<GraphSender<Z::G>> = vec![];
     let (update_sender, update_receiver) = flume::bounded(total_cpu_threads);
 
     crossbeam::scope(|s| {
-        // spawn cpu search, gpu eval, rebatcher threads
+        // spawn per-device threads
         for (device_id, &device) in devices.iter().enumerate() {
             let start_pos = start_pos.clone();
             let (mut new_settings_senders, mut new_graph_senders) =
@@ -202,7 +203,7 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
             .name("commander".to_string())
             .spawn(move |_| {
                 commander_main(reader, settings_senders, graph_senders, update_sender, |path| {
-                    spec.load_graph(path, mapper)
+                    spec.load_graph(path, mapper, startup)
                 });
             })
             .unwrap();

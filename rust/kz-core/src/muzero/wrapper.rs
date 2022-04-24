@@ -2,13 +2,14 @@ use board_game::ai::Bot;
 use std::fmt::{Debug, Formatter};
 
 use board_game::board::Board;
+use cuda_nn_eval::quant::QuantizedStorage;
 
 use crate::mapping::BoardMapper;
 use crate::muzero::step::{
     muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse, MuZeroRootRequest,
 };
 use crate::muzero::tree::MuTree;
-use crate::network::muzero::{MuZeroExpandExecutor, MuZeroRootExecutor};
+use crate::network::muzero::{ExpandArgs, MuZeroExpandExecutor, MuZeroRootExecutor, RootArgs};
 use crate::zero::node::UctWeights;
 use crate::zero::step::FpuMode;
 
@@ -51,6 +52,7 @@ impl MuZeroSettings {
     }
 
     // Continue expanding an existing tree.
+    // TODO maybe unify this code with the async implementation written for the generator?
     pub fn expand_tree<B: Board, M: BoardMapper<B>>(
         self,
         tree: &mut MuTree<B, M>,
@@ -59,6 +61,12 @@ impl MuZeroSettings {
         draw_depth: u32,
         mut stop: impl FnMut(&MuTree<B, M>) -> bool,
     ) {
+        let device = root_exec.root_exec.handles.device();
+        assert_eq!(device, expand_exec.expand_exec.handles.device());
+        assert_eq!(root_exec.info, expand_exec.info);
+
+        let state_size = root_exec.info.state_saved_shape(tree.mapper).size().eval(1);
+
         'outer: loop {
             if stop(tree) {
                 break 'outer;
@@ -69,18 +77,37 @@ impl MuZeroSettings {
 
             // evaluate request
             if let Some(request) = request {
+                let output_state = QuantizedStorage::new(device.alloc(state_size), state_size);
+
                 let response = match request {
                     MuZeroRequest::Root(MuZeroRootRequest { node, board }) => {
-                        let (state, eval) = root_exec.eval_root(&[board]).remove(0);
-                        MuZeroResponse { node, state, eval }
+                        let root_args = RootArgs {
+                            board,
+                            output_state: output_state.clone(),
+                        };
+                        let eval = root_exec.eval_root(&[root_args]).remove(0);
+                        MuZeroResponse {
+                            node,
+                            state: output_state,
+                            eval,
+                        }
                     }
                     MuZeroRequest::Expand(MuZeroExpandRequest {
                         node,
                         state,
                         move_index,
                     }) => {
-                        let (state, eval) = expand_exec.eval_expand(&[(state, move_index)]).remove(0);
-                        MuZeroResponse { node, state, eval }
+                        let expand_args = ExpandArgs {
+                            state,
+                            move_index,
+                            output_state: output_state.clone(),
+                        };
+                        let eval = expand_exec.eval_expand(&[expand_args]).remove(0);
+                        MuZeroResponse {
+                            node,
+                            state: output_state,
+                            eval,
+                        }
                     }
                 };
 

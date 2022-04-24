@@ -57,11 +57,15 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
             let (settings_sender, settings_receiver) = flume::bounded(1);
             settings_senders.push(settings_sender);
 
+            let saved_state_channels = startup.saved_state_channels;
+
             pool.spawn_ok(async move {
                 generator_muzero_main(
                     generator_id,
+                    device,
                     start_pos,
                     mapper,
+                    saved_state_channels,
                     settings_receiver,
                     root_client,
                     expand_client,
@@ -116,9 +120,15 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         (settings_senders, graph_senders)
     }
 
-    fn load_graph(&self, path: &str, mapper: M) -> Self::G {
-        MuZeroGraphs::load(path, mapper)
-            .optimize(Default::default())
-            .fuse(Default::default())
+    fn load_graph(&self, path: &str, mapper: M, startup: &StartupSettings) -> Self::G {
+        let graphs = MuZeroGraphs::load(path, mapper);
+
+        assert_eq!(
+            startup.saved_state_channels, graphs.info.state_channels_saved,
+            "Saved channels mismatch, startup says {} but loaded graph says {}",
+            startup.saved_state_channels, graphs.info.state_channels_saved
+        );
+
+        graphs.fuse(Default::default())
     }
 }

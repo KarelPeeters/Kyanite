@@ -1,6 +1,15 @@
+use std::borrow::Cow;
+
 use board_game::board::Board;
 use flume::{Receiver, TryRecvError};
 use internal_iterator::InternalIterator;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use rand_distr::Dirichlet;
+
+use cuda_nn_eval::quant::QuantizedStorage;
+use cuda_sys::wrapper::handle::Device;
+use cuda_sys::wrapper::mem::pool::DevicePool;
 use kz_core::mapping::BoardMapper;
 use kz_core::muzero::step::{
     muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse, MuZeroRootRequest,
@@ -8,13 +17,9 @@ use kz_core::muzero::step::{
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
 use kz_core::network::common::normalize_in_place;
-use kz_core::network::muzero::{EvalResponsePair, ExpandArgs};
+use kz_core::network::muzero::{ExpandArgs, RootArgs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use rand_distr::Dirichlet;
-use std::borrow::Cow;
 
 use crate::move_selector::MoveSelector;
 use crate::server::job_channel::JobClient;
@@ -24,13 +29,15 @@ use crate::simulation::{Position, Simulation};
 
 // TODO we're reusing quantized states from one network as inputs to a potentially updated network
 //   hopefully that doesn't cause too many issues
-type RootClient<B> = JobClient<B, EvalResponsePair>;
-type ExpandClient = JobClient<ExpandArgs, EvalResponsePair>;
+type RootClient<B> = JobClient<RootArgs<B>, MuZeroEvaluation<'static>>;
+type ExpandClient = JobClient<ExpandArgs, MuZeroEvaluation<'static>>;
 
 pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
     generator_id: usize,
+    device: Device,
     start_pos: impl Fn() -> B,
     mapper: M,
+    saved_state_channels: usize,
     settings_receiver: Receiver<Settings>,
     root_client: RootClient<B>,
     expand_client: ExpandClient,
@@ -38,12 +45,11 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
 ) {
     // wait for initial settings
     let mut settings = settings_receiver.recv_async().await.unwrap();
+    let mut pool: Option<DevicePool> = None;
 
-    //TODO try with a different(faster) rng
-    //  really? can the rng be that significant?
     let mut rng = StdRng::from_entropy();
-
     let mut next_index = 0;
+    let state_size = saved_state_channels * mapper.state_board_size() * mapper.state_board_size();
 
     loop {
         // possibly get new settings
@@ -53,6 +59,15 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
             Err(TryRecvError::Disconnected) => break,
         }
 
+        // possibly (re)allocate pool
+        let pool_size = settings.full_iterations as usize * state_size;
+        pool = pool.filter(|p| {
+            assert_eq!(p.buffer().shared_count(), 1);
+            p.total_size_bytes() == pool_size
+        });
+        let pool = pool.get_or_insert_with(|| DevicePool::new(device, pool_size));
+
+        // send an update
         let index = next_index;
         next_index += 1;
 
@@ -63,6 +78,7 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
             })
             .unwrap();
 
+        // actually generate a full game
         let simulation = generate_simulation(
             &settings,
             &update_sender,
@@ -70,10 +86,13 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
             &expand_client,
             start_pos(),
             mapper,
+            state_size,
+            pool,
             &mut rng,
         )
         .await;
 
+        // send another update
         update_sender
             .send(GeneratorUpdate::FinishedSimulation {
                 generator_id,
@@ -91,6 +110,8 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
     expand_client: &ExpandClient,
     start: B,
     mapper: M,
+    state_size: usize,
+    pool: &mut DevicePool,
     rng: &mut impl Rng,
 ) -> Simulation<B> {
     let mut positions = vec![];
@@ -127,25 +148,45 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
             );
 
             if let Some(request) = request {
+                let output_state = QuantizedStorage::new(pool.alloc(state_size), state_size);
+
                 let response = match request {
                     MuZeroRequest::Root(MuZeroRootRequest { node, board }) => {
-                        let (state, mut eval) = root_client.map_async(board.clone()).await;
+                        let root_args = RootArgs {
+                            board: board.clone(),
+                            output_state: output_state.clone(),
+                        };
+
+                        let mut eval = root_client.map_async(root_args).await;
                         root_evals += 1;
 
                         root_net_eval = Some(extract_zero_eval(mapper, &board, &eval));
                         add_dirichlet_noise(eval.policy.to_mut(), settings, &board, mapper, rng);
 
-                        MuZeroResponse { node, state, eval }
+                        MuZeroResponse {
+                            node,
+                            eval,
+                            state: output_state,
+                        }
                     }
                     MuZeroRequest::Expand(MuZeroExpandRequest {
                         node,
                         state,
                         move_index,
                     }) => {
-                        let (state, eval) = expand_client.map_async((state, move_index)).await;
+                        let expand_args = ExpandArgs {
+                            state,
+                            move_index,
+                            output_state: output_state.clone(),
+                        };
+                        let eval = expand_client.map_async(expand_args).await;
                         expand_evals += 1;
 
-                        MuZeroResponse { node, state, eval }
+                        MuZeroResponse {
+                            node,
+                            eval,
+                            state: output_state,
+                        }
                     }
                 };
 
@@ -187,6 +228,10 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                 moves: 1,
             })
             .unwrap();
+
+        // at this point we don't need the tree nor the underlying pool allocations any more
+        drop(tree);
+        pool.clear();
     }
 
     Simulation {

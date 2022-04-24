@@ -20,7 +20,7 @@ use crate::mapping::BoardMapper;
 use crate::muzero::MuZeroEvaluation;
 use crate::network::common::{softmax_in_place, zero_values_from_scalars};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct MuZeroNetworkInfo {
     pub game: String,
     pub state_channels: usize,
@@ -73,7 +73,7 @@ pub struct MuZeroRootExecutor<B: Board, M: BoardMapper<B>> {
     output_decoder: MuZeroOutputDecoder<B, M>,
 }
 
-// TODO test whether these executers work properly with the wrong batch size
+// TODO test whether these executors work properly with the wrong batch size
 #[derive(Debug)]
 pub struct MuZeroExpandExecutor<B: Board, M: BoardMapper<B>> {
     pub mapper: M,
@@ -89,7 +89,7 @@ pub struct MuZeroExpandExecutor<B: Board, M: BoardMapper<B>> {
 #[derive(Debug)]
 pub struct MuZeroOutputDecoder<B: Board, M: BoardMapper<B>> {
     mapper: M,
-    info: MuZeroNetworkInfo,
+    _info: MuZeroNetworkInfo,
     ph: PhantomData<B>,
 
     quantizer: BatchQuantizer,
@@ -212,24 +212,35 @@ impl<B: Board, M: BoardMapper<B>> MuZeroFusedGraphs<B, M> {
     }
 }
 
-pub type ExpandArgs = (QuantizedStorage, usize);
-pub type EvalResponsePair = (QuantizedStorage, MuZeroEvaluation<'static>);
+#[derive(Debug)]
+pub struct ExpandArgs {
+    pub state: QuantizedStorage,
+    pub move_index: usize,
+    pub output_state: QuantizedStorage,
+}
+
+#[derive(Debug)]
+pub struct RootArgs<B> {
+    pub board: B,
+    pub output_state: QuantizedStorage,
+}
 
 impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
-    pub fn eval_root(&mut self, boards: &[B]) -> Vec<EvalResponsePair> {
+    pub fn eval_root(&mut self, args: &[RootArgs<B>]) -> Vec<MuZeroEvaluation<'static>> {
         let max_batch_size = self.root_exec.batch_size;
+        let batch_size = args.len();
 
         assert!(
-            boards.len() <= max_batch_size,
+            batch_size <= max_batch_size,
             "Max batch size is {}, but got {} boards",
             max_batch_size,
-            boards.len()
+            batch_size
         );
 
         // encode inputs, all padded until the batch size
         self.input_buffer.clear();
-        for board in boards {
-            self.mapper.encode_input_full(&mut self.input_buffer, board);
+        for arg in args {
+            self.mapper.encode_input_full(&mut self.input_buffer, &arg.board);
         }
         self.input_buffer
             .pad(self.mapper.input_full_len() * max_batch_size, f32::NAN);
@@ -242,29 +253,26 @@ impl<B: Board, M: BoardMapper<B>> MuZeroRootExecutor<B, M> {
             self.root_exec.run_async();
 
             // get the result
-            self.output_decoder
-                .copy_and_decode_outputs(&mut self.root_exec, boards.len())
+            self.output_decoder.copy_and_decode_outputs(
+                &mut self.root_exec,
+                batch_size,
+                args.iter().map(|a| &a.output_state),
+            )
         }
     }
 }
 
 impl<B: Board, M: BoardMapper<B>> MuZeroExpandExecutor<B, M> {
-    pub fn eval_expand(&mut self, pairs: &[ExpandArgs]) -> Vec<EvalResponsePair> {
+    pub fn eval_expand(&mut self, args: &[ExpandArgs]) -> Vec<MuZeroEvaluation<'static>> {
         let max_batch_size = self.expand_exec.batch_size;
-        let batch_size = pairs.len();
-
-        assert!(
-            batch_size <= max_batch_size,
-            "Max batch size is {}, but got {} pairs",
-            max_batch_size,
-            batch_size
-        );
+        let batch_size = args.len();
+        check_batch_size(batch_size, max_batch_size);
 
         unsafe {
             // encode inputs
             self.input_buffer.clear();
-            for (_, mv_index) in pairs {
-                self.mapper.encode_mv(&mut self.input_buffer, *mv_index);
+            for arg in args {
+                self.mapper.encode_mv(&mut self.input_buffer, arg.move_index);
             }
 
             // copy inputs to device mem
@@ -276,7 +284,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroExpandExecutor<B, M> {
             let stream = self.expand_exec.handles.cudnn.stream();
             self.output_decoder.quantizer.launch_unquantize(
                 stream,
-                pairs.iter().map(|p| &p.0),
+                args.iter().map(|a| &a.state),
                 &self.expand_exec.inputs[0],
             );
 
@@ -284,8 +292,9 @@ impl<B: Board, M: BoardMapper<B>> MuZeroExpandExecutor<B, M> {
             self.expand_exec.run_async();
 
             // get the result
+            let output_quants = args.iter().map(|a| &a.output_state);
             self.output_decoder
-                .copy_and_decode_outputs(&mut self.expand_exec, batch_size)
+                .copy_and_decode_outputs(&mut self.expand_exec, batch_size, output_quants)
         }
     }
 }
@@ -294,7 +303,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
     fn new(device: Device, max_batch_size: usize, mapper: M, info: MuZeroNetworkInfo) -> Self {
         Self {
             mapper,
-            info,
+            _info: info,
             ph: PhantomData,
 
             quantizer: BatchQuantizer::new(device, max_batch_size),
@@ -303,14 +312,15 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
         }
     }
 
-    unsafe fn copy_and_decode_outputs(
+    unsafe fn copy_and_decode_outputs<'a>(
         &mut self,
         exec: &mut CudaExecutor,
         batch_size: usize,
-    ) -> Vec<(QuantizedStorage, MuZeroEvaluation<'static>)> {
-        let device = exec.handles.cudnn.device();
-        let stream = exec.handles.cudnn.stream();
+        output_quants: impl ExactSizeIterator<Item = &'a QuantizedStorage>,
+    ) -> Vec<MuZeroEvaluation<'static>> {
+        assert_eq!(output_quants.len(), batch_size);
 
+        let stream = exec.handles.cudnn.stream();
         let policy_len = self.mapper.policy_len();
 
         // prepare output buffers
@@ -330,29 +340,20 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
         device_scalars.copy_simple_to_host(&mut self.output_scalars_buffer);
         device_policy.copy_simple_to_host(&mut self.output_policy_buffer);
 
-        let state_saved_size = self.info.state_saved_shape(self.mapper).eval(1).size();
-        let states_quant = (0..batch_size)
-            .map(|_| QuantizedStorage::alloc(device, state_saved_size))
-            .collect_vec();
-        self.quantizer
-            .launch_quantize(&stream, &device_states, states_quant.iter());
+        self.quantizer.launch_quantize(&stream, &device_states, output_quants);
 
         // decode outputs
-        let result = states_quant
-            .into_iter()
-            .enumerate()
-            .map(|(bi, state_quant)| {
+        let result = (0..batch_size)
+            .map(|bi| {
                 let scalars = &self.output_scalars_buffer[5 * bi..5 * (bi + 1)];
                 let mut policy = self.output_policy_buffer[policy_len * bi..policy_len * (bi + 1)].to_vec();
 
                 softmax_in_place(&mut policy);
 
-                let eval = MuZeroEvaluation {
+                MuZeroEvaluation {
                     values: zero_values_from_scalars(scalars),
                     policy: Cow::Owned(policy),
-                };
-
-                (state_quant, eval)
+                }
             })
             .collect_vec();
 
@@ -361,4 +362,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
 
         result
     }
+}
+
+fn check_batch_size(actual: usize, max: usize) {
+    assert!(actual <= max, "Max batch size is {}, but got {}", max, actual);
 }
