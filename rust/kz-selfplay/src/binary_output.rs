@@ -28,6 +28,7 @@ struct MetaData<'a> {
 
     game_count: usize,
     position_count: usize,
+    includes_terminal_positions: bool,
 
     max_game_length: i32,
     min_game_length: i32,
@@ -263,6 +264,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             policy_shape: self.mapper.policy_shape(),
             game_count: self.game_count,
             position_count: self.position_count,
+            includes_terminal_positions: true,
             max_game_length: self.max_game_length.unwrap_or(-1),
             min_game_length: self.min_game_length.unwrap_or(-1),
             root_wdl: (self.total_root_wdl.cast::<f32>() / self.game_count as f32).to_slice(),

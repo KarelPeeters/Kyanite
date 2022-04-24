@@ -4,6 +4,8 @@ from pathlib import Path
 from threading import Lock
 from typing import overload, List, Union
 
+import numpy as np
+
 from lib.data.position import Position
 from lib.games import Game
 
@@ -25,10 +27,13 @@ class DataFileInfo:
         self.timestamp = timestamp
 
         self.position_count = meta["position_count"]
+        self.includes_terminal_positions = meta.get("includes_terminal_positions", False)
         self.game_count = meta["game_count"]
         self.min_game_length = meta["min_game_length"]
         self.max_game_length = meta["max_game_length"]
         self.root_wdl = meta.get("root_wdl")
+
+        self.mean_game_length = (self.position_count - self.includes_terminal_positions * self.game_count) / self.game_count
 
         self.scalar_names = meta["scalar_names"]
 
@@ -86,7 +91,7 @@ class DataFile:
         if isinstance(item, slice):
             return [self[i] for i in range(len(self))[item]]
 
-        assert isinstance(item, int)
+        assert isinstance(item, (int, np.intc)), f"Expected int, got {type(item)}"
         if not (0 <= item < len(self)):
             raise IndexError(f"Index {item} out of bounds in file with {len(self)} positions")
 

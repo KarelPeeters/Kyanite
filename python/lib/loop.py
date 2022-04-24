@@ -365,7 +365,7 @@ class LoopBuffer:
             logger.log("gen-size", "games", info.game_count)
             logger.log("gen-size", "positions", info.position_count)
             logger.log("gen-game-len", "game length min", info.min_game_length)
-            logger.log("gen-game-len", "game length mean", info.position_count / info.game_count)
+            logger.log("gen-game-len", "game length mean", info.mean_game_length)
             logger.log("gen-game-len", "game length max", info.max_game_length)
 
             if info.root_wdl is not None:
