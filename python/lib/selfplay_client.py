@@ -21,6 +21,8 @@ class StartupSettings:
     gpu_batch_size: int
     gpu_batch_size_root: int
 
+    saved_state_channels: int
+
     def as_dict(self):
         return dataclasses.asdict(self)
 

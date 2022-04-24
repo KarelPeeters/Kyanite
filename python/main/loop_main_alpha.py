@@ -23,6 +23,8 @@ def main():
         gpu_threads_per_device=1,
         gpu_batch_size=512,
         gpu_batch_size_root=0,
+
+        saved_state_channels=0,
     )
 
     selfplay_settings = SelfplaySettings(

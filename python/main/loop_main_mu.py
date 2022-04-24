@@ -18,6 +18,8 @@ from lib.train import TrainSettings, ScalarTarget
 def main():
     game = Game.find("chess")
 
+    saved_state_channels = 64
+
     fixed_settings = FixedSelfplaySettings(
         game=game,
         muzero=True,
@@ -27,6 +29,8 @@ def main():
         gpu_threads_per_device=1,
         gpu_batch_size=512,
         gpu_batch_size_root=64,
+
+        saved_state_channels=saved_state_channels,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -58,13 +62,13 @@ def main():
         mask_policy=False,
     )
 
-    def build_network(depth: int, channels: int, saved_channels: int):
+    def build_network(depth: int, channels: int):
         representation = nn.Sequential(
             ResTower(depth, game.full_input_channels, channels, final_affine=False),
             nn.Hardtanh(-1.0, 1.0),
         )
         dynamics = ConcatInputsChannelwise(nn.Sequential(
-            ResTower(depth, saved_channels + game.input_mv_channels, channels, final_affine=False),
+            ResTower(depth, saved_state_channels + game.input_mv_channels, channels, final_affine=False),
             nn.Hardtanh(-1.0, 1.0),
             Flip(dim=2),
         ))
@@ -77,7 +81,7 @@ def main():
 
         return MuZeroNetworks(
             state_channels=channels,
-            state_channels_saved=saved_channels,
+            state_channels_saved=saved_state_channels,
             state_quant_bits=8,
             representation=representation,
             dynamics=dynamics,
@@ -85,10 +89,10 @@ def main():
         )
 
     # def dummy_network():
-    #     return build_network(1, 64, 64)
+    #     return build_network(1, 64)
 
     def initial_network():
-        return build_network(16, 128, 64)
+        return build_network(16, 128)
 
     initial_files_pattern = ""
 
