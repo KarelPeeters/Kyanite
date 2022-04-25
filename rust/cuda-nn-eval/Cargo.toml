@@ -7,7 +7,7 @@ edition = "2018"
 cuda-sys = { path = "../cuda-sys" }
 nn-graph = { path = "../nn-graph" }
 
-bytemuck = "1.7.3"
+bytemuck = "1.9.1"
 itertools = "0.10.3"
 rand = "0.8.5"
 internal-iterator = "0.2.0"
