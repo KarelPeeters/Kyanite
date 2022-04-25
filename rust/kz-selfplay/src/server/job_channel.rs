@@ -1,4 +1,5 @@
 use std::future::Future;
+
 use flume::{Receiver, Sender};
 use futures::FutureExt;
 
@@ -47,7 +48,7 @@ impl<X, Y: 'static> JobClient<X, Y> {
         self.map(x).recv().unwrap()
     }
 
-    pub fn map_async(&self, x: X) -> impl Future<Output=Y> {
+    pub fn map_async(&self, x: X) -> impl Future<Output = Y> {
         self.map(x).into_recv_async().map(Result::unwrap)
     }
 }
