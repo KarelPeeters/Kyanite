@@ -851,7 +851,7 @@ impl SliceRange {
         self.assert_valid();
 
         assert!(
-            self.start == self.end || (self.start < size && self.end <= size),
+            self.start == self.end || (self.start < size && self.end - (self.step - 1) <= size),
             "{:?} out of bounds for axis of size {}",
             self,
             size
