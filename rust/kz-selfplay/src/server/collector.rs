@@ -30,7 +30,6 @@ pub fn collector_main<B: Board>(
     create_dir_all(&output_folder).expect("Failed to create output folder");
 
     let mut curr_gen = first_gen;
-    let mut curr_games = 0;
     let mut curr_output = new_output(curr_gen);
 
     let mut total_games = 0;
@@ -66,14 +65,12 @@ pub fn collector_main<B: Board>(
                 curr_output
                     .append(&simulation)
                     .expect("Error during simulation appending");
-                curr_games += 1;
 
-                if curr_games >= games_per_file {
+                if curr_output.game_count() >= games_per_file {
                     curr_output.finish().expect("Error while finishing output file");
 
                     let prev_i = curr_gen;
                     curr_gen += 1;
-                    curr_games = 0;
                     curr_output = new_output(curr_gen);
 
                     let message = ServerUpdate::FinishedFile { index: prev_i };
