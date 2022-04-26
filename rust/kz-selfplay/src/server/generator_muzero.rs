@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::min;
 
 use board_game::board::Board;
 use flume::{Receiver, TryRecvError};
@@ -124,7 +125,11 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
 
         // run tree search
         let mut tree = MuTree::new(curr_board.clone(), mapper);
-        tree.reserve(target_visits as usize * settings.top_moves);
+
+        let root_max_moves = B::all_possible_moves().count();
+        let inner_max_moves = min(settings.top_moves, mapper.policy_len());
+        let max_nodes = 1 + root_max_moves + target_visits as usize * inner_max_moves;
+        tree.reserve(max_nodes);
 
         let mut root_net_eval = None;
 
