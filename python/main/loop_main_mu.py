@@ -63,6 +63,8 @@ def main():
     )
 
     def build_network(depth: int, channels: int):
+        assert channels >= saved_state_channels, f"Need at least {saved_state_channels} channels, got {channels}"
+
         representation = nn.Sequential(
             ResTower(depth, game.full_input_channels, channels, final_affine=False),
             nn.Hardtanh(-1.0, 1.0),
