@@ -17,6 +17,8 @@ use crate::zero::node::ZeroValues;
 #[derive(Debug)]
 pub struct MuTree<B, M> {
     pub(super) root_board: B,
+    pub(super) draw_depth: u32,
+
     pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
 
@@ -24,12 +26,17 @@ pub struct MuTree<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
-    pub fn new(root_board: B, mapper: M) -> Self {
+    pub fn new(root_board: B, draw_depth: u32, mapper: M) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
+        assert_ne!(
+            draw_depth, 0,
+            "Draw depth cannot be zero, this would behave like a done board"
+        );
 
         let root_node = MuNode::new(None, None, f32::NAN);
         MuTree {
             root_board,
+            draw_depth,
             mapper,
             nodes: vec![root_node],
             current_node_index: None,
@@ -46,6 +53,10 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
 
     pub fn root_board(&self) -> &B {
         &self.root_board
+    }
+
+    pub fn draw_depth(&self) -> u32 {
+        self.draw_depth
     }
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
@@ -112,14 +123,12 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
             .iter()
             .map(move |c| (self[c].visits as f32) / ((self[0].visits - 1) as f32))
     }
-
     pub fn eval(&self) -> ZeroEvaluation<'static> {
         ZeroEvaluation {
             values: self.values(),
             policy: self.policy().collect(),
         }
     }
-
     #[must_use]
     pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> MuTreeDisplay<B, M> {
         MuTreeDisplay {

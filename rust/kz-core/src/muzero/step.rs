@@ -46,7 +46,6 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
-    draw_depth: u32,
 ) -> Option<MuZeroRequest<B>> {
     assert_eq!(
         None, tree.current_node_index,
@@ -69,7 +68,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     let mut last_state: Option<QuantizedStorage> = None;
 
     loop {
-        if depth >= draw_depth {
+        if depth >= tree.draw_depth {
             //TODO what value to use for moves_left?
             tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0));
             return None;

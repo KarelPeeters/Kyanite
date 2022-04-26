@@ -115,6 +115,12 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
     let mut curr_board = start;
 
     while !curr_board.is_done() {
+        // check if we should consider this board a draw
+        let draw_depth = max_moves - positions.len() as u32;
+        if draw_depth == 0 {
+            break;
+        }
+
         // determinate search settings
         let is_full_search = rng.gen_bool(settings.full_search_prob);
         let target_visits = if is_full_search {
@@ -124,7 +130,7 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
         };
 
         // run tree search
-        let mut tree = MuTree::new(curr_board.clone(), mapper);
+        let mut tree = MuTree::new(curr_board.clone(), draw_depth, mapper);
 
         let root_max_moves = B::all_possible_moves().count();
         let inner_max_moves = min(settings.top_moves, mapper.policy_len());
@@ -134,14 +140,11 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
         let mut root_net_eval = None;
 
         while tree.root_visits() < target_visits {
-            let draw_depth = max_moves - positions.len() as u32;
-
             let request = muzero_step_gather(
                 &mut tree,
                 settings.weights.to_uct(),
                 settings.use_value,
                 FpuMode::Parent,
-                draw_depth,
             );
 
             if let Some(request) = request {

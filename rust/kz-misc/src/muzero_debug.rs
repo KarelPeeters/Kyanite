@@ -224,7 +224,7 @@ unsafe fn muzero_debug_utility_inner<B: Board, M: BoardMapper<B>>(
         println!("Building tree");
         let top_moves = 100;
         let settings = MuZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent, top_moves);
-        let tree = settings.build_tree(&start, &mut root_exec, &mut expand_exec, u32::MAX, |tree| {
+        let tree = settings.build_tree(&start, u32::MAX, &mut root_exec, &mut expand_exec, |tree| {
             tree.root_visits() >= tree_visits
         });
 

@@ -39,15 +39,15 @@ impl MuZeroSettings {
     pub fn build_tree<B: Board, M: BoardMapper<B>>(
         self,
         root_board: &B,
+        draw_depth: u32,
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
-        draw_depth: u32,
         stop: impl FnMut(&MuTree<B, M>) -> bool,
     ) -> MuTree<B, M> {
         assert_eq!(root_exec.mapper, expand_exec.mapper);
 
-        let mut tree = MuTree::new(root_board.clone(), root_exec.mapper);
-        self.expand_tree(&mut tree, root_exec, expand_exec, draw_depth, stop);
+        let mut tree = MuTree::new(root_board.clone(), draw_depth, root_exec.mapper);
+        self.expand_tree(&mut tree, root_exec, expand_exec, stop);
         tree
     }
 
@@ -58,7 +58,6 @@ impl MuZeroSettings {
         tree: &mut MuTree<B, M>,
         root_exec: &mut MuZeroRootExecutor<B, M>,
         expand_exec: &mut MuZeroExpandExecutor<B, M>,
-        draw_depth: u32,
         mut stop: impl FnMut(&MuTree<B, M>) -> bool,
     ) {
         let device = root_exec.root_exec.handles.device();
@@ -73,7 +72,7 @@ impl MuZeroSettings {
             }
 
             // gather next request
-            let request = muzero_step_gather(tree, self.weights, self.use_value, self.fpu_mode, draw_depth);
+            let request = muzero_step_gather(tree, self.weights, self.use_value, self.fpu_mode);
 
             // evaluate request
             if let Some(request) = request {
@@ -158,7 +157,7 @@ impl<B: Board, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
     fn select_move(&mut self, board: &B) -> B::Move {
         let tree = self
             .settings
-            .build_tree(board, &mut self.root_exec, &mut self.expand_exec, u32::MAX, |tree| {
+            .build_tree(board, u32::MAX, &mut self.root_exec, &mut self.expand_exec, |tree| {
                 tree.root_visits() >= self.visits
             });
         let index = tree.best_move_index().unwrap();
