@@ -36,6 +36,10 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
         }
     }
 
+    pub fn reserve(&mut self, additional_nodes: usize) {
+        self.nodes.reserve(additional_nodes);
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }

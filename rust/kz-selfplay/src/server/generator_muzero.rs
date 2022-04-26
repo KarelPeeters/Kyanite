@@ -124,6 +124,8 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
 
         // run tree search
         let mut tree = MuTree::new(curr_board.clone(), mapper);
+        tree.reserve(target_visits as usize * settings.top_moves);
+
         let mut root_net_eval = None;
 
         while tree.root_visits() < target_visits {
