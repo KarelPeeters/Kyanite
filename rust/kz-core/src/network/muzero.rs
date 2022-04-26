@@ -18,7 +18,7 @@ use nn_graph::shape::{Shape, Size};
 
 use crate::mapping::BoardMapper;
 use crate::muzero::MuZeroEvaluation;
-use crate::network::common::{softmax_in_place, zero_values_from_scalars};
+use crate::network::common::zero_values_from_scalars;
 
 #[derive(Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct MuZeroNetworkInfo {
@@ -347,13 +347,11 @@ impl<B: Board, M: BoardMapper<B>> MuZeroOutputDecoder<B, M> {
         let result = (0..batch_size)
             .map(|bi| {
                 let scalars = &self.output_scalars_buffer[5 * bi..5 * (bi + 1)];
-                let mut policy = self.output_policy_buffer[policy_len * bi..policy_len * (bi + 1)].to_vec();
-
-                softmax_in_place(&mut policy);
+                let policy_logits = self.output_policy_buffer[policy_len * bi..policy_len * (bi + 1)].to_vec();
 
                 MuZeroEvaluation {
                     values: zero_values_from_scalars(scalars),
-                    policy: Cow::Owned(policy),
+                    policy_logits: Cow::Owned(policy_logits),
                 }
             })
             .collect_vec();

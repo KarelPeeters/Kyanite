@@ -3,7 +3,7 @@ use std::borrow::{Borrow, Cow};
 use board_game::board::Board;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
-use ndarray::{s, ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, s};
 
 use nn_graph::graph::Graph;
 use nn_graph::shape;
@@ -106,6 +106,18 @@ pub fn softmax_in_place(slice: &mut [f32]) {
     for v in slice.iter_mut() {
         *v /= sum;
     }
+}
+
+pub fn unsoftmax_in_place(slice: &mut [f32], bias: f32) {
+    for v in slice.iter_mut() {
+        *v = v.ln() + bias
+    }
+}
+
+pub fn softmax(slice: &[f32]) -> Vec<f32> {
+    let mut copy = slice.to_vec();
+    softmax_in_place(&mut copy);
+    copy
 }
 
 pub fn normalize_in_place(slice: &mut [f32]) {

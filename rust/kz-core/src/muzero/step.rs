@@ -134,25 +134,25 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
     let MuZeroResponse {
         node,
         state,
-        eval: MuZeroEvaluation { values, policy },
+        eval: MuZeroEvaluation { values, policy_logits },
     } = response;
 
     let expected_node = tree.current_node_index.take();
     assert_eq!(expected_node, Some(node), "Unexpected apply node");
-    assert_eq!(tree.mapper.policy_len(), policy.len());
+    assert_eq!(tree.mapper.policy_len(), policy_logits.len());
 
     // create children
     let children = if node == 0 {
         // only keep available moves for root node
         let board = &tree.root_board;
         let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
-        create_child_nodes(&mut tree.nodes, node, indices, &policy)
+        create_child_nodes(&mut tree.nodes, node, indices, &policy_logits)
     } else {
         // keep all moves deeper in the tree
         // TODO use the fact that moves are sorted by policy to optimize UCT calculations later on
         // TODO this doesn't work for the pass move, maybe it's finally time to retire it
-        let indices = top_k_indices_sorted(&policy, top_moves).into_iter().map(Some);
-        create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy)
+        let indices = top_k_indices_sorted(&policy_logits, top_moves).into_iter().map(Some);
+        create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy_logits)
     };
 
     // set node inner
@@ -171,20 +171,22 @@ fn create_child_nodes(
     nodes: &mut Vec<MuNode>,
     parent_node: usize,
     indices: impl InternalIterator<Item = Option<usize>>,
-    policy: &[f32],
+    policy_logits: &[f32],
 ) -> IdxRange {
     let start = nodes.len();
-    let mut total_p = 0.0;
 
+    // temporarily create nodes with un-normalized policy
+    let mut total_p = 0.0;
     indices.for_each(|index| {
-        let p = index.map_or(1.0, |index| policy[index]);
+        let logit = index.map_or(0.0, |index| policy_logits[index]);
+        let p = logit.exp();
         total_p += p;
         nodes.push(MuNode::new(Some(parent_node), index, p))
     });
 
     let end = nodes.len();
 
-    // re-normalize policy
+    // properly normalize policy
     for node in start..end {
         nodes[node].net_policy /= total_p;
     }

@@ -17,7 +17,7 @@ use kz_core::muzero::step::{
 };
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
-use kz_core::network::common::normalize_in_place;
+use kz_core::network::common::{softmax_in_place, unsoftmax_in_place};
 use kz_core::network::muzero::{ExpandArgs, RootArgs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
@@ -157,7 +157,8 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                         let mut eval = root_client.map_async(root_args).await;
 
                         root_net_eval = Some(extract_zero_eval(mapper, &board, &eval));
-                        add_dirichlet_noise(eval.policy.to_mut(), settings, &board, mapper, rng);
+
+                        add_dirichlet_noise(eval.policy_logits.to_mut(), settings, &board, mapper, rng);
 
                         MuZeroResponse {
                             node,
@@ -234,15 +235,22 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
 }
 
 fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(
-    policy: &mut [f32],
+    policy_logits: &mut [f32],
     settings: &Settings,
     board: &B,
     mapper: M,
     rng: &mut impl Rng,
 ) {
     // TODO this function doesn't work with the pass move
+    // TODO consider using KataGo's shaped dirichlet noise, it's even more relevant for muzero
+    //   is that true? we're still just adding noise to the available moves!
+
     let alpha = settings.dirichlet_alpha;
     let eps = settings.dirichlet_eps;
+
+    // we're working on the logits here, so first take the softmax and then later un-softmax it
+    let policy = policy_logits;
+    softmax_in_place(policy);
 
     let mv_count = board.available_moves().count();
     if mv_count > 1 {
@@ -252,16 +260,15 @@ fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(
                 .map(|mv| mapper.move_to_index(board, mv).unwrap())
         };
 
-        let mut total_p = 0.0;
-        indices().for_each(|pi| total_p += policy[pi]);
-
         let distr = Dirichlet::new_with_size(alpha, mv_count).unwrap();
         let noise = rng.sample(distr);
 
         indices().enumerate().for_each(|(i, pi)| {
-            policy[pi] = (policy[pi] / total_p) * (1.0 - eps) + noise[i] * eps;
+            policy[pi] = policy[pi] * (1.0 - eps) + noise[i] * eps;
         });
     }
+
+    unsoftmax_in_place(policy, 0.0);
 }
 
 fn extract_zero_eval<B: Board, M: BoardMapper<B>>(
@@ -269,13 +276,14 @@ fn extract_zero_eval<B: Board, M: BoardMapper<B>>(
     board: &B,
     eval: &MuZeroEvaluation,
 ) -> ZeroEvaluation<'static> {
+    //TODO maybe also collect valid mass here?
+
     let mut policy: Vec<f32> = board
         .available_moves()
-        .map(|mv| mapper.move_to_index(board, mv).map_or(1.0, |i| eval.policy[i]))
+        .map(|mv| mapper.move_to_index(board, mv).map_or(0.0, |i| eval.policy_logits[i]))
         .collect();
 
-    // TODO should we even normalize here? that just means we lose valid weight information
-    normalize_in_place(&mut policy);
+    softmax_in_place(&mut policy);
 
     ZeroEvaluation {
         values: eval.values,

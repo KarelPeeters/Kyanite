@@ -14,15 +14,15 @@ pub struct MuZeroEvaluation<'a> {
     /// The (normalized) values.
     pub values: ZeroValues,
 
-    /// The (normalized) policy "vector", containing all possible moves.
-    pub policy: Cow<'a, [f32]>,
+    /// The (un-normalized) policy "vector", containing all possible moves.
+    pub policy_logits: Cow<'a, [f32]>,
 }
 
 impl MuZeroEvaluation<'_> {
     pub fn shallow_clone(&self) -> MuZeroEvaluation {
         MuZeroEvaluation {
             values: self.values,
-            policy: Cow::Borrowed(self.policy.borrow()),
+            policy_logits: Cow::Borrowed(self.policy_logits.borrow()),
         }
     }
 }

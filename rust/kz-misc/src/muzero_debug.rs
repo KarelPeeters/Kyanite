@@ -1,18 +1,20 @@
+use std::iter;
+
 use board_game::board::Board;
+
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::quant::{BatchQuantizer, QuantizedStorage};
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use kz_core::mapping::BoardMapper;
 use kz_core::muzero::wrapper::MuZeroSettings;
-use kz_core::network::common::{softmax_in_place, zero_values_from_scalars};
+use kz_core::network::common::{softmax, softmax_in_place, zero_values_from_scalars};
 use kz_core::network::muzero::{ExpandArgs, MuZeroGraphs, RootArgs};
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
 use kz_util::display_option;
 use nn_graph::graph::SliceRange;
 use nn_graph::optimizer::OptimizerSettings;
-use std::iter;
 
 pub fn muzero_debug_utility<B: Board, M: BoardMapper<B>>(
     path: &str,
@@ -193,7 +195,7 @@ unsafe fn muzero_debug_utility_inner<B: Board, M: BoardMapper<B>>(
             saved_state_tensor.copy_simple_to_host(&mut saved_state_buffer);
 
             println!("values: {:?}", eval.values);
-            println!("policy: {:?}", eval.policy);
+            println!("policy: {:?}", softmax(&eval.policy_logits));
 
             println!("saved state: {:?}", saved_state_buffer);
 
