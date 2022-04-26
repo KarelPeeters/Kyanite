@@ -19,6 +19,8 @@ pub struct MuTree<B, M> {
     pub(super) root_board: B,
     pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
+
+    pub(super) current_node_index: Option<usize>,
 }
 
 impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
@@ -30,6 +32,7 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
             root_board,
             mapper,
             nodes: vec![root_node],
+            current_node_index: None,
         }
     }
 
@@ -170,7 +173,7 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
             )?;
             writeln!(
                 f,
-                "[move: terminal visits zero({}, p) net(v{}, p), uct(q, u)]",
+                "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
                 ZeroValues::FORMAT_SUMMARY,
                 ZeroValues::FORMAT_SUMMARY
             )?;

@@ -48,7 +48,13 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     fpu_mode: FpuMode,
     draw_depth: u32,
 ) -> Option<MuZeroRequest<B>> {
+    assert_eq!(
+        None, tree.current_node_index,
+        "There is already a gathered node waiting to be applied"
+    );
+
     if tree[0].inner.is_none() {
+        tree.current_node_index = Some(0);
         return Some(MuZeroRequest::Root(MuZeroRootRequest {
             node: 0,
             board: tree.root_board().clone(),
@@ -72,6 +78,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
         let inner = if let Some(inner) = &tree[curr_node].inner {
             inner
         } else {
+            tree.current_node_index = Some(curr_node);
             return Some(MuZeroRequest::Expand(MuZeroExpandRequest {
                 node: curr_node,
                 state: last_state.unwrap(),
@@ -89,22 +96,25 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].visits;
 
-        let selected_index = inner
+        // we need to be careful here, the child and move index are not the same
+        //  (since only part of the children is stored, sorted by policy)
+        let selected_child = inner
             .children
             .iter()
             .position_max_by_key(|&child| {
-                let x = tree[child]
+                let child = &tree[child];
+                let uct = child
                     .uct(parent_total_visits, fpu_mode.select(fpu), use_value)
                     .total(weights);
-                N32::from_inner(x)
+                // pick max-uct child, with net policy as tiebreaker
+                (N32::from_inner(uct), N32::from_inner(child.net_policy))
             })
             .expect("Children cannot be be empty");
 
-        let selected = inner.children.get(selected_index);
+        let selected_node = inner.children.get(selected_child);
 
-        curr_node = selected;
-
-        last_move_index = Some(selected_index);
+        curr_node = selected_node;
+        last_move_index = tree[selected_node].last_move_index;
         last_state = Some(inner.state.clone());
 
         depth += 1;
@@ -127,6 +137,8 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
         eval: MuZeroEvaluation { values, policy },
     } = response;
 
+    let expected_node = tree.current_node_index.take();
+    assert_eq!(expected_node, Some(node), "Unexpected apply node");
     assert_eq!(tree.mapper.policy_len(), policy.len());
 
     // create children
