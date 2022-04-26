@@ -224,7 +224,7 @@ class LoopSettings:
                 self.evaluate_network(buffer, logger, network)
 
                 train_sampler = buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)
-                print(f"Training network on buffer with size {len(train_sampler)}")
+                print(f"Training network on buffer with size {len(train_sampler)} for {batch_count_per_gen} batches")
                 train_start = time.perf_counter()
 
                 for bi in range(batch_count_per_gen):
