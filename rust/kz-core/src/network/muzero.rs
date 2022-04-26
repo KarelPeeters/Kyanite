@@ -164,9 +164,8 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
 
         let expand = {
             let mut expand = Graph::new();
-            let b = self.mapper.state_board_size();
 
-            let prev_state = expand.input(shape![Size::BATCH, self.info.state_channels_saved, b, b]);
+            let prev_state = expand.input(self.info.state_saved_shape(self.mapper));
             let mv = expand.input(Shape::fixed(&self.mapper.encoded_move_shape()).batched());
             let state = expand.call(&self.dynamics, &[prev_state, mv])[0];
             let state_saved = expand.slice(state, 1, state_slice_range);
