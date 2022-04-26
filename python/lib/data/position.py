@@ -1,5 +1,5 @@
 import random
-from typing import List, Optional, TypeVar, Callable
+from typing import List
 
 import numpy as np
 import torch
@@ -86,6 +86,7 @@ class PostTerminalPosition:
         self.final_moves_left = 0.0
         self.zero_moves_left = 0.0
         self.net_moves_left = 0.0
+        self.is_terminal = True
 
 
 class PositionBatch:
@@ -103,6 +104,7 @@ class PositionBatch:
         policy_values.fill_(-1)
 
         played_mv = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
 
         if game.input_mv_channels is not None:
             played_mv_full = torch.zeros(len(positions), *game.input_mv_shape, pin_memory=pin_memory)
@@ -133,6 +135,7 @@ class PositionBatch:
             played_mv[i] = p.played_mv
             if game.input_mv_channels is not None:
                 played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
+            is_terminal[i] = p.is_terminal
 
         self.input_full = input_full.to(DEVICE)
         self.policy_indices = policy_indices.to(DEVICE)
@@ -140,6 +143,7 @@ class PositionBatch:
 
         self.played_mv = played_mv
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
+        self.is_terminal = is_terminal.to(DEVICE)
 
         self.all_wdls = all_wdls.to(DEVICE)
         self.all_values = all_values.to(DEVICE)
@@ -161,7 +165,7 @@ class PositionBatch:
 
 class UnrolledPositionBatch:
     def __init__(self, game: Game, unroll_steps: int, chains: List[List[Position]], pin_memory: bool):
-        assert unroll_steps > 0, "Must contain at least one unroll step"
+        assert unroll_steps >= 0, "Negative unroll steps don't make sense"
         for chain in chains:
             assert len(chain) == unroll_steps + 1, f"Expected {unroll_steps + 1} positions, got chain with {len(chain)}"
 

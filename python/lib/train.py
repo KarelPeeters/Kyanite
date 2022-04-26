@@ -143,7 +143,8 @@ class TrainSettings:
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
         value = torch.tanh(scalars[:, 0])
-        wdl = nnf.softmax(scalars[:, 1:4], -1)
+        wdl_logits = scalars[:, 1:4]
+        wdl = nnf.softmax(wdl_logits, -1)
         moves_left = torch.relu(scalars[:, 4])
 
         batch_value = self.scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
@@ -151,10 +152,17 @@ class TrainSettings:
         # TODO this should be replaced with the same pick construct as the other ones
         batch_moves_left = batch.moves_left_final
 
-        # losses
-        loss_value = nnf.mse_loss(value, batch_value)
-        loss_wdl = nnf.mse_loss(wdl, batch_wdl)
-        loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
+        # calculate losses
+        loss_value_separate = nnf.mse_loss(value, batch_value, reduction="none")
+        # TODO add option to choose between cross-entropy and mse
+        loss_wdl_separate = (-batch_wdl * nnf.log_softmax(wdl_logits, dim=1)).sum(dim=1)
+        loss_moves_left_separate = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta,
+                                                  reduction="none")
+
+        loss_value = loss_value_separate.mean()
+        loss_wdl = loss_wdl_separate.mean()
+        loss_moves_left = loss_moves_left_separate.mean()
+
         eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, self.mask_policy)
 
         loss_total = self.combine_losses(
@@ -162,6 +170,16 @@ class TrainSettings:
             loss_value, loss_wdl, loss_moves_left,
             eval_policy.train_loss
         )
+
+        # log terminal losses
+        terminal_count = batch.is_terminal.sum()
+        loss_wdl_terminal = (loss_wdl_separate * batch.is_terminal).sum() / terminal_count
+        loss_value_terminal = (loss_value_separate * batch.is_terminal).sum() / terminal_count
+        loss_moves_left_terminal = (loss_moves_left * batch.is_terminal).sum() / terminal_count
+
+        logger.log("loss-wdl", f"{log_prefix} wdl terminal", loss_wdl_terminal)
+        logger.log("loss-value", f"{log_prefix} value terminal", loss_value_terminal)
+        logger.log("loss-moves-left", f"{log_prefix} moves-left terminal", loss_moves_left_terminal)
 
         # value accuracies
         batch_size = len(batch)
