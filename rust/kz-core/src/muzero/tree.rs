@@ -275,7 +275,7 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
                         let child_mv = tree
                             .mapper
                             .index_to_move(curr_board, child_mv_index)
-                            .filter(|&mv| curr_board.is_available_move(mv));
+                            .filter(|&mv| !curr_board.is_done() && curr_board.is_available_move(mv));
                         let child_board = child_mv.map(|child_mv| curr_board.clone_and_play(child_mv));
                         (child_board, child_mv)
                     }
