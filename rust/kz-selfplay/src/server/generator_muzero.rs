@@ -228,7 +228,10 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
 
         // at this point we don't need the tree nor the underlying pool allocations any more
         drop(tree);
-        pool.clear();
+        unsafe {
+            // we can't just clear here, since the there might still be leftover references to the states in the executors
+            pool.clear_unsafe();
+        }
     }
 
     Simulation {

@@ -37,7 +37,13 @@ impl DevicePool {
             1,
             "Can only clear buffer without any outstanding users"
         );
-        self.next_offset = 0;
+        unsafe {
+            self.clear_unsafe();
+        }
+    }
+
+    pub unsafe fn clear_unsafe(&mut self) {
+        self.next_offset = 0
     }
 
     pub fn total_size_bytes(&self) -> usize {
