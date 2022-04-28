@@ -143,7 +143,8 @@ class TrainSettings:
         """Returns the total loss for the given batch while logging a bunch of statistics"""
 
         value = torch.tanh(scalars[:, 0])
-        wdl = nnf.softmax(scalars[:, 1:4], -1)
+        wdl_logits = scalars[:, 1:4]
+        wdl = nnf.softmax(wdl_logits, -1)
         moves_left = torch.relu(scalars[:, 4])
 
         batch_value = self.scalar_target.pick(final=batch.v_final, zero=batch.v_zero)
@@ -151,10 +152,17 @@ class TrainSettings:
         # TODO this should be replaced with the same pick construct as the other ones
         batch_moves_left = batch.moves_left_final
 
-        # losses
-        loss_value = nnf.mse_loss(value, batch_value)
-        loss_wdl = nnf.mse_loss(wdl, batch_wdl)
-        loss_moves_left = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta)
+        # calculate losses
+        loss_value_separate = nnf.mse_loss(value, batch_value, reduction="none")
+        # TODO add option to choose between cross-entropy and mse
+        loss_wdl_separate = (-batch_wdl * nnf.log_softmax(wdl_logits, dim=1)).sum(dim=1)
+        loss_moves_left_separate = nnf.huber_loss(moves_left, batch_moves_left, delta=self.moves_left_delta,
+                                                  reduction="none")
+
+        loss_value = loss_value_separate.mean()
+        loss_wdl = loss_wdl_separate.mean()
+        loss_moves_left = loss_moves_left_separate.mean()
+
         eval_policy = evaluate_policy(policy_logits, batch.policy_indices, batch.policy_values, self.mask_policy)
 
         loss_total = self.combine_losses(
@@ -162,6 +170,16 @@ class TrainSettings:
             loss_value, loss_wdl, loss_moves_left,
             eval_policy.train_loss
         )
+
+        # log terminal losses
+        terminal_count = batch.is_terminal.sum()
+        loss_wdl_terminal = (loss_wdl_separate * batch.is_terminal).sum() / terminal_count
+        loss_value_terminal = (loss_value_separate * batch.is_terminal).sum() / terminal_count
+        loss_moves_left_terminal = (loss_moves_left * batch.is_terminal).sum() / terminal_count
+
+        logger.log("loss-wdl", f"{log_prefix} wdl terminal", loss_wdl_terminal)
+        logger.log("loss-value", f"{log_prefix} value terminal", loss_value_terminal)
+        logger.log("loss-moves-left", f"{log_prefix} moves-left terminal", loss_moves_left_terminal)
 
         # value accuracies
         batch_size = len(batch)
@@ -172,11 +190,11 @@ class TrainSettings:
         logger.log("acc-value", f"{log_prefix} wdl", acc_wdl)
 
         # log policy info
-        logger.log("acc-policy", f"{log_prefix} acc", eval_policy.norm_acc)
-        logger.log("acc-policy", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
+        logger.log("pol-acc", f"{log_prefix} acc", eval_policy.norm_acc)
+        logger.log("pol-acc", f"{log_prefix} top_mass", eval_policy.norm_top_mass)
 
         if not self.mask_policy:
-            logger.log("acc-policy", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
+            logger.log("pol-valid", f"{log_prefix} valid_mass", eval_policy.norm_valid_mass)
 
         if log_policy_norm:
             logger.log("loss-policy-norm", f"{log_prefix} policy", eval_policy.norm_loss)
@@ -266,6 +284,7 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
     assert indices.shape == values.shape
     assert len(logits) == len(indices)
 
+    device = logits.device
     (batch_size, max_mv_count) = indices.shape
     logits = logits.flatten(1)
 
@@ -297,12 +316,19 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         picked_logs[values == -1] = -np.inf
 
         top_index = torch.argmax(logits, dim=1)
-        batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
-        batch_top_mass = has_valid * np.nan
 
-        predicted = torch.softmax(logits, 1)
-        predicted_invalid = torch.scatter(predicted, 1, indices, (values == -1).float(), reduce="multiply")
-        batch_valid_mass = 1 - predicted_invalid.sum(dim=1)
+        if indices.shape[1] == 0:
+            # we happened to get a batch with no policy logits at all, and this trips up the gather operation
+            # just set things to nan for now
+            batch_acc = torch.full((batch_size,), np.nan, device=device)
+            batch_valid_mass = torch.full((batch_size,), np.nan, device=device)
+        else:
+            batch_acc = top_index == torch.gather(indices, 1, torch.argmax(values, dim=1).unsqueeze(1)).squeeze(1)
+            predicted = torch.softmax(logits, 1)
+            predicted_invalid = torch.scatter(predicted, 1, indices, (values == -1).float(), reduce="multiply")
+            batch_valid_mass = 1 - predicted_invalid.sum(dim=1)
+
+        batch_top_mass = has_valid * np.nan
 
     # cross-entropy loss
     loss = -values * picked_logs

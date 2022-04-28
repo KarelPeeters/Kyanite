@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from threading import Lock
+from typing import List, Union
 
 from lib.data.position import Position
 from lib.games import Game
@@ -24,10 +25,13 @@ class DataFileInfo:
         self.timestamp = timestamp
 
         self.position_count = meta["position_count"]
+        self.includes_terminal_positions = meta.get("includes_terminal_positions", False)
         self.game_count = meta["game_count"]
         self.min_game_length = meta["min_game_length"]
         self.max_game_length = meta["max_game_length"]
         self.root_wdl = meta.get("root_wdl")
+
+        self.mean_game_length = (self.position_count - self.includes_terminal_positions * self.game_count) / self.game_count
 
         self.scalar_names = meta["scalar_names"]
 
@@ -81,7 +85,10 @@ class DataFile:
     def __len__(self):
         return self.info.position_count
 
-    def __getitem__(self, item: int) -> Position:
+    def __getitem__(self, item: Union[int, slice]) -> Union[Position, List[Position]]:
+        if isinstance(item, slice):
+            return [self[i] for i in range(len(self))[item]]
+
         if not (0 <= item < len(self)):
             raise IndexError(f"Index {item} out of bounds in file with {len(self)} positions")
 

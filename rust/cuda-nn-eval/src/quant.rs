@@ -150,8 +150,12 @@ pub struct QuantizedStorage {
 }
 
 impl QuantizedStorage {
-    pub fn alloc(device: Device, size: usize) -> QuantizedStorage {
+    pub fn alloc(device: Device, size: usize) -> Self {
         let ptr = device.alloc(size);
+        QuantizedStorage { ptr, size }
+    }
+
+    pub fn new(ptr: DevicePtr, size: usize) -> Self {
         QuantizedStorage { ptr, size }
     }
 

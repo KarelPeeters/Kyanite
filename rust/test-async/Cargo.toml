@@ -1,0 +1,8 @@
+[package]
+name = "test-async"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
+flume = "0.10.12"

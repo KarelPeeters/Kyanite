@@ -15,11 +15,13 @@ pub struct StartupSettings {
     pub output_folder: String,
     pub games_per_gen: usize,
 
+    // TODO implement some kind of adaptive batch sizing, especially for root
     pub cpu_threads_per_device: usize,
     pub gpu_threads_per_device: usize,
-    pub cpu_batch_size: usize,
     pub gpu_batch_size: usize,
     pub gpu_batch_size_root: usize,
+
+    pub saved_state_channels: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,27 +38,27 @@ pub enum Command {
 pub enum GeneratorUpdate<B: Board> {
     Stop,
 
-    StartedSimulations {
-        thread_id: usize,
-        next_index: u64,
+    StartedSimulation {
+        generator_id: usize,
+    },
+
+    FinishedMove {
+        generator_id: usize,
+        curr_game_length: usize,
     },
 
     FinishedSimulation {
-        thread_id: usize,
-        index: u64,
+        generator_id: usize,
         simulation: Simulation<B>,
     },
 
-    // all values since the last progress update
-    Progress {
+    Evals {
         // the number of evaluations that hit the cache
         cached_evals: u64,
-        // the number of evaluations that did not hit the cache
+        // the number of (expand) evaluations that did not hit the cache
         real_evals: u64,
         // the number of root muzero evals
         root_evals: u64,
-        // the number of moves played
-        moves: u64,
     },
 }
 
@@ -72,12 +74,11 @@ pub enum ServerUpdate {
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     // self-play game affecting settings
-    pub max_game_length: i64,
+    pub max_game_length: Option<u64>,
     pub weights: Weights,
     pub use_value: bool,
 
     pub random_symmetries: bool,
-    pub keep_tree: bool,
 
     pub temperature: f32,
     pub zero_temp_move_count: u32,

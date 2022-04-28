@@ -46,9 +46,14 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
-    draw_depth: u32,
 ) -> Option<MuZeroRequest<B>> {
+    assert_eq!(
+        None, tree.current_node_index,
+        "There is already a gathered node waiting to be applied"
+    );
+
     if tree[0].inner.is_none() {
+        tree.current_node_index = Some(0);
         return Some(MuZeroRequest::Root(MuZeroRootRequest {
             node: 0,
             board: tree.root_board().clone(),
@@ -63,7 +68,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     let mut last_state: Option<QuantizedStorage> = None;
 
     loop {
-        if depth >= draw_depth {
+        if depth >= tree.draw_depth {
             //TODO what value to use for moves_left?
             tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0));
             return None;
@@ -72,6 +77,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
         let inner = if let Some(inner) = &tree[curr_node].inner {
             inner
         } else {
+            tree.current_node_index = Some(curr_node);
             return Some(MuZeroRequest::Expand(MuZeroExpandRequest {
                 node: curr_node,
                 state: last_state.unwrap(),
@@ -89,22 +95,25 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].visits;
 
-        let selected_index = inner
+        // we need to be careful here, the child and move index are not the same
+        //  (since only part of the children is stored, sorted by policy)
+        let selected_child = inner
             .children
             .iter()
             .position_max_by_key(|&child| {
-                let x = tree[child]
+                let child = &tree[child];
+                let uct = child
                     .uct(parent_total_visits, fpu_mode.select(fpu), use_value)
                     .total(weights);
-                N32::from_inner(x)
+                // pick max-uct child, with net policy as tiebreaker
+                (N32::from_inner(uct), N32::from_inner(child.net_policy))
             })
             .expect("Children cannot be be empty");
 
-        let selected = inner.children.get(selected_index);
+        let selected_node = inner.children.get(selected_child);
 
-        curr_node = selected;
-
-        last_move_index = Some(selected_index);
+        curr_node = selected_node;
+        last_move_index = tree[selected_node].last_move_index;
         last_state = Some(inner.state.clone());
 
         depth += 1;
@@ -124,23 +133,25 @@ pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
     let MuZeroResponse {
         node,
         state,
-        eval: MuZeroEvaluation { values, policy },
+        eval: MuZeroEvaluation { values, policy_logits },
     } = response;
 
-    assert_eq!(tree.mapper.policy_len(), policy.len());
+    let expected_node = tree.current_node_index.take();
+    assert_eq!(expected_node, Some(node), "Unexpected apply node");
+    assert_eq!(tree.mapper.policy_len(), policy_logits.len());
 
     // create children
     let children = if node == 0 {
         // only keep available moves for root node
         let board = &tree.root_board;
         let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
-        create_child_nodes(&mut tree.nodes, node, indices, &policy)
+        create_child_nodes(&mut tree.nodes, node, indices, &policy_logits)
     } else {
         // keep all moves deeper in the tree
         // TODO use the fact that moves are sorted by policy to optimize UCT calculations later on
         // TODO this doesn't work for the pass move, maybe it's finally time to retire it
-        let indices = top_k_indices_sorted(&policy, top_moves).into_iter().map(Some);
-        create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy)
+        let indices = top_k_indices_sorted(&policy_logits, top_moves).into_iter().map(Some);
+        create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy_logits)
     };
 
     // set node inner
@@ -159,20 +170,22 @@ fn create_child_nodes(
     nodes: &mut Vec<MuNode>,
     parent_node: usize,
     indices: impl InternalIterator<Item = Option<usize>>,
-    policy: &[f32],
+    policy_logits: &[f32],
 ) -> IdxRange {
     let start = nodes.len();
-    let mut total_p = 0.0;
 
+    // temporarily create nodes with un-normalized policy
+    let mut total_p = 0.0;
     indices.for_each(|index| {
-        let p = index.map_or(1.0, |index| policy[index]);
+        let logit = index.map_or(0.0, |index| policy_logits[index]);
+        let p = logit.exp();
         total_p += p;
         nodes.push(MuNode::new(Some(parent_node), index, p))
     });
 
     let end = nodes.len();
 
-    // re-normalize policy
+    // properly normalize policy
     for node in start..end {
         nodes[node].net_policy /= total_p;
     }

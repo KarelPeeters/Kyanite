@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::Path;
 
 use board_game::games::chess::ChessBoard;
-use crossbeam::channel::{Receiver, Sender};
+use flume::{Receiver, Sender};
 use tar::Archive;
 
 use kz_core::mapping::BoardMapper;
@@ -24,7 +24,7 @@ pub fn pgn_archive_to_bin(
     let output_folder = output_folder.as_ref();
     std::fs::create_dir_all(output_folder).expect("Failed to create output folder");
 
-    let (sender, receiver) = crossbeam::channel::bounded(thread_count);
+    let (sender, receiver) = flume::bounded(thread_count);
 
     crossbeam::scope(|s| {
         s.spawn(|_| loader_main(input, sender, max_entries));

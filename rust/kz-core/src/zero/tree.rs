@@ -232,7 +232,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             )?;
             writeln!(
                 f,
-                "[move: terminal visits zero({}, p) net(v{}, p), uct(q, u)]",
+                "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
                 ZeroValues::FORMAT_SUMMARY,
                 ZeroValues::FORMAT_SUMMARY
             )?;

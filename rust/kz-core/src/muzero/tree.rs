@@ -17,20 +17,34 @@ use crate::zero::node::ZeroValues;
 #[derive(Debug)]
 pub struct MuTree<B, M> {
     pub(super) root_board: B,
+    pub(super) draw_depth: u32,
+
     pub(super) mapper: M,
     pub(super) nodes: Vec<MuNode>,
+
+    pub(super) current_node_index: Option<usize>,
 }
 
 impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
-    pub fn new(root_board: B, mapper: M) -> Self {
+    pub fn new(root_board: B, draw_depth: u32, mapper: M) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
+        assert_ne!(
+            draw_depth, 0,
+            "Draw depth cannot be zero, this would behave like a done board"
+        );
 
         let root_node = MuNode::new(None, None, f32::NAN);
         MuTree {
             root_board,
+            draw_depth,
             mapper,
             nodes: vec![root_node],
+            current_node_index: None,
         }
+    }
+
+    pub fn reserve(&mut self, additional_nodes: usize) {
+        self.nodes.reserve(additional_nodes);
     }
 
     pub fn len(&self) -> usize {
@@ -39,6 +53,10 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
 
     pub fn root_board(&self) -> &B {
         &self.root_board
+    }
+
+    pub fn draw_depth(&self) -> u32 {
+        self.draw_depth
     }
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
@@ -105,14 +123,12 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
             .iter()
             .map(move |c| (self[c].visits as f32) / ((self[0].visits - 1) as f32))
     }
-
     pub fn eval(&self) -> ZeroEvaluation<'static> {
         ZeroEvaluation {
             values: self.values(),
             policy: self.policy().collect(),
         }
     }
-
     #[must_use]
     pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> MuTreeDisplay<B, M> {
         MuTreeDisplay {
@@ -170,7 +186,7 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
             )?;
             writeln!(
                 f,
-                "[move: terminal visits zero({}, p) net(v{}, p), uct(q, u)]",
+                "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
                 ZeroValues::FORMAT_SUMMARY,
                 ZeroValues::FORMAT_SUMMARY
             )?;
@@ -259,7 +275,7 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
                         let child_mv = tree
                             .mapper
                             .index_to_move(curr_board, child_mv_index)
-                            .filter(|&mv| curr_board.is_available_move(mv));
+                            .filter(|&mv| !curr_board.is_done() && curr_board.is_available_move(mv));
                         let child_board = child_mv.map(|child_mv| curr_board.clone_and_play(child_mv));
                         (child_board, child_mv)
                     }

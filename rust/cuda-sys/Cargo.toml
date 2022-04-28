@@ -7,7 +7,7 @@ edition = "2018"
 bindgen = "0.59.2"
 
 [dependencies]
-bytemuck = "1.7.3"
+bytemuck = "1.9.1"
 
 [dev-dependencies]
 itertools = "0.10.3"

@@ -79,10 +79,12 @@ impl StridedShape {
     }
 
     pub fn slice(&self, axis: usize, range: SliceRange) -> StridedShape {
+        assert!(axis < self.rank(), "Rank {} out of bounds for {:?}", self.rank(), self);
+        range.assert_in_bounds(self.shape[axis]);
+
         let mut new_shape = self.shape.clone();
         let mut new_strides = self.strides.clone();
 
-        range.assert_valid();
         let SliceRange { start, end, step } = range;
 
         new_shape[axis] = (end - start) / step;

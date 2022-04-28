@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-board-game = { version = "0.4.1", path = "../../../board-game-rs" }
+board-game = { version = "0.5.0", path = "../../../board-game-rs" }
 pgn-reader = { path = "../pgn-reader" }
 cuda-nn-eval = { path = "../cuda-nn-eval" }
 cuda-sys = { path = "../cuda-sys" }
@@ -21,12 +21,17 @@ rand_distr = "0.4.3"
 internal-iterator = "0.2.0"
 itertools = "0.10.3"
 
+futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
 crossbeam = "0.8.1"
+flume = "0.10.12"
+
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0.79"
-bytemuck = "1.7.3"
+bytemuck = "1.9.1"
 tar = "0.4.38"
 bzip2 = "0.4.3"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
-lru = "0.7.3"
-clap = { version = "3.1.5", features = ["derive"] }
+lru = "0.7.5"
+clap = { version = "3.1.12", features = ["derive"] }
+
+superluminal-perf = "0.1.1"

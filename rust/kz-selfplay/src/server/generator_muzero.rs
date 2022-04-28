@@ -1,439 +1,298 @@
 use std::borrow::Cow;
+use std::cmp::min;
 
 use board_game::board::Board;
-use crossbeam::channel::{Receiver, Select, SendError, TryRecvError};
+use flume::{Receiver, TryRecvError};
 use internal_iterator::InternalIterator;
-use rand::rngs::ThreadRng;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
 
+use cuda_nn_eval::quant::QuantizedStorage;
+use cuda_sys::wrapper::handle::Device;
+use cuda_sys::wrapper::mem::pool::DevicePool;
 use kz_core::mapping::BoardMapper;
 use kz_core::muzero::step::{
     muzero_step_apply, muzero_step_gather, MuZeroExpandRequest, MuZeroRequest, MuZeroResponse, MuZeroRootRequest,
 };
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
-use kz_core::network::common::normalize_in_place;
-use kz_core::network::muzero::{EvalResponsePair, ExpandArgs};
+use kz_core::network::common::{softmax_in_place, unsoftmax_in_place};
+use kz_core::network::muzero::{ExpandArgs, RootArgs};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
 
 use crate::move_selector::MoveSelector;
 use crate::server::job_channel::JobClient;
 use crate::server::protocol::{GeneratorUpdate, Settings};
+use crate::server::server::UpdateSender;
 use crate::simulation::{Position, Simulation};
 
-type RootClient<B> = JobClient<B, EvalResponsePair>;
-type ExpandClient = JobClient<ExpandArgs, EvalResponsePair>;
+// TODO we're reusing quantized states from one network as inputs to a potentially updated network
+//   hopefully that doesn't cause too many issues
+type RootClient<B> = JobClient<RootArgs<B>, MuZeroEvaluation<'static>>;
+type ExpandClient = JobClient<ExpandArgs, MuZeroEvaluation<'static>>;
 
-type UpdateSender<B> = crossbeam::channel::Sender<GeneratorUpdate<B>>;
-type RngType = ThreadRng;
-
-//TODO support max moves somehow?
-pub fn generator_muzero_main<B: Board>(
-    thread_id: usize,
-    mapper: impl BoardMapper<B>,
+pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
+    generator_id: usize,
+    device: Device,
     start_pos: impl Fn() -> B,
-    batch_size: usize,
+    mapper: M,
+    saved_state_channels: usize,
     settings_receiver: Receiver<Settings>,
     root_client: RootClient<B>,
     expand_client: ExpandClient,
     update_sender: UpdateSender<B>,
-) -> Result<(), SendError<GeneratorUpdate<B>>> {
-    let mut state = GeneratorState::new();
+) {
+    // wait for initial settings
+    let mut settings = settings_receiver.recv_async().await.unwrap();
+    let mut pool: Option<DevicePool> = None;
 
-    let mut rng = RngType::default();
-
-    let mut settings = None;
-    let mut next_index = 0;
+    let mut rng = StdRng::from_entropy();
+    let state_size = saved_state_channels * mapper.state_board_size() * mapper.state_board_size();
 
     loop {
-        // if we don't have settings yet, block
-        // TODO maybe add this to the big select lower down?
-        //   meh, this should have higher priority than others
-        let new_settings = if settings.is_some() {
-            settings_receiver.try_recv()
+        // possibly get new settings
+        match settings_receiver.try_recv() {
+            Ok(new_settings) => settings = new_settings,
+            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Disconnected) => break,
+        }
+
+        // possibly (re)allocate pool
+        let pool_size = settings.full_iterations as usize * state_size;
+        pool = pool.filter(|p| {
+            assert_eq!(p.buffer().shared_count(), 1);
+            p.total_size_bytes() == pool_size
+        });
+        let pool = pool.get_or_insert_with(|| DevicePool::new(device, pool_size));
+
+        // send an update
+        update_sender
+            .send(GeneratorUpdate::StartedSimulation { generator_id })
+            .unwrap();
+
+        // actually generate a full game
+        let simulation = generate_simulation(
+            generator_id,
+            &settings,
+            &update_sender,
+            &root_client,
+            &expand_client,
+            start_pos(),
+            mapper,
+            state_size,
+            pool,
+            &mut rng,
+        )
+        .await;
+
+        // send finished simulation
+        update_sender
+            .send(GeneratorUpdate::FinishedSimulation {
+                generator_id,
+                simulation,
+            })
+            .unwrap();
+    }
+}
+
+async fn generate_simulation<B: Board, M: BoardMapper<B>>(
+    generator_id: usize,
+    settings: &Settings,
+    update_sender: &UpdateSender<B>,
+    root_client: &RootClient<B>,
+    expand_client: &ExpandClient,
+    start: B,
+    mapper: M,
+    state_size: usize,
+    pool: &mut DevicePool,
+    rng: &mut impl Rng,
+) -> Simulation<B> {
+    let mut positions = vec![];
+
+    let max_moves = settings.max_game_length.unwrap_or(u64::MAX) as u32;
+    let mut curr_board = start;
+
+    while !curr_board.is_done() {
+        // check if we should consider this board a draw
+        let draw_depth = max_moves - positions.len() as u32;
+        if draw_depth == 0 {
+            break;
+        }
+
+        // determinate search settings
+        let is_full_search = rng.gen_bool(settings.full_search_prob);
+        let target_visits = if is_full_search {
+            settings.full_iterations
         } else {
-            settings_receiver.recv().map_err(|_| TryRecvError::Disconnected)
+            settings.part_iterations
         };
 
-        match new_settings {
-            Ok(new_settings) => settings = Some(new_settings),
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => panic!("Settings channel disconnected"),
-        }
+        // run tree search
+        let mut tree = MuTree::new(curr_board.clone(), draw_depth, mapper);
 
-        if let Some(settings) = &settings {
-            let mut counter = Counter::default();
+        let root_max_moves = B::all_possible_moves().count();
+        let inner_max_moves = min(settings.top_moves, mapper.policy_len());
+        let max_nodes = 1 + root_max_moves + target_visits as usize * inner_max_moves;
+        tree.reserve(max_nodes);
 
-            let mut ctx = Context {
-                thread_id,
-                mapper,
-                start_pos: &start_pos,
-                batch_size,
+        let mut root_net_eval = None;
 
-                settings,
-                root_client: &root_client,
-                expand_client: &expand_client,
-                update_sender: &update_sender,
+        while tree.root_visits() < target_visits {
+            let request = muzero_step_gather(
+                &mut tree,
+                settings.weights.to_uct(),
+                settings.use_value,
+                FpuMode::Parent,
+            );
 
-                rng: &mut rng,
-                next_index: &mut next_index,
-                counter: &mut counter,
-            };
+            if let Some(request) = request {
+                let output_state = QuantizedStorage::new(pool.alloc(state_size), state_size);
 
-            state.step(&mut ctx);
-
-            // report progress
-            update_sender.send(GeneratorUpdate::Progress {
-                cached_evals: 0,
-                root_evals: counter.root_evals,
-                real_evals: counter.expand_evals,
-                moves: counter.move_count,
-            })?;
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Context<'a, B: Board, M, F> {
-    thread_id: usize,
-    mapper: M,
-    start_pos: &'a F,
-    // TODO rename this to something else, we're not really batching any more
-    batch_size: usize,
-
-    settings: &'a Settings,
-    root_client: &'a RootClient<B>,
-    expand_client: &'a ExpandClient,
-    update_sender: &'a UpdateSender<B>,
-
-    rng: &'a mut RngType,
-    next_index: &'a mut u64,
-    counter: &'a mut Counter,
-}
-
-#[derive(Debug)]
-struct GeneratorState<B: Board, M> {
-    games: Vec<GameTuple<B, M>>,
-}
-
-#[derive(Debug)]
-struct GameTuple<B: Board, M> {
-    state: GameState<B, M>,
-    receiver: Receiver<EvalResponsePair>,
-    node: usize,
-}
-
-#[derive(Debug)]
-struct GameState<B: Board, M> {
-    index: u64,
-    search: SearchState<B, M>,
-    mv_count: u32,
-    positions: Vec<Position<B>>,
-}
-
-#[derive(Debug)]
-struct SearchState<B, M> {
-    tree: MuTree<B, M>,
-    is_full_search: bool,
-    root_net_eval: Option<ZeroEvaluation<'static>>,
-}
-
-#[derive(Debug)]
-enum StepResult<R> {
-    Done,
-    Request(R),
-}
-
-#[derive(Debug, Default)]
-struct Counter {
-    root_evals: u64,
-    expand_evals: u64,
-    move_count: u64,
-}
-
-impl<B: Board, M: BoardMapper<B>> GeneratorState<B, M> {
-    fn new() -> Self {
-        GeneratorState { games: vec![] }
-    }
-
-    fn step_and_append<F: Fn() -> B>(
-        &mut self,
-        ctx: &mut Context<B, M, F>,
-        mut state: GameState<B, M>,
-        response: Option<MuZeroResponse>,
-    ) {
-        let result = state.step(ctx, response);
-
-        match result {
-            StepResult::Done => {}
-            StepResult::Request(request) => {
-                let (node, receiver) = match request {
+                let response = match request {
                     MuZeroRequest::Root(MuZeroRootRequest { node, board }) => {
-                        ctx.counter.root_evals += 1;
-                        (node, ctx.root_client.map(board))
+                        let root_args = RootArgs {
+                            board: board.clone(),
+                            output_state: output_state.clone(),
+                        };
+
+                        let mut eval = root_client.map_async(root_args).await;
+
+                        root_net_eval = Some(extract_zero_eval(mapper, &board, &eval));
+
+                        add_dirichlet_noise(eval.policy_logits.to_mut(), settings, &board, mapper, rng);
+
+                        MuZeroResponse {
+                            node,
+                            eval,
+                            state: output_state,
+                        }
                     }
                     MuZeroRequest::Expand(MuZeroExpandRequest {
                         node,
                         state,
                         move_index,
                     }) => {
-                        ctx.counter.expand_evals += 1;
-                        (node, ctx.expand_client.map((state, move_index)))
+                        let expand_args = ExpandArgs {
+                            state,
+                            move_index,
+                            output_state: output_state.clone(),
+                        };
+                        let eval = expand_client.map_async(expand_args).await;
+
+                        MuZeroResponse {
+                            node,
+                            eval,
+                            state: output_state,
+                        }
                     }
                 };
 
-                self.games.push(GameTuple { state, receiver, node })
+                muzero_step_apply(&mut tree, settings.top_moves, response);
             }
         }
-    }
 
-    fn step<F: Fn() -> B>(&mut self, ctx: &mut Context<B, M, F>) {
-        // start new games until we have enough of them
-        // do this before waiting for receivers so we don't block on an empty list
-        let mut started_any = false;
-        while self.games.len() < ctx.batch_size {
-            let state = GameState::new(ctx);
-            self.step_and_append(ctx, state, None);
-            started_any = true;
-        }
-
-        if started_any {
-            ctx.update_sender
-                .send(GeneratorUpdate::StartedSimulations {
-                    thread_id: ctx.thread_id,
-                    next_index: *ctx.next_index,
-                })
-                .unwrap();
-        }
-
-        // wait for any receiver to become ready
-        let mut select = Select::new();
-        for t in &self.games {
-            select.recv(&t.receiver);
-        }
-        select.ready();
-
-        // update all existing games
-        // this happens in bulk so we don't waste time repeatedly selecting on all receivers
-        // TODO this could just use retain_mut when that becomes stable
-        let prev_tuples = std::mem::take(&mut self.games);
-
-        for tuple in prev_tuples {
-            let response_pair = match tuple.receiver.try_recv() {
-                Ok(response_pair) => response_pair,
-                Err(TryRecvError::Empty) => {
-                    // no luck, just put it back into the queue
-                    self.games.push(tuple);
-                    continue;
-                }
-                Err(TryRecvError::Disconnected) => panic!("Receiver disconnected"),
-            };
-
-            let response = MuZeroResponse {
-                node: tuple.node,
-                state: response_pair.0,
-                eval: response_pair.1,
-            };
-
-            self.step_and_append(ctx, tuple.state, Some(response));
-        }
-    }
-}
-
-impl<B: Board, M: BoardMapper<B>> GameState<B, M> {
-    fn new<F: Fn() -> B>(ctx: &mut Context<B, M, F>) -> Self {
-        let start_pos = (ctx.start_pos)();
-        let tree = MuTree::new(start_pos, ctx.mapper);
-
-        let index = *ctx.next_index;
-        *ctx.next_index += 1;
-
-        GameState {
-            index,
-            mv_count: 0,
-            search: SearchState::new(ctx, tree),
-            positions: vec![],
-        }
-    }
-
-    fn step<F: Fn() -> B>(
-        &mut self,
-        ctx: &mut Context<B, M, F>,
-        initial_response: Option<MuZeroResponse>,
-    ) -> StepResult<MuZeroRequest<B>> {
-        let mut response = initial_response;
-
-        loop {
-            let result = self.search.step(ctx, self.mv_count, response.take());
-
-            match result {
-                StepResult::Request(request) => {
-                    return StepResult::Request(request);
-                }
-                StepResult::Done => {
-                    ctx.counter.move_count += 1;
-                    if self.search_done_step(ctx) {
-                        return StepResult::Done;
-                    }
-                }
-            }
-        }
-    }
-
-    fn search_done_step<F>(&mut self, ctx: &mut Context<B, M, F>) -> bool {
-        let settings = ctx.settings;
-
-        let tree = &self.search.tree;
-
-        // extract both evaluations
-        let net_evaluation = self.search.root_net_eval.take().unwrap();
+        // extract stats
+        let net_evaluation = root_net_eval.unwrap();
         let zero_evaluation = tree.eval();
 
         //pick a move to play
         let move_selector = MoveSelector::new(settings.temperature, settings.zero_temp_move_count);
-        let picked_index = move_selector.select(self.positions.len() as u32, zero_evaluation.policy.as_ref(), ctx.rng);
+        let picked_index = move_selector.select(positions.len() as u32, zero_evaluation.policy.as_ref(), rng);
         let picked_child = tree[0].inner.as_ref().unwrap().children.get(picked_index);
         let picked_move_index = tree[picked_child].last_move_index.unwrap();
-        let picked_move = ctx.mapper.index_to_move(tree.root_board(), picked_move_index).unwrap();
+        let picked_move = mapper.index_to_move(tree.root_board(), picked_move_index).unwrap();
 
-        // store this position
-        self.positions.push(Position {
-            board: tree.root_board().clone(),
-            is_full_search: self.search.is_full_search,
+        // record position
+        let position = Position {
+            board: curr_board.clone(),
+            is_full_search,
             played_mv: picked_move,
             zero_visits: tree.root_visits(),
-            net_evaluation,
             zero_evaluation,
-        });
+            net_evaluation,
+        };
+        positions.push(position);
 
-        let mut next_board = tree.root_board().clone();
-        next_board.play(picked_move);
-        self.mv_count += 1;
+        // actually play the move
+        curr_board.play(picked_move);
 
-        if next_board.is_done() || self.mv_count >= ctx.settings.max_game_length as u32 {
-            // record this game
-            let simulation = Simulation {
-                positions: std::mem::take(&mut self.positions),
-                final_board: next_board,
-            };
-            ctx.update_sender
-                .send(GeneratorUpdate::FinishedSimulation {
-                    thread_id: ctx.thread_id,
-                    index: self.index,
-                    simulation,
-                })
-                .unwrap();
+        // send update
+        update_sender
+            .send(GeneratorUpdate::FinishedMove {
+                generator_id,
+                curr_game_length: positions.len(),
+            })
+            .unwrap();
 
-            // report that this game is done
-            true
-        } else {
-            // continue playing this game, either by keeping part of the tree or starting a new one on the next board
-            let next_tree = MuTree::new(next_board, ctx.mapper);
-            self.search = SearchState::new(ctx, next_tree);
-
-            // report that this game is not done
-            false
+        // at this point we don't need the tree nor the underlying pool allocations any more
+        drop(tree);
+        unsafe {
+            // we can't just clear here, since the there might still be leftover references to the states in the executors
+            pool.clear_unsafe();
         }
+    }
+
+    Simulation {
+        positions,
+        final_board: curr_board,
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> SearchState<B, M> {
-    fn new<F>(ctx: &mut Context<B, M, F>, tree: MuTree<B, M>) -> Self {
-        SearchState {
-            tree,
-            is_full_search: ctx.rng.gen_bool(ctx.settings.full_search_prob),
-            root_net_eval: None,
-        }
-    }
+fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(
+    policy_logits: &mut [f32],
+    settings: &Settings,
+    board: &B,
+    mapper: M,
+    rng: &mut impl Rng,
+) {
+    // TODO this function doesn't work with the pass move
+    // TODO consider using KataGo's shaped dirichlet noise, it's even more relevant for muzero
+    //   is that true? we're still just adding noise to the available moves!
 
-    fn step<F>(
-        &mut self,
-        ctx: &mut Context<B, M, F>,
-        mv_count: u32,
-        response: Option<MuZeroResponse>,
-    ) -> StepResult<MuZeroRequest<B>> {
-        let settings = ctx.settings;
+    let alpha = settings.dirichlet_alpha;
+    let eps = settings.dirichlet_eps;
 
-        if let Some(mut response) = response {
-            if response.node == 0 {
-                self.root_net_eval = Some(extract_zero_eval(ctx.mapper, self.tree.root_board(), &response.eval));
-                add_dirichlet_noise(ctx, self.tree.root_board(), response.eval.policy.to_mut());
-            }
-
-            let top_moves = if ctx.settings.top_moves == 0 {
-                usize::MAX
-            } else {
-                ctx.settings.top_moves
-            };
-            muzero_step_apply(&mut self.tree, top_moves, response);
-        }
-
-        loop {
-            let target_iterations = if self.is_full_search {
-                settings.full_iterations
-            } else {
-                settings.part_iterations
-            };
-            if self.tree.root_visits() >= target_iterations {
-                return StepResult::Done;
-            }
-
-            let draw_depth = ctx.settings.max_game_length as u32 - mv_count;
-
-            if let Some(request) = muzero_step_gather(
-                &mut self.tree,
-                settings.weights.to_uct(),
-                settings.use_value,
-                FpuMode::Parent,
-                draw_depth,
-            ) {
-                return StepResult::Request(request);
-            }
-        }
-    }
-}
-
-fn add_dirichlet_noise<B: Board, M: BoardMapper<B>, F>(ctx: &mut Context<B, M, F>, board: &B, policy: &mut [f32]) {
-    let alpha = ctx.settings.dirichlet_alpha;
-    let eps = ctx.settings.dirichlet_eps;
+    // we're working on the logits here, so first take the softmax and then later un-softmax it
+    let policy = policy_logits;
+    softmax_in_place(policy);
 
     let mv_count = board.available_moves().count();
     if mv_count > 1 {
         let indices = || {
             board
                 .available_moves()
-                .map(|mv| ctx.mapper.move_to_index(board, mv).unwrap())
+                .map(|mv| mapper.move_to_index(board, mv).unwrap())
         };
 
-        let mut total_p = 0.0;
-        indices().for_each(|pi| total_p += policy[pi]);
-
         let distr = Dirichlet::new_with_size(alpha, mv_count).unwrap();
-        let noise = ctx.rng.sample(distr);
+        let noise = rng.sample(distr);
 
         indices().enumerate().for_each(|(i, pi)| {
-            policy[pi] = (policy[pi] / total_p) * (1.0 - eps) + noise[i] * eps;
+            policy[pi] = policy[pi] * (1.0 - eps) + noise[i] * eps;
         });
     }
+
+    unsoftmax_in_place(policy, 0.0);
 }
 
 fn extract_zero_eval<B: Board, M: BoardMapper<B>>(
     mapper: M,
     board: &B,
-    response: &MuZeroEvaluation,
+    eval: &MuZeroEvaluation,
 ) -> ZeroEvaluation<'static> {
+    //TODO maybe also collect valid mass here?
+
     let mut policy: Vec<f32> = board
         .available_moves()
-        .map(|mv| mapper.move_to_index(board, mv).map_or(1.0, |i| response.policy[i]))
+        .map(|mv| mapper.move_to_index(board, mv).map_or(0.0, |i| eval.policy_logits[i]))
         .collect();
 
-    // TODO should we even normalize here? that just means we lose valid weight information
-    normalize_in_place(&mut policy);
+    softmax_in_place(&mut policy);
 
     ZeroEvaluation {
-        values: response.values,
+        values: eval.values,
         policy: Cow::Owned(policy),
     }
 }

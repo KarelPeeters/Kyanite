@@ -8,9 +8,8 @@ use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
-use crossbeam::channel;
-use crossbeam::channel::Sender;
 use crossbeam::thread::Scope;
+use flume::{Receiver, Sender};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::Device;
@@ -37,7 +36,6 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
-    assert_ne!(startup_settings.cpu_batch_size, 0, "CPU batch size must be nonzero");
     assert_ne!(startup_settings.gpu_batch_size, 0, "GPU batch size must be nonzero");
     if startup_settings.muzero {
         assert_ne!(
@@ -45,8 +43,6 @@ pub fn selfplay_server_main() {
             "For muzero root batch size must be nonzero"
         );
     }
-
-    //TODO rewrite proper batch size & thread count asserts to ensure there are no deadlocks
 
     let output_folder = Path::new(&startup_settings.output_folder);
     assert!(
@@ -79,7 +75,7 @@ pub fn selfplay_server_main() {
         Game::Ataxx { size } => selfplay_start(
             game,
             startup_settings,
-            || AtaxxBoard::diagonal(size),
+            move || AtaxxBoard::diagonal(size),
             AtaxxStdMapper::new(size),
             reader,
             writer,
@@ -113,7 +109,7 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
     }
 }
 
-fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Sync>(
+fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Send + Sync + Clone + 'static>(
     game: Game,
     startup: StartupSettings,
     start_pos: F,
@@ -136,6 +132,10 @@ fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Sync>(
     }
 }
 
+pub type UpdateSender<B> = Sender<GeneratorUpdate<B>>;
+pub type GraphSender<G> = Sender<Option<Arc<G>>>;
+pub type GraphReceiver<G> = Receiver<Option<Arc<G>>>;
+
 pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
     type G: Send + Sync;
 
@@ -146,18 +146,18 @@ pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
         device_id: usize,
         startup: &StartupSettings,
         mapper: M,
-        start_pos: &'s (impl Fn() -> B + Sync),
-        update_sender: Sender<GeneratorUpdate<B>>,
-    ) -> (Vec<Sender<Settings>>, Vec<Sender<Arc<Self::G>>>);
+        start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
+        update_sender: UpdateSender<B>,
+    ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>);
 
-    fn load_graph(&self, path: &str, mapper: M) -> Self::G;
+    fn load_graph(&self, path: &str, mapper: M, startup: &StartupSettings) -> Self::G;
 }
 
 fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecialization<B, M> + Send + Sync>(
     game: Game,
     startup: StartupSettings,
     mapper: M,
-    start_pos: impl Fn() -> B + Sync,
+    start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
     reader: BufReader<impl Read + Send>,
     writer: BufWriter<impl Write + Send>,
     spec: Z,
@@ -166,16 +166,16 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
     assert!(!devices.is_empty(), "No cuda devices found");
 
     let total_cpu_threads = startup.cpu_threads_per_device * devices.len();
+    let startup = &startup;
 
     let mut settings_senders = vec![];
-    let mut graph_senders: Vec<Sender<Arc<Z::G>>> = vec![];
-    let (update_sender, update_receiver) = channel::bounded(total_cpu_threads);
-
-    let start_pos = &start_pos;
+    let mut graph_senders: Vec<GraphSender<Z::G>> = vec![];
+    let (update_sender, update_receiver) = flume::bounded(total_cpu_threads);
 
     crossbeam::scope(|s| {
-        // spawn cpu search, gpu eval, rebatcher threads
+        // spawn per-device threads
         for (device_id, &device) in devices.iter().enumerate() {
+            let start_pos = start_pos.clone();
             let (mut new_settings_senders, mut new_graph_senders) =
                 spec.spawn_device_threads(s, device, device_id, &startup, mapper, start_pos, update_sender.clone());
             settings_senders.append(&mut new_settings_senders);
@@ -194,7 +194,6 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
                     &startup.output_folder,
                     mapper,
                     update_receiver,
-                    total_cpu_threads,
                 )
             })
             .unwrap();
@@ -204,7 +203,7 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
             .name("commander".to_string())
             .spawn(move |_| {
                 commander_main(reader, settings_senders, graph_senders, update_sender, |path| {
-                    spec.load_graph(path, mapper)
+                    spec.load_graph(path, mapper, startup)
                 });
             })
             .unwrap();

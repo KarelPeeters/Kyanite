@@ -32,9 +32,10 @@ class FixedSelfplaySettings:
 
     cpu_threads_per_device: int
     gpu_threads_per_device: int
-    cpu_batch_size: int
     gpu_batch_size: int
     gpu_batch_size_root: int
+
+    saved_state_channels: int
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
@@ -45,9 +46,9 @@ class FixedSelfplaySettings:
             games_per_gen=self.games_per_gen,
             cpu_threads_per_device=self.cpu_threads_per_device,
             gpu_threads_per_device=self.gpu_threads_per_device,
-            cpu_batch_size=self.cpu_batch_size,
             gpu_batch_size=self.gpu_batch_size,
             gpu_batch_size_root=self.gpu_batch_size_root,
+            saved_state_channels=self.saved_state_channels,
         )
 
 
@@ -100,12 +101,13 @@ class LoopSettings:
     def calc_batch_count_per_gen(self) -> int:
         game = self.fixed_settings.game
         positions_in_buffer = self.max_buffer_size
+        samples_per_position = float(self.samples_per_position)
 
         # this does not depend on gens_in_buffer since that divides itself away
         positions_per_gen = game.estimate_moves_per_game * self.fixed_settings.games_per_gen
 
         samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
-        batch_count = self.samples_per_position * positions_per_gen / samples_per_batch
+        batch_count = samples_per_position * positions_per_gen / samples_per_batch
 
         batch_count_int = round(batch_count)
         if batch_count_int == 0:
@@ -114,7 +116,7 @@ class LoopSettings:
         # extra calculations for prints
         gens_in_buffer = positions_in_buffer / positions_per_gen
         games_in_buffer = gens_in_buffer * self.fixed_settings.games_per_gen
-        samples_per_game = self.samples_per_position * game.estimate_moves_per_game
+        samples_per_game = samples_per_position * game.estimate_moves_per_game
         samples_per_gen = samples_per_game * self.fixed_settings.games_per_gen
 
         print("Behaviour estimates:")
@@ -129,7 +131,7 @@ class LoopSettings:
         print(f"    {samples_per_batch} /batch")
         print(f"    {samples_per_gen:.4} /gen")
         print(f"    {samples_per_game:.4} /game")
-        print(f"    {self.samples_per_position:.4} /position")
+        print(f"    {samples_per_position :.4} /position")
         print(f"Calculated {batch_count:.4} -> {batch_count_int} batches per gen")
 
         return batch_count_int
@@ -222,7 +224,7 @@ class LoopSettings:
                 self.evaluate_network(buffer, logger, network)
 
                 train_sampler = buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)
-                print(f"Training network on buffer with size {len(train_sampler)}")
+                print(f"Training network on buffer with size {len(train_sampler)} for {batch_count_per_gen} batches")
                 train_start = time.perf_counter()
 
                 for bi in range(batch_count_per_gen):
@@ -363,7 +365,7 @@ class LoopBuffer:
             logger.log("gen-size", "games", info.game_count)
             logger.log("gen-size", "positions", info.position_count)
             logger.log("gen-game-len", "game length min", info.min_game_length)
-            logger.log("gen-game-len", "game length mean", info.position_count / info.game_count)
+            logger.log("gen-game-len", "game length mean", info.mean_game_length)
             logger.log("gen-game-len", "game length max", info.max_game_length)
 
             if info.root_wdl is not None:

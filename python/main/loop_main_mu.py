@@ -9,25 +9,28 @@ from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.layers import Flip
 from lib.model.post_act import ScalarHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
-    ResBlock, AttentionPolicyHead
+    ResBlock, AttentionPolicyHead, ConvPolicyHead
 from lib.networks import MuZeroNetworks
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("chess")
+    game = Game.find("ttt")
+
+    saved_state_channels = 32
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         muzero=True,
         games_per_gen=200,
 
-        cpu_threads_per_device=2,
+        cpu_threads_per_device=4,
         gpu_threads_per_device=1,
-        cpu_batch_size=1024,
-        gpu_batch_size=1024,
-        gpu_batch_size_root=8,
+        gpu_batch_size=512,
+        gpu_batch_size_root=64,
+
+        saved_state_channels=saved_state_channels,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -35,7 +38,6 @@ def main():
         zero_temp_move_count=30,
         use_value=False,
         max_game_length=400,
-        keep_tree=False,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
         full_search_prob=1.0,
@@ -60,26 +62,28 @@ def main():
         mask_policy=False,
     )
 
-    def build_network(depth: int, channels: int, saved_channels: int):
+    def build_network(depth: int, channels: int):
+        assert channels >= saved_state_channels, f"Need at least {saved_state_channels} channels, got {channels}"
+
         representation = nn.Sequential(
             ResTower(depth, game.full_input_channels, channels, final_affine=False),
             nn.Hardtanh(-1.0, 1.0),
         )
         dynamics = ConcatInputsChannelwise(nn.Sequential(
-            ResTower(depth, saved_channels + game.input_mv_channels, channels, final_affine=False),
+            ResTower(depth, saved_state_channels + game.input_mv_channels, channels, final_affine=False),
             nn.Hardtanh(-1.0, 1.0),
             Flip(dim=2),
         ))
         prediction = PredictionHeads(
             common=ResBlock(channels),
             scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-            policy_head=AttentionPolicyHead(game, channels, channels)
-            # policy_head=ConvPolicyHead(game, channels)
+            # policy_head=AttentionPolicyHead(game, channels, channels)
+            policy_head=ConvPolicyHead(game, channels)
         )
 
         return MuZeroNetworks(
             state_channels=channels,
-            state_channels_saved=saved_channels,
+            state_channels_saved=saved_state_channels,
             state_quant_bits=8,
             representation=representation,
             dynamics=dynamics,
@@ -87,10 +91,10 @@ def main():
         )
 
     # def dummy_network():
-    #     return build_network(1, 64, 64)
+    #     return build_network(1, 64)
 
     def initial_network():
-        return build_network(16, 128, 64)
+        return build_network(8, 32)
 
     initial_files_pattern = ""
 
@@ -104,11 +108,11 @@ def main():
 
         only_generate=False,
 
-        min_buffer_size=1_500_000,
-        max_buffer_size=2_000_000,
+        min_buffer_size=100_000,
+        max_buffer_size=200_000,
 
         train_batch_size=128,
-        samples_per_position=0.5,
+        samples_per_position=10,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 

@@ -157,7 +157,7 @@ pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayVi
 
     let mut result = Array4::zeros(output_shape);
     for b in 0..batch_size {
-        let result_b = conv2d(&filter, input.index_axis(Axis(0), b), Padding::Same, 1);
+        let result_b = conv2d(&filter, None, input.index_axis(Axis(0), b), Padding::Same, 1);
         result.index_axis_mut(Axis(0), b).assign(&result_b);
     }
 
