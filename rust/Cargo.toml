@@ -13,7 +13,6 @@ members = [
     "kz-selfplay",
     "kz-lichess",
     "kz-misc",
-    "test-async"
 ]
 
 [profile.release]
