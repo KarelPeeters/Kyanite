@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::ffi::{c_void, CString};
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
@@ -66,29 +67,38 @@ impl CuModule {
         }
     }
 
-    pub unsafe fn from_source(src: &str, device: Device) -> CompileResult {
+    pub unsafe fn from_source(src: &str, name: Option<&str>, device: Device) -> CompileResult {
         let mut program = null_mut();
 
         let src_c = CString::new(src.as_bytes()).unwrap();
-        let name_c = CString::new("src.cu".as_bytes()).unwrap();
+        let name_c = name.map(|name| CString::new(name.as_bytes()).unwrap());
 
         nvrtcCreateProgram(
             &mut program as *mut _,
             src_c.as_ptr() as *const i8,
-            name_c.as_ptr() as *const i8,
+            name_c.map_or(null(), |name_c| name_c.as_ptr() as *const i8),
             0,
             null(),
             null(),
         )
         .unwrap();
 
-        let properties = device.properties();
+        let props = device.properties();
 
-        let arg = format!("--gpu-architecture=compute_{}{}", properties.major, properties.minor);
-        let arg = CString::new(arg).unwrap();
+        let args = vec![
+            format!("--gpu-architecture=compute_{}{}", props.major, props.minor),
+            "-G".to_string(),
+            "--generate-line-info".to_string(),
+        ];
 
-        let args = [arg.as_ptr() as *const i8];
-        let result = nvrtcCompileProgram(program, 1, args.as_ptr());
+        let args = args
+            .into_iter()
+            .map(CString::new)
+            .collect::<Result<Vec<CString>, _>>()
+            .unwrap();
+        let args = args.iter().map(|s| s.as_ptr() as *const i8).collect_vec();
+
+        let result = nvrtcCompileProgram(program, args.len() as i32, args.as_ptr());
 
         let mut log_size: usize = 0;
         nvrtcGetProgramLogSize(program, &mut log_size as *mut _).unwrap();
@@ -198,6 +208,10 @@ impl CuFunction {
 }
 
 impl Dim3 {
+    pub fn single(x: u32) -> Self {
+        Self { x, y: 1, z: 1 }
+    }
+
     pub fn new(x: u32, y: u32, z: u32) -> Self {
         Self { x, y, z }
     }

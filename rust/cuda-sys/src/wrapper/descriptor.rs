@@ -51,6 +51,12 @@ impl TensorDescriptor {
             shape,
             strides,
         );
+        assert!(
+            strides.iter().all(|&x| x != 0),
+            "Stride cannot be zero, got shape {:?} with strides {:?}",
+            shape,
+            strides
+        );
 
         unsafe {
             let mut inner = null_mut();

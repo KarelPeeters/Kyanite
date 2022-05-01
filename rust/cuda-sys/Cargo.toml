@@ -8,6 +8,4 @@ bindgen = "0.59.2"
 
 [dependencies]
 bytemuck = "1.9.1"
-
-[dev-dependencies]
 itertools = "0.10.3"

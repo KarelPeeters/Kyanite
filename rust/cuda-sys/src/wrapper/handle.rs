@@ -114,6 +114,7 @@ impl CudaStream {
         cudaEventRecord(event.inner(), self.inner()).unwrap()
     }
 
+    // TODO make this the default function with the shorter name
     pub unsafe fn record_new_event(&self) -> CudaEvent {
         let event = CudaEvent::new();
         self.record_event(&event);

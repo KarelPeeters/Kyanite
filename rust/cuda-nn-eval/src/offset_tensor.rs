@@ -85,6 +85,11 @@ impl<P: OffsetPtr> PtrTensor<P> {
 
         self.offset(offset, result_shape)
     }
+
+    pub fn repeat_unary(&self, axis: usize, count: usize) -> Self {
+        let result_shape = self.shape.repeat_unary(axis, count);
+        self.offset(0, result_shape)
+    }
 }
 
 impl<P: Clone> PtrTensor<P> {

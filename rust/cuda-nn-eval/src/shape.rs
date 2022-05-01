@@ -198,6 +198,19 @@ impl StridedShape {
         StridedShape::new(new_shape, new_strides)
     }
 
+    pub fn repeat_unary(&self, axis: usize, count: usize) -> StridedShape {
+        assert!(axis < self.rank());
+        assert_eq!(self.shape[axis], 1);
+
+        let mut new_shape = self.shape.clone();
+        let mut new_strides = self.strides.clone();
+
+        new_shape[axis] = count;
+        new_strides[axis] = 0;
+
+        StridedShape::new(new_shape, new_strides)
+    }
+
     pub fn descriptor(&self) -> TensorDescriptor {
         let mut shape = self.shape.iter().map(|&x| x as i32).collect_vec();
         let mut strides = self.strides.iter().map(|&x| x as i32).collect_vec();

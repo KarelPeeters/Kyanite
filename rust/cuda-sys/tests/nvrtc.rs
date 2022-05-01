@@ -31,12 +31,10 @@ fn saxpy() {
     let stream = CudaStream::new(device);
 
     unsafe {
-        cuInit(0).unwrap();
-
         for _ in 0..10 {
             let start = Instant::now();
 
-            let result = CuModule::from_source(SAXPY_SOURCE, device);
+            let result = CuModule::from_source(SAXPY_SOURCE, None, device);
             println!("{}", result.log);
 
             let module = result.module.unwrap();

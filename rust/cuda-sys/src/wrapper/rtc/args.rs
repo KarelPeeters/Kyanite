@@ -30,6 +30,10 @@ impl KernelArgs {
         }
     }
 
+    pub fn push_int(&mut self, value: i32) {
+        self.push(value)
+    }
+
     pub fn finish(mut self) -> Vec<u8> {
         self.pad_to(self.max_alignment);
         self.buffer
