@@ -58,7 +58,7 @@ def supervised_loop(
             mean_wdl = train_batch_wdl.mean(axis=0, keepdims=True)
             mean_value = mean_wdl[0, 0] - mean_wdl[0, 2]
 
-            loss_wdl_mean = nnf.mse_loss(mean_wdl.expand(len(test_batch), 3), test_batch_wdl)
+            loss_wdl_mean = nnf.cross_entropy(mean_wdl.expand(len(test_batch), 3), test_batch_wdl)
 
             test_batch_value = test_batch_wdl[:, 0] - test_batch_wdl[:, 2]
             loss_value_mean = nnf.mse_loss(mean_value.expand(len(test_batch)), test_batch_value)

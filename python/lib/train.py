@@ -303,7 +303,7 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         # only softmax between selected indices, implicitly assuming other logits are -inf
         picked_logits = torch.gather(logits, 1, indices)
         picked_logits[values == -1] = -np.inf
-        picked_logs = torch.log_softmax(picked_logits, 1).clamp(-LOG_CLIPPING, None)
+        picked_logs = torch.log_softmax(picked_logits, 1)
 
         top_index = torch.argmax(picked_logits, dim=1)
         batch_acc = top_index == torch.argmax(values, dim=1)
@@ -311,7 +311,7 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
         batch_valid_mass = has_valid * np.nan
     else:
         # softmax between all logits, then only use selected logs, implicitly assuming other values are 0.0
-        logs = torch.log_softmax(logits, 1).clamp(-LOG_CLIPPING, None)
+        logs = torch.log_softmax(logits, 1)
         picked_logs = torch.gather(logs, 1, indices)
         picked_logs[values == -1] = -np.inf
 
@@ -330,14 +330,15 @@ def evaluate_policy(logits, indices, values, mask_invalid_moves: bool) -> Policy
 
         batch_top_mass = has_valid * np.nan
 
-    # cross-entropy loss
-    loss = -values * picked_logs
+    # cross-entropy loss, with clipped logs for stability
+    loss = -values * picked_logs.clamp(-LOG_CLIPPING, None)
 
     # unavailable moves (values == -1 from before) become -inf but should be 0
-    loss[loss.isinf()] = 0
+    loss[picked_logs.isinf()] = 0
 
     # positions without any valid moves become rows of nan, which we skip here
     total_loss = loss.nansum()
+
     return PolicyEvaluation(
         train_loss=total_loss / batch_size,
         norm_loss=total_loss / has_valid_count,
