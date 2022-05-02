@@ -102,7 +102,7 @@ def main(plotter: LogPlotter):
         assert allow_resume, f"Not allowed to resume, but found existing batch {last_bi}"
 
         logger = Logger.load(os.path.join(output_folder, "log.npz"))
-        start_bi = last_bi + 1
+        start_bi = last_bi
         network = torch.jit.load(os.path.join(output_folder, f"network_{last_bi}.pt"))
 
     network.to(DEVICE)
