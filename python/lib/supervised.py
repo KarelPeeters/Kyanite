@@ -33,8 +33,8 @@ def supervised_loop(
             logger.save(os.path.join(output_folder, "log.npz"))
 
             print("Saving network")
-            save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
             torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
+            save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
 
         plotter.block_while_paused()
         print(f"Starting batch {bi}")
