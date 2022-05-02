@@ -1,8 +1,6 @@
-from dataclasses import dataclass
+from typing import NamedTuple
 
-import einops
 import torch
-from einops.layers.torch import Rearrange
 from torch import nn
 
 
@@ -16,6 +14,7 @@ class AttentionTower(nn.Module):
     ):
         super().__init__()
         self.board_size = board_size
+        self.d_model = d_model
 
         alpha = (2 * depth) ** (1 / 4)
         beta = (8 * depth) ** (-1 / 4)
@@ -28,21 +27,21 @@ class AttentionTower(nn.Module):
             for _ in range(depth)
         )
 
-        self.rearrange_before = Rearrange("b c h w -> b (h w) c", h=board_size, w=board_size)
-        self.rearrange_after = Rearrange("b (h w) c -> b c h w", h=board_size, w=board_size)
-
     def forward(self, x):
-        _, _, h, w = x.shape
+        b, _, h, w = x.shape
 
         expanded = self.expand(x)
         embedded = expanded + self.embedding
 
-        curr = self.rearrange_before(embedded)
+        # "b c h w -> b (h w) c"
+        curr = embedded.permute((0, 2, 3, 1)).view((b, h * w, self.d_model))
 
         for encoder in self.encoders:
             curr = encoder(curr)
 
-        reshaped = self.rearrange_after(curr)
+        # "b (h w) c -> b c h w"
+        reshaped = curr.view((b, h, w, self.d_model)).permute((0, 3, 1, 2))
+
         return reshaped
 
 
@@ -64,7 +63,6 @@ class EncoderLayer(nn.Module):
 
         self.dk_total = heads * d_k
 
-        # TODO better (DeepNorm) initialization
         self.project_qkv = nn.Conv1d(d_model, heads * (2 * d_k + d_v), 1)
         self.project_out = nn.Conv1d(heads * d_v, d_model, 1)
 
@@ -91,17 +89,17 @@ class EncoderLayer(nn.Module):
             nn.init.xavier_normal_(w, gain=1)
 
     def forward_with_weights(self, input):
-        qkv = run_conv(self.project_qkv, input)
+        qkv = self.project_qkv(input.permute((0, 2, 1))).permute((0, 2, 1))
 
         q = qkv[:, :, :self.dk_total]
         k = qkv[:, :, self.dk_total:2 * self.dk_total]
         v = qkv[:, :, 2 * self.dk_total:]
 
         att_raw, weights = multi_head_attention(q, k, v, self.heads)
-        att_projected = run_conv(self.project_out, att_raw)
+        att_projected = self.project_out(att_raw.permute((0, 2, 1))).permute((0, 2, 1))
         att_result = self.norm_att(input * self.alpha + self.dropout(att_projected))
 
-        ff_inner = run_conv(self.ff, att_result)
+        ff_inner = self.ff(att_result.permute((0, 2, 1))).permute((0, 2, 1))
         ff_result = self.norm_ff(att_result * self.alpha + self.dropout(ff_inner))
 
         return ff_result, weights
@@ -111,33 +109,31 @@ class EncoderLayer(nn.Module):
         return result
 
 
-def run_conv(f, x):
-    x_conv = einops.rearrange(x, "b n c -> b c n")
-    y_conv = f(x_conv)
-    y = einops.rearrange(y_conv, "b c n -> b n c")
-    return y
-
-
 def multi_head_attention(q, k, v, heads: int):
-    shapes = check_att_shapes(q, k, v, heads)
+    s = check_att_shapes(q, k, v, heads)
 
-    # shuffle the input
-    q_split = einops.rearrange(q, "b m (h k) -> (b h) m k", h=heads, m=shapes.m)
-    k_split = einops.rearrange(k, "b n (h k) -> (b h) k n", h=heads, n=shapes.n)
-    v_split = einops.rearrange(v, "b n (h v) -> (b h) n v", h=heads, n=shapes.n)
+    # shuffle the inputs
+
+    # "b m (h k) -> (b h) m k"
+    q_split = q.view(s.b, s.m, heads, s.dk).permute((0, 2, 1, 3)).contiguous().view(s.b * heads, s.m, s.dk)
+    # "b n (h k) -> (b h) k n"
+    k_split = k.view(s.b, s.n, heads, s.dk).permute((0, 2, 3, 1)).contiguous().view(s.b * heads, s.dk, s.n)
+    # "b n (h v) -> (b h) n v"
+    v_split = v.view(s.b, s.n, heads, s.dv).permute((0, 2, 1, 3)).contiguous().view(s.b * heads, s.n, s.dv)
 
     # actual attention
-    logits_split = torch.bmm(q_split, k_split) / shapes.dk ** .5
+    logits_split = torch.bmm(q_split, k_split) / s.dk ** .5
     att_split = torch.softmax(logits_split, -1)
     result_split = torch.bmm(att_split, v_split)
 
     # shuffle the output back
-    result = einops.rearrange(result_split, "(b h) m v -> b m (h v)", h=heads, m=shapes.m)
+    # "(b h) m v -> b m (h v)"
+    result = result_split.view(s.b, heads, s.m, s.dv).permute((0, 2, 1, 3)).contiguous().view(s.b, s.m, heads * s.dv)
+
     return result, att_split
 
 
-@dataclass
-class AttShapes:
+class AttShapes(NamedTuple):
     b: int  # batch size
     n: int  # input sequence length (for k and v)
     m: int  # output sequence length (for q)
