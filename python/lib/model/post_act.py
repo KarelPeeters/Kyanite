@@ -62,7 +62,7 @@ class AttentionPolicyHead(nn.Module):
         q_from = bulk[:, :self.query_channels, :, :].flatten(2)
         q_to = torch.cat([
             bulk[:, self.query_channels:, :, :].flatten(2),
-            under.view(-1, self.query_channels, 3 * 8)
+            under.reshape(-1, self.query_channels, 3 * 8)
         ], dim=2)
 
         # TODO try to do this scaling inside of the weight (and bias?) initializations instead
