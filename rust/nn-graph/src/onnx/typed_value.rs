@@ -10,6 +10,8 @@ use crate::shape::{Shape, Size};
 /// `IntTensor` is stored as a float tensor where casting still needs to happen at use-time.
 #[derive(Debug, Clone)]
 pub enum TypedValue {
+    //TODO support proper tensor types both compile and runtime
+    //TODO switch to ::Shape and ::Tensor instead of splitting them here, this is causing a bunch of ugly matches
     Shape(Vec<SizeOrInt>),
     FloatTensor(Value),
     IntTensor(Value),
@@ -22,27 +24,30 @@ pub enum SizeOrInt {
 }
 
 impl TypedValue {
-    pub fn unwrap_as_shape(&self, graph: &Graph) -> Vec<SizeOrInt> {
+    pub fn as_shape(&self, graph: &Graph) -> Option<Vec<SizeOrInt>> {
         match self {
-            TypedValue::Shape(shape) => shape.clone(),
+            TypedValue::Shape(shape) => Some(shape.clone()),
             &TypedValue::IntTensor(inner) => {
                 let shape_shape = &graph[inner].shape;
-                assert_eq!(
-                    shape_shape.rank(),
-                    1,
-                    "Shape tensor must have rank 1, got shape {:?}",
+
+                // TODO constrain this again once shapes get proper shapes
+                assert!(
+                    shape_shape.rank() <= 1,
+                    "Shape tensor must have rank 0 or 1, got shape {:?}",
                     shape_shape
                 );
 
                 let dims_f = graph.as_const(inner).expect("Shape tensor must be constant");
-                dims_f
+                let shape = dims_f
                     .iter()
                     .copied()
                     .map(float_to_i64_exact)
                     .map(SizeOrInt::Int)
-                    .collect_vec()
+                    .collect_vec();
+
+                Some(shape)
             }
-            TypedValue::FloatTensor(_) => panic!("Float tensor cannot be used as shape"),
+            TypedValue::FloatTensor(_) => None,
         }
     }
 
@@ -80,4 +85,19 @@ impl TypedValue {
 pub fn float_to_i64_exact(f: f32) -> i64 {
     assert_eq!(f as i64 as f32, f, "Float must be an integer, got {}", f);
     f as i64
+}
+
+impl SizeOrInt {
+    pub fn as_size(self) -> Option<Size> {
+        match self {
+            SizeOrInt::Size(size) => Some(size),
+            SizeOrInt::Int(int) => {
+                if int >= 0 {
+                    Some(Size::fixed(int as usize))
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }

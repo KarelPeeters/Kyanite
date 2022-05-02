@@ -94,6 +94,13 @@ impl Shape {
         shape![Size::BATCH].concat(self)
     }
 
+    pub fn without(&self, axis: usize) -> Shape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        let mut dims = self.dims.clone();
+        dims.remove(axis);
+        Shape::new(dims)
+    }
+
     /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
     pub fn replace(&self, axis: usize, replacement: Size) -> Shape {
         assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
@@ -190,6 +197,10 @@ impl ConcreteShape {
     }
 
     pub fn unwrap_2(&self) -> [usize; 2] {
+        self.dims.as_slice().try_into().expect("Expected rank 2 shape")
+    }
+
+    pub fn unwrap_3(&self) -> [usize; 3] {
         self.dims.as_slice().try_into().expect("Expected rank 2 shape")
     }
 

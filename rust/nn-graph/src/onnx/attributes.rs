@@ -30,6 +30,10 @@ impl<'a> Attributes<'a> {
         })
     }
 
+    pub fn maybe_take_int(&mut self, key: &str) -> Option<i64> {
+        self.maybe_take(key, AttributeType::Int).map(|a| a.i)
+    }
+
     pub fn take_int(&mut self, key: &str) -> i64 {
         self.take(key, AttributeType::Int).i
     }
