@@ -30,7 +30,7 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 
 
 def main(plotter: LogPlotter):
-    output_folder = "../../data/supervised/att-alpha3"
+    output_folder = "../../data/supervised/custom-att"
 
     paths = [
         fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
@@ -67,7 +67,7 @@ def main(plotter: LogPlotter):
     def initial_network():
         channels = 256
         return PredictionHeads(
-            common=AttentionTower(game.board_size, 8, game.full_input_channels, channels, channels, 8, 0.0),
+            common=AttentionTower(game.board_size, game.full_input_channels, 8, channels, 8, 16, 16, 512, 0.1),
             # common=ResTower(8, game.full_input_channels, channels),
 
             scalar_head=ScalarHead(game.board_size, channels, 4, 32),

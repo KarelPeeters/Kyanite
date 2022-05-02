@@ -3,7 +3,6 @@ import json
 import os
 from typing import Optional
 
-import torch
 import torch.nn.functional as nnf
 from torch import nn
 from torch.optim import Optimizer
@@ -11,7 +10,6 @@ from torch.optim import Optimizer
 from lib.data.buffer import FileListSampler
 from lib.logger import Logger
 from lib.plotter import LogPlotter
-from lib.save_onnx import save_onnx
 from lib.schedule import Schedule
 from lib.train import TrainSettings
 
@@ -74,5 +72,5 @@ def supervised_loop(
 
             # do this last so we can look for onnx files to continue training
             print("Saving network")
-            save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
-            torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
+            # save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
+            # torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
