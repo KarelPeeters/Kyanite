@@ -28,14 +28,6 @@ def supervised_loop(
         json.dump(settings, settings_f, default=lambda o: o.__dict__, indent=2)
 
     for bi in itertools.count(start_bi):
-        if bi % save_steps == 0:
-            print("Saving log")
-            logger.save(os.path.join(output_folder, "log.npz"))
-
-            print("Saving network")
-            torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
-            save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)
-
         plotter.block_while_paused()
         print(f"Starting batch {bi}")
         logger.start_batch()
@@ -74,3 +66,11 @@ def supervised_loop(
             logger.log("loss-value", "trivial", loss_value_mean.item())
 
             plotter.update(logger)
+
+        if bi % save_steps == 0:
+            print("Saving log")
+            logger.save(os.path.join(output_folder, "log.npz"))
+
+            print("Saving network")
+            torch.jit.script(network).save(os.path.join(output_folder, f"network_{bi}.pt"))
+            save_onnx(settings.game, os.path.join(output_folder, f"network_{bi}.onnx"), network, 4)

@@ -30,7 +30,7 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 
 
 def main(plotter: LogPlotter):
-    output_folder = "../../data/supervised/custom-att-DN-init-scaled2"
+    output_folder = "../../data/supervised/att-again-deeper"
 
     paths = [
         fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
@@ -67,7 +67,7 @@ def main(plotter: LogPlotter):
     def initial_network():
         channels = 256
         return PredictionHeads(
-            common=AttentionTower(game.board_size, game.full_input_channels, 8, channels, 8, 16, 16, 512, 0.1),
+            common=AttentionTower(game.board_size, game.full_input_channels, 16, channels, 8, 16, 16, 256, 0.1),
             # common=ResTower(8, game.full_input_channels, channels),
 
             scalar_head=ScalarHead(game.board_size, channels, 4, 32),
@@ -102,7 +102,7 @@ def main(plotter: LogPlotter):
         assert allow_resume, f"Not allowed to resume, but found existing batch {last_bi}"
 
         logger = Logger.load(os.path.join(output_folder, "log.npz"))
-        start_bi = last_bi
+        start_bi = last_bi + 1
         network = torch.jit.load(os.path.join(output_folder, f"network_{last_bi}.pt"))
 
     network.to(DEVICE)
