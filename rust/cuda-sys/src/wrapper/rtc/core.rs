@@ -87,8 +87,9 @@ impl CuModule {
 
         let args = vec![
             format!("--gpu-architecture=compute_{}{}", props.major, props.minor),
-            "-G".to_string(),
-            "--generate-line-info".to_string(),
+            // "-G".to_string(),
+            // "--generate-line-info".to_string(),
+            "--define-macro=NVRTC".to_string(),
         ];
 
         let args = args
