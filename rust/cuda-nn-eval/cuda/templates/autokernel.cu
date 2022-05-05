@@ -2,13 +2,25 @@ __host__ __device__ int ceil_div(int x, int y) {
     return (x + y - 1) / y;
 }
 
-extern "C" __global__ void
-foo_kernel(
+template<typename T, int R>
+struct Array {
+    T data[R];
+
+    __host__ __device__ T &operator[](int index) {
+        return this->data[index];
+    }
+};
+
+template<int R>
+__global__ void foo_kernel(
         int op,
-        int shape_0, int shape_1,
-        int stride0_0, int stride0_1, float *ptr0,
-        int stride1_0, int stride1_1, float *ptr1,
-        int stride2_0, int stride2_1, float *ptr2
+
+        int size,
+        Array<int, R> strides_dense,
+
+        Array<int, R> strides_0, float *ptr_0,
+        Array<int, R> strides_1, float *ptr_1,
+        Array<int, R> strides_2, float *ptr_2
 ) {
     int blockCount = gridDim.x;
     int threadsPerBlock = blockDim.x;
@@ -18,21 +30,28 @@ foo_kernel(
     int thread = threadIdx.x;
     int global = block * threadsPerBlock + thread;
 
-    int size = shape_0 * shape_1;
     int itemsPerThread = ceil_div(size, threadCount);
 
     for (int index = global; index < size; index += threadCount) {
-        int a0 = index / shape_1;
-        int a1 = index % shape_1;
+        int index_left = index;
+        int i0 = 0;
+        int i1 = 0;
+        int i2 = 0;
 
-        int i0 = a0 * stride0_0 + a1 * stride0_1;
-        int i1 = a0 * stride1_0 + a1 * stride1_1;
-        int i2 = a0 * stride2_0 + a1 * stride2_1;
+#pragma unroll
+        for (int d = 0; d < R; d++) {
+            int a_d = index_left / strides_dense[d];
+            index_left %= strides_dense[d];
+
+            i0 += a_d * strides_0[d];
+            i1 += a_d * strides_1[d];
+            i2 += a_d * strides_2[d];
+        }
 
         if (op) {
-            ptr2[i2] = ptr2[i0] + ptr1[i1];
+            ptr_2[i2] = ptr_2[i0] + ptr_1[i1];
         } else {
-            ptr2[i2] = ptr2[i0];
+            ptr_2[i2] = ptr_2[i0];
         }
     }
 }

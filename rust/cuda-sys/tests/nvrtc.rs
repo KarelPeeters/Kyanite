@@ -34,7 +34,7 @@ fn saxpy() {
         for _ in 0..10 {
             let start = Instant::now();
 
-            let result = CuModule::from_source(SAXPY_SOURCE, None, device);
+            let result = CuModule::from_source(device, SAXPY_SOURCE, None, &[]);
             println!("{}", result.log);
 
             let module = result.module.unwrap();

@@ -1,6 +1,7 @@
 extern crate core;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_nn_eval::shape::StridedShape;
 use cuda_sys::bindings::cudnnOpTensorOp_t;
 use cuda_sys::wrapper::descriptor::TensorOpDescriptor;
 use cuda_sys::wrapper::group::TensorOpArgs;
@@ -8,7 +9,6 @@ use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule, Dim3};
-use cuda_sys::wrapper::status::Status;
 
 fn main() {
     unsafe { main_inner() }
@@ -16,24 +16,36 @@ fn main() {
 
 unsafe fn push_tensor(args: &mut KernelArgs, shape: &[usize], tensor: &DeviceTensor) {
     assert_eq!(tensor.shape().shape(), shape);
-    assert_eq!(tensor.shape().rank(), 2);
 
-    args.push_int(tensor.shape().strides()[0] as i32);
-    args.push_int(tensor.shape().strides()[1] as i32);
+    for &s in tensor.shape().strides() {
+        args.push_int(s as i32);
+    }
+
     args.push(tensor.ptr().ptr());
 }
 
-unsafe fn launch(stream: &CudaStream, func: &CuFunction, a: &DeviceTensor, b: &DeviceTensor, c: &DeviceTensor) {
+unsafe fn launch(
+    stream: &CudaStream,
+    func: &CuFunction,
+    rank: usize,
+    op: i32,
+    a: &DeviceTensor,
+    b: &DeviceTensor,
+    c: &DeviceTensor,
+) {
     let shape = a.shape().shape();
-    assert_eq!(shape.len(), 2);
+    assert_eq!(rank, shape.len());
 
     let args = {
         let mut args = KernelArgs::new();
 
-        args.push_int(0 as i32);
+        args.push_int(op);
 
-        args.push_int(shape[0] as i32);
-        args.push_int(shape[1] as i32);
+        let dense_shape = StridedShape::new_simple(shape.to_vec());
+        args.push(dense_shape.size() as i32);
+        for &s in dense_shape.strides() {
+            args.push_int(s as i32);
+        }
 
         push_tensor(&mut args, shape, a);
         push_tensor(&mut args, shape, b);
@@ -74,15 +86,22 @@ unsafe fn main_inner() {
     let handle = CudnnHandle::new(device);
     let stream = handle.stream();
 
-    let module = CuModule::from_source(&template, Some(template_path), device);
+    let shape = vec![1024, 256, 8, 8];
+    let rank = shape.len();
+
+    let func_name = format!("foo_kernel<{}>", rank);
+    let module = CuModule::from_source(device, &template, Some(template_path), &[&func_name]);
     println!("{}", module.log);
+    println!("{:?}", module.lowered_names);
+
+    let func_lowered_name = module.lowered_names.get(&func_name).unwrap();
 
     let module = module.module.unwrap();
-    let func = module.get_function("foo_kernel").unwrap();
+    let func = module.get_function(func_lowered_name).unwrap();
 
-    let a_inner = DeviceTensor::alloc_simple(device, vec![1024, 256 * 8 * 8]);
-    let b_inner = DeviceTensor::alloc_simple(device, vec![1024, 256 * 8 * 8]);
-    let c_inner = DeviceTensor::alloc_simple(device, vec![1024, 256 * 8 * 8]);
+    let a_inner = DeviceTensor::alloc_simple(device, shape.clone());
+    let b_inner = DeviceTensor::alloc_simple(device, shape.clone());
+    let c_inner = DeviceTensor::alloc_simple(device, shape.clone());
 
     let a_large = a_inner.clone();
     // let a_large = a_inner.repeat_unary(0, 1024).repeat_unary(1, 256 * 8 * 8);
@@ -91,7 +110,10 @@ unsafe fn main_inner() {
     let c_large = c_inner.clone();
 
     println!("Autokernel");
-    let time_manual = profile_kernel(&stream, || launch(stream, &func, &a_large, &b_large, &c_large));
+    let op = 0;
+    let time_manual = profile_kernel(&stream, || {
+        launch(stream, &func, rank, op, &a_large, &b_large, &c_large)
+    });
     let tp_manual = (4 * a_large.shape().size()) as f32 / time_manual;
 
     println!("  Delta per kernel: {} ms", time_manual * 1000.0);
