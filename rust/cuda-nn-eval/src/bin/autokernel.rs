@@ -1,41 +1,59 @@
 extern crate core;
 
+use itertools::Itertools;
+
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::shape::StridedShape;
-use cuda_sys::bindings::cudnnOpTensorOp_t;
+use cuda_sys::bindings::{cudaError, cudaStream_t, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::TensorOpDescriptor;
 use cuda_sys::wrapper::group::TensorOpArgs;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule, Dim3};
-use itertools::Itertools;
+use cuda_sys::wrapper::status::Status;
 
 fn main() {
     unsafe { main_inner() }
 }
 
-unsafe fn launch(stream: &CudaStream, func: &CuFunction, a: &DeviceTensor, b: &DeviceTensor) {
+unsafe fn push_tensor(args: &mut KernelArgs, shape: &[usize], tensor: &DeviceTensor) {
+    assert_eq!(tensor.shape().shape(), shape);
+    assert_eq!(tensor.shape().rank(), 2);
+
+    args.push_int(tensor.shape().strides()[0] as i32);
+    args.push_int(tensor.shape().strides()[1] as i32);
+    args.push(tensor.ptr().ptr());
+}
+
+unsafe fn launch(stream: &CudaStream, func: &CuFunction, a: &DeviceTensor, b: &DeviceTensor, c: &DeviceTensor) {
+    let shape = a.shape().shape();
+    assert_eq!(shape.len(), 2);
+
     let args = {
-        // int shape[2], int stride0[2], int stride1[2], float *x0, float *x1
         let mut args = KernelArgs::new();
-        assert_eq!(a.shape().shape(), b.shape().shape());
-        assert_eq!(a.shape().rank(), 2);
-        args.push_int(a.shape().shape()[0] as i32);
-        args.push_int(a.shape().shape()[1] as i32);
-        args.push_int(a.shape().strides()[0] as i32);
-        args.push_int(a.shape().strides()[1] as i32);
-        args.push_int(b.shape().strides()[0] as i32);
-        args.push_int(b.shape().strides()[1] as i32);
-        args.push(a.ptr().ptr());
-        args.push(b.ptr().ptr());
+
+        args.push_int(shape[0] as i32);
+        args.push_int(shape[1] as i32);
+
+        push_tensor(&mut args, shape, a);
+        push_tensor(&mut args, shape, b);
+        push_tensor(&mut args, shape, c);
+
         args.finish()
     };
 
-    func.launch_kernel(Dim3::single(128), Dim3::single(128), 0, stream, &args);
+    let blocks = 128;
+    let threads_per_block = 128;
+
+    // let threads = blocks * threads_per_block;
+    // let items_per_thread = (a.shape().size() as u32 + threads - 1) / threads;
+    // println!("{} items per thread", items_per_thread);
+
+    func.launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, stream, &args);
 }
 
 unsafe fn main_inner() {
-    let template_path = "template.cu";
+    let template_path = "cuda-nn-eval/cuda/templates/autokernel.cu";
     let template = std::fs::read_to_string(template_path).unwrap();
 
     let device = Device::new(0);
@@ -43,54 +61,34 @@ unsafe fn main_inner() {
     let stream = handle.stream();
 
     let module = CuModule::from_source(&template, Some(template_path), device);
-
     println!("{}", module.log);
 
-    let zero = DeviceTensor::alloc_simple(device, vec![1, 1]);
-    zero.copy_simple_from_host(&[0.0]);
-
-    let a = DeviceTensor::alloc_simple(device, vec![8, 1]);
-    let b = DeviceTensor::alloc_simple(device, vec![8, 3]);
-
-    let buffer_a = (0..a.shape().size()).map(|i| i as f32).collect_vec();
-    let mut buffer_b = vec![f32::NAN; b.shape().size()];
-
     let module = module.module.unwrap();
-    let func = module.get_function("foo").unwrap();
+    let func = module.get_function("foo_kernel").unwrap();
 
-    println!("a_ptr: {:?}", a.ptr().ptr());
-    println!("b_ptr: {:?}", b.ptr().ptr());
+    let a_inner = DeviceTensor::alloc_simple(device, vec![1024, 256 * 8 * 8]);
+    let b_inner = DeviceTensor::alloc_simple(device, vec![1, 1]);
+    let c_inner = DeviceTensor::alloc_simple(device, vec![1024, 256 * 8 * 8]);
 
-    a.copy_from_host_staged(&buffer_a);
+    let a_large = a_inner.clone();
+    let b_large = b_inner.repeat_unary(0, 1024).repeat_unary(1, 256 * 8 * 8);
+    let c_large = c_inner.clone();
 
-    launch(stream, &func, &a.repeat_unary(1, 3), &b);
+    let iterations = 100;
 
-    stream.synchronize();
-
-    b.copy_to_host_staged(&mut buffer_b);
-
-    println!("buffer_a: {:?}", buffer_a);
-    println!("buffer_b: {:?}", buffer_b);
-
-    println!("Start benchmarking");
-    let a_inner = DeviceTensor::alloc_simple(device, vec![1, 1]);
-    let b_inner = DeviceTensor::alloc_simple(device, vec![256, 256]);
-
-    let a_large = a_inner.repeat_unary(0, 256).repeat_unary(1, 256);
-    let b_large = b_inner;
-
-    let iterations = 10;
     let start = stream.record_new_event();
-
     for _ in 0..iterations {
-        launch(stream, &func, &a_large, &b_large);
+        launch(stream, &func, &a_large, &b_large, &c_large);
+        // launch_foo(stream, &a_large, &b_large);
     }
-
     let end = stream.record_new_event();
     stream.synchronize();
 
-    let delta = end.time_elapsed_since(&start);
-    let throughput = (a_large.shape().size() * iterations) as f32 / delta;
+    let time_per_kernel = end.time_elapsed_since(&start) / iterations as f32;
+    let throughput = (4 * a_large.shape().size()) as f32 / time_per_kernel;
+
+    println!("Delta per kernel: {} ms", time_per_kernel * 1000.0);
+    println!("Kernels per second: {}", 1.0 / time_per_kernel);
     println!(
         "Manual throughput:\n  {} items/s\n  {} GBps",
         throughput,
