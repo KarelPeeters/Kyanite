@@ -21,15 +21,17 @@ template<typename T, int R>
 struct Array {
     T data[R];
 
-    __host__ __device__ T &operator[](int index) {
+    __device__ T &operator[](int index) {
         return this->data[index];
     }
 };
 
+__device__ float operation(float a, float b) {
+    return $OPERATION$;
+}
+
 template<int R>
 __global__ void foo_kernel(
-        int op,
-
         int size,
         Array<int, R> strides_dense,
 
@@ -64,10 +66,6 @@ __global__ void foo_kernel(
             i2 += a_d * strides_2[d];
         }
 
-        if (op) {
-            ptr_2[i2] = ptr_0[i0] + ptr_1[i1];
-        } else {
-            ptr_2[i2] = ptr_0[i0];
-        }
+        ptr_2[i2] = operation(ptr_0[i0], ptr_1[i1]);
     }
 }

@@ -28,7 +28,6 @@ unsafe fn launch(
     stream: &CudaStream,
     func: &CuFunction,
     rank: usize,
-    op: i32,
     a: &DeviceTensor,
     b: &DeviceTensor,
     c: &DeviceTensor,
@@ -38,8 +37,6 @@ unsafe fn launch(
 
     let args = {
         let mut args = KernelArgs::new();
-
-        args.push_int(op);
 
         let dense_shape = StridedShape::new_simple(shape.to_vec());
         args.push(dense_shape.size() as i32);
@@ -86,11 +83,15 @@ unsafe fn main_inner() {
     let handle = CudnnHandle::new(device);
     let stream = handle.stream();
 
-    let shape = vec![1024, 256, 8, 8];
+    let shape = vec![1024 * 256 * 8 * 8];
+
     let rank = shape.len();
+    let operation = "a + b";
 
     let func_name = format!("foo_kernel<{}>", rank);
-    let module = CuModule::from_source(device, &template, Some(template_path), &[&func_name]);
+    let source = template.replace("$OPERATION$", operation);
+
+    let module = CuModule::from_source(device, &source, Some(template_path), &[&func_name]);
     println!("{}", module.log);
     println!("{:?}", module.lowered_names);
 
@@ -110,10 +111,7 @@ unsafe fn main_inner() {
     let c_large = c_inner.clone();
 
     println!("Autokernel");
-    let op = 1;
-    let time_manual = profile_kernel(&stream, || {
-        launch(stream, &func, rank, op, &a_large, &b_large, &c_large)
-    });
+    let time_manual = profile_kernel(&stream, || launch(stream, &func, rank, &a_large, &b_large, &c_large));
     let tp_manual = (4 * a_large.shape().size()) as f32 / time_manual;
 
     println!("  Delta per kernel: {} ms", time_manual * 1000.0);
