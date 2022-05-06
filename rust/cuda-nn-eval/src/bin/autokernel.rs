@@ -8,57 +8,52 @@ use cuda_sys::wrapper::group::TensorOpArgs;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::rtc::args::KernelArgs;
-use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule, Dim3};
+use cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
+use cuda_sys::wrapper::status::Status;
+use itertools::Itertools;
+use std::fmt::Write;
 
 fn main() {
     unsafe { main_inner() }
 }
 
-unsafe fn push_tensor(args: &mut KernelArgs, shape: &[usize], tensor: &DeviceTensor) {
-    assert_eq!(tensor.shape().shape(), shape);
-
-    for &s in tensor.shape().strides() {
-        args.push_int(s as i32);
+fn append_values(s: &mut String, values: &[isize]) {
+    for (i, v) in values.iter().enumerate() {
+        if i != 0 {
+            s.push_str(", ");
+        }
+        write!(s, "{}", v).unwrap();
     }
-
-    args.push(tensor.ptr().ptr());
 }
 
-unsafe fn launch(
-    stream: &CudaStream,
-    func: &CuFunction,
-    rank: usize,
-    a: &DeviceTensor,
-    b: &DeviceTensor,
-    c: &DeviceTensor,
-) {
-    let shape = a.shape().shape();
-    assert_eq!(rank, shape.len());
+unsafe fn build_replacements(operation: &str, operand_shapes: &[&StridedShape]) -> Vec<(&'static str, String)> {
+    assert!(operand_shapes.len() > 0);
+    let dense = StridedShape::new_simple(operand_shapes[0].shape().to_vec());
 
-    let args = {
-        let mut args = KernelArgs::new();
+    let mut dense_strides = String::from("{");
+    append_values(&mut dense_strides, dense.strides());
+    dense_strides.push('}');
 
-        let dense_shape = StridedShape::new_simple(shape.to_vec());
-        args.push(dense_shape.size() as i32);
-        for &s in dense_shape.strides() {
-            args.push_int(s as i32);
+    let mut strides = String::from("{");
+    for (i, op) in operand_shapes.iter().enumerate() {
+        assert_eq!(op.shape(), dense.shape());
+        if i != 0 {
+            strides.push_str(", ");
         }
+        append_values(&mut strides, op.strides());
+    }
+    strides.push('}');
 
-        push_tensor(&mut args, shape, a);
-        push_tensor(&mut args, shape, b);
-        push_tensor(&mut args, shape, c);
+    let args = vec![
+        ("$SIZE$", format!("{}", dense.size())),
+        ("$RANK$", format!("{}", dense.rank())),
+        ("$OPERANDS$", format!("{}", operand_shapes.len())),
+        ("$STRIDES_DENSE$", dense_strides),
+        ("$STRIDES$", strides),
+        ("$OPERATION$", operation.to_owned()),
+    ];
 
-        args.finish()
-    };
-
-    let blocks = 128;
-    let threads_per_block = 128;
-
-    // let threads = blocks * threads_per_block;
-    // let items_per_thread = (a.shape().size() as u32 + threads - 1) / threads;
-    // println!("{} items per thread", items_per_thread);
-
-    func.launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, stream, &args);
+    args
 }
 
 unsafe fn profile_kernel(stream: &CudaStream, f: impl Fn()) -> f32 {
@@ -83,22 +78,13 @@ unsafe fn main_inner() {
     let handle = CudnnHandle::new(device);
     let stream = handle.stream();
 
-    let shape = vec![1024 * 256 * 8 * 8];
+    // operation settings
+    let operation = "*x[0] = *x[1] + *x[2]";
+    let blocks = 128;
+    let threads_per_block = 128;
 
-    let rank = shape.len();
-    let operation = "a + b";
-
-    let func_name = format!("foo_kernel<{}>", rank);
-    let source = template.replace("$OPERATION$", operation);
-
-    let module = CuModule::from_source(device, &source, Some(template_path), &[&func_name]);
-    println!("{}", module.log);
-    println!("{:?}", module.lowered_names);
-
-    let func_lowered_name = module.lowered_names.get(&func_name).unwrap();
-
-    let module = module.module.unwrap();
-    let func = module.get_function(func_lowered_name).unwrap();
+    println!("Building buffers");
+    let shape = vec![1024, 256, 8, 8];
 
     let a_inner = DeviceTensor::alloc_simple(device, shape.clone());
     let b_inner = DeviceTensor::alloc_simple(device, shape.clone());
@@ -110,8 +96,48 @@ unsafe fn main_inner() {
     // let b_large = b_inner.repeat_unary(0, 1024).repeat_unary(1, 256 * 8 * 8);
     let c_large = c_inner.clone();
 
-    println!("Autokernel");
-    let time_manual = profile_kernel(&stream, || launch(stream, &func, rank, &a_large, &b_large, &c_large));
+    let operands = [&a_large, &b_large, &c_large];
+
+    // map operands
+    let operand_shapes = operands.iter().map(|op| op.shape()).collect_vec();
+    let mut args = KernelArgs::new();
+    for op in operands {
+        args.push(op.ptr().ptr());
+    }
+    let args = args.finish();
+
+    let replacements = build_replacements(operation, &operand_shapes);
+    println!("Replacements: {:?}", replacements);
+
+    let mut source = template;
+    for (key, value) in replacements {
+        source = source.replace(key, &value);
+    }
+
+    println!("Source:\n{}\n\n", source);
+    assert!(
+        !source.contains("$"),
+        "Leftover $-signs, probably because of a missing parameter argument?"
+    );
+
+    println!("Comping kernel");
+    let kernel_name = "scalar_kernel";
+    let module = CuModule::from_source(device, &source, Some(template_path), &[kernel_name]);
+    println!("{}", module.log);
+    println!("{:?}", module.lowered_names);
+
+    let func_lowered_name = module.lowered_names.get(kernel_name).unwrap();
+
+    let module = module.module.unwrap();
+    let func = module.get_function(func_lowered_name).unwrap();
+
+    println!("Launching autokernel");
+
+    let time_manual = profile_kernel(&stream, || {
+        let grid_dim = Dim3::single(blocks);
+        let block_dim = Dim3::single(threads_per_block);
+        func.launch_kernel(grid_dim, block_dim, 0, &stream, &args).unwrap()
+    });
     let tp_manual = (4 * a_large.shape().size()) as f32 / time_manual;
 
     println!("  Delta per kernel: {} ms", time_manual * 1000.0);

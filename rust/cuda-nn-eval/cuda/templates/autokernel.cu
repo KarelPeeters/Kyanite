@@ -26,46 +26,54 @@ struct Array {
     }
 };
 
-__device__ float operation(float a, float b) {
-    return $OPERATION$;
+__device__ void operation(float *x[$OPERANDS$]) {
+    $OPERATION$;
 }
 
-template<int R>
-__global__ void foo_kernel(
-        int size,
-        Array<int, R> strides_dense,
-
-        Array<int, R> strides_0, float *ptr_0,
-        Array<int, R> strides_1, float *ptr_1,
-        Array<int, R> strides_2, float *ptr_2
+__global__ void scalar_kernel(
+        Array<float *, $OPERANDS$> pointers
 ) {
-    int blockCount = gridDim.x;
-    int threadsPerBlock = blockDim.x;
-    int threadCount = blockCount * threadsPerBlock;
+    // de-dollar-ify parameters
+    const int size = $SIZE$;
+    const int rank = $RANK$;
+    const int operands = $OPERANDS$;
+    const int strides_dense[$RANK$] = $STRIDES_DENSE$;
+    const int strides[$OPERANDS$][$RANK$] = $STRIDES$;
 
-    int block = blockIdx.x;
-    int thread = threadIdx.x;
-    int global = block * threadsPerBlock + thread;
+    // common startup constants
+    const int blockCount = gridDim.x;
+    const int threadsPerBlock = blockDim.x;
+    const int threadCount = blockCount * threadsPerBlock;
 
-    int itemsPerThread = ceil_div(size, threadCount);
+    const int block = blockIdx.x;
+    const int thread = threadIdx.x;
+    const int global = block * threadsPerBlock + thread;
 
-    for (int index = global; index < size; index += threadCount) {
-        int index_left = index;
-        int i0 = 0;
-        int i1 = 0;
-        int i2 = 0;
+    const int itemsPerThread = ceil_div(size, threadCount);
 
-#pragma unroll
-        for (int d = 0; d < R; d++) {
-            int2 result = fast_div(index_left, strides_dense[d]);
-            int a_d = result.x;
-            index_left = result.y;
+    // the main loop, following https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+    for (int flat = global; flat < size; flat += threadCount) {
+        // convert the flat index into a per-operand offset
+        int flat_left = flat;
+        int offsets[operands] = {};
 
-            i0 += a_d * strides_0[d];
-            i1 += a_d * strides_1[d];
-            i2 += a_d * strides_2[d];
+        for (int axis = 0; axis < rank; axis++) {
+            int2 result = fast_div(flat_left, strides_dense[axis]);
+            int axis_index = result.x;
+            flat_left = result.y;
+
+            for (int operand = 0; operand < operands; operand++) {
+                offsets[operand] += axis_index * strides[operand][axis];
+            }
         }
 
-        ptr_2[i2] = operation(ptr_0[i0], ptr_1[i1]);
+        // get a pointer into each operand
+        float *x[operands];
+        for (int operand = 0; operand < operands; operand++) {
+            x[operand] = &pointers[operand][offsets[operand]];
+        }
+
+        // actually run the operation
+        operation(x);
     }
 }
