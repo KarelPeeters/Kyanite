@@ -110,7 +110,7 @@ unsafe fn main_inner() {
     let c_large = c_inner.clone();
 
     println!("Autokernel");
-    let op = 0;
+    let op = 1;
     let time_manual = profile_kernel(&stream, || {
         launch(stream, &func, rank, op, &a_large, &b_large, &c_large)
     });
