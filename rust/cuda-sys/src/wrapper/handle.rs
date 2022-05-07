@@ -4,10 +4,11 @@ use std::ptr::null_mut;
 use bytemuck::cast_slice;
 
 use crate::bindings::{
-    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceProp, cudaEventRecord,
-    cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode,
-    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent,
-    cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
+    cuDeviceGetAttribute, cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceAttr,
+    cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount, cudaGetDeviceProperties,
+    cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy,
+    cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy,
+    cudnnHandle_t, cudnnSetStream, CUdevice_attribute,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
@@ -24,6 +25,12 @@ pub fn cuda_device_count() -> i32 {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Device(i32);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct ComputeCapability {
+    pub major: i32,
+    pub minor: i32,
+}
 
 impl Device {
     pub fn new(device: i32) -> Self {
@@ -46,7 +53,7 @@ impl Device {
     // Set the current cuda device to this device.
     //TODO is this enough when there are multiple threads running?
     pub unsafe fn switch_to(self) {
-        cudaSetDevice(self.0).unwrap()
+        cudaSetDevice(self.inner()).unwrap()
     }
 
     pub fn alloc(self, len_bytes: usize) -> DevicePtr {
@@ -57,8 +64,23 @@ impl Device {
         unsafe {
             self.switch_to();
             let mut properties = MaybeUninit::uninit();
-            cudaGetDeviceProperties(properties.as_mut_ptr(), self.0).unwrap();
+            cudaGetDeviceProperties(properties.as_mut_ptr(), self.inner()).unwrap();
             properties.assume_init()
+        }
+    }
+
+    pub fn attribute(self, attribute: cudaDeviceAttr) -> i32 {
+        unsafe {
+            let mut value: i32 = 0;
+            cudaDeviceGetAttribute(&mut value as *mut _, attribute, self.inner()).unwrap();
+            value
+        }
+    }
+
+    pub fn compute_capability(self) -> ComputeCapability {
+        ComputeCapability {
+            major: self.attribute(cudaDeviceAttr::cudaDevAttrComputeCapabilityMajor),
+            minor: self.attribute(cudaDeviceAttr::cudaDevAttrComputeCapabilityMinor),
         }
     }
 
