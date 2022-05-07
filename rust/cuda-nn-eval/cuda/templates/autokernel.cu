@@ -26,20 +26,20 @@ struct Array {
     }
 };
 
-__device__ void operation(float *x[$OPERANDS$]) {
+// de-dollar-ify template parameters
+const int SIZE = $SIZE$;
+const int RANK = $RANK$;
+const int OPERANDS = $OPERANDS$;
+const int STRIDES_DENSE[RANK] = $STRIDES_DENSE$;
+const int STRIDES[OPERANDS][RANK] = $STRIDES$;
+
+__device__ void operation(float *x[OPERANDS]) {
     $OPERATION$;
 }
 
 __global__ void scalar_kernel(
-        Array<float *, $OPERANDS$> pointers
+        Array<float *, OPERANDS> pointers
 ) {
-    // de-dollar-ify parameters
-    const int size = $SIZE$;
-    const int rank = $RANK$;
-    const int operands = $OPERANDS$;
-    const int strides_dense[$RANK$] = $STRIDES_DENSE$;
-    const int strides[$OPERANDS$][$RANK$] = $STRIDES$;
-
     // common startup constants
     const int blockCount = gridDim.x;
     const int threadsPerBlock = blockDim.x;
@@ -49,27 +49,27 @@ __global__ void scalar_kernel(
     const int thread = threadIdx.x;
     const int global = block * threadsPerBlock + thread;
 
-    const int itemsPerThread = ceil_div(size, threadCount);
+    const int itemsPerThread = ceil_div(SIZE, threadCount);
 
     // the main loop, following https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
-    for (int flat = global; flat < size; flat += threadCount) {
+    for (int flat = global; flat < SIZE; flat += threadCount) {
         // convert the flat index into a per-operand offset
         int flat_left = flat;
-        int offsets[operands] = {};
+        int offsets[OPERANDS] = {};
 
-        for (int axis = 0; axis < rank; axis++) {
-            int2 result = fast_div(flat_left, strides_dense[axis]);
+        for (int axis = 0; axis < RANK; axis++) {
+            int2 result = fast_div(flat_left, STRIDES_DENSE[axis]);
             int axis_index = result.x;
             flat_left = result.y;
 
-            for (int operand = 0; operand < operands; operand++) {
-                offsets[operand] += axis_index * strides[operand][axis];
+            for (int operand = 0; operand < OPERANDS; operand++) {
+                offsets[operand] += axis_index * STRIDES[operand][axis];
             }
         }
 
         // get a pointer into each operand
-        float *x[operands];
-        for (int operand = 0; operand < operands; operand++) {
+        float *x[OPERANDS];
+        for (int operand = 0; operand < OPERANDS; operand++) {
             x[operand] = &pointers[operand][offsets[operand]];
         }
 
