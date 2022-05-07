@@ -33,12 +33,12 @@ const int OPERANDS = $OPERANDS$;
 const int STRIDES_DENSE[RANK] = $STRIDES_DENSE$;
 const int STRIDES[OPERANDS][RANK] = $STRIDES$;
 
-__device__ void operation(float *x[OPERANDS]) {
+__device__ void operation(void *pointers[OPERANDS], int offsets[OPERANDS]) {
     $OPERATION$;
 }
 
 __global__ void scalar_kernel(
-        Array<float *, OPERANDS> pointers
+        Array<void *, OPERANDS> pointers
 ) {
     // common startup constants
     const int blockCount = gridDim.x;
@@ -67,13 +67,7 @@ __global__ void scalar_kernel(
             }
         }
 
-        // get a pointer into each operand
-        float *x[OPERANDS];
-        for (int operand = 0; operand < OPERANDS; operand++) {
-            x[operand] = &pointers[operand][offsets[operand]];
-        }
-
         // actually run the operation
-        operation(x);
+        operation(pointers.data, &offsets[0]);
     }
 }

@@ -79,7 +79,8 @@ unsafe fn main_inner() {
     let stream = handle.stream();
 
     // operation settings
-    let operation = "*x[0] = *x[1] + *x[2]";
+    let operation =
+        "((float*) pointers[0])[offsets[0]] = ((float*) pointers[1])[offsets[1]] + ((float*) pointers[2])[offsets[2]]";
     let blocks = 128;
     let threads_per_block = 128;
 
