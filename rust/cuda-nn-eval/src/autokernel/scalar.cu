@@ -27,7 +27,6 @@ struct Array {
 };
 
 // de-dollar-ify template parameters
-const int SIZE = $SIZE$;
 const int RANK = $RANK$;
 const int OPERANDS = $OPERANDS$;
 const int STRIDES_DENSE[RANK] = $STRIDES_DENSE$;
@@ -38,6 +37,7 @@ __device__ void operation(void *pointers[OPERANDS], int offsets[OPERANDS]) {
 }
 
 __global__ void scalar_kernel(
+        int batchSize,
         Array<void *, OPERANDS> pointers
 ) {
     // common startup constants
@@ -49,10 +49,11 @@ __global__ void scalar_kernel(
     const int thread = threadIdx.x;
     const int global = block * threadsPerBlock + thread;
 
-    const int itemsPerThread = ceil_div(SIZE, threadCount);
+    int size = batchSize * STRIDES_DENSE[0];
+    const int itemsPerThread = ceil_div(size, threadCount);
 
     // the main loop, following https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
-    for (int flat = global; flat < SIZE; flat += threadCount) {
+    for (int flat = global; flat < size; flat += threadCount) {
         // convert the flat index into a per-operand offset
         int flat_left = flat;
         int offsets[OPERANDS] = {};

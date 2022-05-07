@@ -2,7 +2,7 @@ extern crate core;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::shape::StridedShape;
-use cuda_sys::bindings::cudnnOpTensorOp_t;
+use cuda_sys::bindings::{cudaDeviceAttr, cudnnOpTensorOp_t};
 use cuda_sys::wrapper::descriptor::TensorOpDescriptor;
 use cuda_sys::wrapper::group::TensorOpArgs;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
@@ -15,45 +15,6 @@ use std::fmt::Write;
 
 fn main() {
     unsafe { main_inner() }
-}
-
-fn append_values(s: &mut String, values: &[isize]) {
-    for (i, v) in values.iter().enumerate() {
-        if i != 0 {
-            s.push_str(", ");
-        }
-        write!(s, "{}", v).unwrap();
-    }
-}
-
-unsafe fn build_replacements(operation: &str, operand_shapes: &[&StridedShape]) -> Vec<(&'static str, String)> {
-    assert!(operand_shapes.len() > 0);
-    let dense = StridedShape::new_simple(operand_shapes[0].shape().to_vec());
-
-    let mut dense_strides = String::from("{");
-    append_values(&mut dense_strides, dense.strides());
-    dense_strides.push('}');
-
-    let mut strides = String::from("{");
-    for (i, op) in operand_shapes.iter().enumerate() {
-        assert_eq!(op.shape(), dense.shape());
-        if i != 0 {
-            strides.push_str(", ");
-        }
-        append_values(&mut strides, op.strides());
-    }
-    strides.push('}');
-
-    let args = vec![
-        ("$SIZE$", format!("{}", dense.size())),
-        ("$RANK$", format!("{}", dense.rank())),
-        ("$OPERANDS$", format!("{}", operand_shapes.len())),
-        ("$STRIDES_DENSE$", dense_strides),
-        ("$STRIDES$", strides),
-        ("$OPERATION$", operation.to_owned()),
-    ];
-
-    args
 }
 
 unsafe fn profile_kernel(stream: &CudaStream, f: impl Fn()) -> f32 {
@@ -71,7 +32,7 @@ unsafe fn profile_kernel(stream: &CudaStream, f: impl Fn()) -> f32 {
 }
 
 unsafe fn main_inner() {
-    let template_path = "cuda-nn-eval/cuda/templates/autokernel.cu";
+    let template_path = "cuda-nn-eval/cuda/autokernel/scalar.cu";
     let template = std::fs::read_to_string(template_path).unwrap();
 
     let device = Device::new(0);
@@ -80,12 +41,13 @@ unsafe fn main_inner() {
 
     // operation settings
     let operation =
-        "((float*) pointers[0])[offsets[0]] = ((float*) pointers[1])[offsets[1]] + ((float*) pointers[2])[offsets[2]]";
+        "((float*) pointers[0])[offsets[0]] = ((float*) pointers[1])[offsets[1]] + ((float*) pointers[2])[offsets[2]];";
     let blocks = 128;
     let threads_per_block = 128;
 
     println!("Building buffers");
-    let shape = vec![1024, 256, 8, 8];
+    let batch_size = 1024;
+    let shape = vec![batch_size, 256, 8, 8];
 
     let a_inner = DeviceTensor::alloc_simple(device, shape.clone());
     let b_inner = DeviceTensor::alloc_simple(device, shape.clone());
@@ -102,6 +64,7 @@ unsafe fn main_inner() {
     // map operands
     let operand_shapes = operands.iter().map(|op| op.shape()).collect_vec();
     let mut args = KernelArgs::new();
+    args.push_int(batch_size as i32);
     for op in operands {
         args.push(op.ptr().ptr());
     }
@@ -112,6 +75,7 @@ unsafe fn main_inner() {
 
     let mut source = template;
     for (key, value) in replacements {
+        assert!(source.contains(key), "Source does not contain '{}'", key);
         source = source.replace(key, &value);
     }
 
@@ -123,7 +87,12 @@ unsafe fn main_inner() {
 
     println!("Comping kernel");
     let kernel_name = "scalar_kernel";
-    let module = CuModule::from_source(device, &source, Some(template_path), &[kernel_name]);
+    let module = CuModule::from_source(
+        device.compute_capability(),
+        &source,
+        Some(template_path),
+        &[kernel_name],
+    );
     println!("{}", module.log);
     println!("{:?}", module.lowered_names);
 
