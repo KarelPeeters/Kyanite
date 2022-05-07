@@ -5,9 +5,9 @@ use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
-use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
+use cuda_sys::bindings::cudnnActivationMode_t;
+use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
@@ -15,11 +15,12 @@ use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
 use nn_graph::optimizer::core::find_hidden_values_used_once;
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::scalar::ScalarKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, Step};
+use crate::step::{GatherArgs, ScalarOpArgs, Step};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -252,11 +253,15 @@ impl<'a> Planner<'a> {
                 unsafe {
                     result.copy_simple_from_host(cast_slice(&**data));
                 }
-                result.map_inner(PlanPtr::from)
+                result.map_ptr(PlanPtr::from)
             }
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
                 input_tensor.view(result_shape.dims.clone())
+            }
+            &Operation::Broadcast { input } => {
+                let input_tensor = self.visit(input);
+                input_tensor.broadcast(result_shape.dims.clone())
             }
             &Operation::Permute { input, ref permutation } => self.visit(input).permute(permutation),
             &Operation::Slice { input, axis, range } => self.visit(input).slice(axis, range),
@@ -330,16 +335,16 @@ impl<'a> Planner<'a> {
                 result
             }
             &Operation::Element { left, right, op } => {
-                let (op, negate_right) = match op {
-                    ElementOp::Add => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, false),
-                    ElementOp::Sub => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, true),
-                    ElementOp::Mul => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false),
-                    ElementOp::Div => todo!("GPU elementwise division not yet supported"),
-                    ElementOp::Min => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN, false),
-                    ElementOp::Max => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX, false),
+                let operation = match op {
+                    ElementOp::Add => "*x0 = *x1 + *x2;",
+                    ElementOp::Sub => "*x0 = *x1 - *x2;",
+                    ElementOp::Mul => "*x0 = *x1 * *x2;",
+                    ElementOp::Div => "*x0 = *x1 / *x2;",
+                    ElementOp::Min => "*x0 = min(*x1, *x2);",
+                    ElementOp::Max => "*x0 = max(*x1, *x2);",
                 };
 
-                self.visit_op(result_shape, left, right, op, negate_right)
+                self.visit_binary_op(result_shape, left, right, operation)
             }
         };
 
@@ -478,20 +483,18 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn visit_op(
+    fn visit_binary_op(
         &mut self,
         result_shape: ConcreteShape,
         left: Value,
         right: Value,
-        op: cudnnOpTensorOp_t,
-        negate_right: bool,
+        operation: &str,
     ) -> PlanTensor {
         let left = self.visit(left);
         let right = self.visit(right);
         let output = self.alloc_tensor_shared(result_shape);
-        let alpha_2 = if negate_right { -1.0 } else { 1.0 };
 
-        self.plan_op(op, 1.0, &left, alpha_2, &right, &output);
+        self.plan_scalar_op(operation, vec![output.clone(), left, right]);
 
         output
     }
@@ -499,33 +502,17 @@ impl<'a> Planner<'a> {
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor) {
         assert_eq!(old.shape().shape(), new.shape().shape());
 
-        let zero = self.alloc_tensor_zero(ConcreteShape::new(vec![1; old.shape().rank()]));
-        self.plan_op(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, 1.0, old, 0.0, &zero, &new);
+        self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()]);
     }
 
-    fn plan_op(
-        &mut self,
-        op: cudnnOpTensorOp_t,
-        alpha_1: f32,
-        left: &PlanTensor,
-        alpha_2: f32,
-        right: &PlanTensor,
-        output: &PlanTensor,
-    ) {
-        let args = TensorOpArgs {
-            op_desc: TensorOpDescriptor::new(op),
-            alpha_1,
-            input_1_desc: left.shape().descriptor(),
-            input_1_ptr: left.ptr().clone(),
-            alpha_2,
-            input_2_desc: right.shape().descriptor(),
-            input_2_ptr: right.ptr().clone(),
-            beta: 0.0,
-            output_desc: output.shape().descriptor(),
-            output_ptr: output.ptr().clone(),
-        };
+    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>) {
+        let capability = self.device().compute_capability();
+        let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
 
-        self.plan.push(PlanStep::TensorOp(args));
+        let kernel = ScalarKernel::new_for_shapes(capability, operation, &shapes);
+
+        let args = ScalarOpArgs { kernel, operands };
+        self.plan.push(PlanStep::ScalarOp(args));
     }
 
     fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {
@@ -577,7 +564,7 @@ impl RealizationContext {
     }
 
     fn realize_tensor(&self, tensor: PlanTensor) -> DeviceTensor {
-        tensor.map_inner(|ptr| self.realize_ptr(ptr))
+        tensor.map_ptr(|ptr| self.realize_ptr(ptr))
     }
 
     fn realize_step(&self, step: PlanStep) -> ExecStep {

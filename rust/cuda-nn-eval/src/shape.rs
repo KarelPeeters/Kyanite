@@ -103,6 +103,33 @@ impl StridedShape {
         StridedShape::new(new_shape, new_strides)
     }
 
+    pub fn broadcast(&self, new_shape: Vec<usize>) -> StridedShape {
+        assert_eq!(
+            self.rank(),
+            new_shape.len(),
+            "Can only broadcast to same rank, got {:?} and {:?}",
+            self,
+            new_shape
+        );
+
+        let new_strides = (0..self.rank())
+            .map(|i| {
+                if new_shape[i] == self.shape[i] {
+                    self.strides[i]
+                } else {
+                    assert_eq!(
+                        self.shape[i], 1,
+                        "Broadcast mismatch between {:?} and {:?} at axis {}",
+                        self, new_shape, i
+                    );
+                    0
+                }
+            })
+            .collect_vec();
+
+        StridedShape::new(new_shape, new_strides)
+    }
+
     pub fn view(&self, new_shape: Vec<usize>) -> Result<StridedShape, ViewError> {
         // implementation originally based on pytorch computeStride_impl:
         // https://github.com/pytorch/pytorch/blob/560cd881956bbf425251d63f0ff0f9085a759447/aten/src/ATen/TensorUtils.cpp#L335-L346

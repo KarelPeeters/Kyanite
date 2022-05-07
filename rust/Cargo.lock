@@ -620,6 +620,7 @@ dependencies = [
  "cuda-sys",
  "internal-iterator",
  "itertools",
+ "lazy_static",
  "nn-graph",
  "rand 0.8.5",
 ]

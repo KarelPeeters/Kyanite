@@ -122,6 +122,22 @@ impl Shape {
         }
         result
     }
+
+    pub fn repeat_unary(&self, axis: usize, new_size: Size) -> Shape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        assert_eq!(
+            self.dims[axis],
+            Size::ONE,
+            "Repeated axis {} must have length 1 for {:?}",
+            axis,
+            self
+        );
+
+        let mut result = self.clone();
+        result.dims[axis] = new_size;
+
+        result
+    }
 }
 
 impl From<usize> for Size {

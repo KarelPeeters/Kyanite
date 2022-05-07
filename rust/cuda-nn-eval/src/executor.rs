@@ -43,7 +43,7 @@ pub struct Profile {
 
     pub conv: f32,
     pub mat_mul: f32,
-    pub tensor_op: f32,
+    pub scalar_op: f32,
     pub gather: f32,
 
     pub total_cpu: f32,
@@ -158,7 +158,7 @@ impl CudaExecutor {
                 *match step {
                     Step::Conv { .. } => &mut profile.conv,
                     Step::MatMul { .. } => &mut profile.mat_mul,
-                    Step::TensorOp { .. } => &mut profile.tensor_op,
+                    Step::ScalarOp { .. } => &mut profile.scalar_op,
                     Step::Gather { .. } => &mut profile.gather,
                 } += time;
 
@@ -203,8 +203,8 @@ impl Step<DevicePtr> {
                 let blas_event = handles.cublas.stream().record_new_event();
                 handles.cudnn.stream().wait_for_event(&blas_event);
             }
-            Step::TensorOp(args) => {
-                args.run(&handles.cudnn);
+            Step::ScalarOp(args) => {
+                args.kernel.run(handles.cudnn.stream(), &args.operands);
             }
             Step::Gather(GatherArgs {
                 input,
@@ -272,12 +272,12 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        let total = self.conv + self.mat_mul + self.tensor_op + self.gather;
+        let total = self.conv + self.mat_mul + self.scalar_op + self.gather;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
         line("Conv:     ", self.conv)?;
         line("Matmul:   ", self.mat_mul)?;
-        line("Tensor op:", self.tensor_op)?;
+        line("Scalar:   ", self.scalar_op)?;
         line("Gather:   ", self.gather)?;
 
         writeln!(f, "  ==============================")?;

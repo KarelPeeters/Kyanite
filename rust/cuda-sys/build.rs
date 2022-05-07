@@ -1,6 +1,5 @@
 extern crate core;
 
-use std::env;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
@@ -9,6 +8,8 @@ use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 #[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
+    println!("rerun-if-env-changed={}", name);
+
     use std::env::VarError;
     let path = std::env::var(name).unwrap_or_else(|e| match e {
         VarError::NotPresent => panic!("Environment variable {} is not defined", name),
@@ -26,7 +27,7 @@ fn get_var_path(name: &str) -> PathBuf {
 }
 
 #[cfg(target_family = "windows")]
-fn link_cuda(builder: Builder) -> Builder {
+fn link_cuda() -> Vec<PathBuf> {
     let cuda_path = get_var_path("CUDA_PATH");
     let cudnn_path = get_var_path("CUDNN_PATH");
 
@@ -37,30 +38,21 @@ fn link_cuda(builder: Builder) -> Builder {
         );
     }
 
-    println!("cargo:rustc-link-lib=dylib=cuda");
-    println!("cargo:rustc-link-lib=dylib=cudart");
-    println!("cargo:rustc-link-lib=dylib=cudnn");
-    println!("cargo:rustc-link-lib=dylib=cublas");
-    println!("cargo:rustc-link-lib=dylib=nvrtc");
-
-    builder
-        .clang_arg(format!("-I{}", cuda_path.join("include").to_str().unwrap()))
-        .clang_arg(format!("-I{}", cuda_path.join("include/nvtx3").to_str().unwrap()))
-        .clang_arg(format!("-I{}", cudnn_path.join("include").to_str().unwrap()))
+    vec![
+        cuda_path.join("include"),
+        cuda_path.join("include/nvtx3"),
+        cudnn_path.join("include"),
+    ]
 }
 
 #[cfg(target_family = "unix")]
-fn link_cuda(builder: Builder) -> Builder {
+fn link_cuda() -> Vec<PathBuf> {
     println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
-    println!("cargo:rustc-link-lib=dylib=cuda");
-    println!("cargo:rustc-link-lib=dylib=cudart");
-    println!("cargo:rustc-link-lib=dylib=cudnn");
-    println!("cargo:rustc-link-lib=dylib=cublas");
-    println!("cargo:rustc-link-lib=dylib=nvrtc");
 
-    builder
-        .clang_arg("-I/usr/local/cuda/include/")
-        .clang_arg("-I/usr/local/cuda/include/nvtx3")
+    vec![
+        PathBuf::from("/usr/local/cuda/include/"),
+        PathBuf::from("/usr/local/cuda/include/nvtx3"),
+    ]
 }
 
 // see https://github.com/rust-lang/rust-bindgen/issues/687,
@@ -93,11 +85,26 @@ impl ParseCallbacks for CustomParseCallBacks {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=wrapper.h");
+    let out_path = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let builder = Builder::default();
 
-    let out_path = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    // tell cargo to link cuda libs
+    println!("cargo:rustc-link-lib=dylib=cuda");
+    println!("cargo:rustc-link-lib=dylib=cudart");
+    println!("cargo:rustc-link-lib=dylib=cudnn");
+    println!("cargo:rustc-link-lib=dylib=cublas");
+    println!("cargo:rustc-link-lib=dylib=nvrtc");
 
-    link_cuda(Builder::default())
+    // find include directories and set up link search paths
+    let include_paths = link_cuda();
+    let builder = include_paths.iter().fold(builder, |builder, path| {
+        let path = path.to_str().unwrap();
+
+        println!("cargo:rerun-if-changed={}", path);
+        builder.clang_arg(format!("-I{}", path))
+    });
+
+    builder
         // input
         .header("wrapper.h")
         .parse_callbacks(Box::new(CustomParseCallBacks))

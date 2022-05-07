@@ -32,7 +32,7 @@ impl<P> PtrTensor<P> {
         &self.shape
     }
 
-    pub fn map_inner<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
+    pub fn map_ptr<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
         PtrTensor::from_parts(f(self.ptr), self.shape)
     }
 }
@@ -47,7 +47,11 @@ impl<P: OffsetPtr> PtrTensor<P> {
     }
 
     pub fn view(&self, new_shape: Vec<usize>) -> Self {
-        self.offset(0, self.shape.view(new_shape.clone()).unwrap())
+        self.offset(0, self.shape.view(new_shape).unwrap())
+    }
+
+    pub fn broadcast(&self, new_shape: Vec<usize>) -> Self {
+        self.offset(0, self.shape.broadcast(new_shape))
     }
 
     pub fn slice(&self, axis: usize, range: SliceRange) -> Self {

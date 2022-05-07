@@ -37,6 +37,10 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 let input = &map.get(&input).unwrap().tensor;
                 input.reshape(output_shape_dyn)
             }
+            &Operation::Broadcast { input } => {
+                let input = &map.get(&input).unwrap().tensor;
+                input.broadcast(output_shape_dyn).unwrap().to_shared()
+            }
             &Operation::Permute { input, ref permutation } => {
                 let input = &map.get(&input).unwrap().tensor;
                 input.view().permuted_axes(permutation.clone()).to_shared()
@@ -116,12 +120,8 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                     ElementOp::Sub => left - right,
                     ElementOp::Mul => left * right,
                     ElementOp::Div => left / right,
-                    ElementOp::Min => Zip::from(left)
-                        .and_broadcast(right)
-                        .map_collect(|&l, &r| f32::min(l, r)),
-                    ElementOp::Max => Zip::from(left)
-                        .and_broadcast(right)
-                        .map_collect(|&l, &r| f32::max(l, r)),
+                    ElementOp::Min => Zip::from(left).and(right).map_collect(|&l, &r| f32::min(l, r)),
+                    ElementOp::Max => Zip::from(left).and(right).map_collect(|&l, &r| f32::max(l, r)),
                 };
                 result.into_shared()
             }

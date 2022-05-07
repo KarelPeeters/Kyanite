@@ -4,7 +4,6 @@ use itertools::Itertools;
 
 use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
 use nn_graph::ndarray::Array1;
-use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
@@ -350,11 +349,7 @@ fn affine_single_div() {
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
-
-    // only test optimized since div is not yet supported on GPU
-    // and the optimizer converts it to a scale affine operation
-    let optimized = optimize_graph(&graph, OptimizerSettings::default());
-    test_all_graph(&optimized, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
+    test_all_graph(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
 }
 
 #[test]
