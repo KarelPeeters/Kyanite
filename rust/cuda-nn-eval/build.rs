@@ -4,9 +4,11 @@ use std::path::Path;
 fn main() {
     // based on https://github.com/termoshtt/link_cuda_kernel
 
-    let kernels_path = Path::new("cuda/kernels");
+    let kernels_path = "cuda/kernels";
+    println!("cargo:rerun-if-changed={}", kernels_path);
 
     // this is stupid, there's way to much unwrapping here
+    let kernels_path = Path::new(kernels_path);
     let mut files = vec![];
     for f in std::fs::read_dir(kernels_path).unwrap() {
         let f = f.unwrap();
