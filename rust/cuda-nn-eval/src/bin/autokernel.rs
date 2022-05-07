@@ -50,12 +50,10 @@ unsafe fn main_inner() {
 
     let operands = vec![a_large, b_large, c_large.clone()];
 
-    let kernel = ScalarKernel::new(
+    let kernel = ScalarKernel::new_for_shapes(
         device.compute_capability(),
         "*x0 = *x1 + *x2;",
-        inner_shape,
-        vec![String::from("float"); operands.len()],
-        operands.iter().map(|op| op.shape().strides().to_vec()).collect_vec(),
+        &operands.iter().map(|op| op.shape().clone()).collect_vec(),
     );
 
     let time_manual = profile_kernel(&stream, || kernel.run(&stream, &operands));
