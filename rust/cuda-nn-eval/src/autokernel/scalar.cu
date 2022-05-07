@@ -33,7 +33,7 @@ const int STRIDES_DENSE[RANK] = $STRIDES_DENSE$;
 const int STRIDES[OPERANDS][RANK] = $STRIDES$;
 
 __device__ void operation(void *pointers[OPERANDS], int offsets[OPERANDS]) {
-    $OPERATION$;
+    $OPERATION$
 }
 
 __global__ void scalar_kernel(

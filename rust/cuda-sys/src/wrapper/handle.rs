@@ -4,11 +4,10 @@ use std::ptr::null_mut;
 use bytemuck::cast_slice;
 
 use crate::bindings::{
-    cuDeviceGetAttribute, cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceAttr,
-    cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount, cudaGetDeviceProperties,
-    cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy,
-    cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy,
-    cudnnHandle_t, cudnnSetStream, CUdevice_attribute,
+    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute,
+    cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice,
+    cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture,
+    cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;

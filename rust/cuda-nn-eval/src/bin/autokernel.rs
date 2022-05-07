@@ -1,5 +1,6 @@
 extern crate core;
 
+use cuda_nn_eval::autokernel::scalar::ScalarKernel;
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::shape::StridedShape;
 use cuda_sys::bindings::{cudaDeviceAttr, cudnnOpTensorOp_t};
@@ -32,26 +33,19 @@ unsafe fn profile_kernel(stream: &CudaStream, f: impl Fn()) -> f32 {
 }
 
 unsafe fn main_inner() {
-    let template_path = "cuda-nn-eval/cuda/autokernel/scalar.cu";
-    let template = std::fs::read_to_string(template_path).unwrap();
-
     let device = Device::new(0);
     let handle = CudnnHandle::new(device);
     let stream = handle.stream();
 
-    // operation settings
-    let operation =
-        "((float*) pointers[0])[offsets[0]] = ((float*) pointers[1])[offsets[1]] + ((float*) pointers[2])[offsets[2]];";
-    let blocks = 128;
-    let threads_per_block = 128;
-
     println!("Building buffers");
-    let batch_size = 1024;
-    let shape = vec![batch_size, 256, 8, 8];
+    let batch_size: usize = 1024;
+    let inner_shape = vec![256, 8, 8];
+    let full_shape = [&[batch_size], &*inner_shape].concat();
+    let full_size: usize = full_shape.iter().copied().product();
 
-    let a_inner = DeviceTensor::alloc_simple(device, shape.clone());
-    let b_inner = DeviceTensor::alloc_simple(device, shape.clone());
-    let c_inner = DeviceTensor::alloc_simple(device, shape.clone());
+    let a_inner = DeviceTensor::alloc_simple(device, full_shape.clone());
+    let b_inner = DeviceTensor::alloc_simple(device, full_shape.clone());
+    let c_inner = DeviceTensor::alloc_simple(device, full_shape.clone());
 
     let a_large = a_inner.clone();
     // let a_large = a_inner.repeat_unary(0, 1024).repeat_unary(1, 256 * 8 * 8);
@@ -59,56 +53,18 @@ unsafe fn main_inner() {
     // let b_large = b_inner.repeat_unary(0, 1024).repeat_unary(1, 256 * 8 * 8);
     let c_large = c_inner.clone();
 
-    let operands = [&a_large, &b_large, &c_large];
+    let operands = vec![a_large, b_large, c_large.clone()];
 
-    // map operands
-    let operand_shapes = operands.iter().map(|op| op.shape()).collect_vec();
-    let mut args = KernelArgs::new();
-    args.push_int(batch_size as i32);
-    for op in operands {
-        args.push(op.ptr().ptr());
-    }
-    let args = args.finish();
-
-    let replacements = build_replacements(operation, &operand_shapes);
-    println!("Replacements: {:?}", replacements);
-
-    let mut source = template;
-    for (key, value) in replacements {
-        assert!(source.contains(key), "Source does not contain '{}'", key);
-        source = source.replace(key, &value);
-    }
-
-    println!("Source:\n{}\n\n", source);
-    assert!(
-        !source.contains("$"),
-        "Leftover $-signs, probably because of a missing parameter argument?"
-    );
-
-    println!("Comping kernel");
-    let kernel_name = "scalar_kernel";
-    let module = CuModule::from_source(
+    let kernel = ScalarKernel::new(
         device.compute_capability(),
-        &source,
-        Some(template_path),
-        &[kernel_name],
+        inner_shape,
+        vec![String::from("float"); operands.len()],
+        operands.iter().map(|op| op.shape().strides().to_vec()).collect_vec(),
+        "*x0 = *x1 + *x2;",
     );
-    println!("{}", module.log);
-    println!("{:?}", module.lowered_names);
 
-    let func_lowered_name = module.lowered_names.get(kernel_name).unwrap();
-
-    let module = module.module.unwrap();
-    let func = module.get_function(func_lowered_name).unwrap();
-
-    println!("Launching autokernel");
-
-    let time_manual = profile_kernel(&stream, || {
-        let grid_dim = Dim3::single(blocks);
-        let block_dim = Dim3::single(threads_per_block);
-        func.launch_kernel(grid_dim, block_dim, 0, &stream, &args).unwrap()
-    });
-    let tp_manual = (4 * a_large.shape().size()) as f32 / time_manual;
+    let time_manual = profile_kernel(&stream, || kernel.run(&stream, &operands));
+    let tp_manual = (4 * full_size) as f32 / time_manual;
 
     println!("  Delta per kernel: {} ms", time_manual * 1000.0);
     println!("  Kernels per second: {}", 1.0 / time_manual);
@@ -134,7 +90,7 @@ unsafe fn main_inner() {
 
     println!("Cudnn TensorOp");
     let time_cudnn = profile_kernel(stream, || args.run(&handle));
-    let tp_cudnn = (4 * a_large.shape().size()) as f32 / time_cudnn;
+    let tp_cudnn = (4 * full_size) as f32 / time_cudnn;
     println!("  Delta per kernel: {} ms", time_cudnn * 1000.0);
     println!("  Kernels per second: {}", 1.0 / time_cudnn);
     println!(
