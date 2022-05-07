@@ -2,11 +2,9 @@ use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use cuda_sys::bindings::cuInit;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
-use cuda_sys::wrapper::status::Status;
 
 const SAXPY_SOURCE: &str = r#"
 
@@ -34,7 +32,7 @@ fn saxpy() {
         for _ in 0..10 {
             let start = Instant::now();
 
-            let result = CuModule::from_source(device, SAXPY_SOURCE, None, &[]);
+            let result = CuModule::from_source(device.compute_capability(), SAXPY_SOURCE, None, &[]);
             println!("{}", result.log);
 
             let module = result.module.unwrap();

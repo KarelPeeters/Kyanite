@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::sync::Mutex;
 
 use lazy_static::lazy_static;
 
-use cuda_sys::wrapper::handle::{ComputeCapability, Device};
+use cuda_sys::wrapper::handle::ComputeCapability;
 use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
 pub mod scalar;

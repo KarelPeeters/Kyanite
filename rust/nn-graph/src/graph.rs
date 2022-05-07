@@ -46,6 +46,8 @@ pub enum Operation {
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
     View { input: Value },
+    /// Repeat along axes with size 1 that don't match the output shape.
+    Broadcast { input: Value },
     /// Change the order of axis in the shape.
     Permute { input: Value, permutation: Vec<usize> },
     /// Slice along the given `axis` with range `start..end`.
@@ -100,6 +102,7 @@ impl Operation {
             Operation::Input { index: _ } => vec![],
             Operation::Constant { data: _ } => vec![],
             &Operation::View { input } => vec![input],
+            &Operation::Broadcast { input } => vec![input],
             &Operation::Permute { input, permutation: _ } => vec![input],
             &Operation::Slice {
                 input,
@@ -128,6 +131,7 @@ impl Operation {
             &Operation::Input { index } => Operation::Input { index },
             Operation::Constant { data } => Operation::Constant { data: data.clone() },
             &Operation::View { input } => Operation::View { input: f(input) },
+            &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
             &Operation::Permute { input, ref permutation } => Operation::Permute {
                 input: f(input),
                 permutation: permutation.clone(),
@@ -230,35 +234,6 @@ impl Graph {
             value
         );
         assert!(value.index < self.values.len());
-    }
-
-    fn broadcast(&mut self, left: Value, right: Value) -> Value {
-        let left_shape = &self[left].shape;
-        let right_shape = &self[right].shape;
-
-        if right_shape.rank() == 0 {
-            let new_right_shape = Shape::ones(left_shape.rank());
-            self.view(right, new_right_shape)
-        } else {
-            assert_eq!(
-                left_shape.rank(),
-                right_shape.rank(),
-                "Both inputs must have the same rank (or right must have rank 0), got {:?} and {:?}",
-                left_shape,
-                right_shape
-            );
-
-            for (&l, &r) in zip_eq(&left_shape.dims, &right_shape.dims) {
-                assert!(
-                    l == r || r == Size::ONE,
-                    "Cannot broadcast shape {:?} to {:?}",
-                    right_shape,
-                    left_shape
-                );
-            }
-
-            right
-        }
     }
 
     /// Iterate over the values in this graph, in topological order,
@@ -373,6 +348,21 @@ impl Graph {
         );
 
         self.push(new_shape, Operation::View { input })
+    }
+
+    /// Broadcast the `input` towards `new_shape`.
+    /// `input` must be either a zero-rank tensor or have the same rank and size 1 for mismatching axes.
+    #[must_use]
+    pub fn broadcast(&mut self, mut input: Value, new_shape: Shape) -> Value {
+        if self[input].shape.rank() == 0 {
+            input = self.view(input, Shape::ones(new_shape.rank()));
+        }
+
+        if &self[input].shape == &new_shape {
+            return input;
+        }
+
+        self.push(new_shape, Operation::Broadcast { input })
     }
 
     /// View a value with a flattened shape.
@@ -659,8 +649,6 @@ impl Graph {
     /// They must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
-        let right = self.broadcast(left, right);
-
         let skip = match op {
             ElementOp::Sub | ElementOp::Add => self.is_const_filled_with(right, 0.0),
             ElementOp::Mul | ElementOp::Div => self.is_const_filled_with(right, 1.0),
@@ -672,6 +660,8 @@ impl Graph {
         }
 
         let result_shape = self[left].shape.clone();
+        let right = self.broadcast(right, result_shape.clone());
+
         self.push(result_shape, Operation::Element { left, right, op })
     }
 

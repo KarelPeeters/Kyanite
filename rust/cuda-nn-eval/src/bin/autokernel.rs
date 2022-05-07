@@ -2,17 +2,12 @@ extern crate core;
 
 use cuda_nn_eval::autokernel::scalar::ScalarKernel;
 use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_nn_eval::shape::StridedShape;
-use cuda_sys::bindings::{cudaDeviceAttr, cudnnOpTensorOp_t};
+use cuda_sys::bindings::cudnnOpTensorOp_t;
 use cuda_sys::wrapper::descriptor::TensorOpDescriptor;
 use cuda_sys::wrapper::group::TensorOpArgs;
 use cuda_sys::wrapper::handle::{CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
-use cuda_sys::wrapper::rtc::args::KernelArgs;
-use cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
-use cuda_sys::wrapper::status::Status;
 use itertools::Itertools;
-use std::fmt::Write;
 
 fn main() {
     unsafe { main_inner() }
@@ -57,10 +52,10 @@ unsafe fn main_inner() {
 
     let kernel = ScalarKernel::new(
         device.compute_capability(),
+        "*x0 = *x1 + *x2;",
         inner_shape,
         vec![String::from("float"); operands.len()],
         operands.iter().map(|op| op.shape().strides().to_vec()).collect_vec(),
-        "*x0 = *x1 + *x2;",
     );
 
     let time_manual = profile_kernel(&stream, || kernel.run(&stream, &operands));

@@ -2,15 +2,16 @@ use std::ops::ControlFlow;
 
 use internal_iterator::InternalIterator;
 
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulOperand, TensorOpArgs};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulOperand};
 
+use crate::autokernel::scalar::ScalarKernel;
 use crate::offset_tensor::PtrTensor;
 
 #[derive(Debug)]
 pub enum Step<P> {
     Conv(FusedConvolutionArgs<P>),
     MatMul(BatchedMatMulArgs<P>),
-    TensorOp(TensorOpArgs<P>),
+    ScalarOp(ScalarOpArgs<P>),
     Gather(GatherArgs<P>),
 }
 
@@ -20,6 +21,12 @@ pub struct GatherArgs<P> {
     pub axis: usize,
     pub indices: PtrTensor<P>,
     pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
+pub struct ScalarOpArgs<P> {
+    pub kernel: ScalarKernel,
+    pub operands: Vec<PtrTensor<P>>,
 }
 
 #[derive(Debug)]
@@ -60,23 +67,15 @@ impl<P> Step<P> {
                 c: matmul_args_map_ptr(args.c, &mut f),
                 batch_count: args.batch_count,
             }),
-            Step::TensorOp(args) => Step::TensorOp(TensorOpArgs {
-                op_desc: args.op_desc,
-                alpha_1: args.alpha_1,
-                input_1_desc: args.input_1_desc,
-                input_1_ptr: f(args.input_1_ptr),
-                alpha_2: args.alpha_2,
-                input_2_desc: args.input_2_desc,
-                input_2_ptr: f(args.input_2_ptr),
-                beta: args.beta,
-                output_desc: args.output_desc,
-                output_ptr: f(args.output_ptr),
+            Step::ScalarOp(args) => Step::ScalarOp(ScalarOpArgs {
+                kernel: args.kernel,
+                operands: args.operands.into_iter().map(|op| op.map_ptr(&mut f)).collect(),
             }),
             Step::Gather(args) => Step::Gather(GatherArgs {
-                input: args.input.map_inner(&mut f),
+                input: args.input.map_ptr(&mut f),
                 axis: args.axis,
-                indices: args.indices.map_inner(&mut f),
-                output: args.output.map_inner(&mut f),
+                indices: args.indices.map_ptr(&mut f),
+                output: args.output.map_ptr(&mut f),
             }),
         }
     }
@@ -123,22 +122,7 @@ impl<P> Step<P> {
                 f(&b.ptr)?;
                 f(&c.ptr)?;
             }
-            Step::TensorOp(TensorOpArgs {
-                op_desc: _,
-                alpha_1: _,
-                input_1_desc: _,
-                input_1_ptr,
-                alpha_2: _,
-                input_2_desc: _,
-                input_2_ptr,
-                beta: _,
-                output_desc: _,
-                output_ptr,
-            }) => {
-                f(input_1_ptr)?;
-                f(input_2_ptr)?;
-                f(output_ptr)?;
-            }
+            Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => operands.iter().map(|a| a.ptr()).try_for_each(f)?,
             Step::Gather(GatherArgs {
                 input,
                 axis: _,

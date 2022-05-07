@@ -222,7 +222,8 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                     // check if all commons dims at the start match, which implies the only different is trailing 1s
                     zip(&graph[input].shape.dims, &graph[other].shape.dims).all(|(l, r)| l == r)
                 }
-                Operation::Permute { .. }
+                Operation::Broadcast { .. }
+                | Operation::Permute { .. }
                 | Operation::Slice { .. }
                 | Operation::Flip { .. }
                 | Operation::Gather { .. }
@@ -245,6 +246,7 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         Operation::Input { .. } => false,
         Operation::Constant { .. } => true,
         Operation::View { .. }
+        | Operation::Broadcast { .. }
         | Operation::Permute { .. }
         | Operation::Slice { .. }
         | Operation::Flip { .. }
