@@ -11,7 +11,7 @@ use crate::bindings::{
     nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
     CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
 };
-use crate::wrapper::handle::{CudaStream, Device};
+use crate::wrapper::handle::{ComputeCapability, CudaStream};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -70,7 +70,12 @@ impl CuModule {
         }
     }
 
-    pub unsafe fn from_source(device: Device, src: &str, name: Option<&str>, expected_names: &[&str]) -> CompileResult {
+    pub unsafe fn from_source(
+        cap: ComputeCapability,
+        src: &str,
+        name: Option<&str>,
+        expected_names: &[&str],
+    ) -> CompileResult {
         let mut program = null_mut();
 
         let src_c = CString::new(src.as_bytes()).unwrap();
@@ -93,12 +98,11 @@ impl CuModule {
         }
 
         // figure out the arguments
-        let props = device.properties();
         let args = vec![
-            format!("--gpu-architecture=compute_{}{}", props.major, props.minor),
+            format!("--gpu-architecture=compute_{}{}", cap.major, cap.minor),
             // "-G".to_string(),
             // "--generate-line-info".to_string(),
-            "--define-macro=NVRTC".to_string(),
+            // "--define-macro=NVRTC".to_string(),
         ];
 
         let args = args
