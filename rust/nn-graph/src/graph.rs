@@ -94,6 +94,7 @@ pub enum ElementOp {
     Div,
     Min,
     Max,
+    Pow,
 }
 
 impl Operation {
@@ -645,13 +646,18 @@ impl Graph {
         self.ele(ElementOp::Mul, left, right)
     }
 
+    #[must_use]
+    pub fn pow(&mut self, left: Value, right: Value) -> Value {
+        self.ele(ElementOp::Pow, left, right)
+    }
+
     /// Compute an elementwise operation between two values.
     /// They must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
         let skip = match op {
             ElementOp::Sub | ElementOp::Add => self.is_const_filled_with(right, 0.0),
-            ElementOp::Mul | ElementOp::Div => self.is_const_filled_with(right, 1.0),
+            ElementOp::Mul | ElementOp::Div | ElementOp::Pow => self.is_const_filled_with(right, 1.0),
             ElementOp::Min => self.is_const_filled_with(right, f32::INFINITY),
             ElementOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
         };

@@ -342,6 +342,7 @@ impl<'a> Planner<'a> {
                     ElementOp::Div => "*x0 = *x1 / *x2;",
                     ElementOp::Min => "*x0 = min(*x1, *x2);",
                     ElementOp::Max => "*x0 = max(*x1, *x2);",
+                    ElementOp::Pow => "*x0 = powf(*x1, *x2);",
                 };
 
                 self.visit_binary_op(result_shape, left, right, operation)

@@ -163,7 +163,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
-            "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" => {
+            "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" | "Pow" => {
                 let op = match &*node.op_type {
                     "Add" => ElementOp::Add,
                     "Sub" => ElementOp::Sub,
@@ -171,6 +171,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     "Div" => ElementOp::Div,
                     "Min" => ElementOp::Min,
                     "Max" => ElementOp::Max,
+                    "Pow" => ElementOp::Pow,
                     _ => unreachable!(),
                 };
 

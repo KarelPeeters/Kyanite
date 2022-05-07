@@ -122,6 +122,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                     ElementOp::Div => left / right,
                     ElementOp::Min => Zip::from(left).and(right).map_collect(|&l, &r| f32::min(l, r)),
                     ElementOp::Max => Zip::from(left).and(right).map_collect(|&l, &r| f32::max(l, r)),
+                    ElementOp::Pow => Zip::from(left).and(right).map_collect(|&l, &r| l.powf(r)),
                 };
                 result.into_shared()
             }

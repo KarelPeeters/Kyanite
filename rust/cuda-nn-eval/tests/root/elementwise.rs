@@ -16,6 +16,11 @@ fn mul() {
 }
 
 #[test]
+fn div() {
+    test_elementwise_pair(|a, b| a * b, |g, a, b| g.mul(a, b))
+}
+
+#[test]
 fn clamp() {
     for min in [f32::NEG_INFINITY, 0.0] {
         for max in [f32::INFINITY, 6.0] {
@@ -23,4 +28,9 @@ fn clamp() {
             test_elementwise(|a| a.clamp(min, max), |g, a| g.clamp(a, min, max))
         }
     }
+}
+
+#[test]
+fn pow() {
+    test_elementwise_pair(|a, b| a.powf(b), |g, a, b| g.pow(a, b))
 }
