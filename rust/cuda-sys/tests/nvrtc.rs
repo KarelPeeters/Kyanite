@@ -32,7 +32,13 @@ fn saxpy() {
         for _ in 0..10 {
             let start = Instant::now();
 
-            let result = CuModule::from_source(device.compute_capability(), SAXPY_SOURCE, None, &[]);
+            let result = CuModule::from_source(
+                device.compute_capability(),
+                SAXPY_SOURCE,
+                None,
+                &[],
+                &Default::default(),
+            );
             println!("{}", result.log);
 
             let module = result.module.unwrap();

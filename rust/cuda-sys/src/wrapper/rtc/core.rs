@@ -79,6 +79,7 @@ impl CuModule {
         src: &str,
         name: Option<&str>,
         expected_names: &[&str],
+        headers: &HashMap<&str, &str>,
     ) -> CompileResult {
         unsafe {
             let mut program = null_mut();
@@ -86,15 +87,27 @@ impl CuModule {
             let src_c = CString::new(src.as_bytes()).unwrap();
             let name_c = name.map(|name| CString::new(name.as_bytes()).unwrap());
 
+            let header_names_c = headers
+                .keys()
+                .map(|s| CString::new(s.as_bytes()).unwrap())
+                .collect_vec();
+            let header_sources_c = headers
+                .values()
+                .map(|s| CString::new(s.as_bytes()).unwrap())
+                .collect_vec();
+
+            let header_names_ptr = header_names_c.iter().map(|s| s.as_ptr()).collect_vec();
+            let header_sources_ptr = header_sources_c.iter().map(|s| s.as_ptr()).collect_vec();
+
             nvrtcCreateProgram(
                 &mut program as *mut _,
                 src_c.as_ptr() as *const i8,
                 name_c.map_or(null(), |name_c| name_c.as_ptr() as *const i8),
-                0,
-                null(),
-                null(),
+                headers.len() as i32,
+                header_sources_ptr.as_ptr(),
+                header_names_ptr.as_ptr(),
             )
-                .unwrap();
+            .unwrap();
 
             // add requested names
             for &expected_name in expected_names {
