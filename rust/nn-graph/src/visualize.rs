@@ -229,7 +229,9 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 | Operation::Gather { .. }
                 | Operation::Concat { .. }
                 | Operation::Conv { .. }
-                | Operation::MatMul { .. } => false,
+                | Operation::MatMul { .. }
+                | Operation::Softmax { .. }
+                | Operation::Reduce { .. } => false,
                 &Operation::Element { left, right, op: _ } => graph[left].shape != graph[right].shape,
             }
         } else {
@@ -254,7 +256,9 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         | Operation::Concat { .. }
         | Operation::Conv { .. }
         | Operation::MatMul { .. }
-        | Operation::Element { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
+        | Operation::Element { .. }
+        | Operation::Softmax { .. }
+        | Operation::Reduce { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
     }
 }
 

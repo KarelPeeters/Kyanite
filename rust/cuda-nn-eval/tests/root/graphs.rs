@@ -2,7 +2,7 @@ use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
-use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
+use nn_graph::graph::{ElementOp, Graph, ReduceOp, SliceRange, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -553,4 +553,36 @@ fn repeated_conv() {
     graph.output_all(&[x4, y4]);
 
     test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
+fn softmax() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 3]);
+
+    let result0 = graph.softmax(input, 0);
+    let result1 = graph.softmax(input, 1);
+
+    graph.output_all(&[result0, result1]);
+
+    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
+    test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);
+}
+
+#[test]
+fn reduce() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 3]);
+
+    for &axis in &[0, 1] {
+        for &op in ReduceOp::ALL {
+            let result = graph.reduce(input, vec![axis], op);
+            graph.output(result);
+        }
+    }
+
+    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
+    test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);
 }

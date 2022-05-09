@@ -76,6 +76,15 @@ pub enum Operation {
 
     /// Elementwise operation between two operands, with broadcasting on the right.
     Element { left: Value, right: Value, op: ElementOp },
+
+    /// Softmax along `axis, the output shape matches the input shape.
+    Softmax { input: Value, axis: usize },
+    /// Reduce along the given `axes` using `op`. The `axes` are removed from the shape.
+    Reduce {
+        input: Value,
+        axes: Vec<usize>,
+        op: ReduceOp,
+    },
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -85,7 +94,6 @@ pub struct SliceRange {
     pub step: usize,
 }
 
-/// An elementwise operation.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ElementOp {
     Add,
@@ -95,6 +103,15 @@ pub enum ElementOp {
     Min,
     Max,
     Pow,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ReduceOp {
+    Sum,
+    Mean,
+    Prod,
+    Max,
+    Min,
 }
 
 impl Operation {
@@ -124,13 +141,15 @@ impl Operation {
             } => vec![input, filter],
             &Operation::MatMul { left, right } => vec![left, right],
             &Operation::Element { left, right, op: _ } => vec![left, right],
+            &Operation::Softmax { input, axis: _ } => vec![input],
+            &Operation::Reduce { input, axes: _, op: _ } => vec![input],
         }
     }
 
     pub(crate) fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
         match self {
             &Operation::Input { index } => Operation::Input { index },
-            Operation::Constant { data } => Operation::Constant { data: data.clone() },
+            &Operation::Constant { ref data } => Operation::Constant { data: data.clone() },
             &Operation::View { input } => Operation::View { input: f(input) },
             &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
             &Operation::Permute { input, ref permutation } => Operation::Permute {
@@ -168,6 +187,12 @@ impl Operation {
             &Operation::Element { left, right, op } => Operation::Element {
                 left: f(left),
                 right: f(right),
+                op,
+            },
+            &Operation::Softmax { input, axis } => Operation::Softmax { input: f(input), axis },
+            &Operation::Reduce { input, ref axes, op } => Operation::Reduce {
+                input: f(input),
+                axes: axes.clone(),
                 op,
             },
         }
@@ -439,7 +464,7 @@ impl Graph {
             return input;
         }
 
-        let new_shape = old_shape.replace(axis, Size::fixed(new_size));
+        let new_shape = old_shape.replace(axis, Some(Size::fixed(new_size)));
         self.push(new_shape, Operation::Slice { input, axis, range })
     }
 
@@ -467,7 +492,7 @@ impl Graph {
     pub fn repeat(&mut self, input: Value, axis: usize, count: usize) -> Value {
         //TODO introduce separate (optimized) operation for this?
         //TODO special-case length-0 axis to some kind of restride operation
-        let base_shape = self[input].shape.replace(axis, Size::ZERO);
+        let base_shape = self[input].shape.replace(axis, Some(Size::ZERO));
         self.concat(vec![input; count], axis, Some(base_shape))
     }
 
@@ -492,14 +517,14 @@ impl Graph {
                 !inputs.is_empty(),
                 "Cannot infer concatenation shape without any values"
             );
-            self[inputs[0]].shape.replace(axis, Size::ZERO)
+            self[inputs[0]].shape.replace(axis, Some(Size::ZERO))
         });
 
         let size_along_axis = inputs
             .iter()
             .map(|&v| {
                 assert_eq!(
-                    self[v].shape.replace(axis, Size::ZERO),
+                    self[v].shape.replace(axis, Some(Size::ZERO)),
                     base_shape,
                     "All concatenated values must match base shape on non-concatenated axes"
                 );
@@ -603,7 +628,39 @@ impl Graph {
         self.push(result_shape, Operation::MatMul { left, right })
     }
 
-    /// Elementwise relu..
+    #[must_use]
+    pub fn softmax(&mut self, input: Value, axis: usize) -> Value {
+        let input_shape = &self[input].shape;
+        assert!(
+            axis < input_shape.dims.len(),
+            "Softmax axis {} out of range for shape {:?}",
+            axis,
+            input_shape
+        );
+
+        let new_shape = input_shape.clone();
+        self.push(new_shape, Operation::Softmax { input, axis })
+    }
+
+    #[must_use]
+    pub fn reduce(&mut self, input: Value, axes: Vec<usize>, op: ReduceOp) -> Value {
+        let input_shape = &self[input].shape;
+
+        // check that the axes are in bounds
+        for &axis in &axes {
+            assert!(
+                axis < input_shape.dims.len(),
+                "Reduce axis {} out of range for shape {:?}",
+                axis,
+                input_shape
+            );
+        }
+
+        let new_shape = input_shape.replace_all(&axes, None);
+        self.push(new_shape, Operation::Reduce { input, axes, op })
+    }
+
+    /// Elementwise relu.
     #[must_use]
     pub fn relu(&mut self, input: Value) -> Value {
         self.clamp(input, 0.0, f32::INFINITY)
@@ -856,6 +913,16 @@ impl SliceRange {
 }
 
 impl ElementOp {
+    pub const ALL: &'static [Self] = &[
+        ElementOp::Add,
+        ElementOp::Sub,
+        ElementOp::Mul,
+        ElementOp::Div,
+        ElementOp::Pow,
+        ElementOp::Min,
+        ElementOp::Max,
+    ];
+
     pub fn map(self, left: f32, right: f32) -> f32 {
         match self {
             ElementOp::Add => left + right,
@@ -865,6 +932,51 @@ impl ElementOp {
             ElementOp::Pow => f32::powf(left, right),
             ElementOp::Min => f32::min(left, right),
             ElementOp::Max => f32::max(left, right),
+        }
+    }
+}
+
+impl ReduceOp {
+    pub const ALL: &'static [Self] = &[
+        ReduceOp::Sum,
+        ReduceOp::Mean,
+        ReduceOp::Prod,
+        ReduceOp::Min,
+        ReduceOp::Max,
+    ];
+
+    fn identity(self) -> f32 {
+        match self {
+            ReduceOp::Sum | ReduceOp::Mean => 0.0,
+            ReduceOp::Prod => 1.0,
+            ReduceOp::Min => f32::INFINITY,
+            ReduceOp::Max => f32::NEG_INFINITY,
+        }
+    }
+
+    fn operation(self) -> (ElementOp, bool) {
+        match self {
+            ReduceOp::Sum => (ElementOp::Add, false),
+            ReduceOp::Mean => (ElementOp::Add, true),
+            ReduceOp::Prod => (ElementOp::Mul, false),
+            ReduceOp::Min => (ElementOp::Min, false),
+            ReduceOp::Max => (ElementOp::Max, false),
+        }
+    }
+
+    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
+        let (op, is_mean) = self.operation();
+
+        let mut count = 0;
+        let total = seq.into_iter().fold(self.identity(), |acc, x| {
+            count += 1;
+            op.map(acc, x)
+        });
+
+        if is_mean {
+            total / count as f32
+        } else {
+            total
         }
     }
 }

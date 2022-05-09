@@ -347,6 +347,8 @@ impl<'a> Planner<'a> {
 
                 self.visit_binary_op(result_shape, left, right, operation)
             }
+            &Operation::Softmax { .. } => todo!("GPU softmax"),
+            &Operation::Reduce { .. } => todo!("GPU reduce"),
         };
 
         self.insert_mapping(value, result.clone());

@@ -4,7 +4,7 @@ use num_traits::cast;
 use prost::Message;
 
 pub use crate::graph::Graph;
-use crate::graph::{ElementOp, SliceRange};
+use crate::graph::{ElementOp, ReduceOp, SliceRange};
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
@@ -58,7 +58,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
         // TODO put this huge match expression in a separate function
         // TODO in general panic a lot less and return a proper result type instead
-        let value: TypedValue = match &*node.op_type {
+        let op_type = &*node.op_type;
+        let value: TypedValue = match op_type {
             "Conv" => {
                 assert!(inputs.len() <= 3);
                 let input = inputs[0].unwrap_float();
@@ -105,7 +106,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         let result_conv = graph.conv(input_extra, filter_extra, padding_0, 0);
                         let result_biased = bias.map_or(result_conv, |bias| graph.add(result_conv, bias));
 
-                        let result = graph.view(result_biased, graph[result_biased].shape.without(3));
+                        let result_shape = graph[result_biased].shape.replace(3, None);
+                        let result = graph.view(result_biased, result_shape);
 
                         result
                     }
@@ -164,7 +166,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" | "Pow" => {
-                let op = match &*node.op_type {
+                let op = match op_type {
                     "Add" => ElementOp::Add,
                     "Sub" => ElementOp::Sub,
                     "Mul" => ElementOp::Mul,
@@ -567,9 +569,50 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let dims = shape.dims.iter().copied().map(SizeOrInt::Size).collect_vec();
                 TypedValue::Shape(dims)
             }
+            "Softmax" => {
+                assert_eq!(1, inputs.len());
+                let input = inputs[0].unwrap_float();
+
+                let shape = graph[input].shape.clone();
+                let axis = attrs.maybe_take_int("axis").unwrap_or(-1);
+                let axis = abs_axis(axis, shape.rank());
+
+                TypedValue::FloatTensor(graph.softmax(input, axis))
+            }
+            "ReduceSum" | "ReduceMean" | "ReduceProd" | "ReduceMin" | "ReduceMax" => {
+                let op = match op_type {
+                    "ReduceSum" => ReduceOp::Sum,
+                    "ReduceMean" => ReduceOp::Mean,
+                    "ReduceProd" => ReduceOp::Prod,
+                    "ReduceMin" => ReduceOp::Min,
+                    "ReduceMax" => ReduceOp::Max,
+                    _ => unreachable!(),
+                };
+
+                assert_eq!(1, inputs.len());
+                let input = inputs[0].unwrap_float();
+                let input_shape = graph[input].shape.clone();
+
+                let axes = attrs.maybe_take_ints("axes").map_or_else(
+                    || (0..input_shape.rank()).collect_vec(),
+                    |axes| axes.iter().map(|&a| abs_axis(a, input_shape.rank())).collect_vec(),
+                );
+                let keep_dims = attrs.maybe_take_int("keepdims").unwrap_or(1) != 0;
+
+                let result_shape = if keep_dims {
+                    input_shape.replace_all(&axes, Some(Size::ONE))
+                } else {
+                    input_shape.clone()
+                };
+
+                let result = graph.reduce(input, axes, op);
+                let result_shaped = graph.view(result, result_shape);
+
+                TypedValue::FloatTensor(result_shaped)
+            }
             _ => {
                 eprintln!("Already parsed graph:\n{:?}", graph);
-                panic!("Unsupported op_type '{}' in node {}", node.op_type, node.name);
+                panic!("Unsupported op_type '{}' in node {}", op_type, node.name);
             }
         };
 

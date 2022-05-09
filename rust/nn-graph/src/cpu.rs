@@ -9,7 +9,7 @@ use ndarray::{
     concatenate, s, ArcArray, Array3, Array4, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
 };
 
-use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value, ValueInfo};
+use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 
 /// We're using an ArcArray so reshaping is free.
@@ -29,7 +29,7 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
 
         let result: Tensor = match operation {
             &Operation::Input { index } => inputs[index].to_shared(),
-            Operation::Constant { data } => {
+            &Operation::Constant { ref data } => {
                 let data = (&**data).clone();
                 Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
             }
@@ -81,13 +81,13 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
 
                 concatenate(Axis(axis), &slices).unwrap().into_shared()
             }
-            Operation::Concat { inputs, axis } => {
+            &Operation::Concat { ref inputs, axis } => {
                 let inputs = inputs.iter().map(|x| map.get(x).unwrap().tensor.view()).collect_vec();
 
                 if inputs.is_empty() {
                     Tensor::zeros(output_shape_dyn)
                 } else {
-                    ndarray::concatenate(Axis(*axis), &inputs).unwrap().into_shared()
+                    ndarray::concatenate(Axis(axis), &inputs).unwrap().into_shared()
                 }
             }
             &Operation::Conv {
@@ -115,16 +115,23 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 let left = &map.get(&left).unwrap().tensor;
                 let right = &map.get(&right).unwrap().tensor;
 
-                let result = match op {
-                    ElementOp::Add => left + right,
-                    ElementOp::Sub => left - right,
-                    ElementOp::Mul => left * right,
-                    ElementOp::Div => left / right,
-                    ElementOp::Min => Zip::from(left).and(right).map_collect(|&l, &r| f32::min(l, r)),
-                    ElementOp::Max => Zip::from(left).and(right).map_collect(|&l, &r| f32::max(l, r)),
-                    ElementOp::Pow => Zip::from(left).and(right).map_collect(|&l, &r| l.powf(r)),
-                };
-                result.into_shared()
+                Zip::from(left)
+                    .and(right)
+                    .map_collect(|&l, &r| op.map(l, r))
+                    .into_shared()
+            }
+            &Operation::Softmax { input, axis } => {
+                let input = &map.get(&input).unwrap().tensor;
+                softmax(input.view(), Axis(axis)).into_shared()
+            }
+            &Operation::Reduce { input, ref axes, op } => {
+                let input = &map.get(&input).unwrap().tensor;
+
+                axes.iter().fold(input.to_shared(), |curr, &axis| {
+                    Zip::from(curr.lanes(Axis(axis)))
+                        .map_collect(|lane| op.reduce(lane.iter().copied()))
+                        .into_shared()
+                })
             }
         };
 

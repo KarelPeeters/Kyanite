@@ -94,33 +94,45 @@ impl Shape {
         shape![Size::BATCH].concat(self)
     }
 
-    pub fn without(&self, axis: usize) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
-        let mut dims = self.dims.clone();
-        dims.remove(axis);
-        Shape::new(dims)
+    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
+    pub fn replace(&self, axis: usize, replacement: Option<Size>) -> Shape {
+        self.replace_all(&[axis], replacement)
     }
 
-    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
-    pub fn replace(&self, axis: usize, replacement: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+    pub fn replace_all(&self, axes: &[usize], replacement: Option<Size>) -> Shape {
+        assert_eq!(
+            axes.iter().unique().count(),
+            axes.len(),
+            "Axes must be unique, got {:?}",
+            axes
+        );
 
-        let mut result = self.clone();
-        result[axis] = replacement;
-        result
+        // check that the axes are in bounds
+        for &axis in axes {
+            assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        }
+
+        let dims = self
+            .dims
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &d)| if axes.contains(&i) { replacement } else { Some(d) })
+            .collect_vec();
+
+        Shape::new(dims)
     }
 
     /// Build a new shape with the shape at `axis` kept and all other axes replaced by `rest`.
     pub fn keep(&self, axis: usize, rest: Size) -> Shape {
         assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
 
-        let mut result = self.clone();
+        let mut dims = self.dims.clone();
         for i in 0..self.rank() {
             if i != axis {
-                result.dims[i] = rest;
+                dims[i] = rest;
             }
         }
-        result
+        Shape::new(dims)
     }
 
     pub fn repeat_unary(&self, axis: usize, new_size: Size) -> Shape {
@@ -133,10 +145,9 @@ impl Shape {
             self
         );
 
-        let mut result = self.clone();
-        result.dims[axis] = new_size;
-
-        result
+        let mut dims = self.dims.clone();
+        dims[axis] = new_size;
+        Shape::new(dims)
     }
 }
 
