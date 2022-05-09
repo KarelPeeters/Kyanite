@@ -179,34 +179,42 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let left = inputs[0];
                 let right = inputs[1];
 
-                let left_shape = left.as_shape(&graph);
-                let right_shape = right.as_shape(&graph);
+                if let (Some(left), Some(right)) = (left.as_shape(&graph), right.as_shape(&graph)) {
+                    // if they're both shapes keep it that way
+                    assert_eq!(left.len(), right.len());
 
-                match (left, right, left_shape, right_shape) {
-                    (TypedValue::FloatTensor(left), TypedValue::FloatTensor(right), _, _) => {
-                        let result = graph.ele(op, *left, *right);
-                        TypedValue::FloatTensor(result)
-                    }
-                    (_, _, Some(left), Some(right)) => {
-                        assert_eq!(left.len(), right.len());
+                    let run_op = match op {
+                        ElementOp::Mul => |a: Size, b: Size| a * b,
+                        ElementOp::Div => {
+                            |a: Size, b: Size| (a / b).unwrap_or_else(|| panic!("Failed to divide {:?} by {:?}", a, b))
+                        }
+                        _ => panic!("Unsupported shape operation {:?}", op),
+                    };
 
-                        let run_op = match op {
-                            ElementOp::Mul => |a: Size, b: Size| a * b,
-                            ElementOp::Div => |a: Size, b: Size| {
-                                (a / b).unwrap_or_else(|| panic!("Failed to divide {:?} by {:?}", a, b))
-                            },
-                            _ => panic!("Unsupported shape operation {:?}", op),
-                        };
+                    let result = zip_eq(left, right)
+                        .map(|(l, r)| SizeOrInt::Size(run_op(l.as_size().unwrap(), r.as_size().unwrap())))
+                        .collect_vec();
+                    TypedValue::Shape(result)
+                } else if let (TypedValue::FloatTensor(left), TypedValue::FloatTensor(right)) = (left, right) {
+                    // if they're both float tensors just add a graph operation
+                    let result = graph.ele(op, *left, *right);
+                    TypedValue::FloatTensor(result)
+                } else if let (TypedValue::Shape(left), TypedValue::FloatTensor(right)) = (left, right) {
+                    assert_eq!(left.len(), 1);
+                    assert_eq!(graph[*right].shape, Shape::SCALAR);
 
-                        let result = zip_eq(left, right)
-                            .map(|(l, r)| SizeOrInt::Size(run_op(l.as_size().unwrap(), r.as_size().unwrap())))
-                            .collect_vec();
-                        TypedValue::Shape(result)
-                    }
-                    _ => panic!(
+                    let left_value = left[0].as_size().unwrap().unwrap_fixed("ele left hand size") as f32;
+                    let right_value = graph.as_const(*right).unwrap()[0];
+
+                    let result_value = op.map(left_value, right_value);
+
+                    let result = graph.constant(Shape::SCALAR, vec![result_value]);
+                    TypedValue::FloatTensor(result)
+                } else {
+                    panic!(
                         "Elementwise operation between {:?} and {:?} not implemented for node {:?}",
                         left, right, output_name,
-                    ),
+                    )
                 }
             }
             "Flatten" => {

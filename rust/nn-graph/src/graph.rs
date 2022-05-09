@@ -854,3 +854,17 @@ impl SliceRange {
         )
     }
 }
+
+impl ElementOp {
+    pub fn map(self, left: f32, right: f32) -> f32 {
+        match self {
+            ElementOp::Add => left + right,
+            ElementOp::Sub => left - right,
+            ElementOp::Mul => left * right,
+            ElementOp::Div => left / right,
+            ElementOp::Pow => f32::powf(left, right),
+            ElementOp::Min => f32::min(left, right),
+            ElementOp::Max => f32::max(left, right),
+        }
+    }
+}
