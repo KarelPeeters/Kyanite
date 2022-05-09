@@ -1,7 +1,7 @@
 use ndarray::{s, Array1, Array4, ArrayView1, Data, Dimension};
 
 use crate::cpu::convolution;
-use crate::graph::{ConvDetails, ElementOp, Graph, Operation, Value};
+use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
 use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
@@ -52,10 +52,10 @@ impl Optimizer<'_> {
                     None
                 }
             }
-            Operation::Element {
+            Operation::Binary {
                 left,
                 right,
-                op: op @ (ElementOp::Add | ElementOp::Sub | ElementOp::Mul | ElementOp::Div),
+                op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div),
             } => {
                 if let &[Size::ONE, channels, Size::ONE, Size::ONE] = self.old_graph[right].shape.dims.as_slice() {
                     let expected_channels = builder.current_channels();
@@ -70,12 +70,12 @@ impl Optimizer<'_> {
                         let data = data.iter().copied().cycle().take(expected_channels);
 
                         let affine_op = match op {
-                            ElementOp::Add => Some(AffineOperation::AddChannel { data: data.collect() }),
-                            ElementOp::Sub => Some(AffineOperation::AddChannel {
+                            BinaryOp::Add => Some(AffineOperation::AddChannel { data: data.collect() }),
+                            BinaryOp::Sub => Some(AffineOperation::AddChannel {
                                 data: data.map(|x| -x).collect(),
                             }),
-                            ElementOp::Mul => Some(AffineOperation::ScaleChannel { data: data.collect() }),
-                            ElementOp::Div => Some(AffineOperation::ScaleChannel {
+                            BinaryOp::Mul => Some(AffineOperation::ScaleChannel { data: data.collect() }),
+                            BinaryOp::Div => Some(AffineOperation::ScaleChannel {
                                 data: data.map(|x| 1.0 / x).collect(),
                             }),
                             _ => unreachable!(),
@@ -221,7 +221,7 @@ fn apply_fused_conv(
 
             let mut curr = input;
             curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
-            curr = graph.ele(ElementOp::Add, curr, value_bias);
+            curr = graph.binary(BinaryOp::Add, curr, value_bias);
             curr
         }
         Err(bias_before) => {
@@ -239,7 +239,7 @@ fn apply_fused_conv(
             let mut curr = input;
             curr = before.apply(graph, curr);
             curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
-            curr = graph.ele(ElementOp::Add, curr, value_bias_after);
+            curr = graph.binary(BinaryOp::Add, curr, value_bias_after);
             curr
         }
     }
@@ -292,8 +292,8 @@ impl ScaleBias {
         let bias = graph.constant(const_shape, self.bias.to_vec());
 
         let mut curr = input;
-        curr = graph.ele(ElementOp::Mul, curr, scale);
-        curr = graph.ele(ElementOp::Add, curr, bias);
+        curr = graph.binary(BinaryOp::Mul, curr, scale);
+        curr = graph.binary(BinaryOp::Add, curr, bias);
 
         curr
     }

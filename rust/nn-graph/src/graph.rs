@@ -74,8 +74,10 @@ pub enum Operation {
     /// Batched matrix multiply.
     MatMul { left: Value, right: Value },
 
-    /// Elementwise operation between two operands, with broadcasting on the right.
-    Element { left: Value, right: Value, op: ElementOp },
+    /// Elementwise unary operation.
+    Unary { input: Value, op: UnaryOp },
+    /// Elementwise binary operation. Both operands must have the same shape.
+    Binary { left: Value, right: Value, op: BinaryOp },
 
     /// Softmax along `axis, the output shape matches the input shape.
     Softmax { input: Value, axis: usize },
@@ -95,7 +97,12 @@ pub struct SliceRange {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ElementOp {
+pub enum UnaryOp {
+    Sqrt,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum BinaryOp {
     Add,
     Sub,
     Mul,
@@ -140,7 +147,8 @@ impl Operation {
                 details: _,
             } => vec![input, filter],
             &Operation::MatMul { left, right } => vec![left, right],
-            &Operation::Element { left, right, op: _ } => vec![left, right],
+            &Operation::Unary { input, op: _ } => vec![input],
+            &Operation::Binary { left, right, op: _ } => vec![left, right],
             &Operation::Softmax { input, axis: _ } => vec![input],
             &Operation::Reduce { input, axes: _, op: _ } => vec![input],
         }
@@ -184,7 +192,8 @@ impl Operation {
                 left: f(left),
                 right: f(right),
             },
-            &Operation::Element { left, right, op } => Operation::Element {
+            &Operation::Unary { input, op } => Operation::Unary { input: f(input), op },
+            &Operation::Binary { left, right, op } => Operation::Binary {
                 left: f(left),
                 right: f(right),
                 op,
@@ -677,12 +686,12 @@ impl Graph {
         // these checks are kind of tedious but it prevents the value allocations if they're not necessary
         if max != f32::INFINITY {
             let max_value = self.constant(right_shape.clone(), vec![max]);
-            curr = self.ele(ElementOp::Min, curr, max_value);
+            curr = self.binary(BinaryOp::Min, curr, max_value);
         }
 
         if min != f32::INFINITY {
             let min_value = self.constant(right_shape, vec![min]);
-            curr = self.ele(ElementOp::Max, curr, min_value);
+            curr = self.binary(BinaryOp::Max, curr, min_value);
         }
 
         curr
@@ -690,33 +699,39 @@ impl Graph {
 
     #[must_use]
     pub fn add(&mut self, left: Value, right: Value) -> Value {
-        self.ele(ElementOp::Add, left, right)
+        self.binary(BinaryOp::Add, left, right)
     }
 
     #[must_use]
     pub fn sub(&mut self, left: Value, right: Value) -> Value {
-        self.ele(ElementOp::Sub, left, right)
+        self.binary(BinaryOp::Sub, left, right)
     }
 
     #[must_use]
     pub fn mul(&mut self, left: Value, right: Value) -> Value {
-        self.ele(ElementOp::Mul, left, right)
+        self.binary(BinaryOp::Mul, left, right)
     }
 
     #[must_use]
     pub fn pow(&mut self, left: Value, right: Value) -> Value {
-        self.ele(ElementOp::Pow, left, right)
+        self.binary(BinaryOp::Pow, left, right)
     }
 
-    /// Compute an elementwise operation between two values.
-    /// They must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
+    // Elementwise binary operation.
     #[must_use]
-    pub fn ele(&mut self, op: ElementOp, left: Value, right: Value) -> Value {
+    pub fn unary(&mut self, op: UnaryOp, input: Value) -> Value {
+        self.push(self[input].shape.clone(), Operation::Unary { op, input })
+    }
+
+    /// Compute elementwise binary operation.
+    /// Both inputs must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
+    #[must_use]
+    pub fn binary(&mut self, op: BinaryOp, left: Value, right: Value) -> Value {
         let skip = match op {
-            ElementOp::Sub | ElementOp::Add => self.is_const_filled_with(right, 0.0),
-            ElementOp::Mul | ElementOp::Div | ElementOp::Pow => self.is_const_filled_with(right, 1.0),
-            ElementOp::Min => self.is_const_filled_with(right, f32::INFINITY),
-            ElementOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
+            BinaryOp::Sub | BinaryOp::Add => self.is_const_filled_with(right, 0.0),
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => self.is_const_filled_with(right, 1.0),
+            BinaryOp::Min => self.is_const_filled_with(right, f32::INFINITY),
+            BinaryOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
         };
         if skip {
             return left;
@@ -725,7 +740,7 @@ impl Graph {
         let result_shape = self[left].shape.clone();
         let right = self.broadcast(right, result_shape.clone());
 
-        self.push(result_shape, Operation::Element { left, right, op })
+        self.push(result_shape, Operation::Binary { left, right, op })
     }
 
     /// Computes the operations described by `graph` on the given inputs.
@@ -912,26 +927,36 @@ impl SliceRange {
     }
 }
 
-impl ElementOp {
+impl UnaryOp {
+    pub const ALL: &'static [Self] = &[UnaryOp::Sqrt];
+
+    pub fn map(self, x: f32) -> f32 {
+        match self {
+            UnaryOp::Sqrt => x.sqrt(),
+        }
+    }
+}
+
+impl BinaryOp {
     pub const ALL: &'static [Self] = &[
-        ElementOp::Add,
-        ElementOp::Sub,
-        ElementOp::Mul,
-        ElementOp::Div,
-        ElementOp::Pow,
-        ElementOp::Min,
-        ElementOp::Max,
+        BinaryOp::Add,
+        BinaryOp::Sub,
+        BinaryOp::Mul,
+        BinaryOp::Div,
+        BinaryOp::Pow,
+        BinaryOp::Min,
+        BinaryOp::Max,
     ];
 
     pub fn map(self, left: f32, right: f32) -> f32 {
         match self {
-            ElementOp::Add => left + right,
-            ElementOp::Sub => left - right,
-            ElementOp::Mul => left * right,
-            ElementOp::Div => left / right,
-            ElementOp::Pow => f32::powf(left, right),
-            ElementOp::Min => f32::min(left, right),
-            ElementOp::Max => f32::max(left, right),
+            BinaryOp::Add => left + right,
+            BinaryOp::Sub => left - right,
+            BinaryOp::Mul => left * right,
+            BinaryOp::Div => left / right,
+            BinaryOp::Pow => f32::powf(left, right),
+            BinaryOp::Min => f32::min(left, right),
+            BinaryOp::Max => f32::max(left, right),
         }
     }
 }
@@ -954,13 +979,13 @@ impl ReduceOp {
         }
     }
 
-    fn operation(self) -> (ElementOp, bool) {
+    fn operation(self) -> (BinaryOp, bool) {
         match self {
-            ReduceOp::Sum => (ElementOp::Add, false),
-            ReduceOp::Mean => (ElementOp::Add, true),
-            ReduceOp::Prod => (ElementOp::Mul, false),
-            ReduceOp::Min => (ElementOp::Min, false),
-            ReduceOp::Max => (ElementOp::Max, false),
+            ReduceOp::Sum => (BinaryOp::Add, false),
+            ReduceOp::Mean => (BinaryOp::Add, true),
+            ReduceOp::Prod => (BinaryOp::Mul, false),
+            ReduceOp::Min => (BinaryOp::Min, false),
+            ReduceOp::Max => (BinaryOp::Max, false),
         }
     }
 

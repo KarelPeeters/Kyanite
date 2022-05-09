@@ -111,7 +111,11 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
                 .into_dyn()
                 .into_shared()
             }
-            &Operation::Element { left, right, op } => {
+            &Operation::Unary { input, op } => {
+                let input = &map.get(&input).unwrap().tensor;
+                input.map(|&x| op.map(x)).into_shared()
+            }
+            &Operation::Binary { left, right, op } => {
                 let left = &map.get(&left).unwrap().tensor;
                 let right = &map.get(&right).unwrap().tensor;
 

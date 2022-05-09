@@ -4,7 +4,7 @@ use num_traits::cast;
 use prost::Message;
 
 pub use crate::graph::Graph;
-use crate::graph::{ElementOp, ReduceOp, SliceRange};
+use crate::graph::{BinaryOp, ReduceOp, SliceRange, UnaryOp};
 use crate::onnx::attributes::Attributes;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
@@ -165,15 +165,27 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
+            "Sqrt" => {
+                let op = match op_type {
+                    "Sqrt" => UnaryOp::Sqrt,
+                    _ => unreachable!(),
+                };
+
+                assert_eq!(1, inputs.len());
+                let input = inputs[0].unwrap_float();
+
+                let result = graph.unary(op, input);
+                TypedValue::FloatTensor(result)
+            }
             "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" | "Pow" => {
                 let op = match op_type {
-                    "Add" => ElementOp::Add,
-                    "Sub" => ElementOp::Sub,
-                    "Mul" => ElementOp::Mul,
-                    "Div" => ElementOp::Div,
-                    "Min" => ElementOp::Min,
-                    "Max" => ElementOp::Max,
-                    "Pow" => ElementOp::Pow,
+                    "Add" => BinaryOp::Add,
+                    "Sub" => BinaryOp::Sub,
+                    "Mul" => BinaryOp::Mul,
+                    "Div" => BinaryOp::Div,
+                    "Min" => BinaryOp::Min,
+                    "Max" => BinaryOp::Max,
+                    "Pow" => BinaryOp::Pow,
                     _ => unreachable!(),
                 };
 
@@ -186,8 +198,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     assert_eq!(left.len(), right.len());
 
                     let run_op = match op {
-                        ElementOp::Mul => |a: Size, b: Size| a * b,
-                        ElementOp::Div => {
+                        BinaryOp::Mul => |a: Size, b: Size| a * b,
+                        BinaryOp::Div => {
                             |a: Size, b: Size| (a / b).unwrap_or_else(|| panic!("Failed to divide {:?} by {:?}", a, b))
                         }
                         _ => panic!("Unsupported shape operation {:?}", op),
@@ -199,7 +211,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     TypedValue::Shape(result)
                 } else if let (TypedValue::FloatTensor(left), TypedValue::FloatTensor(right)) = (left, right) {
                     // if they're both float tensors just add a graph operation
-                    let result = graph.ele(op, *left, *right);
+                    let result = graph.binary(op, *left, *right);
                     TypedValue::FloatTensor(result)
                 } else if let (TypedValue::Shape(left), TypedValue::FloatTensor(right)) = (left, right) {
                     assert_eq!(left.len(), 1);

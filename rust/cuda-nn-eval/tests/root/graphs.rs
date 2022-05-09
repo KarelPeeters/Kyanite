@@ -2,7 +2,7 @@ use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
-use nn_graph::graph::{ElementOp, Graph, ReduceOp, SliceRange, Value};
+use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -253,11 +253,11 @@ fn fuse_clamp() {
 fn ele_broadcast() {
     // don't test division, since the GPU doesn't support it yet
     for op in [
-        ElementOp::Add,
-        ElementOp::Sub,
-        ElementOp::Mul,
-        ElementOp::Min,
-        ElementOp::Max,
+        BinaryOp::Add,
+        BinaryOp::Sub,
+        BinaryOp::Mul,
+        BinaryOp::Min,
+        BinaryOp::Max,
     ] {
         println!("Testing operation {:?}", op);
 
@@ -268,7 +268,7 @@ fn ele_broadcast() {
             println!("  with right shape {}", shape);
             let size = shape.size().eval(0);
             let right = graph.constant(shape, linspace_vec(size));
-            let result = graph.ele(op, left, right);
+            let result = graph.binary(op, left, right);
             graph.output(result);
         }
 
@@ -345,7 +345,7 @@ fn affine_single_div() {
 
     let left = graph.constant(shape![2, 3], range_vec(2 * 3));
     let right = graph.constant(Shape::SCALAR, vec![2.0]);
-    let result = graph.ele(ElementOp::Div, left, right);
+    let result = graph.binary(BinaryOp::Div, left, right);
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];

@@ -215,6 +215,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
     let has_dummy_user = graph.values().any(|other| {
         let other_operation = &graph[other].operation;
 
+        // TODO what are we even calculating here? mostly questionable heuristics?
         if other_operation.inputs().contains(&value) {
             match other_operation {
                 Operation::Input { .. } | Operation::Constant { .. } => unreachable!(),
@@ -231,8 +232,9 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 | Operation::Conv { .. }
                 | Operation::MatMul { .. }
                 | Operation::Softmax { .. }
-                | Operation::Reduce { .. } => false,
-                &Operation::Element { left, right, op: _ } => graph[left].shape != graph[right].shape,
+                | Operation::Reduce { .. }
+                | Operation::Unary { .. } => false,
+                &Operation::Binary { left, right, op: _ } => graph[left].shape != graph[right].shape,
             }
         } else {
             false
@@ -256,7 +258,8 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         | Operation::Concat { .. }
         | Operation::Conv { .. }
         | Operation::MatMul { .. }
-        | Operation::Element { .. }
+        | Operation::Unary { .. }
+        | Operation::Binary { .. }
         | Operation::Softmax { .. }
         | Operation::Reduce { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
     }

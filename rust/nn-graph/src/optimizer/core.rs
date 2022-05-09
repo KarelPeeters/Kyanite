@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 
-use crate::graph::{ElementOp, Graph, Operation, Value};
+use crate::graph::{BinaryOp, Graph, Operation, Value};
 use crate::optimizer::OptimizerSettings;
 
 #[derive(Debug)]
@@ -76,17 +76,17 @@ impl<'a> Optimizer<'a> {
         let mut total_max = f32::INFINITY;
 
         let old_input = self.follow_if(old_start, |_, _, operation| {
-            if let &Operation::Element {
+            if let &Operation::Binary {
                 left: old_left,
                 right: old_right,
-                op: op @ (ElementOp::Min | ElementOp::Max),
+                op: op @ (BinaryOp::Min | BinaryOp::Max),
             } = operation
             {
                 // if right is a single constant value we can fuse it
                 if let Some(&[f]) = self.old_graph.as_const(old_right) {
                     match op {
-                        ElementOp::Min => total_max = f32::min(total_max, f),
-                        ElementOp::Max => total_min = f32::max(total_min, f),
+                        BinaryOp::Min => total_max = f32::min(total_max, f),
+                        BinaryOp::Max => total_min = f32::max(total_min, f),
                         _ => unreachable!(),
                     }
 
@@ -114,10 +114,10 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_convert_div_to_mul(&mut self, old_start: Value) -> Option<Value> {
-        if let &Operation::Element {
+        if let &Operation::Binary {
             left,
             right,
-            op: ElementOp::Div,
+            op: BinaryOp::Div,
         } = &self.old_graph[old_start].operation
         {
             if let Some(data) = self.follow_const(right) {

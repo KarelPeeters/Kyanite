@@ -11,7 +11,7 @@ use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
+use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use nn_graph::optimizer::core::find_hidden_values_used_once;
 use nn_graph::shape::{ConcreteShape, Size};
 
@@ -334,18 +334,36 @@ impl<'a> Planner<'a> {
 
                 result
             }
-            &Operation::Element { left, right, op } => {
+            &Operation::Unary { input, op } => {
                 let operation = match op {
-                    ElementOp::Add => "*x0 = *x1 + *x2;",
-                    ElementOp::Sub => "*x0 = *x1 - *x2;",
-                    ElementOp::Mul => "*x0 = *x1 * *x2;",
-                    ElementOp::Div => "*x0 = *x1 / *x2;",
-                    ElementOp::Min => "*x0 = min(*x1, *x2);",
-                    ElementOp::Max => "*x0 = max(*x1, *x2);",
-                    ElementOp::Pow => "*x0 = powf(*x1, *x2);",
+                    UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
                 };
 
-                self.visit_binary_op(result_shape, left, right, operation)
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                self.plan_scalar_op(operation, vec![output.clone(), input]);
+
+                output
+            }
+            &Operation::Binary { left, right, op } => {
+                let operation = match op {
+                    BinaryOp::Add => "*x0 = *x1 + *x2;",
+                    BinaryOp::Sub => "*x0 = *x1 - *x2;",
+                    BinaryOp::Mul => "*x0 = *x1 * *x2;",
+                    BinaryOp::Div => "*x0 = *x1 / *x2;",
+                    BinaryOp::Min => "*x0 = min(*x1, *x2);",
+                    BinaryOp::Max => "*x0 = max(*x1, *x2);",
+                    BinaryOp::Pow => "*x0 = powf(*x1, *x2);",
+                };
+
+                let left = self.visit(left);
+                let right = self.visit(right);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                self.plan_scalar_op(operation, vec![output.clone(), left, right]);
+
+                output
             }
             &Operation::Softmax { .. } => todo!("GPU softmax"),
             &Operation::Reduce { .. } => todo!("GPU reduce"),
@@ -370,10 +388,10 @@ impl<'a> Planner<'a> {
         let graph = self.graph;
 
         // relu(curr)?
-        let act_mode = if let &Operation::Element {
+        let act_mode = if let &Operation::Binary {
             left,
             right,
-            op: ElementOp::Max,
+            op: BinaryOp::Max,
         } = &graph[curr].operation
         {
             if !self.fuse_candidates.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
@@ -388,10 +406,10 @@ impl<'a> Planner<'a> {
         let mut bias = None;
         let mut res = None;
 
-        while let &Operation::Element {
+        while let &Operation::Binary {
             left,
             right,
-            op: ElementOp::Add,
+            op: BinaryOp::Add,
         } = &graph[curr].operation
         {
             if !self.fuse_candidates.contains(&left) {
@@ -484,22 +502,6 @@ impl<'a> Planner<'a> {
         } else {
             None
         }
-    }
-
-    fn visit_binary_op(
-        &mut self,
-        result_shape: ConcreteShape,
-        left: Value,
-        right: Value,
-        operation: &str,
-    ) -> PlanTensor {
-        let left = self.visit(left);
-        let right = self.visit(right);
-        let output = self.alloc_tensor_shared(result_shape);
-
-        self.plan_scalar_op(operation, vec![output.clone(), left, right]);
-
-        output
     }
 
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor) {
