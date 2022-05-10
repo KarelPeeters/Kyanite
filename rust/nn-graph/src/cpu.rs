@@ -131,11 +131,14 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
             &Operation::Reduce { input, ref axes, op } => {
                 let input = &map.get(&input).unwrap().tensor;
 
-                axes.iter().fold(input.to_shared(), |curr, &axis| {
+                let result = axes.iter().fold(input.to_shared(), |curr, &axis| {
                     Zip::from(curr.lanes(Axis(axis)))
                         .map_collect(|lane| op.reduce(lane.iter().copied()))
                         .into_shared()
-                })
+                        .insert_axis(Axis(axis))
+                });
+
+                result.reshape(output_shape_dyn)
             }
         };
 

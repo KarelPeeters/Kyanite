@@ -4,8 +4,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
-use itertools::{zip_eq, Itertools};
-use rand::{thread_rng, Rng};
+use itertools::{Itertools, zip_eq};
+use rand::{Rng, thread_rng};
 
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -273,7 +273,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item = Value> {
+    pub fn values(&self) -> impl Iterator<Item=Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -823,7 +823,7 @@ impl Display for Graph {
                 "    {:?} = {:?},",
                 Value {
                     index: i,
-                    check: *check
+                    check: *check,
                 },
                 info
             )?;
@@ -970,7 +970,7 @@ impl ReduceOp {
         ReduceOp::Max,
     ];
 
-    fn identity(self) -> f32 {
+    pub fn identity(self) -> f32 {
         match self {
             ReduceOp::Sum | ReduceOp::Mean => 0.0,
             ReduceOp::Prod => 1.0,
@@ -979,7 +979,7 @@ impl ReduceOp {
         }
     }
 
-    fn operation(self) -> (BinaryOp, bool) {
+    pub fn operation(self) -> (BinaryOp, bool) {
         match self {
             ReduceOp::Sum => (BinaryOp::Add, false),
             ReduceOp::Mean => (BinaryOp::Add, true),
@@ -989,7 +989,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
+    pub fn reduce(self, seq: impl IntoIterator<Item=f32>) -> f32 {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;

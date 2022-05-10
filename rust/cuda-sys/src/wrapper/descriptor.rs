@@ -4,14 +4,16 @@ use crate::bindings::{
     cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t,
     cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor,
     cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor, cudnnCreatePoolingDescriptor,
-    cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor,
-    cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor, cudnnDestroyPoolingDescriptor,
-    cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim,
-    cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim,
-    cudnnGetTensorSizeInBytes, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t,
-    cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor,
-    cudnnSetFilter4dDescriptor, cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetTensorNdDescriptor,
-    cudnnTensorDescriptor_t, cudnnTensorFormat_t,
+    cudnnCreateReduceTensorDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor,
+    cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor,
+    cudnnDestroyPoolingDescriptor, cudnnDestroyReduceTensorDescriptor, cudnnDestroyTensorDescriptor,
+    cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize,
+    cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetReductionWorkspaceSize,
+    cudnnGetTensorSizeInBytes, cudnnIndicesType_t, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t,
+    cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnReduceTensorDescriptor_t, cudnnReduceTensorIndices_t,
+    cudnnReduceTensorOp_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor,
+    cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetReduceTensorDescriptor,
+    cudnnSetTensorNdDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t,
 };
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::status::Status;
@@ -198,7 +200,7 @@ impl ConvolutionDescriptor {
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
             )
-            .unwrap();
+                .unwrap();
             ConvolutionDescriptor(inner)
         }
     }
@@ -235,7 +237,7 @@ impl ConvolutionDescriptor {
                 algo,
                 &mut workspace as *mut _,
             )
-            .unwrap();
+                .unwrap();
         }
 
         workspace
@@ -262,7 +264,7 @@ impl ConvolutionDescriptor {
                 &mut h as *mut _,
                 &mut w as *mut _,
             )
-            .unwrap();
+                .unwrap();
             [n, c, h, w]
         }
     }
@@ -337,7 +339,7 @@ impl PoolingDescriptor {
                 stride_y,
                 stride_x,
             )
-            .unwrap();
+                .unwrap();
             PoolingDescriptor(inner)
         }
     }
@@ -356,7 +358,7 @@ impl PoolingDescriptor {
                 &mut h as *mut _,
                 &mut w as *mut _,
             )
-            .unwrap();
+                .unwrap();
             [n, c, h, w]
         }
     }
@@ -384,19 +386,76 @@ impl TensorOpDescriptor {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateOpTensorDescriptor(&mut inner as *mut _).unwrap();
+
             cudnnSetOpTensorDescriptor(
                 inner,
                 operation,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
             )
-            .unwrap();
+                .unwrap();
 
             TensorOpDescriptor { inner, operation }
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnOpTensorDescriptor_t {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct TensorReduceDescriptor {
+    inner: cudnnReduceTensorDescriptor_t,
+    #[allow(dead_code)]
+    operation: cudnnReduceTensorOp_t,
+}
+
+impl Drop for TensorReduceDescriptor {
+    fn drop(&mut self) {
+        unsafe {
+            cudnnDestroyReduceTensorDescriptor(self.inner).unwrap_in_drop();
+        }
+    }
+}
+
+impl TensorReduceDescriptor {
+    pub fn new(operation: cudnnReduceTensorOp_t) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cudnnCreateReduceTensorDescriptor(&mut inner as *mut _).unwrap();
+
+            // TODO add support for indices
+            cudnnSetReduceTensorDescriptor(
+                inner,
+                operation,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
+                cudnnReduceTensorIndices_t::CUDNN_REDUCE_TENSOR_NO_INDICES,
+                cudnnIndicesType_t::CUDNN_32BIT_INDICES,
+            )
+                .unwrap();
+
+            TensorReduceDescriptor { inner, operation }
+        }
+    }
+
+    pub fn workspace_size(&self, handle: &CudnnHandle, a_desc: &TensorDescriptor, c_desc: &TensorDescriptor) -> usize {
+        unsafe {
+            let mut size = 0;
+            cudnnGetReductionWorkspaceSize(
+                handle.inner(),
+                self.inner(),
+                a_desc.inner(),
+                c_desc.inner(),
+                &mut size as *mut _,
+            )
+                .unwrap();
+            size
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cudnnReduceTensorDescriptor_t {
         self.inner
     }
 }

@@ -1,12 +1,14 @@
+use std::ptr::null_mut;
+
 pub use crate::bindings::{
     cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward,
-    cudnnConvolutionFwdAlgoPerf_t, cudnnConvolutionFwdAlgo_t, cudnnFindConvolutionForwardAlgorithm,
+    cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm,
     cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t,
 };
-use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward};
+use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward, cudnnReduceTensor};
 use crate::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor,
-    TensorOpDescriptor,
+    TensorOpDescriptor, TensorReduceDescriptor,
 };
 use crate::wrapper::handle::CudnnHandle;
 use crate::wrapper::mem::device::DevicePtr;
@@ -40,7 +42,7 @@ pub fn find_conv_algorithms(
             &mut algo_count as *mut _,
             result.as_mut_ptr(),
         )
-        .unwrap();
+            .unwrap();
 
         result.set_len(algo_count as usize);
 
@@ -90,7 +92,7 @@ pub unsafe fn run_conv(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
 }
 
 /// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
@@ -113,7 +115,7 @@ pub unsafe fn run_add_tensor(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
 }
 
 /// Run `output = act(input)`.
@@ -139,7 +141,7 @@ pub unsafe fn run_activation(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
 }
 
 /// Runs `output = act(conv(input, filter) + res + bias)`.
@@ -224,7 +226,7 @@ pub unsafe fn run_conv_bias_res_activation(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
 }
 
 /// Runs `output = pool(input)`.
@@ -249,7 +251,7 @@ pub unsafe fn run_pooling(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
 }
 
 /// Runs `output = op(alpha_1 * input_1, alpha_2 * input_2) + b * output`
@@ -279,5 +281,35 @@ pub unsafe fn run_tensor_op(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-    .unwrap();
+        .unwrap();
+}
+
+/// Runs `output = a * reduce(A) + b * output`
+pub unsafe fn run_tensor_reduce(
+    handle: &CudnnHandle,
+    reduce_desc: &TensorReduceDescriptor,
+    work_size_in_bytes: usize,
+    work_ptr: &DevicePtr,
+    alpha: f32,
+    input_desc: &TensorDescriptor,
+    input_ptr: &DevicePtr,
+    beta: f32,
+    output_desc: &TensorDescriptor,
+    output_ptr: &DevicePtr,
+) {
+    cudnnReduceTensor(
+        handle.inner(),
+        reduce_desc.inner(),
+        null_mut(),
+        0,
+        work_ptr.ptr(),
+        work_size_in_bytes,
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_ptr.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_ptr.ptr(),
+    )
+        .unwrap();
 }

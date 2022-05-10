@@ -1,7 +1,7 @@
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
+use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_sys::wrapper::handle::Device;
 use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
@@ -571,10 +571,10 @@ fn softmax() {
 }
 
 #[test]
-fn reduce() {
+fn reduce_easy() {
     let mut graph = Graph::new();
 
-    let input = graph.input(shape![3, 3]);
+    let input = graph.input(shape![4, 3]);
 
     for &axis in &[0, 1] {
         for &op in ReduceOp::ALL {
@@ -583,6 +583,18 @@ fn reduce() {
         }
     }
 
-    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
-    test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);
+    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, -1.0 / 0.0, 0.0, 1.0, 2.0];
+    test_all(&graph, 0, &[manual_tensor((4, 3), input_data)], None);
+}
+
+#[test]
+fn reduce_mixed() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![12, 3, 7, 9, 13]);
+    let mixed = graph.permute(input, vec![0, 3, 2, 1, 4]);
+    let output = graph.reduce(mixed, vec![1, 2, 4], ReduceOp::Sum);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor((12, 3, 7, 9, 13)).into_dyn()], None);
 }

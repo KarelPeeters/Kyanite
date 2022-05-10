@@ -15,12 +15,13 @@ use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use nn_graph::optimizer::core::find_hidden_values_used_once;
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
 use crate::autokernel::scalar::ScalarKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, ScalarOpArgs, Step};
+use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, Step};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -347,26 +348,50 @@ impl<'a> Planner<'a> {
                 output
             }
             &Operation::Binary { left, right, op } => {
-                let operation = match op {
-                    BinaryOp::Add => "*x0 = *x1 + *x2;",
-                    BinaryOp::Sub => "*x0 = *x1 - *x2;",
-                    BinaryOp::Mul => "*x0 = *x1 * *x2;",
-                    BinaryOp::Div => "*x0 = *x1 / *x2;",
-                    BinaryOp::Min => "*x0 = min(*x1, *x2);",
-                    BinaryOp::Max => "*x0 = max(*x1, *x2);",
-                    BinaryOp::Pow => "*x0 = powf(*x1, *x2);",
-                };
+                let op_str = format!("*x0 = {};", binary_op_str(op, "*x1", "*x2"));
 
                 let left = self.visit(left);
                 let right = self.visit(right);
                 let output = self.alloc_tensor_shared(result_shape);
 
-                self.plan_scalar_op(operation, vec![output.clone(), left, right]);
+                self.plan_scalar_op(&op_str, vec![output.clone(), left, right]);
 
                 output
             }
             &Operation::Softmax { .. } => todo!("GPU softmax"),
-            &Operation::Reduce { .. } => todo!("GPU reduce"),
+            &Operation::Reduce { input, ref axes, op } => {
+                let result_size = result_shape.size();
+
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let identity = op.identity();
+                let (operation, is_mean) = op.operation();
+                let scale = if is_mean {
+                    result_size as f32 / input.shape().size() as f32
+                } else {
+                    1.0
+                };
+
+                let code = ReduceCode {
+                    ty: "float".to_owned(),
+                    identity: format!("{}", identity).replace("inf", "(1.0/0.0)"),
+                    operation: binary_op_str(operation, "curr", "x"),
+                    post_process: format!("curr * {}", scale),
+                };
+
+                let capability = self.device().compute_capability();
+                let kernel = ReduceKernel::new(capability, code, input.shape(), output.shape(), axes);
+
+                let args = ReduceOpArgs {
+                    kernel,
+                    input,
+                    output: output.clone(),
+                };
+                self.plan.push(PlanStep::ReduceOp(args));
+
+                output
+            }
         };
 
         self.insert_mapping(value, result.clone());
@@ -592,5 +617,17 @@ impl OffsetPtr for PlanPtr {
 impl From<DevicePtr> for PlanPtr {
     fn from(ptr: DevicePtr) -> Self {
         PlanPtr::from_parts(PlanBuffer::Dedicated(ptr), 0)
+    }
+}
+
+fn binary_op_str(op: BinaryOp, a: &str, b: &str) -> String {
+    match op {
+        BinaryOp::Add => format!("{} + {}", a, b),
+        BinaryOp::Sub => format!("{} - {}", a, b),
+        BinaryOp::Mul => format!("{} * {}", a, b),
+        BinaryOp::Div => format!("{} / {}", a, b),
+        BinaryOp::Min => format!("min({}, {})", a, b),
+        BinaryOp::Max => format!("max({}, {})", a, b),
+        BinaryOp::Pow => format!("powf({}, {})", a, b),
     }
 }

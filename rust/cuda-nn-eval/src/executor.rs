@@ -10,9 +10,8 @@ use nn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
-
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, Step};
+use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, Step};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -44,6 +43,7 @@ pub struct Profile {
     pub conv: f32,
     pub mat_mul: f32,
     pub scalar_op: f32,
+    pub reduce_op: f32,
     pub gather: f32,
 
     pub total_cpu: f32,
@@ -159,6 +159,7 @@ impl CudaExecutor {
                     Step::Conv { .. } => &mut profile.conv,
                     Step::MatMul { .. } => &mut profile.mat_mul,
                     Step::ScalarOp { .. } => &mut profile.scalar_op,
+                    Step::ReduceOp { .. } => &mut profile.reduce_op,
                     Step::Gather { .. } => &mut profile.gather,
                 } += time;
 
@@ -203,15 +204,16 @@ impl Step<DevicePtr> {
                 let blas_event = handles.cublas.stream().record_new_event();
                 handles.cudnn.stream().wait_for_event(&blas_event);
             }
-            Step::ScalarOp(args) => {
-                args.kernel.run(handles.cudnn.stream(), &args.operands);
+            Step::ScalarOp(ScalarOpArgs { kernel, operands }) => {
+                kernel.run(handles.cudnn.stream(), operands);
             }
+            Step::ReduceOp(ReduceOpArgs { kernel, input, output }) => kernel.run(handles.cudnn.stream(), input, output),
             Step::Gather(GatherArgs {
-                input,
-                axis,
-                indices,
-                output,
-            }) => {
+                             input,
+                             axis,
+                             indices,
+                             output,
+                         }) => {
                 assert!(
                     *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
@@ -234,7 +236,7 @@ impl Step<DevicePtr> {
                     indices.ptr().ptr() as *const f32,
                     output.ptr().ptr() as *mut f32,
                 )
-                .unwrap();
+                    .unwrap();
             }
         }
     }
