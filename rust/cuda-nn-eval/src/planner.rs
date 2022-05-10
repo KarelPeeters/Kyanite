@@ -338,6 +338,7 @@ impl<'a> Planner<'a> {
             &Operation::Unary { input, op } => {
                 let operation = match op {
                     UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
+                    UnaryOp::Exp => "*x0 = exp(*x1);",
                 };
 
                 let input = self.visit(input);

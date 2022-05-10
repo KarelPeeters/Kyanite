@@ -4,8 +4,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
-use itertools::{Itertools, zip_eq};
-use rand::{Rng, thread_rng};
+use itertools::{zip_eq, Itertools};
+use rand::{thread_rng, Rng};
 
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -99,6 +99,7 @@ pub struct SliceRange {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOp {
     Sqrt,
+    Exp,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -273,7 +274,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item=Value> {
+    pub fn values(&self) -> impl Iterator<Item = Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -651,6 +652,8 @@ impl Graph {
         self.push(new_shape, Operation::Softmax { input, axis })
     }
 
+    /// Reduce `input` along the given `axes`.
+    /// The result shape is the same as the input shape but without the reduces axes.
     #[must_use]
     pub fn reduce(&mut self, input: Value, axes: Vec<usize>, op: ReduceOp) -> Value {
         let input_shape = &self[input].shape;
@@ -933,6 +936,7 @@ impl UnaryOp {
     pub fn map(self, x: f32) -> f32 {
         match self {
             UnaryOp::Sqrt => x.sqrt(),
+            UnaryOp::Exp => x.exp(),
         }
     }
 }
@@ -989,7 +993,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce(self, seq: impl IntoIterator<Item=f32>) -> f32 {
+    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;
