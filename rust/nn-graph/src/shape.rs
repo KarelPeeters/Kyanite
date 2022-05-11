@@ -26,6 +26,8 @@ pub struct ConcreteShape {
     pub dims: Vec<usize>,
 }
 
+// TODO unify all shape types into a generic "Shape<S>"
+//  what about strides?
 impl Shape {
     pub const SCALAR: Shape = Shape { dims: vec![] };
 
@@ -149,6 +151,14 @@ impl Shape {
         dims[axis] = new_size;
         Shape::new(dims)
     }
+
+    pub fn insert(&self, axis: usize, size: Size) -> Shape {
+        assert!(axis <= self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+
+        let mut dims = self.dims.clone();
+        dims.insert(axis, size);
+        Shape::new(dims)
+    }
 }
 
 impl From<usize> for Size {
@@ -263,7 +273,7 @@ impl std::ops::Div for Size {
 }
 
 impl std::iter::Product for Size {
-    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+    fn product<I: Iterator<Item=Self>>(iter: I) -> Self {
         iter.fold(Size::fixed(1), |a, s| a * s)
     }
 }

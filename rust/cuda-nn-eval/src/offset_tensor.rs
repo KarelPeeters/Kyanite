@@ -1,8 +1,10 @@
-use crate::shape::StridedShape;
+use std::fmt::Debug;
+
 use cuda_sys::bindings::cublasOperation_t;
 use cuda_sys::wrapper::group::MatMulOperand;
 use nn_graph::graph::SliceRange;
-use std::fmt::Debug;
+
+use crate::shape::{StridedShape, ViewError};
 
 pub trait OffsetPtr: Debug + Clone {
     fn offset_bytes(self, offset: isize) -> Self;
@@ -46,8 +48,8 @@ impl<P: OffsetPtr> PtrTensor<P> {
         self.offset(0, self.shape.permute(permutation))
     }
 
-    pub fn view(&self, new_shape: Vec<usize>) -> Self {
-        self.offset(0, self.shape.view(new_shape).unwrap())
+    pub fn view(&self, new_shape: Vec<usize>) -> Result<Self, ViewError> {
+        self.shape.view(new_shape).map(|shape| self.offset(0, shape))
     }
 
     pub fn broadcast(&self, new_shape: Vec<usize>) -> Self {
@@ -72,7 +74,9 @@ impl<P: OffsetPtr> PtrTensor<P> {
         let mut new_shape = self.shape.shape().to_vec();
         new_shape.remove(axis);
 
-        self.slice(axis, SliceRange::simple(index, index + 1)).view(new_shape)
+        self.slice(axis, SliceRange::simple(index, index + 1))
+            .view(new_shape)
+            .unwrap()
     }
 
     pub fn flip(&self, axis: usize) -> Self {

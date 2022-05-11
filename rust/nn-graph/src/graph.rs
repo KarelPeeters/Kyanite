@@ -387,18 +387,42 @@ impl Graph {
     }
 
     /// Broadcast the `input` towards `new_shape`.
-    /// `input` must be either a zero-rank tensor or have the same rank and size 1 for mismatching axes.
+    /// Additional unit axes are are inserted at the front and unit axes are repeated as necessary.
     #[must_use]
-    pub fn broadcast(&mut self, mut input: Value, new_shape: Shape) -> Value {
-        if self[input].shape.rank() == 0 {
-            input = self.view(input, Shape::ones(new_shape.rank()));
+    pub fn broadcast(&mut self, input: Value, new_shape: Shape) -> Value {
+        let input_shape = self[input].shape.clone();
+
+        assert!(
+            input_shape.rank() <= new_shape.rank(),
+            "Cannot broadcast to a lower rank shape (from {:?} to {:?})",
+            input_shape,
+            new_shape
+        );
+
+        // insert dummy axes until ranks match
+        let mut view_shape = input_shape.clone();
+        while view_shape.rank() < new_shape.rank() {
+            view_shape = view_shape.insert(0, Size::ONE);
+        }
+        assert_eq!(view_shape.rank(), new_shape.rank());
+
+        let curr = self.view(input, view_shape.clone());
+        if view_shape == new_shape {
+            return curr;
         }
 
-        if &self[input].shape == &new_shape {
-            return input;
+        // check that broadcasting is valid
+        for (&old_axis, &new_axis) in zip_eq(&view_shape.dims, &new_shape.dims) {
+            assert!(
+                old_axis == new_axis || old_axis == Size::ONE,
+                "Cannot broadcast from {:?} to {:?}",
+                view_shape,
+                new_shape
+            );
         }
 
-        self.push(new_shape, Operation::Broadcast { input })
+        // do the actual broadcast
+        self.push(new_shape, Operation::Broadcast { input: curr })
     }
 
     /// View a value with a flattened shape.

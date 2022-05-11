@@ -258,7 +258,16 @@ impl<'a> Planner<'a> {
             }
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
-                input_tensor.view(result_shape.dims.clone())
+
+                // try simple view operation, otherwise restride to dense and then copy
+                // TODO if we want the output to be simple strided immediately we need separate input/output shapes
+                //    in the scalar kernel
+                input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
+                    let input_shape = ConcreteShape::new(input_tensor.shape().shape().to_vec());
+                    let result = self.alloc_tensor_shared(input_shape);
+                    self.plan_copy_tensor(&input_tensor, &result);
+                    result.view(result_shape.dims.clone()).unwrap()
+                })
             }
             &Operation::Broadcast { input } => {
                 let input_tensor = self.visit(input);
