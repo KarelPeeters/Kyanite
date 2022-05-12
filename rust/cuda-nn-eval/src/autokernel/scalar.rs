@@ -16,6 +16,9 @@ use crate::shape::StridedShape;
 /// The first axis is runtime-dynamic without recompiling the kernel.
 #[derive(Debug)]
 pub struct ScalarKernel {
+    #[allow(dead_code)]
+    operation: String,
+
     capability: ComputeCapability,
     function: CuFunction,
 
@@ -73,6 +76,7 @@ impl ScalarKernel {
         let inner_size = inner_shape.iter().product();
 
         ScalarKernel {
+            operation: operation.to_owned(),
             capability,
             function,
             inner_size,
@@ -143,7 +147,7 @@ fn build_operation(operand_types: &[String], operation: &str) -> String {
             ty = ty,
             i = i
         )
-            .unwrap();
+        .unwrap();
     }
     writeln!(f, "{}", operation).unwrap();
 

@@ -71,6 +71,7 @@ impl<'a> Optimizer<'a> {
         None
     }
 
+    /// Fuse _multiple_ sequential min and max operations into a single min and max operation.
     fn try_fuse_clamp(&mut self, old_start: Value) -> Option<Value> {
         let mut total_min = f32::NEG_INFINITY;
         let mut total_max = f32::INFINITY;
@@ -83,20 +84,20 @@ impl<'a> Optimizer<'a> {
             } = operation
             {
                 // if right is a single constant value we can fuse it
-                if let Some(&[f]) = self.old_graph.as_const(old_right) {
-                    match op {
-                        BinaryOp::Min => total_max = f32::min(total_max, f),
-                        BinaryOp::Max => total_min = f32::max(total_min, f),
-                        _ => unreachable!(),
-                    }
+                if let Some(value) = self.old_graph.as_const(old_right) {
+                    if value.len() == 1 {
+                        let &f = value.iter().next().unwrap();
 
-                    Some(old_left)
-                } else {
-                    None
+                        match op {
+                            BinaryOp::Min => total_max = f32::min(total_max, f),
+                            BinaryOp::Max => total_min = f32::max(total_min, f),
+                            _ => unreachable!(),
+                        }
+                        return Some(old_left);
+                    }
                 }
-            } else {
-                None
             }
+            None
         })?;
 
         let new_input = self.map(old_input);
@@ -104,6 +105,7 @@ impl<'a> Optimizer<'a> {
         Some(new_output)
     }
 
+    // TODO also get this to work for 1D convolutions
     fn try_fuse_conv_affine(&mut self, old_start: Value) -> Option<Value> {
         let group = self.try_build_affine_group(old_start)?;
 
@@ -120,7 +122,7 @@ impl<'a> Optimizer<'a> {
             op: BinaryOp::Div,
         } = &self.old_graph[old_start].operation
         {
-            if let Some(data) = self.follow_const(right) {
+            if let Some(data) = self.old_graph.as_const(right) {
                 let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
                 let new_right = self.new_graph.constant(self.old_graph[right].shape.clone(), new_data);
 
@@ -133,30 +135,6 @@ impl<'a> Optimizer<'a> {
         } else {
             None
         }
-    }
-
-    //TODO this should maybe support slicing and permuting as well
-    pub fn follow_const(&self, start: Value) -> Option<&[f32]> {
-        let input = self.follow_views(start);
-
-        if let Operation::Constant { data } = &self.old_graph[input].operation {
-            Some(data.as_slice())
-        } else {
-            None
-        }
-    }
-
-    //TODO this is wrong, since this can change strides etc which the receiver of the data does not know about
-    //  either we need a proper striding system or this can only follow views that add or remove size-1 axis
-    pub fn follow_views(&self, start: Value) -> Value {
-        self.follow_if(start, |_, _, operation| {
-            if let &Operation::View { input } = operation {
-                Some(input)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(start)
     }
 
     pub fn follow_if(

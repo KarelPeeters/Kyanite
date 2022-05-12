@@ -1,4 +1,6 @@
-use ndarray::{s, Array1, Array4, ArrayView1, Data, Dimension};
+use std::fmt::Debug;
+
+use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
 
 use crate::cpu::convolution;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
@@ -6,6 +8,8 @@ use crate::ndarray::ArrayBase;
 use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
 use crate::shape::{Shape, Size};
+
+type ArcArray4<A> = ArcArray<A, Ix4>;
 
 impl Optimizer<'_> {
     pub fn try_build_affine_group(&self, old_start: Value) -> Option<AffineGroup> {
@@ -38,11 +42,13 @@ impl Optimizer<'_> {
     fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> Option<Value> {
         match *operation {
             Operation::Conv { input, filter, details } => {
-                if let Some(filter) = self.follow_const(filter) {
+                if let Some(filter) = self.old_graph.as_const(filter) {
+                    let filter: ArcArray4<f32> = filter.into_dimensionality().unwrap();
+
                     if builder.conv.is_none() && details.keeps_spatial_shape() {
                         builder.set_conv(ConvOperation {
                             details,
-                            filter: filter.to_owned(),
+                            filter: filter,
                         });
                         Some(input)
                     } else {
@@ -57,31 +63,34 @@ impl Optimizer<'_> {
                 right,
                 op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div),
             } => {
-                if let &[Size::ONE, channels, Size::ONE, Size::ONE] = self.old_graph[right].shape.dims.as_slice() {
-                    let expected_channels = builder.current_channels();
-                    assert!(
-                        channels == Size::ONE || channels == Size::fixed(expected_channels),
-                        "Invalid shape for right in element operation, got {:?} expected {:?}",
-                        channels,
-                        expected_channels
-                    );
+                if let &Operation::Broadcast { input: right_inner } = &self.old_graph[right].operation {
+                    if let &[Size::ONE, actual_channels, Size::ONE, Size::ONE] =
+                        self.old_graph[right_inner].shape.dims.as_slice()
+                    {
+                        let channels = builder.current_channels();
+                        assert_eq!(
+                            actual_channels,
+                            Size::fixed(channels),
+                            "Invalid channel count for right in binary operation"
+                        );
 
-                    if let Some(data) = self.follow_const(right) {
-                        let data = data.iter().copied().cycle().take(expected_channels);
+                        if let Some(data) = self.old_graph.as_const(right_inner) {
+                            let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
+                            assert_eq!(data.shape(), &[1, channels, 1, 1]);
+                            let data: ArcArray1<f32> = data.reshape(channels);
 
-                        let affine_op = match op {
-                            BinaryOp::Add => Some(AffineOperation::AddChannel { data: data.collect() }),
-                            BinaryOp::Sub => Some(AffineOperation::AddChannel {
-                                data: data.map(|x| -x).collect(),
-                            }),
-                            BinaryOp::Mul => Some(AffineOperation::ScaleChannel { data: data.collect() }),
-                            BinaryOp::Div => Some(AffineOperation::ScaleChannel {
-                                data: data.map(|x| 1.0 / x).collect(),
-                            }),
-                            _ => unreachable!(),
-                        };
+                            let affine_op = match op {
+                                BinaryOp::Add => AffineOperation::AddChannel { data },
+                                BinaryOp::Sub => AffineOperation::AddChannel {
+                                    data: data.map(|&x| -x).into_shared(),
+                                },
+                                BinaryOp::Mul => AffineOperation::ScaleChannel { data },
+                                BinaryOp::Div => AffineOperation::ScaleChannel {
+                                    data: data.map(|&x| 1.0 / x).into_shared(),
+                                },
+                                _ => unreachable!(),
+                            };
 
-                        if let Some(affine_op) = affine_op {
                             builder.push_affine(affine_op);
                             Some(left)
                         } else {
@@ -190,7 +199,7 @@ fn apply_fused_conv(
 ) -> Value {
     let details = conv.details;
 
-    let mut total_filter = Array4::from_shape_vec(details.kernel_shape(), conv.filter).unwrap();
+    let mut total_filter = conv.filter.to_owned();
 
     // fuse output scale into kernel
     for k in 0..details.output_channels {
@@ -271,7 +280,7 @@ fn pull_bias_through_conv(
         let before_shaped = before.into_shape((1, details.input_channels, 1, 1)).unwrap();
 
         let before_broadcast = before_shaped
-            .broadcast((1, details.input_channels, details.input_h, details.input_w))
+            .broadcast((1usize, details.input_channels, details.input_h, details.input_w))
             .unwrap();
 
         Ok(convolution(details, before_broadcast, filter.view()))
@@ -310,13 +319,11 @@ fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'
     for op in operations {
         match op {
             AffineOperation::AddChannel { data } => {
-                let data = ArrayView1::from_shape(channels, data).unwrap();
-                total_bias += &data;
+                total_bias += data;
             }
             AffineOperation::ScaleChannel { data } => {
-                let data = ArrayView1::from_shape(channels, data).unwrap();
-                total_scale *= &data;
-                total_bias *= &data;
+                total_scale *= data;
+                total_bias *= data;
             }
         }
     }
@@ -330,7 +337,7 @@ fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'
 #[derive(Debug)]
 struct ConvOperation {
     details: ConvDetails,
-    filter: Vec<f32>,
+    filter: ArcArray4<f32>,
 }
 
 #[allow(dead_code)]
@@ -345,8 +352,8 @@ struct AffineShape {
 
 #[derive(Debug)]
 enum AffineOperation {
-    AddChannel { data: Vec<f32> },
-    ScaleChannel { data: Vec<f32> },
+    AddChannel { data: ArcArray1<f32> },
+    ScaleChannel { data: ArcArray1<f32> },
 }
 
 fn reversed<T>(mut v: Vec<T>) -> Vec<T> {

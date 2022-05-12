@@ -7,6 +7,7 @@ use decorum::cmp::FloatEq;
 use itertools::{zip_eq, Itertools};
 use rand::{thread_rng, Rng};
 
+use crate::cpu::{run_cpu_const_operation, OperationError, Tensor};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -32,7 +33,7 @@ pub struct ValueInfo {
 
 /// Wrapper type that prevents the Debug output from getting too large.
 #[derive(Clone)]
-pub struct ConstantData(Vec<f32>);
+pub struct ConstantData(pub Vec<f32>);
 
 /// The core set of graph operations.
 /// Some attempt was made to keep operations orthogonal but flexible, so they can be composed easily.
@@ -299,16 +300,41 @@ impl Graph {
         &mut self.outputs
     }
 
-    pub fn as_const(&self, value: Value) -> Option<&[f32]> {
-        if let Operation::Constant { data } = &self[value].operation {
-            Some(data)
-        } else {
-            None
-        }
+    pub fn as_const(&self, value: Value) -> Option<Tensor> {
+        run_cpu_const_operation(&self[value], |x| self.as_const(x).ok_or(OperationError::MissingOperand)).ok()
     }
 
     pub fn is_const_filled_with(&self, value: Value, f: f32) -> bool {
-        self.as_const(value).map_or(false, |x| x.iter().all(|&x| x == f))
+        let simple = match &self[value].operation {
+            Operation::Input { .. } => false,
+            Operation::Constant { data } => data.iter().all(|&x| float_eq(x, f)),
+            &Operation::View { input } => self.is_const_filled_with(input, f),
+            &Operation::Broadcast { input } => self.is_const_filled_with(input, f),
+            &Operation::Permute { input, permutation: _ } => self.is_const_filled_with(input, f),
+            &Operation::Slice {
+                input,
+                axis: _,
+                range: _,
+            } => self.is_const_filled_with(input, f),
+            &Operation::Flip { input, axis: _ } => self.is_const_filled_with(input, f),
+            &Operation::Gather {
+                input,
+                axis: _,
+                indices: _,
+            } => self.is_const_filled_with(input, f),
+            &Operation::Concat { ref inputs, axis: _ } => inputs.iter().all(|&x| self.is_const_filled_with(x, f)),
+            Operation::Conv { .. }
+            | Operation::MatMul { .. }
+            | Operation::Unary { .. }
+            | Operation::Binary { .. }
+            | Operation::Softmax { .. }
+            | Operation::Reduce { .. } => false,
+        };
+
+        return simple
+            || self
+                .as_const(value)
+                .map_or(false, |x| x.iter().all(|&x| float_eq(x, f)));
     }
 
     #[must_use]
@@ -1032,4 +1058,8 @@ impl ReduceOp {
             total
         }
     }
+}
+
+fn float_eq(left: f32, right: f32) -> bool {
+    left == right || (left.is_nan() && right.is_nan())
 }

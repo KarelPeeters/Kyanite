@@ -452,20 +452,29 @@ impl<'a> Planner<'a> {
             }
 
             //TODO check that left != conv input
-            //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
             //TODO try visiting both left and right for the continuation
 
-            if graph[left].shape == graph[right].shape {
-                // has to be res
-                if res.is_none() {
-                    res = Some(right);
+            let is_res = graph[left].shape == graph[right].shape;
+
+            let mut bias_inner = None;
+
+            if let Operation::Broadcast { input: right_inner } = graph[right].operation {
+                if graph[left].shape.keep(1, Size::ONE) == graph[right_inner].shape {
+                    bias_inner = Some(right_inner);
+                }
+            }
+
+            if let Some(bias_inner) = bias_inner {
+                // has to be bias
+                if bias.is_none() {
+                    bias = Some(bias_inner);
                 } else {
                     return None;
                 }
-            } else if graph[left].shape.keep(1, Size::ONE) == graph[right].shape {
-                // has to be bias
-                if bias.is_none() {
-                    bias = Some(right);
+            } else if is_res {
+                // has to be res
+                if res.is_none() {
+                    res = Some(right);
                 } else {
                     return None;
                 }

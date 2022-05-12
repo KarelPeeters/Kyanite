@@ -4,7 +4,7 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
 use image::{ImageBuffer, Rgb};
-use ndarray::ArrayView4;
+use itertools::Itertools;
 use palette::{LinSrgb, Srgb};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -31,22 +31,23 @@ fn main() {
 
         for (_, &v) in ordered_values(&graph).iter().enumerate() {
             if let Some(data) = graph.as_const(v) {
-                let shape = graph[v].shape.unwrap_fixed("constant shape");
-
-                if shape.size() <= 1 {
+                let shape = data.shape();
+                if shape.len() <= 1 {
                     continue;
                 };
 
-                let (k, c, h, w) = match &*shape.dims {
+                let (k, c, h, w) = match shape {
                     &[k, c, h, w] => (k, c, h, w),
                     &[k, c] => (k, c, 1, 1),
                     _ => continue,
                 };
+                let data = data.reshape((k, c, h, w));
 
+                let shape_name = shape.iter().map(ToString::to_string).join("x");
                 let image_path = PathBuf::from(format!(
                     "D:/Documents/A0/filters/16x128/{}_{}/{}.png",
                     v.index(),
-                    shape,
+                    shape_name,
                     ei
                 ));
                 create_dir_all(image_path.parent().unwrap()).unwrap();
@@ -54,15 +55,13 @@ fn main() {
                     continue;
                 }
 
-                println!("Saving filters for layer {}_{}", v.index(), shape);
+                println!("Saving filters for layer {}_{}", v.index(), shape_name);
 
-                let mut sorted = data.to_owned();
+                let mut sorted = data.to_owned().into_raw_vec();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
                 let q_min = sorted[sorted.len() / 100];
                 let q_max = sorted[99 * sorted.len() / 100];
                 let range = f32::max(q_max, -q_min);
-
-                let data = ArrayView4::from_shape((k, c, h, w), data).unwrap();
 
                 let padding = if h == 1 && w == 1 { 0 } else { 1 };
 

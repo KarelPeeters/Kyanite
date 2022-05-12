@@ -218,7 +218,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     assert_eq!(graph[*right].shape, Shape::SCALAR);
 
                     let left_value = left[0].as_size().unwrap().unwrap_fixed("ele left hand size") as f32;
-                    let right_value = graph.as_const(*right).unwrap()[0];
+                    let right_value = *graph.as_const(*right).unwrap().iter().next().unwrap();
 
                     let result_value = op.map(left_value, right_value);
 
@@ -429,7 +429,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 match graph[indices].shape.rank() {
                     0 => {
                         if let Some(index) = graph.as_const(indices) {
-                            let index = index[0] as usize;
+                            assert_eq!(index.len(), 1);
+                            let index = *index.iter().next().unwrap() as usize;
 
                             match input {
                                 TypedValue::Shape(dims) => TypedValue::Shape(vec![dims[index]]),

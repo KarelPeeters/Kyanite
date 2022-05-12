@@ -56,6 +56,15 @@ impl Shape {
         self.dims.len()
     }
 
+    pub fn as_fixed(&self) -> Option<ConcreteShape> {
+        self.dims
+            .iter()
+            .map(|d| d.try_unwrap_fixed().ok_or(()))
+            .try_collect()
+            .ok()
+            .map(|dims| ConcreteShape::new(dims))
+    }
+
     pub fn unwrap_fixed(&self, what: &str) -> ConcreteShape {
         let dims = self.dims.iter().map(|d| d.unwrap_fixed(what)).collect_vec();
         ConcreteShape { dims }
@@ -273,7 +282,7 @@ impl std::ops::Div for Size {
 }
 
 impl std::iter::Product for Size {
-    fn product<I: Iterator<Item=Self>>(iter: I) -> Self {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Size::fixed(1), |a, s| a * s)
     }
 }
