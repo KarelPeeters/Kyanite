@@ -118,6 +118,7 @@ impl CuModule {
             // figure out the arguments
             let args = vec![
                 format!("--gpu-architecture=compute_{}{}", cap.major, cap.minor),
+                "-std=c++11".to_string(),
                 // "-G".to_string(),
                 // "--generate-line-info".to_string(),
                 // "--define-macro=NVRTC".to_string(),
