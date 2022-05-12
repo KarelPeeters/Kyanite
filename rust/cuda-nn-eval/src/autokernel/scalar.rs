@@ -104,6 +104,18 @@ impl ScalarKernel {
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, tensors: &[DeviceTensor]) {
+        let items_per_thread = 64;
+        let threads_per_block = 64;
+        self.run_custom(stream, tensors, items_per_thread, threads_per_block);
+    }
+
+    pub unsafe fn run_custom(
+        &self,
+        stream: &CudaStream,
+        tensors: &[DeviceTensor],
+        items_per_thread: u32,
+        threads_per_block: u32,
+    ) {
         assert_eq!(stream.device().compute_capability(), self.capability);
         assert_eq!(tensors.len(), self.operand_types.len());
         //TODO verify tensor types once that's implemented
@@ -124,8 +136,6 @@ impl ScalarKernel {
 
         let args = args.finish();
 
-        let items_per_thread = 1024;
-        let threads_per_block = 64;
         let items = batch_size * self.inner_size;
 
         let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
