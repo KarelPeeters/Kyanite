@@ -6,6 +6,7 @@ use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulOp
 
 use crate::autokernel::reduce::ReduceKernel;
 use crate::autokernel::scalar::ScalarKernel;
+use crate::autokernel::softmax::SoftmaxKernel;
 use crate::offset_tensor::PtrTensor;
 
 #[derive(Debug)]
@@ -14,6 +15,7 @@ pub enum Step<P> {
     MatMul(BatchedMatMulArgs<P>),
     ScalarOp(ScalarOpArgs<P>),
     ReduceOp(ReduceOpArgs<P>),
+    SoftmaxOp(SoftmaxOpArgs<P>),
     Gather(GatherArgs<P>),
 }
 
@@ -34,6 +36,13 @@ pub struct ScalarOpArgs<P> {
 #[derive(Debug)]
 pub struct ReduceOpArgs<P> {
     pub kernel: ReduceKernel,
+    pub input: PtrTensor<P>,
+    pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
+pub struct SoftmaxOpArgs<P> {
+    pub kernel: SoftmaxKernel,
     pub input: PtrTensor<P>,
     pub output: PtrTensor<P>,
 }
@@ -85,6 +94,11 @@ impl<P> Step<P> {
                 input: args.input.map_ptr(&mut f),
                 output: args.output.map_ptr(&mut f),
             }),
+            Step::SoftmaxOp(args) => Step::SoftmaxOp(SoftmaxOpArgs {
+                kernel: args.kernel,
+                input: args.input.map_ptr(&mut f),
+                output: args.output.map_ptr(&mut f),
+            }),
             Step::Gather(args) => Step::Gather(GatherArgs {
                 input: args.input.map_ptr(&mut f),
                 axis: args.axis,
@@ -97,21 +111,21 @@ impl<P> Step<P> {
     pub fn for_each_ptr<'a, R>(&'a self, mut f: impl FnMut(&'a P) -> ControlFlow<R>) -> ControlFlow<R> {
         match self {
             Step::Conv(FusedConvolutionArgs {
-                           conv_desc: _,
-                           algo: _,
-                           work_ptr,
-                           work_size_bytes: _,
-                           filter_desc: _,
-                           filter_ptr,
-                           input_desc: _,
-                           input_ptr,
-                           res_ptr,
-                           bias_desc: _,
-                           bias_ptr,
-                           act_desc: _,
-                           output_desc: _,
-                           output_ptr,
-                       }) => {
+                conv_desc: _,
+                algo: _,
+                work_ptr,
+                work_size_bytes: _,
+                filter_desc: _,
+                filter_ptr,
+                input_desc: _,
+                input_ptr,
+                res_ptr,
+                bias_desc: _,
+                bias_ptr,
+                act_desc: _,
+                output_desc: _,
+                output_ptr,
+            }) => {
                 f(work_ptr)?;
                 f(filter_ptr)?;
                 f(input_ptr)?;
@@ -122,35 +136,43 @@ impl<P> Step<P> {
                 f(output_ptr)?;
             }
             Step::MatMul(BatchedMatMulArgs {
-                             m: _,
-                             n: _,
-                             k: _,
-                             alpha: _,
-                             beta: _,
-                             a,
-                             b,
-                             c,
-                             batch_count: _,
-                         }) => {
+                m: _,
+                n: _,
+                k: _,
+                alpha: _,
+                beta: _,
+                a,
+                b,
+                c,
+                batch_count: _,
+            }) => {
                 f(&a.ptr)?;
                 f(&b.ptr)?;
                 f(&c.ptr)?;
             }
             Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => operands.iter().map(|a| a.ptr()).try_for_each(f)?,
             Step::ReduceOp(ReduceOpArgs {
-                               kernel: _,
-                               input,
-                               output,
-                           }) => {
+                kernel: _,
+                input,
+                output,
+            }) => {
+                f(input.ptr())?;
+                f(output.ptr())?;
+            }
+            Step::SoftmaxOp(SoftmaxOpArgs {
+                kernel: _,
+                input,
+                output,
+            }) => {
                 f(input.ptr())?;
                 f(output.ptr())?;
             }
             Step::Gather(GatherArgs {
-                             input,
-                             axis: _,
-                             indices,
-                             output,
-                         }) => {
+                input,
+                axis: _,
+                indices,
+                output,
+            }) => {
                 f(input.ptr())?;
                 f(indices.ptr())?;
                 f(output.ptr())?;
@@ -174,8 +196,8 @@ impl<'a, P> InternalIterator for PlanStepOperands<'a, P> {
     type Item = &'a P;
 
     fn try_for_each<R, F>(self, f: F) -> ControlFlow<R>
-        where
-            F: FnMut(Self::Item) -> ControlFlow<R>,
+    where
+        F: FnMut(Self::Item) -> ControlFlow<R>,
     {
         self.0.for_each_ptr(f)
     }

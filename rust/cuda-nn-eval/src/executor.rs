@@ -11,7 +11,7 @@ use nn_graph::graph::Graph;
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, Step};
+use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -44,6 +44,7 @@ pub struct Profile {
     pub mat_mul: f32,
     pub scalar_op: f32,
     pub reduce_op: f32,
+    pub softmax_op: f32,
     pub gather: f32,
 
     pub total_cpu: f32,
@@ -160,6 +161,7 @@ impl CudaExecutor {
                     Step::MatMul { .. } => &mut profile.mat_mul,
                     Step::ScalarOp { .. } => &mut profile.scalar_op,
                     Step::ReduceOp { .. } => &mut profile.reduce_op,
+                    Step::SoftmaxOp { .. } => &mut profile.softmax_op,
                     Step::Gather { .. } => &mut profile.gather,
                 } += time;
 
@@ -208,6 +210,9 @@ impl Step<DevicePtr> {
                 kernel.run(handles.cudnn.stream(), operands);
             }
             Step::ReduceOp(ReduceOpArgs { kernel, input, output }) => kernel.run(handles.cudnn.stream(), input, output),
+            Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
+                kernel.run(handles.cudnn.stream(), input, output)
+            }
             Step::Gather(GatherArgs {
                              input,
                              axis,
@@ -274,12 +279,13 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        let total = self.conv + self.mat_mul + self.scalar_op + self.gather;
+        let total = self.conv + self.mat_mul + self.scalar_op + self.softmax_op + self.gather;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
         line("Conv:     ", self.conv)?;
         line("Matmul:   ", self.mat_mul)?;
         line("Scalar:   ", self.scalar_op)?;
+        line("Softmax:  ", self.softmax_op)?;
         line("Gather:   ", self.gather)?;
 
         writeln!(f, "  ==============================")?;

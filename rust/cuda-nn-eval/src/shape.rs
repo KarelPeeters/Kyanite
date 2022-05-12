@@ -259,6 +259,18 @@ impl StridedShape {
         let dims = self.shape();
         FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
     }
+
+    pub fn remove(&self, axis: usize) -> StridedShape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+
+        let mut new_shape = self.shape.clone();
+        let mut new_strides = self.strides.clone();
+
+        new_shape.remove(axis);
+        new_strides.remove(axis);
+
+        StridedShape::new(new_shape, new_strides)
+    }
 }
 
 fn simple_strides(shape: &[usize]) -> Vec<isize> {
@@ -363,7 +375,7 @@ mod test {
     fn view_size_zero() {
         let shape = StridedShape::new(vec![2, 3, 0, 5], vec![0, 0, 0, 2]);
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]));
-        assert_eq!(shape.view(vec![0]), Ok(StridedShape::new(vec![0], vec![1])),);
+        assert_eq!(shape.view(vec![0]), Ok(StridedShape::new(vec![0], vec![1])));
         assert_eq!(shape.view(vec![12, 0]), Ok(StridedShape::new(vec![12, 0], vec![0, 1])),);
     }
 

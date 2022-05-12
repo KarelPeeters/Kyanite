@@ -17,11 +17,12 @@ use nn_graph::shape::{ConcreteShape, Size};
 
 use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
 use crate::autokernel::scalar::ScalarKernel;
+use crate::autokernel::softmax::SoftmaxKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, Step};
+use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -368,7 +369,22 @@ impl<'a> Planner<'a> {
 
                 output
             }
-            &Operation::Softmax { .. } => todo!("GPU softmax"),
+            &Operation::Softmax { input, axis } => {
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let kernel =
+                    SoftmaxKernel::new(self.device().compute_capability(), input.shape(), output.shape(), axis);
+
+                let args = SoftmaxOpArgs {
+                    kernel,
+                    input,
+                    output: output.clone(),
+                };
+
+                self.plan.push(PlanStep::SoftmaxOp(args));
+                output
+            }
             &Operation::Reduce { input, ref axes, op } => {
                 let result_size = result_shape.size();
 

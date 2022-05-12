@@ -1,3 +1,7 @@
+constexpr __device__ int ceil_div(int x, int y) {
+    return (x + y - 1) / y;
+}
+
 struct KernelInfo {
     int block_count;
     int threads_per_block;
@@ -25,16 +29,13 @@ __device__ KernelInfo kernel_info() {
     info.thread_id = threadIdx.x;
     info.global_thread_id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    info.warp_id = threadIdx.x / 32;
+    int warps_per_block = ceil_div(info.threads_per_block, 32);
+    info.global_warp_id = info.block_id * warps_per_block + info.thread_id / 32;
     info.lane_id = threadIdx.x % 32;
 
     info.lane_count = 32;
 
     return info;
-}
-
-__device__ int ceil_div(int x, int y) {
-    return (x + y - 1) / y;
 }
 
 __device__ int2 fast_div(int a, int b) {
@@ -91,4 +92,21 @@ __device__ int flat_index_to_offset(
 ) {
     Array<int, 1> offsets = flat_index_to_offsets<RANK, 1>(flat, strides_dense, (int (*)[RANK]) strides);
     return offsets[0];
+}
+
+const unsigned int FULL_WARP_MASK = 0xffffffff;
+
+// Reduce a value across all threads in a block, towards the first thread.
+// To get the value in all threads, use `__shfl(value, 0)`.
+// see https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/
+template<typename T, typename F>
+__device__ T warp_reduce(T value, F f) {
+    T result = value;
+
+    for (int offset = 16; offset > 0; offset /= 2) {
+        T next = __shfl_down_sync(FULL_WARP_MASK, result, offset);
+        result = f(result, next);
+    }
+
+    return result;
 }

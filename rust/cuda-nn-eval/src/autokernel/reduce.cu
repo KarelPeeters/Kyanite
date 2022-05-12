@@ -53,12 +53,8 @@ __global__ void reduce_kernel(
         curr = reduce(curr, x);
     }
 
-    // reduce over the warp (from https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/)
-    assert(info.lane_count == 32);
-    for (int offset = 16; offset > 0; offset /= 2) {
-        Type other = __shfl_down_sync(0xffffffff, curr, offset);
-        curr = reduce(curr, other);
-    }
+    // reduce over warp
+    curr = warp_reduce(curr, reduce);
 
     // postprocess and write output
     if (info.lane_id == 0) {
