@@ -1,0 +1,109 @@
+use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
+use cuda_sys::wrapper::rtc::args::KernelArgs;
+use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+
+use crate::autokernel::common::{
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+};
+use crate::device_tensor::DeviceTensor;
+use crate::shape::StridedShape;
+
+#[derive(Debug)]
+pub struct LayernormKernel {
+    capability: ComputeCapability,
+    function: CuFunction,
+
+    input_shape: StridedShape,
+    output_shape: StridedShape,
+
+    _norm_axis: usize,
+    static_size: usize,
+
+    eps: f32,
+}
+
+const LAYERNORM_SOURCE: &str = include_str!("layernorm.cu");
+
+impl LayernormKernel {
+    pub fn new(
+        capability: ComputeCapability,
+        input_shape: &StridedShape,
+        output_shape: &StridedShape,
+        norm_axis: usize,
+        eps: f32,
+    ) -> Self {
+        assert_eq!(input_shape.shape(), output_shape.shape());
+
+        let norm_size = input_shape.shape()[norm_axis];
+        let static_size = input_shape.size() / norm_size;
+
+        let input_static = input_shape.remove(norm_axis);
+        let output_static = output_shape.remove(norm_axis);
+
+        let static_dense = StridedShape::new_simple(input_static.shape().to_vec());
+
+        let mut static_strides = [input_static.strides().to_vec(), output_static.strides().to_vec()];
+        let mut static_dense_strides = static_dense.strides().to_vec();
+
+        let norm_strides = [input_shape.strides()[norm_axis], output_shape.strides()[norm_axis]];
+
+        // pad arrays to ensure they never become zero-sized
+        static_strides[0].push(0);
+        static_strides[1].push(0);
+        static_dense_strides.push(1);
+
+        let replacements = vec![
+            ("$RANK$", format!("{}", input_shape.rank())),
+            ("$STATIC_SIZE$", format!("{}", static_size)),
+            ("$NORM_SIZE$", format!("{}", norm_size)),
+            ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
+            ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
+            ("$NORM_STRIDES$", c_array_string(&norm_strides)),
+        ];
+
+        // compile the kernel
+        let source = fill_replacements(LAYERNORM_SOURCE, &replacements);
+        let key = KernelKey {
+            capability,
+            source,
+            func_name: "layernorm_kernel".to_owned(),
+        };
+        let function = compile_cached_kernel(key);
+
+        // wrap everything up
+        LayernormKernel {
+            capability,
+            function,
+            input_shape: input_shape.clone(),
+            output_shape: output_shape.clone(),
+            _norm_axis: norm_axis,
+            static_size,
+            eps,
+        }
+    }
+
+    pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
+        assert_eq!(stream.device().compute_capability(), self.capability);
+
+        assert_eq!(input.shape(), &self.input_shape);
+        assert_eq!(output.shape(), &self.output_shape);
+
+        let mut args = KernelArgs::new();
+        args.push(input.ptr().ptr());
+        args.push(output.ptr().ptr());
+        args.push::<f32>(self.eps);
+        let args = args.finish();
+
+        //TODO see if these settings make sense for the typically larger layernorm sizes
+
+        let warps = self.static_size;
+        let warps_per_block = 4;
+        let threads_per_warp = 32;
+
+        let threads_per_block = (threads_per_warp * warps_per_block) as u32;
+        let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
+
+        self.function
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+    }
+}
