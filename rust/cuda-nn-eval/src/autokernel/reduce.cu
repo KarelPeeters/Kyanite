@@ -7,10 +7,11 @@ const int REDUCED_RANK = $REDUCED_RANK$;
 const int KEPT_SIZE = $KEPT_SIZE$;
 const int REDUCTION_SIZE = $REDUCTION_SIZE$;
 
-const int KEPT_STRIDES_DENSE[KEPT_RANK] = $KEPT_STRIDES_DENSE$;
+// *CAREFUL* these arrays are actually of length KEPT_RANK, but zero-sized arrays are not allowed in C++ so we pad them
+const int KEPT_STRIDES_DENSE[KEPT_RANK + 1] = $KEPT_STRIDES_DENSE$;
 const int REDUCED_STRIDES_DENSE[REDUCED_RANK] = $REDUCED_STRIDES_DENSE$;
 
-const int KEPT_STRIDES[2][KEPT_RANK] = $KEPT_STRIDES$;
+const int KEPT_STRIDES[2][KEPT_RANK + 1] = $KEPT_STRIDES$;
 const int REDUCED_STRIDES[REDUCED_RANK] = $REDUCED_STRIDES$;
 
 typedef $TYPE$ Type;
@@ -39,7 +40,7 @@ __global__ void reduce_kernel(
     if (flat_kept >= KEPT_SIZE) {
         return;
     }
-    Array<int, 2> kept_offsets = flat_index_to_offsets<KEPT_RANK, 2>(flat_kept, KEPT_STRIDES_DENSE, KEPT_STRIDES);
+    Array<int, 2> kept_offsets = flat_index_to_offsets<KEPT_RANK + 1, 2>(flat_kept, KEPT_STRIDES_DENSE, KEPT_STRIDES);
 
     // run a partial reduction for each lane
     Type curr = identity();

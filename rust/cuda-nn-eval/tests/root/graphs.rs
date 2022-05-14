@@ -600,6 +600,28 @@ fn reduce_mixed() {
 }
 
 #[test]
+fn reduce_single() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![4]);
+    let output = graph.reduce(input, vec![0], ReduceOp::Sum);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+}
+
+#[test]
+fn softmax_single() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![4]);
+    let output = graph.softmax(input, 0);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+}
+
+#[test]
 fn layernorm_fused() {
     let mut graph = Graph::new();
 

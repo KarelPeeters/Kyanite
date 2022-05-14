@@ -12,11 +12,11 @@ use crate::shape::StridedShape;
 
 #[derive(Debug)]
 pub struct ReduceKernel {
-    capability: ComputeCapability,
-    function: CuFunction,
-
     _code: ReduceCode,
     _reduced_axes: Vec<usize>,
+
+    capability: ComputeCapability,
+    function: CuFunction,
 
     input_shape: StridedShape,
     output_shape: StridedShape,
@@ -86,16 +86,23 @@ impl ReduceKernel {
         let kept_shape_dense = StridedShape::new_simple(input_kept_shape.clone());
         let reduced_shape_dense = StridedShape::new_simple(input_reduced_shape.clone());
 
+        // pad arrays to ensure they never become zero-sized
+        let mut kept_stides_dense = kept_shape_dense.strides().to_vec();
+        kept_stides_dense.push(0);
+        input_kept_strides.push(0);
+        let mut output_kept_strides = output_shape.strides().to_vec();
+        output_kept_strides.push(0);
+
         let replacements = vec![
             ("$KEPT_RANK$", format!("{}", input_kept_shape.len())),
             ("$REDUCED_RANK$", format!("{}", input_reduced_shape.len())),
             ("$KEPT_SIZE$", format!("{}", kept_size)),
             ("$REDUCTION_SIZE$", format!("{}", reduction_size)),
-            ("$KEPT_STRIDES_DENSE$", c_array_string(kept_shape_dense.strides())),
+            ("$KEPT_STRIDES_DENSE$", c_array_string(&kept_stides_dense)),
             ("$REDUCED_STRIDES_DENSE$", c_array_string(reduced_shape_dense.strides())),
             (
                 "$KEPT_STRIDES$",
-                c_nested_array_string(&[input_kept_strides, output_shape.strides().to_vec()]),
+                c_nested_array_string(&[input_kept_strides, output_kept_strides]),
             ),
             ("$REDUCED_STRIDES$", c_array_string(&input_reduced_strides)),
             ("$TYPE$", code.ty.clone()),
