@@ -11,7 +11,7 @@ use nn_graph::graph::Graph;
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -45,6 +45,7 @@ pub struct Profile {
     pub scalar_op: f32,
     pub reduce_op: f32,
     pub softmax_op: f32,
+    pub layernorm_op: f32,
     pub gather: f32,
 
     pub total_cpu: f32,
@@ -162,6 +163,7 @@ impl CudaExecutor {
                     Step::ScalarOp { .. } => &mut profile.scalar_op,
                     Step::ReduceOp { .. } => &mut profile.reduce_op,
                     Step::SoftmaxOp { .. } => &mut profile.softmax_op,
+                    Step::LayernormOp { .. } => &mut profile.layernorm_op,
                     Step::Gather { .. } => &mut profile.gather,
                 } += time;
 
@@ -213,12 +215,15 @@ impl Step<DevicePtr> {
             Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
                 kernel.run(handles.cudnn.stream(), input, output)
             }
+            Step::LayernormOp(LayernormOpArgs { kernel, input, output }) => {
+                kernel.run(handles.cudnn.stream(), input, output)
+            }
             Step::Gather(GatherArgs {
-                             input,
-                             axis,
-                             indices,
-                             output,
-                         }) => {
+                input,
+                axis,
+                indices,
+                output,
+            }) => {
                 assert!(
                     *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
@@ -241,7 +246,7 @@ impl Step<DevicePtr> {
                     indices.ptr().ptr() as *const f32,
                     output.ptr().ptr() as *mut f32,
                 )
-                    .unwrap();
+                .unwrap();
             }
         }
     }

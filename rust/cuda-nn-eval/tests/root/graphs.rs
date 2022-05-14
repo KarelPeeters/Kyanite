@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
-use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, Value};
+use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -597,4 +597,31 @@ fn reduce_mixed() {
     graph.output(output);
 
     test_all(&graph, 0, &[linspace_tensor((12, 3, 7, 9, 13)).into_dyn()], None);
+}
+
+#[test]
+fn layernorm_fused() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![Size::BATCH, 8, 32]);
+    let reduced_shape = shape![Size::BATCH, 8, 1];
+
+    let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
+    let const_eps = graph.constant(Shape::SCALAR, vec![1e-5]);
+
+    let mean = graph.reduce(input, vec![2], ReduceOp::Mean);
+    let mean = graph.view(mean, reduced_shape.clone());
+    let zeroed = graph.sub(input, mean);
+
+    let pow = graph.pow(zeroed, const_2);
+    let var = graph.reduce(pow, vec![2], ReduceOp::Mean);
+    let var = graph.view(var, reduced_shape.clone());
+    let var = graph.add(var, const_eps);
+
+    let std = graph.unary(UnaryOp::Sqrt, var);
+    let result = graph.binary(BinaryOp::Div, zeroed, std);
+
+    graph.output(result);
+
+    test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
 }

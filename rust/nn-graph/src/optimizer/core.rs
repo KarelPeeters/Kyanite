@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use itertools::Itertools;
 
@@ -12,17 +12,13 @@ pub struct Optimizer<'a> {
     pub old_graph: &'a Graph,
     pub new_graph: Graph,
 
-    fuse_candidates: HashSet<Value>,
     mapping: HashMap<Value, Value>,
 }
 
 impl<'a> Optimizer<'a> {
     pub fn new(settings: OptimizerSettings, old_graph: &'a Graph) -> Self {
-        let fuse_candidates = find_hidden_values_used_once(old_graph).collect();
-
         Optimizer {
             settings,
-            fuse_candidates,
             new_graph: Graph::new(),
             old_graph,
             mapping: HashMap::default(),
@@ -145,7 +141,7 @@ impl<'a> Optimizer<'a> {
         let mut curr = start;
 
         loop {
-            if !self.fuse_candidates.contains(&curr) {
+            if !self.old_graph.is_hidden_with_users(curr, 1) {
                 break;
             }
 
@@ -162,24 +158,4 @@ impl<'a> Optimizer<'a> {
             Some(curr)
         }
     }
-}
-
-pub fn values_use_count<'a>(graph: &'a Graph) -> impl Iterator<Item = (Value, usize)> + 'a {
-    let all_operands = graph.values().flat_map(|v| graph[v].operation.inputs()).collect_vec();
-
-    graph.values().map(move |value| {
-        let operand_count = all_operands.iter().filter(|&&other| other == value).count();
-        let output_count = graph.outputs().iter().filter(|&&other| other == value).count();
-
-        let use_count = operand_count + output_count;
-        (value, use_count)
-    })
-}
-
-pub fn find_hidden_values_used_once<'a>(graph: &'a Graph) -> impl Iterator<Item = Value> + 'a {
-    values_use_count(graph)
-        .filter(move |&(value, use_count)| {
-            use_count == 1 && !graph.inputs().contains(&value) && !graph.outputs().contains(&value)
-        })
-        .map(|(v, _)| v)
 }

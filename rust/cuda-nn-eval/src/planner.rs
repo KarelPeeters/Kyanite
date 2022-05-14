@@ -1,5 +1,5 @@
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
@@ -11,10 +11,10 @@ use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
-use nn_graph::optimizer::core::find_hidden_values_used_once;
+use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
 use crate::autokernel::scalar::ScalarKernel;
 use crate::autokernel::softmax::SoftmaxKernel;
@@ -22,7 +22,7 @@ use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -45,9 +45,6 @@ pub(crate) struct Planner<'a> {
     handles: &'a Handles,
     graph: &'a Graph,
     batch_size: usize,
-
-    // all values that are only used once in the graph (and are thus candidates for fusing)
-    fuse_candidates: HashSet<Value>,
 
     shared_buffers_size_in_bytes: Vec<usize>,
     max_zero_size: usize,
@@ -204,13 +201,10 @@ impl<'a> Planner<'a> {
     }
 
     fn new(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Self {
-        let fuse_candidates = find_hidden_values_used_once(graph).collect();
-
         Planner {
             handles,
             graph,
             batch_size,
-            fuse_candidates,
             shared_buffers_size_in_bytes: vec![],
             map: Default::default(),
             plan: vec![],
@@ -237,12 +231,14 @@ impl<'a> Planner<'a> {
             return result.clone();
         }
 
-        if self.graph[value].shape.rank() == 4 {
-            if let Some(result) = self.visit_fused_conv(value) {
-                let prev = self.map.insert(value, result.clone());
-                assert!(prev.is_none());
-                return result;
-            }
+        if let Some(result) = self.visit_fused_conv(value) {
+            self.insert_mapping(value, result.clone());
+            return result;
+        }
+
+        if let Some(result) = self.visit_fused_layernorm(value) {
+            self.insert_mapping(value, result.clone());
+            return result;
         }
 
         let result_info = &self.graph[value];
@@ -435,6 +431,10 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_fused_conv(&mut self, value: Value) -> Option<PlanTensor> {
+        if self.graph[value].shape.rank() != 4 {
+            return None;
+        }
+
         let mut curr = value;
         let graph = self.graph;
 
@@ -445,7 +445,7 @@ impl<'a> Planner<'a> {
             op: BinaryOp::Max,
         } = &graph[curr].operation
         {
-            if !self.fuse_candidates.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
+            if !self.graph.is_hidden_with_users(left, 1) || !graph.is_const_filled_with(right, 0.0) {
                 return None;
             }
             curr = left;
@@ -463,7 +463,7 @@ impl<'a> Planner<'a> {
             op: BinaryOp::Add,
         } = &graph[curr].operation
         {
-            if !self.fuse_candidates.contains(&left) {
+            if !self.graph.is_hidden_with_users(left, 1) {
                 return None;
             }
 
@@ -562,6 +562,137 @@ impl<'a> Planner<'a> {
         } else {
             None
         }
+    }
+
+    fn visit_fused_layernorm(&mut self, value: Value) -> Option<PlanTensor> {
+        let mut fused_values = HashMap::<Value, usize>::new();
+
+        let mut op = |v| {
+            *fused_values.entry(v).or_insert(0) += 1;
+            &self.graph[v].operation
+        };
+
+        // TODO this is extremely tedious, is there a better way to do general graph matching?
+        if let &Operation::Binary {
+            left: zeroed0,
+            right: std_broadcast,
+            op: BinaryOp::Div,
+        } = op(value)
+        {
+            if let &Operation::Binary {
+                left: input0,
+                right: mean_broadcast,
+                op: BinaryOp::Sub,
+            } = op(zeroed0)
+            {
+                if let &Operation::Broadcast { input: mean_view } = op(mean_broadcast) {
+                    if let &Operation::View { input: mean } = op(mean_view) {
+                        if let &Operation::Reduce {
+                            input: input1,
+                            axes: ref axes0,
+                            op: ReduceOp::Mean,
+                        } = op(mean)
+                        {
+                            if let &Operation::Broadcast { input: std } = op(std_broadcast) {
+                                if let &Operation::Unary {
+                                    input: stable_var,
+                                    op: UnaryOp::Sqrt,
+                                } = op(std)
+                                {
+                                    if let &Operation::Binary {
+                                        left: var_view,
+                                        right: const_eps,
+                                        op: BinaryOp::Add,
+                                    } = op(stable_var)
+                                    {
+                                        if let &Operation::View { input: var } = op(var_view) {
+                                            if let &Operation::Reduce {
+                                                input: pow,
+                                                axes: ref axes1,
+                                                op: ReduceOp::Mean,
+                                            } = op(var)
+                                            {
+                                                if let &Operation::Binary {
+                                                    left: zeroed1,
+                                                    right: const_2,
+                                                    op: BinaryOp::Pow,
+                                                } = op(pow)
+                                                {
+                                                    if input0 != input1 || zeroed0 != zeroed1 || axes0 != axes1 {
+                                                        return None;
+                                                    }
+
+                                                    if fused_values.iter().any(|(&fused_value, &count)| {
+                                                        value != value
+                                                            && !self.graph.is_hidden_with_users(fused_value, count)
+                                                    }) {
+                                                        return None;
+                                                    }
+
+                                                    return self.visit_fused_layernorm_inner(
+                                                        value, input0, axes0, const_2, const_eps,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn visit_fused_layernorm_inner(
+        &mut self,
+        result: Value,
+        input: Value,
+        axes: &[usize],
+        const_2: Value,
+        const_eps: Value,
+    ) -> Option<PlanTensor> {
+        // confirm that we can actually fuse everything
+        if axes.len() != 1 {
+            return None;
+        }
+        let axis = axes[0];
+
+        let eps = if let Some(eps) = self.graph.as_single_const(const_eps) {
+            eps
+        } else {
+            return None;
+        };
+
+        if !self.graph.is_const_filled_with(const_2, 2.0) {
+            return None;
+        }
+
+        // construct the plan step
+        let input = self.visit(input);
+
+        let result_shape = self.graph[result].shape.eval(self.batch_size);
+        let result = self.alloc_tensor_shared(result_shape);
+
+        let kernel = LayernormKernel::new(
+            self.device().compute_capability(),
+            input.shape(),
+            result.shape(),
+            axis,
+            eps,
+        );
+
+        let args = LayernormOpArgs {
+            kernel,
+            input,
+            output: result.clone(),
+        };
+
+        self.plan.push(PlanStep::LayernormOp(args));
+        Some(result)
     }
 
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor) {

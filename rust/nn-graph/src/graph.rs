@@ -29,6 +29,7 @@ pub struct Value {
 pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
+    pub users: usize,
 }
 
 /// Wrapper type that prevents the Debug output from getting too large.
@@ -300,46 +301,67 @@ impl Graph {
         &mut self.outputs
     }
 
+    pub fn is_hidden(&self, value: Value) -> bool {
+        self.check_contains(value);
+        !self.inputs.contains(&value) && !self.outputs.contains(&value)
+    }
+
+    pub fn is_hidden_with_users(&self, value: Value, users: usize) -> bool {
+        self.is_hidden(value) && self[value].users == users
+    }
+
+    /// Try to evaluate `value` as a constant.
     pub fn as_const(&self, value: Value) -> Option<Tensor> {
         run_cpu_const_operation(&self[value], |x| self.as_const(x).ok_or(OperationError::MissingOperand)).ok()
     }
 
+    /// Returns whether `value` is effectively a constant with every element equal to `f`.
     pub fn is_const_filled_with(&self, value: Value, f: f32) -> bool {
-        let simple = match &self[value].operation {
-            Operation::Input { .. } => false,
-            Operation::Constant { data } => data.iter().all(|&x| float_eq(x, f)),
-            &Operation::View { input } => self.is_const_filled_with(input, f),
-            &Operation::Broadcast { input } => self.is_const_filled_with(input, f),
-            &Operation::Permute { input, permutation: _ } => self.is_const_filled_with(input, f),
+        self.as_single_const(value).map_or(false, |g| float_eq(f, g))
+    }
+
+    /// Returns `Some(f)` if `value` is effectively a constant with every element equal to `f`.
+    pub fn as_single_const(&self, value: Value) -> Option<f32> {
+        match &self[value].operation {
+            Operation::Input { .. } => None,
+            Operation::Constant { data } => {
+                let f = *data.first()?;
+                data.iter().all(|&x| float_eq(x, f)).then(|| f)
+            }
+            &Operation::View { input } => self.as_single_const(input),
+            &Operation::Broadcast { input } => self.as_single_const(input),
+            &Operation::Permute { input, permutation: _ } => self.as_single_const(input),
             &Operation::Slice {
                 input,
                 axis: _,
                 range: _,
-            } => self.is_const_filled_with(input, f),
-            &Operation::Flip { input, axis: _ } => self.is_const_filled_with(input, f),
+            } => self.as_single_const(input),
+            &Operation::Flip { input, axis: _ } => self.as_single_const(input),
             &Operation::Gather {
                 input,
                 axis: _,
                 indices: _,
-            } => self.is_const_filled_with(input, f),
-            &Operation::Concat { ref inputs, axis: _ } => inputs.iter().all(|&x| self.is_const_filled_with(x, f)),
+            } => self.as_single_const(input),
+            &Operation::Concat { ref inputs, axis: _ } => {
+                let f = self.as_single_const(*inputs.first()?)?;
+                inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
+            }
             Operation::Conv { .. }
             | Operation::MatMul { .. }
             | Operation::Unary { .. }
             | Operation::Binary { .. }
             | Operation::Softmax { .. }
-            | Operation::Reduce { .. } => false,
-        };
-
-        return simple
-            || self
-                .as_const(value)
-                .map_or(false, |x| x.iter().all(|&x| float_eq(x, f)));
+            | Operation::Reduce { .. } => None,
+        }
     }
 
     #[must_use]
     pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
-        let info = ValueInfo { shape, operation };
+        let info = ValueInfo {
+            shape,
+            operation,
+            users: 0,
+        };
 
         let index = match self.values.iter().position(|cand| cand == &info) {
             Some(index) => {
@@ -347,8 +369,10 @@ impl Graph {
                 index
             }
             None => {
+                // no duplicate found, create new value
                 for input in info.operation.inputs() {
                     self.check_contains(input);
+                    self.values[input.index].users += 1;
                 }
 
                 let index = self.values.len();
@@ -706,6 +730,10 @@ impl Graph {
     /// The result shape is the same as the input shape but without the reduces axes.
     #[must_use]
     pub fn reduce(&mut self, input: Value, axes: Vec<usize>, op: ReduceOp) -> Value {
+        if axes.is_empty() {
+            return input;
+        }
+
         let input_shape = &self[input].shape;
 
         // check that the axes are in bounds
