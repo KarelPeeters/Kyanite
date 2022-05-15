@@ -11,7 +11,7 @@ use nn_graph::graph::Graph;
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -22,7 +22,7 @@ pub struct CudaExecutor {
 
     pub batch_size: usize,
     pub mem_usage: MemoryUsage,
-    steps: Vec<Step<DevicePtr>>,
+    steps: Vec<StepInfo<DevicePtr>>,
 
     profile: bool,
     last_profile: Option<Profile>,
@@ -124,8 +124,8 @@ impl CudaExecutor {
     /// so ensure inputs are written and synchronize before reading outputs.
     pub unsafe fn run_async(&mut self) {
         if !self.profile {
-            for step in &self.steps {
-                step.run(&self.handles);
+            for step_info in &self.steps {
+                step_info.step.run(&self.handles);
             }
 
             self.last_profile = None
@@ -137,13 +137,13 @@ impl CudaExecutor {
 
             let start_cpu = Instant::now();
 
-            for step in &self.steps {
+            for step_info in &self.steps {
                 let start = self.stream().record_new_event();
-                step.run(&self.handles);
+                step_info.step.run(&self.handles);
                 let end = self.stream().record_new_event();
 
                 if self.profile {
-                    timers.push((step, start, end));
+                    timers.push((step_info, start, end));
                 }
             }
 
@@ -154,10 +154,10 @@ impl CudaExecutor {
 
             let mut profile = Profile::default();
 
-            for (i, (step, start, end)) in timers.iter().enumerate() {
+            for (i, (step_info, start, end)) in timers.iter().enumerate() {
                 let time = end.time_elapsed_since(start);
 
-                *match step {
+                *match step_info.step {
                     Step::Conv { .. } => &mut profile.conv,
                     Step::MatMul { .. } => &mut profile.mat_mul,
                     Step::ScalarOp { .. } => &mut profile.scalar_op,
@@ -169,7 +169,7 @@ impl CudaExecutor {
 
                 profile
                     .steps
-                    .push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step));
+                    .push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step_info));
             }
 
             let overhead_end = Instant::now();
@@ -219,11 +219,11 @@ impl Step<DevicePtr> {
                 kernel.run(handles.cudnn.stream(), input, output)
             }
             Step::Gather(GatherArgs {
-                input,
-                axis,
-                indices,
-                output,
-            }) => {
+                             input,
+                             axis,
+                             indices,
+                             output,
+                         }) => {
                 assert!(
                     *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
@@ -246,7 +246,7 @@ impl Step<DevicePtr> {
                     indices.ptr().ptr() as *const f32,
                     output.ptr().ptr() as *mut f32,
                 )
-                .unwrap();
+                    .unwrap();
             }
         }
     }

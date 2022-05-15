@@ -11,6 +11,12 @@ use crate::autokernel::softmax::SoftmaxKernel;
 use crate::offset_tensor::PtrTensor;
 
 #[derive(Debug)]
+pub struct StepInfo<P> {
+    pub debug_id: String,
+    pub step: Step<P>,
+}
+
+#[derive(Debug)]
 pub enum Step<P> {
     Conv(FusedConvolutionArgs<P>),
     MatMul(BatchedMatMulArgs<P>),

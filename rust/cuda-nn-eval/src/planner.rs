@@ -22,7 +22,7 @@ use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -40,6 +40,8 @@ struct PlanPtr {
 type PlanTensor = PtrTensor<PlanPtr>;
 type PlanStep = Step<PlanPtr>;
 type ExecStep = Step<DevicePtr>;
+type PlanStepInfo = StepInfo<PlanPtr>;
+type ExecStepInfo = StepInfo<DevicePtr>;
 
 pub(crate) struct Planner<'a> {
     handles: &'a Handles,
@@ -50,7 +52,7 @@ pub(crate) struct Planner<'a> {
     max_zero_size: usize,
 
     map: HashMap<Value, PlanTensor>,
-    plan: Vec<PlanStep>,
+    steps: Vec<PlanStepInfo>,
 
     dedicated_bytes: usize,
 }
@@ -59,7 +61,7 @@ pub(crate) struct Planner<'a> {
 pub struct Plan {
     pub inputs: Vec<DeviceTensor>,
     pub outputs: Vec<DeviceTensor>,
-    pub steps: Vec<Step<DevicePtr>>,
+    pub steps: Vec<ExecStepInfo>,
     pub mem_usage: MemoryUsage,
 }
 
@@ -81,19 +83,20 @@ impl<'a> Planner<'a> {
         let outputs = graph
             .outputs()
             .iter()
-            .map(|&output| planner.visit_ensure_simple_strides(output))
+            .enumerate()
+            .map(|(oi, &output)| planner.visit_ensure_simple_strides(output, &format!("output_{}", oi)))
             .collect_vec();
 
         let buffer_count = planner.shared_buffers_size_in_bytes.len();
-        let step_count = planner.plan.len();
+        let step_count = planner.steps.len();
         let mut shared_bytes = 0;
 
         // determine live ranges for shared tensors
         let live_ranges = {
             let mut live_ranges = vec![(step_count, 0); buffer_count];
 
-            for (si, step) in planner.plan.iter().enumerate() {
-                step.ptr_operands().for_each(|op| {
+            for (si, step_info) in planner.steps.iter().enumerate() {
+                step_info.step.ptr_operands().for_each(|op| {
                     if let &PlanBuffer::Shared { index } = &op.buffer {
                         let (lower, upper) = &mut live_ranges[index];
                         *lower = min(*lower, si);
@@ -192,9 +195,12 @@ impl<'a> Planner<'a> {
             inputs: inputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
             outputs: outputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
             steps: planner
-                .plan
+                .steps
                 .into_iter()
-                .map(|step| ctx.realize_step(step))
+                .map(|PlanStepInfo { step, debug_id }| ExecStepInfo {
+                    step: ctx.realize_step(step),
+                    debug_id,
+                })
                 .collect_vec(),
             mem_usage,
         }
@@ -207,13 +213,13 @@ impl<'a> Planner<'a> {
             batch_size,
             shared_buffers_size_in_bytes: vec![],
             map: Default::default(),
-            plan: vec![],
+            steps: vec![],
             max_zero_size: 0,
             dedicated_bytes: 0,
         }
     }
 
-    fn visit_ensure_simple_strides(&mut self, value: Value) -> PlanTensor {
+    fn visit_ensure_simple_strides(&mut self, value: Value, id: &str) -> PlanTensor {
         let result = self.visit(value);
 
         if result.shape().has_simple_strides() {
@@ -221,7 +227,7 @@ impl<'a> Planner<'a> {
         } else {
             let shape = ConcreteShape::new(result.shape().shape().to_vec());
             let new = self.alloc_tensor_shared(shape);
-            self.plan_copy_tensor(&result, &new);
+            self.plan_copy_tensor(&result, &new, id);
             new
         }
     }
@@ -262,7 +268,7 @@ impl<'a> Planner<'a> {
                 input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
                     let input_shape = ConcreteShape::new(input_tensor.shape().shape().to_vec());
                     let result = self.alloc_tensor_shared(input_shape);
-                    self.plan_copy_tensor(&input_tensor, &result);
+                    self.plan_copy_tensor(&input_tensor, &result, &result_info.debug_id);
                     result.view(result_shape.dims.clone()).unwrap()
                 })
             }
@@ -285,7 +291,7 @@ impl<'a> Planner<'a> {
                     output: output.clone(),
                 };
 
-                self.plan.push(PlanStep::Gather(args));
+                self.push(PlanStep::Gather(args), &result_info.debug_id);
 
                 output
             }
@@ -301,7 +307,7 @@ impl<'a> Planner<'a> {
                     let curr_range = SliceRange::simple(curr_start, curr_start + curr_size);
 
                     let curr_result = result.slice(axis, curr_range);
-                    self.plan_copy_tensor(&input, &curr_result);
+                    self.plan_copy_tensor(&input, &curr_result, &result_info.debug_id);
 
                     curr_start += curr_size;
                 }
@@ -337,7 +343,7 @@ impl<'a> Planner<'a> {
                     batch_count: batch_size as i32,
                 };
 
-                self.plan.push(PlanStep::MatMul(args));
+                self.push(PlanStep::MatMul(args), &result_info.debug_id);
 
                 result
             }
@@ -350,7 +356,7 @@ impl<'a> Planner<'a> {
                 let input = self.visit(input);
                 let output = self.alloc_tensor_shared(result_shape);
 
-                self.plan_scalar_op(operation, vec![output.clone(), input]);
+                self.plan_scalar_op(operation, vec![output.clone(), input], &result_info.debug_id);
 
                 output
             }
@@ -361,7 +367,7 @@ impl<'a> Planner<'a> {
                 let right = self.visit(right);
                 let output = self.alloc_tensor_shared(result_shape);
 
-                self.plan_scalar_op(&op_str, vec![output.clone(), left, right]);
+                self.plan_scalar_op(&op_str, vec![output.clone(), left, right], &result_info.debug_id);
 
                 output
             }
@@ -378,7 +384,7 @@ impl<'a> Planner<'a> {
                     output: output.clone(),
                 };
 
-                self.plan.push(PlanStep::SoftmaxOp(args));
+                self.push(PlanStep::SoftmaxOp(args), &result_info.debug_id);
                 output
             }
             &Operation::Reduce { input, ref axes, op } => {
@@ -410,7 +416,7 @@ impl<'a> Planner<'a> {
                     input,
                     output: output.clone(),
                 };
-                self.plan.push(PlanStep::ReduceOp(args));
+                self.push(PlanStep::ReduceOp(args), &result_info.debug_id);
 
                 output
             }
@@ -428,6 +434,14 @@ impl<'a> Planner<'a> {
         );
         let prev = self.map.insert(value, result);
         assert!(prev.is_none());
+    }
+
+    fn push(&mut self, step: PlanStep, id: &str) {
+        let step_info = StepInfo {
+            debug_id: id.to_owned(),
+            step,
+        };
+        self.steps.push(step_info);
     }
 
     fn visit_fused_conv(&mut self, value: Value) -> Option<PlanTensor> {
@@ -512,10 +526,12 @@ impl<'a> Planner<'a> {
             }
 
             // TODO for conv the input & res need simple strides, what about filter and bias?
-            let input = self.visit_ensure_simple_strides(input);
+            let debug_id = &self.graph[value].debug_id;
+
+            let input = self.visit_ensure_simple_strides(input, &format!("{}_input", debug_id));
             let filter = self.visit(filter);
             let bias = bias.map(|bias| self.visit(bias));
-            let res = res.map(|res| self.visit_ensure_simple_strides(res));
+            let res = res.map(|res| self.visit_ensure_simple_strides(res, &format!("{}_res", debug_id)));
 
             let bias = bias.unwrap_or_else(|| {
                 let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);
@@ -556,7 +572,7 @@ impl<'a> Planner<'a> {
                 output_desc,
                 output_ptr: output.ptr().clone(),
             };
-            self.plan.push(PlanStep::Conv(args));
+            self.push(PlanStep::Conv(args), &graph[value].debug_id);
 
             Some(output)
         } else {
@@ -675,12 +691,12 @@ impl<'a> Planner<'a> {
         let input = self.visit(input);
 
         let result_shape = self.graph[result].shape.eval(self.batch_size);
-        let result = self.alloc_tensor_shared(result_shape);
+        let result_tensor = self.alloc_tensor_shared(result_shape);
 
         let kernel = LayernormKernel::new(
             self.device().compute_capability(),
             input.shape(),
-            result.shape(),
+            result_tensor.shape(),
             axis,
             eps,
         );
@@ -688,27 +704,27 @@ impl<'a> Planner<'a> {
         let args = LayernormOpArgs {
             kernel,
             input,
-            output: result.clone(),
+            output: result_tensor.clone(),
         };
 
-        self.plan.push(PlanStep::LayernormOp(args));
-        Some(result)
+        self.push(PlanStep::LayernormOp(args), &self.graph[result].debug_id);
+        Some(result_tensor)
     }
 
-    fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor) {
+    fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, id: &str) {
         assert_eq!(old.shape().shape(), new.shape().shape());
 
-        self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()]);
+        self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()], id);
     }
 
-    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>) {
+    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, id: &str) {
         let capability = self.device().compute_capability();
         let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
 
         let kernel = ScalarKernel::new_for_shapes(capability, operation, &shapes);
 
         let args = ScalarOpArgs { kernel, operands };
-        self.plan.push(PlanStep::ScalarOp(args));
+        self.push(PlanStep::ScalarOp(args), id);
     }
 
     fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {

@@ -15,6 +15,7 @@ use crate::shape::{Shape, Size};
 pub struct Graph {
     check: u32,
     values: Vec<ValueInfo>,
+    new_values: Vec<Value>,
     inputs: Vec<Value>,
     outputs: Vec<Value>,
 }
@@ -30,6 +31,7 @@ pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
     pub users: usize,
+    pub debug_id: String,
 }
 
 /// Wrapper type that prevents the Debug output from getting too large.
@@ -260,6 +262,7 @@ impl Graph {
         Graph {
             check: thread_rng().gen(),
             values: vec![],
+            new_values: vec![],
             inputs: vec![],
             outputs: vec![],
         }
@@ -355,18 +358,26 @@ impl Graph {
         }
     }
 
+    /// Return all newly crated values since the last call to `take_new_values`.
+    pub fn take_new_values(&mut self) -> Vec<Value> {
+        std::mem::take(&mut self.new_values)
+    }
+
     #[must_use]
     pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
         let info = ValueInfo {
             shape,
             operation,
             users: 0,
+            debug_id: String::new(),
         };
 
-        let index = match self.values.iter().position(|cand| cand == &info) {
+        let check = self.check;
+
+        match self.values.iter().position(|cand| cand == &info) {
             Some(index) => {
                 // found duplicate, reuse existing value
-                index
+                Value { index, check }
             }
             None => {
                 // no duplicate found, create new value
@@ -376,15 +387,21 @@ impl Graph {
                 }
 
                 let index = self.values.len();
-                self.values.push(info);
-                index
-            }
-        };
+                let value = Value { index, check };
 
-        Value {
-            index,
-            check: self.check,
+                self.values.push(info);
+                self.new_values.push(value);
+
+                value
+            }
         }
+    }
+
+    /// Equivalent to `self[value].debug_id = id`,
+    /// but that would not work since there is intentionally no implementation of `IndexMut` for `Graph`.
+    pub fn set_debug_id(&mut self, value: Value, id: String) {
+        self.check_contains(value);
+        self.values[value.index].debug_id = id;
     }
 
     /// Declare a new input value.
@@ -887,6 +904,7 @@ impl Display for Graph {
         let Graph {
             check,
             values,
+            new_values: _,
             inputs,
             outputs,
         } = self;

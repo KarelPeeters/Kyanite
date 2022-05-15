@@ -43,14 +43,21 @@ impl<'a> Optimizer<'a> {
     fn map_new(&mut self, old_value: Value) -> Value {
         // try fusing the value
         if let Some(fused) = self.try_fuse(old_value) {
+            self.new_graph
+                .set_debug_id(fused, self.old_graph[old_value].debug_id.clone());
             return fused;
         }
 
         // fallback, copy the old operation
-        let shape = self.old_graph[old_value].shape.clone();
-        let old_operation = &self.old_graph[old_value].operation;
+        let old_info = &self.old_graph[old_value];
+        let shape = old_info.shape.clone();
+
+        let old_operation = &old_info.operation;
         let new_operation = old_operation.clone_map_inputs(|old_input| self.map(old_input));
-        self.new_graph.push(shape, new_operation)
+
+        let new_value = self.new_graph.push(shape, new_operation);
+        self.new_graph.set_debug_id(new_value, old_info.debug_id.clone());
+        new_value
     }
 
     fn try_fuse(&mut self, old_start: Value) -> Option<Value> {

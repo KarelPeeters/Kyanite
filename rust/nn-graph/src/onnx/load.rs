@@ -29,6 +29,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
     load_initializers(&mut graph, &mut nodes, &model_graph.initializer);
 
+    graph.take_new_values();
+
     for input in &model_graph.input {
         // initializers are allowed to re-appear in the inputs, so we skip them the second time
         if nodes.contains(&*input.name) {
@@ -629,7 +631,10 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
         };
 
-        // register operation output as node
+        for value in graph.take_new_values() {
+            graph.set_debug_id(value, node.name.clone())
+        }
+
         nodes.define(output_name, value);
         assert!(attrs.is_done(), "Leftover attributes: {:?}", attrs);
     }
