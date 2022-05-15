@@ -11,7 +11,7 @@ use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
+use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use nn_graph::shape::{ConcreteShape, Size};
 
 use crate::autokernel::layernorm::LayernormKernel;
@@ -242,11 +242,6 @@ impl<'a> Planner<'a> {
             return result;
         }
 
-        if let Some(result) = self.visit_fused_layernorm(value) {
-            self.insert_mapping(value, result.clone());
-            return result;
-        }
-
         let result_info = &self.graph[value];
         let result_shape = result_info.shape.eval(self.batch_size);
 
@@ -385,6 +380,27 @@ impl<'a> Planner<'a> {
                 };
 
                 self.push(PlanStep::SoftmaxOp(args), &result_info.debug_id);
+                output
+            }
+            &Operation::Layernorm { input, axis, eps } => {
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let kernel = LayernormKernel::new(
+                    self.device().compute_capability(),
+                    input.shape(),
+                    output.shape(),
+                    axis,
+                    eps.into_inner(),
+                );
+
+                let args = LayernormOpArgs {
+                    kernel,
+                    input,
+                    output: output.clone(),
+                };
+
+                self.push(PlanStep::LayernormOp(args), &result_info.debug_id);
                 output
             }
             &Operation::Reduce { input, ref axes, op } => {
@@ -578,137 +594,6 @@ impl<'a> Planner<'a> {
         } else {
             None
         }
-    }
-
-    fn visit_fused_layernorm(&mut self, value: Value) -> Option<PlanTensor> {
-        let mut fused_values = HashMap::<Value, usize>::new();
-
-        let mut op = |v| {
-            *fused_values.entry(v).or_insert(0) += 1;
-            &self.graph[v].operation
-        };
-
-        // TODO this is extremely tedious, is there a better way to do general graph matching?
-        if let &Operation::Binary {
-            left: zeroed0,
-            right: std_broadcast,
-            op: BinaryOp::Div,
-        } = op(value)
-        {
-            if let &Operation::Binary {
-                left: input0,
-                right: mean_broadcast,
-                op: BinaryOp::Sub,
-            } = op(zeroed0)
-            {
-                if let &Operation::Broadcast { input: mean_view } = op(mean_broadcast) {
-                    if let &Operation::View { input: mean } = op(mean_view) {
-                        if let &Operation::Reduce {
-                            input: input1,
-                            axes: ref axes0,
-                            op: ReduceOp::Mean,
-                        } = op(mean)
-                        {
-                            if let &Operation::Broadcast { input: std } = op(std_broadcast) {
-                                if let &Operation::Unary {
-                                    input: stable_var,
-                                    op: UnaryOp::Sqrt,
-                                } = op(std)
-                                {
-                                    if let &Operation::Binary {
-                                        left: var_view,
-                                        right: const_eps,
-                                        op: BinaryOp::Add,
-                                    } = op(stable_var)
-                                    {
-                                        if let &Operation::View { input: var } = op(var_view) {
-                                            if let &Operation::Reduce {
-                                                input: pow,
-                                                axes: ref axes1,
-                                                op: ReduceOp::Mean,
-                                            } = op(var)
-                                            {
-                                                if let &Operation::Binary {
-                                                    left: zeroed1,
-                                                    right: const_2,
-                                                    op: BinaryOp::Pow,
-                                                } = op(pow)
-                                                {
-                                                    if input0 != input1 || zeroed0 != zeroed1 || axes0 != axes1 {
-                                                        return None;
-                                                    }
-
-                                                    if fused_values.iter().any(|(&fused_value, &count)| {
-                                                        value != value
-                                                            && !self.graph.is_hidden_with_users(fused_value, count)
-                                                    }) {
-                                                        return None;
-                                                    }
-
-                                                    return self.visit_fused_layernorm_inner(
-                                                        value, input0, axes0, const_2, const_eps,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn visit_fused_layernorm_inner(
-        &mut self,
-        result: Value,
-        input: Value,
-        axes: &[usize],
-        const_2: Value,
-        const_eps: Value,
-    ) -> Option<PlanTensor> {
-        // confirm that we can actually fuse everything
-        if axes.len() != 1 {
-            return None;
-        }
-        let axis = axes[0];
-
-        let eps = if let Some(eps) = self.graph.as_single_const(const_eps) {
-            eps
-        } else {
-            return None;
-        };
-
-        if !self.graph.is_const_filled_with(const_2, 2.0) {
-            return None;
-        }
-
-        // construct the plan step
-        let input = self.visit(input);
-
-        let result_shape = self.graph[result].shape.eval(self.batch_size);
-        let result_tensor = self.alloc_tensor_shared(result_shape);
-
-        let kernel = LayernormKernel::new(
-            self.device().compute_capability(),
-            input.shape(),
-            result_tensor.shape(),
-            axis,
-            eps,
-        );
-
-        let args = LayernormOpArgs {
-            kernel,
-            input,
-            output: result_tensor.clone(),
-        };
-
-        self.push(PlanStep::LayernormOp(args), &self.graph[result].debug_id);
-        Some(result_tensor)
     }
 
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, id: &str) {

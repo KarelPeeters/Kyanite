@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
-use crate::graph::{BinaryOp, Graph, Operation, Value};
+use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
 use crate::optimizer::OptimizerSettings;
 
 #[derive(Debug)]
@@ -61,6 +61,11 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_fuse(&mut self, old_start: Value) -> Option<Value> {
+        if self.settings.fuse_layernorm {
+            if let Some(result) = self.try_fuse_layernorm(old_start) {
+                return Some(result);
+            }
+        }
         if let Some(result) = self.try_fuse_clamp(old_start) {
             return Some(result);
         }
@@ -72,6 +77,114 @@ impl<'a> Optimizer<'a> {
         }
 
         None
+    }
+
+    fn try_fuse_layernorm(&mut self, value: Value) -> Option<Value> {
+        let mut fused_values = HashMap::<Value, usize>::new();
+
+        let mut op = |v| {
+            *fused_values.entry(v).or_insert(0) += 1;
+            &self.old_graph[v].operation
+        };
+
+        // TODO this is extremely tedious, is there a better way to do general graph matching?
+        if let &Operation::Binary {
+            left: zeroed0,
+            right: std_broadcast,
+            op: BinaryOp::Div,
+        } = op(value)
+        {
+            if let &Operation::Binary {
+                left: input0,
+                right: mean_broadcast,
+                op: BinaryOp::Sub,
+            } = op(zeroed0)
+            {
+                if let &Operation::Broadcast { input: mean_view } = op(mean_broadcast) {
+                    if let &Operation::View { input: mean } = op(mean_view) {
+                        if let &Operation::Reduce {
+                            input: input1,
+                            axes: ref axes0,
+                            op: ReduceOp::Mean,
+                        } = op(mean)
+                        {
+                            if let &Operation::Broadcast { input: std } = op(std_broadcast) {
+                                if let &Operation::Unary {
+                                    input: stable_var,
+                                    op: UnaryOp::Sqrt,
+                                } = op(std)
+                                {
+                                    if let &Operation::Binary {
+                                        left: var_view,
+                                        right: const_eps,
+                                        op: BinaryOp::Add,
+                                    } = op(stable_var)
+                                    {
+                                        if let &Operation::View { input: var } = op(var_view) {
+                                            if let &Operation::Reduce {
+                                                input: pow,
+                                                axes: ref axes1,
+                                                op: ReduceOp::Mean,
+                                            } = op(var)
+                                            {
+                                                if let &Operation::Binary {
+                                                    left: zeroed1,
+                                                    right: const_2,
+                                                    op: BinaryOp::Pow,
+                                                } = op(pow)
+                                                {
+                                                    if input0 != input1 || zeroed0 != zeroed1 || axes0 != axes1 {
+                                                        return None;
+                                                    }
+
+                                                    // check that the intermediate values are not used elsewhere
+                                                    if fused_values.iter().any(|(&fused_value, &count)| {
+                                                        value != value
+                                                            && !self.old_graph.is_hidden_with_users(fused_value, count)
+                                                    }) {
+                                                        return None;
+                                                    }
+
+                                                    return self
+                                                        .try_fuse_layernorm_inner(input0, axes0, const_2, const_eps);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn try_fuse_layernorm_inner(
+        &mut self,
+        old_input: Value,
+        axes: &[usize],
+        old_const_2: Value,
+        old_const_eps: Value,
+    ) -> Option<Value> {
+        // confirm that this is actually a layernorm
+        // TODO support multiple layernorm axes?
+        if axes.len() != 1 {
+            return None;
+        }
+        let axis = axes[0];
+
+        let eps = self.old_graph.as_single_const(old_const_eps)?;
+
+        if !self.old_graph.is_const_filled_with(old_const_2, 2.0) {
+            return None;
+        }
+
+        // finally, we can just construct the new layernorm operation
+        let new_input = self.map(old_input);
+        Some(self.new_graph.layernorm(new_input, axis, eps))
     }
 
     /// Fuse _multiple_ sequential min and max operations into a single min and max operation.

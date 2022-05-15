@@ -232,6 +232,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                 | Operation::Conv { .. }
                 | Operation::MatMul { .. }
                 | Operation::Softmax { .. }
+                | Operation::Layernorm { .. }
                 | Operation::Reduce { .. }
                 | Operation::Unary { .. } => false,
                 &Operation::Binary { left, right, op: _ } => graph[left].shape != graph[right].shape,
@@ -261,6 +262,7 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         | Operation::Unary { .. }
         | Operation::Binary { .. }
         | Operation::Softmax { .. }
+        | Operation::Layernorm { .. }
         | Operation::Reduce { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
     }
 }

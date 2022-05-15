@@ -219,11 +219,11 @@ impl Step<DevicePtr> {
                 kernel.run(handles.cudnn.stream(), input, output)
             }
             Step::Gather(GatherArgs {
-                             input,
-                             axis,
-                             indices,
-                             output,
-                         }) => {
+                input,
+                axis,
+                indices,
+                output,
+            }) => {
                 assert!(
                     *axis == 1 && input.shape().rank() == 2,
                     "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
@@ -246,7 +246,7 @@ impl Step<DevicePtr> {
                     indices.ptr().ptr() as *const f32,
                     output.ptr().ptr() as *mut f32,
                 )
-                    .unwrap();
+                .unwrap();
             }
         }
     }
@@ -287,16 +287,17 @@ impl Display for Profile {
         let total = self.conv + self.mat_mul + self.scalar_op + self.softmax_op + self.gather;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
-        line("Conv:     ", self.conv)?;
-        line("Matmul:   ", self.mat_mul)?;
-        line("Scalar:   ", self.scalar_op)?;
-        line("Softmax:  ", self.softmax_op)?;
-        line("Gather:   ", self.gather)?;
+        line("Conv:      ", self.conv)?;
+        line("Matmul:    ", self.mat_mul)?;
+        line("Scalar:    ", self.scalar_op)?;
+        line("Softmax:   ", self.softmax_op)?;
+        line("Layernorm: ", self.layernorm_op)?;
+        line("Gather:    ", self.gather)?;
 
         writeln!(f, "  ==============================")?;
-        writeln!(f, "  Total GPU: {:>10.4} ms", self.total_gpu * 1e3)?;
-        writeln!(f, "  Total CPU: {:>10.4} ms", self.total_cpu * 1e3)?;
-        writeln!(f, "  Overhead:  {:>10.4} ms", self.timing_overhead * 1e3)?;
+        writeln!(f, "  Total GPU:  {:>10.4} ms", self.total_gpu * 1e3)?;
+        writeln!(f, "  Total CPU:  {:>10.4} ms", self.total_cpu * 1e3)?;
+        writeln!(f, "  Overhead:   {:>10.4} ms", self.timing_overhead * 1e3)?;
 
         writeln!(f, "}}")?;
 

@@ -192,6 +192,10 @@ fn try_run_cpu_operation(
             let input = map(input)?;
             softmax(input.view(), Axis(axis)).into_shared()
         }
+        &Operation::Layernorm { input, axis, eps } => {
+            let input = map(input)?;
+            layernorm(input.view(), Axis(axis), eps.into_inner()).into_shared()
+        }
         &Operation::Reduce { input, ref axes, op } => {
             let input = map(input)?;
 
@@ -263,6 +267,27 @@ where
     result.map_inplace(|x: &mut f32| *x = x.exp());
     let sum = result.sum_axis(axis).insert_axis(axis);
     result /= &sum;
+
+    result
+}
+
+/// Layernorm along the given axis of the tensor.
+pub fn layernorm<S, D>(array: ArrayBase<S, D>, axis: Axis, eps: f32) -> Array<f32, D>
+where
+    D: ndarray::RemoveAxis,
+    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
+{
+    let mut result = array.to_owned();
+
+    let mean = result.mean_axis(axis).unwrap();
+    result -= &mean.insert_axis(axis);
+
+    let std = result
+        .mapv(|f| f.powi(2))
+        .mean_axis(axis)
+        .unwrap()
+        .mapv(|f| (f + eps).sqrt());
+    result /= &std.insert_axis(axis);
 
     result
 }

@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
+use decorum::Total;
 use itertools::{zip_eq, Itertools};
 use rand::{thread_rng, Rng};
 
@@ -83,8 +84,11 @@ pub enum Operation {
     /// Elementwise binary operation. Both operands must have the same shape.
     Binary { left: Value, right: Value, op: BinaryOp },
 
-    /// Softmax along `axis, the output shape matches the input shape.
+    /// Softmax along `axis`.
     Softmax { input: Value, axis: usize },
+    /// Layernorm along `axis`.
+    Layernorm { input: Value, axis: usize, eps: Total<f32> },
+
     /// Reduce along the given `axes` using `op`. The `axes` are removed from the shape.
     Reduce {
         input: Value,
@@ -155,6 +159,7 @@ impl Operation {
             &Operation::Unary { input, op: _ } => vec![input],
             &Operation::Binary { left, right, op: _ } => vec![left, right],
             &Operation::Softmax { input, axis: _ } => vec![input],
+            &Operation::Layernorm { input, axis: _, eps: _ } => vec![input],
             &Operation::Reduce { input, axes: _, op: _ } => vec![input],
         }
     }
@@ -204,6 +209,11 @@ impl Operation {
                 op,
             },
             &Operation::Softmax { input, axis } => Operation::Softmax { input: f(input), axis },
+            &Operation::Layernorm { input, axis, eps } => Operation::Layernorm {
+                input: f(input),
+                axis,
+                eps,
+            },
             &Operation::Reduce { input, ref axes, op } => Operation::Reduce {
                 input: f(input),
                 axes: axes.clone(),
@@ -320,7 +330,7 @@ impl Graph {
 
     /// Returns whether `value` is effectively a constant with every element equal to `f`.
     pub fn is_const_filled_with(&self, value: Value, f: f32) -> bool {
-        self.as_single_const(value).map_or(false, |g| float_eq(f, g))
+        self.as_single_const(value).map_or(false, |g| f.float_eq(&g))
     }
 
     /// Returns `Some(f)` if `value` is effectively a constant with every element equal to `f`.
@@ -329,7 +339,7 @@ impl Graph {
             Operation::Input { .. } => None,
             Operation::Constant { data } => {
                 let f = *data.first()?;
-                data.iter().all(|&x| float_eq(x, f)).then(|| f)
+                data.iter().all(|&x| f.float_eq(&x)).then(|| f)
             }
             &Operation::View { input } => self.as_single_const(input),
             &Operation::Broadcast { input } => self.as_single_const(input),
@@ -354,6 +364,7 @@ impl Graph {
             | Operation::Unary { .. }
             | Operation::Binary { .. }
             | Operation::Softmax { .. }
+            | Operation::Layernorm { .. }
             | Operation::Reduce { .. } => None,
         }
     }
@@ -743,6 +754,27 @@ impl Graph {
         self.push(new_shape, Operation::Softmax { input, axis })
     }
 
+    #[must_use]
+    pub fn layernorm(&mut self, input: Value, axis: usize, eps: f32) -> Value {
+        let input_shape = &self[input].shape;
+        assert!(
+            axis < input_shape.dims.len(),
+            "Layernorm axis {} out of range for shape {:?}",
+            axis,
+            input_shape
+        );
+
+        let new_shape = input_shape.clone();
+        self.push(
+            new_shape,
+            Operation::Layernorm {
+                input,
+                axis,
+                eps: Total::from(eps),
+            },
+        )
+    }
+
     /// Reduce `input` along the given `axes`.
     /// The result shape is the same as the input shape but without the reduces axes.
     #[must_use]
@@ -1104,8 +1136,4 @@ impl ReduceOp {
             total
         }
     }
-}
-
-fn float_eq(left: f32, right: f32) -> bool {
-    left == right || (left.is_nan() && right.is_nan())
 }
