@@ -41,22 +41,17 @@ __global__ void layernorm_kernel(
 
         cache[i / 32] = curr_raw;
 
-//        printf("Thread %d loaded %f\n", info.global_thread_id, curr_raw);
-
         count += 1;
         float delta = curr_raw - mean;
         mean += delta / count;
         m2 += delta * (curr_raw - mean);
     }
-//    printf("Thread %d calculated count %d mean %f and variance %f\n", info.global_thread_id, count, mean, m2);
 
     // combine variance and mean between threads
     for (int offset = 16; offset > 0; offset /= 2) {
         int next_count = __shfl_down_sync(FULL_WARP_MASK, count, offset);
         float next_mean = __shfl_down_sync(FULL_WARP_MASK, mean, offset);
         float next_m2 = __shfl_down_sync(FULL_WARP_MASK, m2, offset);
-
-//        printf("Thread %d combining (%d, %f, %f) with (%d, %f, %f)\n", info.global_thread_id, count, mean, m2, next_count, next_mean, next_m2);
 
         int prev_count = count;
         count += next_count;
@@ -70,8 +65,6 @@ __global__ void layernorm_kernel(
 
         mean += delta * factor;
         m2 += next_m2 + delta * delta * prev_count * factor;
-
-//        printf("Thread %d combined (%d, %f, %f)\n", info.global_thread_id, count, mean, m2);
     }
 
     float var = m2 / count;
