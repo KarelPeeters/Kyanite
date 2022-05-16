@@ -19,9 +19,9 @@ impl OffsetPtr for DevicePtr {
 
 impl DeviceTensor {
     pub fn alloc_simple(device: Device, shape: Vec<usize>) -> Self {
-        let size = shape.iter().product::<usize>();
-        let ptr = DevicePtr::alloc(device, size * 4);
-        DeviceTensor::from_parts(ptr, StridedShape::new_simple(shape))
+        let shape = StridedShape::new_simple(shape);
+        let ptr = DevicePtr::alloc(device, shape.size() * 4);
+        DeviceTensor::from_parts(ptr, shape)
     }
 
     pub fn device(&self) -> Device {
