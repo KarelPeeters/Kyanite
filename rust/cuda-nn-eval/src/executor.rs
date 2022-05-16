@@ -132,22 +132,22 @@ impl CudaExecutor {
         } else {
             let mut timers = vec![];
 
-            let start_gpu = self.stream().record_new_event();
+            let start_gpu = self.stream().record_event();
             start_gpu.synchronize();
 
             let start_cpu = Instant::now();
 
             for step_info in &self.steps {
-                let start = self.stream().record_new_event();
+                let start = self.stream().record_event();
                 step_info.step.run(&self.handles);
-                let end = self.stream().record_new_event();
+                let end = self.stream().record_event();
 
                 if self.profile {
                     timers.push((step_info, start, end));
                 }
             }
 
-            let end_gpu = self.stream().record_new_event();
+            let end_gpu = self.stream().record_event();
             self.stream().synchronize();
 
             let end_cpu = Instant::now();
@@ -198,14 +198,14 @@ impl Step<DevicePtr> {
             }
             Step::MatMul(args) => {
                 // schedule blas wait for cudnn
-                let cuda_event = handles.cudnn.stream().record_new_event();
+                let cuda_event = handles.cudnn.stream().record_event();
                 handles.cublas.stream().wait_for_event(&cuda_event);
 
                 // schedule operation on blas
                 args.run(&handles.cublas);
 
                 // schedule cudnn wait for blas
-                let blas_event = handles.cublas.stream().record_new_event();
+                let blas_event = handles.cublas.stream().record_event();
                 handles.cudnn.stream().wait_for_event(&blas_event);
             }
             Step::ScalarOp(ScalarOpArgs { kernel, operands }) => {

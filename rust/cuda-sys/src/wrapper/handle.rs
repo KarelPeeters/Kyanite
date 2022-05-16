@@ -131,19 +131,20 @@ impl CudaStream {
         self.inner
     }
 
-    pub unsafe fn record_event(&self, event: &CudaEvent) {
-        cudaEventRecord(event.inner(), self.inner()).unwrap()
-    }
-
-    // TODO make this the default function with the shorter name
-    pub unsafe fn record_new_event(&self) -> CudaEvent {
+    pub fn record_event(&self) -> CudaEvent {
         let event = CudaEvent::new();
-        self.record_event(&event);
+        self.record_existing_event(&event);
         event
     }
 
-    pub unsafe fn wait_for_event(&self, event: &CudaEvent) {
-        cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+    pub fn record_existing_event(&self, event: &CudaEvent) {
+        unsafe { cudaEventRecord(event.inner(), self.inner()).unwrap() }
+    }
+
+    pub fn wait_for_event(&self, event: &CudaEvent) {
+        unsafe {
+            cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+        }
     }
 
     pub unsafe fn begin_capture(&self) {
@@ -227,7 +228,7 @@ impl CublasHandle {
         }
     }
 
-    pub unsafe fn stream(&self) -> &CudaStream {
+    pub fn stream(&self) -> &CudaStream {
         &self.stream
     }
 

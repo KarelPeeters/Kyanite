@@ -123,15 +123,15 @@ unsafe fn test_custom_conv(
 
     let mut stream = CudaStream::new(device);
 
-    let warmup = stream.record_new_event();
+    let warmup = stream.record_event();
     for _ in 0..warmup_iter {
         launch(&mut stream);
     }
-    let start = stream.record_new_event();
+    let start = stream.record_event();
     for _ in 0..bench_iter {
         launch(&mut stream);
     }
-    let end = stream.record_new_event();
+    let end = stream.record_event();
 
     stream.synchronize();
 

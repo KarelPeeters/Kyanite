@@ -35,9 +35,7 @@ impl BatchQuantizer {
     /// This is necessary to ensure the device memory is no longer being used by the previous kernel launch.
     pub fn synchronize(&mut self) {
         if let Some(event) = self.last_event.take() {
-            unsafe {
-                event.synchronize();
-            }
+            event.synchronize();
         }
     }
 
@@ -114,7 +112,7 @@ impl BatchQuantizer {
         )
         .unwrap();
 
-        self.last_event = Some(stream.record_new_event());
+        self.last_event = Some(stream.record_event());
     }
 
     pub unsafe fn launch_unquantize<'a>(
@@ -139,7 +137,7 @@ impl BatchQuantizer {
         )
         .unwrap();
 
-        self.last_event = Some(stream.record_new_event());
+        self.last_event = Some(stream.record_event());
     }
 }
 

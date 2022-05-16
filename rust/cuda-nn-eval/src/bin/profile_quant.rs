@@ -27,7 +27,7 @@ unsafe fn main_inner() {
     let quantized_pointers_device = device.alloc(8 * batch_size);
     quantized_pointers_device.copy_linear_from_host(cast_slice(&quantized_pointers));
 
-    let start = stream.record_new_event();
+    let start = stream.record_event();
     let iterations = 1000;
     for _ in 0..iterations {
         kernels::unquantize(
@@ -40,7 +40,7 @@ unsafe fn main_inner() {
         .unwrap();
     }
 
-    let end = stream.record_new_event();
+    let end = stream.record_event();
     end.synchronize();
 
     let delta = end.time_elapsed_since(&start);

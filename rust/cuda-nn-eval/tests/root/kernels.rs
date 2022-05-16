@@ -82,7 +82,7 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
         input.copy_linear_from_host(cast_slice(&input_data));
         indices.copy_linear_from_host(cast_slice(&indices_data));
 
-        let before = stream.record_new_event();
+        let before = stream.record_event();
 
         kernels::gather2dAxis1FloatFloat(
             stream.inner(),
@@ -97,7 +97,7 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
         )
             .unwrap();
 
-        let after = stream.record_new_event();
+        let after = stream.record_event();
         stream.synchronize();
         println!("Took {}s", after.time_elapsed_since(&before));
 
