@@ -191,7 +191,7 @@ fn mat_mul() {
                 b_orig
             };
 
-            let result = graph.mat_mul(a, b);
+            let result = graph.batched_mat_mul(a, b);
             assert_eq!(graph[result].shape, shape![4, 5, 3]);
             graph.output(result);
 
@@ -411,7 +411,7 @@ fn pre_act_resnet() {
     let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
     let mut tower = graph.conv(input, filter_initial, 1, 1);
-    for _ in 0..4 {
+    for _ in 0..2 {
         let mut curr = channel_batchnorm(&mut graph, tower);
         curr = graph.clamp(curr, 0.0, 6.0);
         curr = graph.conv(curr, filter_tower, 1, 1);

@@ -70,13 +70,14 @@ pub enum Operation {
     /// Concatenate values along an axis.
     Concat { inputs: Vec<Value>, axis: usize },
 
-    /// The standard convolution operator.
+    /// 2D convolution.
     Conv {
         input: Value,
         filter: Value,
         details: ConvDetails,
     },
-    /// Batched matrix multiply.
+    /// (Batched) Matrix multiply.
+    /// If left has shape `[b, p, q]` and right has shape `[b, q, r]` the result has shape `[b, p, r]`.
     MatMul { left: Value, right: Value },
 
     /// Elementwise unary operation.
@@ -701,42 +702,37 @@ impl Graph {
     }
 
     /// Apply a linear transformation.
-    /// Input shape `[N, Ci]` and weight shape `[Co, Ci]` result in an output with shape `[N, Co]`.
+    /// Input shape `[b, Ci]` and weight shape `[Co, Ci]` result in an output with shape `[b, Co]`.
     #[must_use]
     pub fn linear(&mut self, input: Value, weight: Value) -> Value {
-        let input_shape = self[input].shape.unwrap_2();
-        let weight_shape = self[weight].shape.unwrap_2();
-
-        let n = input_shape[0];
-        let ci = input_shape[1];
-        let co = weight_shape[0];
-        assert_eq!(ci, weight_shape[1]);
-
-        // convert this linear operation into the equivalent convolution
-        let input_view_shape = shape![n, ci, 1, 1];
-        let input_view = self.view(input, input_view_shape);
-        let weight_view_shape = shape![co, ci, 1, 1];
-        let weight_view = self.view(weight, weight_view_shape);
-        let output_view_shape = shape![n, co];
-
-        let output = self.conv(input_view, weight_view, 0, 0);
-        self.view(output, output_view_shape)
+        let weight_transposed = self.permute(weight, vec![1, 0]);
+        self.mat_mul(input, weight_transposed)
     }
 
-    /// Batched matrix multiply. Inputs must have shapes `[N, p, q]`, `[N, q, r]` and the result has shape `[N, p, r]`.
+    /// Single matrix multiply.
     #[must_use]
     pub fn mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let [n0, p, q0] = self[left].shape.unwrap_3();
-        let [n1, q1, r] = self[right].shape.unwrap_3();
+        let left_batched = self.view(left, self[left].shape.insert(0, Size::ONE));
+        let right_batched = self.view(right, self[right].shape.insert(0, Size::ONE));
+        let result_batched = self.batched_mat_mul(left_batched, right_batched);
+        let result = self.view(result_batched, self[result_batched].shape.replace(0, None));
+        result
+    }
+
+    /// Batched matrix multiply. Inputs must have shapes `[b, p, q]`, `[b, q, r]` and the result has shape `[N, p, r]`.
+    #[must_use]
+    pub fn batched_mat_mul(&mut self, left: Value, right: Value) -> Value {
+        let [b0, p, q0] = self[left].shape.unwrap_3();
+        let [b1, q1, r] = self[right].shape.unwrap_3();
 
         assert!(
-            n0 == n1 && q0 == q1,
+            b0 == b1 && q0 == q1,
             "MatMul dimension mismatch: {:?} and {:?}",
             self[left].shape,
             self[right].shape
         );
 
-        let result_shape = shape![n0, p, r];
+        let result_shape = shape![b0, p, r];
         self.push(result_shape, Operation::MatMul { left, right })
     }
 

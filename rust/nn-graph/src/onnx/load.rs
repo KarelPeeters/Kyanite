@@ -278,7 +278,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let input_a = inputs[0].unwrap_float();
                 let input_b = inputs[1].unwrap_float();
 
-                let result = graph.mat_mul(input_a, input_b);
+                let result = graph.batched_mat_mul(input_a, input_b);
                 TypedValue::FloatTensor(result)
             }
             "BatchNormalization" => {
