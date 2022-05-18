@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use internal_iterator::InternalIterator;
 
 use crate::autokernel::layernorm::LayernormKernel;
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulOperand};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 
 use crate::autokernel::reduce::ReduceKernel;
 use crate::autokernel::scalar::ScalarKernel;
@@ -95,9 +95,9 @@ impl<P> Step<P> {
                 k: args.k,
                 alpha: args.alpha,
                 beta: args.beta,
-                a: matmul_args_map_ptr(args.a, &mut f),
-                b: matmul_args_map_ptr(args.b, &mut f),
-                c: matmul_args_map_ptr(args.c, &mut f),
+                a: args.a.map_ptr(&mut f),
+                b: args.b.map_ptr(&mut f),
+                c: args.c.map_ptr(&mut f),
                 batch_count: args.batch_count,
             }),
             Step::ScalarOp(args) => Step::ScalarOp(ScalarOpArgs {
@@ -208,15 +208,6 @@ impl<P> Step<P> {
         }
 
         ControlFlow::Continue(())
-    }
-}
-
-fn matmul_args_map_ptr<P, K>(operand: MatMulOperand<P>, mut f: impl FnMut(P) -> K) -> MatMulOperand<K> {
-    MatMulOperand {
-        ptr: f(operand.ptr),
-        trans: operand.trans,
-        ld: operand.ld,
-        stride: operand.stride,
     }
 }
 

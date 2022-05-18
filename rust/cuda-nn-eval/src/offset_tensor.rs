@@ -105,30 +105,22 @@ impl<P: Clone> PtrTensor<P> {
     pub fn to_mat_mul_arg(&self) -> MatMulOperand<P> {
         assert_eq!(self.shape().rank(), 3);
 
-        let inner_shape = StridedShape::new(self.shape().shape()[1..].to_vec(), self.shape().strides()[1..].to_vec());
-
-        // whether the strides are col-major (true) or row-major (false)
-        let col_major = if inner_shape.has_simple_strides() {
-            false
-        } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
-            true
+        // prefer col-major in case of a tie, since cublas likes that more
+        let (trans, lead_axis) = if self.shape.strides()[1] == 1 {
+            (cublasOperation_t::CUBLAS_OP_N, 2)
+        } else if self.shape.strides()[2] == 1 {
+            (cublasOperation_t::CUBLAS_OP_T, 1)
         } else {
             panic!(
-                "GPU matmul operand must be either col- or row-major, got {:?}",
+                "GPU matmul operand must be either col- or row-dense, got {:?}",
                 self.shape
             )
         };
 
-        let lead_axis = if col_major { 1 } else { 2 };
-
         MatMulOperand {
             ptr: self.ptr().clone(),
-            trans: if col_major {
-                cublasOperation_t::CUBLAS_OP_N
-            } else {
-                cublasOperation_t::CUBLAS_OP_T
-            },
-            ld: self.shape().shape()[lead_axis] as i32,
+            trans,
+            ld: self.shape.strides()[lead_axis] as i32,
             stride: self.shape().strides()[0] as i64,
         }
     }

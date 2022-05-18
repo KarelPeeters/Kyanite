@@ -1,4 +1,4 @@
-use crate::bindings::{cublasOperation_t, cublasSgemmStridedBatched, cudnnConvolutionFwdAlgo_t};
+use crate::bindings::{cublasOperation_t, cublasSgemmStridedBatched, cublasSgemm_v2, cudnnConvolutionFwdAlgo_t};
 use crate::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor, TensorOpDescriptor,
 };
@@ -93,6 +93,17 @@ pub struct MatMulOperand<P = DevicePtr> {
     pub stride: i64,
 }
 
+impl<P> MatMulOperand<P> {
+    pub fn map_ptr<K>(self, mut f: impl FnMut(P) -> K) -> MatMulOperand<K> {
+        MatMulOperand {
+            ptr: f(self.ptr),
+            trans: self.trans,
+            ld: self.ld,
+            stride: self.stride,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BatchedMatMulArgs<P = DevicePtr> {
     pub m: i32,
@@ -107,29 +118,55 @@ pub struct BatchedMatMulArgs<P = DevicePtr> {
 }
 
 impl BatchedMatMulArgs {
+    /// Call `cublasSgemmStridedBatched` with the right arguments. If `batch_count == 1`, call `cublasSgemm_v2` instead.
     pub unsafe fn run(&self, handle: &CublasHandle) {
-        assert_eq!(self.c.trans, cublasOperation_t::CUBLAS_OP_N);
+        assert_eq!(
+            self.c.trans,
+            cublasOperation_t::CUBLAS_OP_N,
+            "A transpose output is not supported, instead you can flip and transpose the inputs"
+        );
 
-        cublasSgemmStridedBatched(
-            handle.inner(),
-            self.a.trans,
-            self.b.trans,
-            self.m,
-            self.n,
-            self.k,
-            &(self.alpha) as *const f32,
-            self.a.ptr.ptr() as *const f32,
-            self.a.ld,
-            self.a.stride,
-            self.b.ptr.ptr() as *const f32,
-            self.b.ld,
-            self.b.stride,
-            &(self.beta) as *const f32,
-            self.c.ptr.ptr() as *mut f32,
-            self.c.ld,
-            self.c.stride,
-            self.batch_count,
-        )
-        .unwrap()
+        // TODO does this actually help performance in any way?
+        if self.batch_count == 1 {
+            cublasSgemm_v2(
+                handle.inner(),
+                self.a.trans,
+                self.b.trans,
+                self.m,
+                self.n,
+                self.k,
+                &(self.alpha) as *const f32,
+                self.a.ptr.ptr() as *const f32,
+                self.a.ld,
+                self.b.ptr.ptr() as *const f32,
+                self.b.ld,
+                &(self.beta) as *const f32,
+                self.c.ptr.ptr() as *mut f32,
+                self.c.ld,
+            )
+            .unwrap()
+        } else {
+            cublasSgemmStridedBatched(
+                handle.inner(),
+                self.a.trans,
+                self.b.trans,
+                self.m,
+                self.n,
+                self.k,
+                &(self.alpha) as *const f32,
+                self.a.ptr.ptr() as *const f32,
+                self.a.ld,
+                self.a.stride,
+                self.b.ptr.ptr() as *const f32,
+                self.b.ld,
+                self.b.stride,
+                &(self.beta) as *const f32,
+                self.c.ptr.ptr() as *mut f32,
+                self.c.ld,
+                self.c.stride,
+                self.batch_count,
+            )
+            .unwrap()
+        }
     }
 }

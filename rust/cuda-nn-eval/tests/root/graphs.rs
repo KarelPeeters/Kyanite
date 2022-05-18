@@ -160,6 +160,25 @@ fn linear() {
 }
 
 #[test]
+fn linear_sliced() {
+    let mut graph = Graph::new();
+
+    let left = graph.input(shape![8, 4]);
+    let left_sliced = graph.slice(left, 0, SliceRange::new(0, 8, 2));
+    let right = graph.input(shape![4, 3]);
+
+    let result = graph.mat_mul(left_sliced, right);
+    graph.output(result);
+
+    test_all(
+        &graph,
+        0,
+        &[linspace_tensor((8, 4)).into_dyn(), linspace_tensor((4, 3)).into_dyn()],
+        None,
+    );
+}
+
+#[test]
 fn mat_mul() {
     // run the "transposed" cases first since they're simpler for cublas
     for transpose_a in [true, false] {
