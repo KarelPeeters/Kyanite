@@ -85,15 +85,24 @@ impl Shape {
     }
 
     pub fn unwrap_2(&self) -> [Size; 2] {
-        self.dims.as_slice().try_into().expect("Expected rank 2 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 2 shape, got {:?}", self))
     }
 
     pub fn unwrap_3(&self) -> [Size; 3] {
-        self.dims.as_slice().try_into().expect("Expected rank 3 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 3 shape, got {:?}", self))
     }
 
     pub fn unwrap_4(&self) -> [Size; 4] {
-        self.dims.as_slice().try_into().expect("Expected rank 4 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 4 shape, got {:?}", self))
     }
 
     pub fn concat(mut self, other: &Shape) -> Shape {
