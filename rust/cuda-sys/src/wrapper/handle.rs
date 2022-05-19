@@ -4,10 +4,11 @@ use std::ptr::null_mut;
 use bytemuck::cast_slice;
 
 use crate::bindings::{
-    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute,
-    cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice,
-    cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture,
-    cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
+    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasLtCreate, cublasLtDestroy, cublasLtHandle_t,
+    cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount,
+    cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate,
+    cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate,
+    cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
@@ -233,6 +234,32 @@ impl CublasHandle {
     }
 
     pub unsafe fn inner(&self) -> cublasHandle_t {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct CublasLtHandle {
+    inner: cublasLtHandle_t,
+}
+
+impl Drop for CublasLtHandle {
+    fn drop(&mut self) {
+        unsafe { cublasLtDestroy(self.inner).unwrap_in_drop() }
+    }
+}
+
+impl CublasLtHandle {
+    pub fn new(device: Device) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            device.switch_to();
+            cublasLtCreate(&mut inner as *mut _).unwrap();
+            CublasLtHandle { inner }
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cublasLtHandle_t {
         self.inner
     }
 }

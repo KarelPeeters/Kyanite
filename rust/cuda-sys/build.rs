@@ -93,6 +93,8 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cudnn");
     println!("cargo:rustc-link-lib=dylib=cublas");
+    println!("cargo:rustc-link-lib=dylib=cublas");
+    println!("cargo:rustc-link-lib=dylib=cublasLt");
     println!("cargo:rustc-link-lib=dylib=nvrtc");
 
     // find include directories and set up link search paths
@@ -103,6 +105,8 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path);
         builder.clang_arg(format!("-I{}", path))
     });
+
+    println!("cargo:rerun-if-changed=wrapper.h");
 
     builder
         // input

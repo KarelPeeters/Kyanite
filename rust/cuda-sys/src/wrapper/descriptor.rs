@@ -1,21 +1,29 @@
+use std::ffi::c_void;
 use std::ptr::null_mut;
 
 use crate::bindings::{
-    cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t,
-    cudnnConvolutionMode_t, cudnnCreateActivationDescriptor, cudnnCreateConvolutionDescriptor,
-    cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor, cudnnCreatePoolingDescriptor,
-    cudnnCreateReduceTensorDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t, cudnnDestroyActivationDescriptor,
-    cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor, cudnnDestroyOpTensorDescriptor,
-    cudnnDestroyPoolingDescriptor, cudnnDestroyReduceTensorDescriptor, cudnnDestroyTensorDescriptor,
-    cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim, cudnnGetConvolutionForwardWorkspaceSize,
-    cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim, cudnnGetReductionWorkspaceSize,
-    cudnnGetTensorSizeInBytes, cudnnIndicesType_t, cudnnNanPropagation_t, cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t,
-    cudnnPoolingDescriptor_t, cudnnPoolingMode_t, cudnnReduceTensorDescriptor_t, cudnnReduceTensorIndices_t,
-    cudnnReduceTensorOp_t, cudnnSetActivationDescriptor, cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor,
-    cudnnSetOpTensorDescriptor, cudnnSetPooling2dDescriptor, cudnnSetReduceTensorDescriptor,
-    cudnnSetTensorNdDescriptor, cudnnTensorDescriptor_t, cudnnTensorFormat_t,
+    cublasComputeType_t, cublasLtEpilogue_t, cublasLtMatmulDescAttributes_t, cublasLtMatmulDescCreate,
+    cublasLtMatmulDescDestroy, cublasLtMatmulDescSetAttribute, cublasLtMatmulDesc_t,
+    cublasLtMatmulPreferenceAttributes_t, cublasLtMatmulPreferenceCreate, cublasLtMatmulPreferenceDestroy,
+    cublasLtMatmulPreferenceSetAttribute, cublasLtMatmulPreference_t, cublasLtMatrixLayoutAttribute_t,
+    cublasLtMatrixLayoutCreate, cublasLtMatrixLayoutDestroy, cublasLtMatrixLayoutSetAttribute, cublasLtMatrixLayout_t,
+    cublasLtOrder_t, cublasLtPointerModeMask_t, cudaDataType_t, cudnnActivationDescriptor_t, cudnnActivationMode_t,
+    cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor,
+    cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor,
+    cudnnCreatePoolingDescriptor, cudnnCreateReduceTensorDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t,
+    cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor,
+    cudnnDestroyOpTensorDescriptor, cudnnDestroyPoolingDescriptor, cudnnDestroyReduceTensorDescriptor,
+    cudnnDestroyTensorDescriptor, cudnnFilterDescriptor_t, cudnnGetConvolution2dForwardOutputDim,
+    cudnnGetConvolutionForwardWorkspaceSize, cudnnGetFilterSizeInBytes, cudnnGetPooling2dForwardOutputDim,
+    cudnnGetReductionWorkspaceSize, cudnnGetTensorSizeInBytes, cudnnIndicesType_t, cudnnNanPropagation_t,
+    cudnnOpTensorDescriptor_t, cudnnOpTensorOp_t, cudnnPoolingDescriptor_t, cudnnPoolingMode_t,
+    cudnnReduceTensorDescriptor_t, cudnnReduceTensorIndices_t, cudnnReduceTensorOp_t, cudnnSetActivationDescriptor,
+    cudnnSetConvolution2dDescriptor, cudnnSetFilter4dDescriptor, cudnnSetOpTensorDescriptor,
+    cudnnSetPooling2dDescriptor, cudnnSetReduceTensorDescriptor, cudnnSetTensorNdDescriptor, cudnnTensorDescriptor_t,
+    cudnnTensorFormat_t,
 };
 use crate::wrapper::handle::CudnnHandle;
+use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -200,7 +208,7 @@ impl ConvolutionDescriptor {
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
             )
-                .unwrap();
+            .unwrap();
             ConvolutionDescriptor(inner)
         }
     }
@@ -237,7 +245,7 @@ impl ConvolutionDescriptor {
                 algo,
                 &mut workspace as *mut _,
             )
-                .unwrap();
+            .unwrap();
         }
 
         workspace
@@ -264,7 +272,7 @@ impl ConvolutionDescriptor {
                 &mut h as *mut _,
                 &mut w as *mut _,
             )
-                .unwrap();
+            .unwrap();
             [n, c, h, w]
         }
     }
@@ -339,7 +347,7 @@ impl PoolingDescriptor {
                 stride_y,
                 stride_x,
             )
-                .unwrap();
+            .unwrap();
             PoolingDescriptor(inner)
         }
     }
@@ -358,7 +366,7 @@ impl PoolingDescriptor {
                 &mut h as *mut _,
                 &mut w as *mut _,
             )
-                .unwrap();
+            .unwrap();
             [n, c, h, w]
         }
     }
@@ -393,7 +401,7 @@ impl TensorOpDescriptor {
                 cudnnDataType_t::CUDNN_DATA_FLOAT,
                 cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
             )
-                .unwrap();
+            .unwrap();
 
             TensorOpDescriptor { inner, operation }
         }
@@ -434,7 +442,7 @@ impl TensorReduceDescriptor {
                 cudnnReduceTensorIndices_t::CUDNN_REDUCE_TENSOR_NO_INDICES,
                 cudnnIndicesType_t::CUDNN_32BIT_INDICES,
             )
-                .unwrap();
+            .unwrap();
 
             TensorReduceDescriptor { inner, operation }
         }
@@ -450,12 +458,216 @@ impl TensorReduceDescriptor {
                 c_desc.inner(),
                 &mut size as *mut _,
             )
-                .unwrap();
+            .unwrap();
             size
         }
     }
 
     pub unsafe fn inner(&self) -> cudnnReduceTensorDescriptor_t {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct MatrixLayout {
+    inner: cublasLtMatrixLayout_t,
+}
+
+impl Drop for MatrixLayout {
+    fn drop(&mut self) {
+        unsafe {
+            cublasLtMatrixLayoutDestroy(self.inner).unwrap_in_drop();
+        }
+    }
+}
+
+impl MatrixLayout {
+    pub fn new(shape: [usize; 3], strides: [isize; 3]) -> Option<Self> {
+        let [batch_size, rows, cols] = shape;
+        let [batch_stride, row_stride, col_stride] = strides;
+
+        // prefer col-major in case of a tie, since cublas likes that more
+        let (order, ld) = if row_stride == 1 {
+            (cublasLtOrder_t::CUBLASLT_ORDER_COL, col_stride)
+        } else if col_stride == 1 {
+            (cublasLtOrder_t::CUBLASLT_ORDER_ROW, row_stride)
+        } else {
+            return None;
+        };
+
+        unsafe {
+            let mut inner = null_mut();
+            cublasLtMatrixLayoutCreate(
+                &mut inner as *mut _,
+                cudaDataType_t::CUDA_R_32F,
+                rows as u64,
+                cols as u64,
+                ld as i64,
+            )
+            .unwrap();
+
+            cublasLtMatrixLayoutSetAttribute(
+                inner,
+                cublasLtMatrixLayoutAttribute_t::CUBLASLT_MATRIX_LAYOUT_ORDER,
+                &(order as i32) as *const _ as *const _,
+                std::mem::size_of::<i32>(),
+            )
+            .unwrap();
+
+            if batch_size != 1 {
+                cublasLtMatrixLayoutSetAttribute(
+                    inner,
+                    cublasLtMatrixLayoutAttribute_t::CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
+                    &(batch_size as i32) as *const _ as *const _,
+                    std::mem::size_of::<i32>(),
+                )
+                .unwrap();
+                cublasLtMatrixLayoutSetAttribute(
+                    inner,
+                    cublasLtMatrixLayoutAttribute_t::CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
+                    &(batch_stride as i64) as *const _ as *const _,
+                    std::mem::size_of::<i64>(),
+                )
+                .unwrap();
+            }
+
+            Some(MatrixLayout { inner })
+        }
+    }
+
+    pub fn inner(&self) -> cublasLtMatrixLayout_t {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct MatMulDesc {
+    inner: cublasLtMatmulDesc_t,
+    epilogue: cublasLtEpilogue_t,
+}
+
+impl Drop for MatMulDesc {
+    fn drop(&mut self) {
+        unsafe {
+            cublasLtMatmulDescDestroy(self.inner).unwrap_in_drop();
+        }
+    }
+}
+
+impl MatMulDesc {
+    pub fn new(relu: bool, bias: Option<DevicePtr>) -> MatMulDesc {
+        unsafe {
+            let epilogue = match (relu, bias.is_some()) {
+                (false, false) => cublasLtEpilogue_t::CUBLASLT_EPILOGUE_DEFAULT,
+                (true, false) => cublasLtEpilogue_t::CUBLASLT_EPILOGUE_RELU,
+                (false, true) => cublasLtEpilogue_t::CUBLASLT_EPILOGUE_BIAS,
+                (true, true) => cublasLtEpilogue_t::CUBLASLT_EPILOGUE_RELU_BIAS,
+            };
+
+            let mut inner = null_mut();
+            cublasLtMatmulDescCreate(
+                &mut inner as *mut _,
+                cublasComputeType_t::CUBLAS_COMPUTE_32F,
+                cudaDataType_t::CUDA_C_32F,
+            )
+            .unwrap();
+
+            cublasLtMatmulDescSetAttribute(
+                inner,
+                cublasLtMatmulDescAttributes_t::CUBLASLT_MATMUL_DESC_EPILOGUE,
+                &(epilogue as u32) as *const _ as *const _,
+                std::mem::size_of::<u32>(),
+            )
+            .unwrap();
+
+            if let Some(bias) = bias {
+                cublasLtMatmulDescSetAttribute(
+                    inner,
+                    cublasLtMatmulDescAttributes_t::CUBLASLT_MATMUL_DESC_BIAS_POINTER,
+                    &(bias.ptr()) as *const _ as *const _,
+                    std::mem::size_of::<*mut c_void>(),
+                )
+                .unwrap();
+            }
+
+            MatMulDesc { inner, epilogue }
+        }
+    }
+
+    pub fn inner(&self) -> cublasLtMatmulDesc_t {
+        self.inner
+    }
+
+    pub fn epilogue(&self) -> cublasLtEpilogue_t {
+        self.epilogue
+    }
+}
+
+#[derive(Debug)]
+pub struct MatMulPreference {
+    inner: cublasLtMatmulPreference_t,
+}
+
+impl Drop for MatMulPreference {
+    fn drop(&mut self) {
+        unsafe {
+            cublasLtMatmulPreferenceDestroy(self.inner).unwrap_in_drop();
+        }
+    }
+}
+
+impl MatMulPreference {
+    pub fn new(min_alignment: usize, max_workspace: usize, epilogue: cublasLtEpilogue_t) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            cublasLtMatmulPreferenceCreate(&mut inner as *mut _).unwrap();
+
+            let alignment_attrs = [
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES,
+            ];
+
+            for attr in alignment_attrs {
+                cublasLtMatmulPreferenceSetAttribute(
+                    inner,
+                    attr,
+                    &(min_alignment as u32) as *const _ as *const _,
+                    std::mem::size_of::<u32>(),
+                )
+                .unwrap();
+            }
+
+            cublasLtMatmulPreferenceSetAttribute(
+                inner,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_POINTER_MODE_MASK,
+                &(cublasLtPointerModeMask_t::CUBLASLT_POINTER_MODE_MASK_HOST as u32) as *const _ as *const _,
+                std::mem::size_of::<u32>(),
+            )
+            .unwrap();
+
+            cublasLtMatmulPreferenceSetAttribute(
+                inner,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_EPILOGUE_MASK,
+                &(epilogue as u32) as *const _ as *const _,
+                std::mem::size_of::<u32>(),
+            )
+            .unwrap();
+
+            cublasLtMatmulPreferenceSetAttribute(
+                inner,
+                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+                &(max_workspace as u64) as *const _ as *const _,
+                std::mem::size_of::<u64>(),
+            )
+            .unwrap();
+
+            MatMulPreference { inner }
+        }
+    }
+
+    pub fn inner(&self) -> cublasLtMatmulPreference_t {
         self.inner
     }
 }

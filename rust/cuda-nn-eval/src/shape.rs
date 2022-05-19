@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 
 use itertools::{zip, zip_eq, Itertools};
 
-use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
+use cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
 use nn_graph::graph::SliceRange;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -258,6 +258,15 @@ impl StridedShape {
 
         let dims = self.shape();
         FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
+    }
+
+    pub fn matrix_layout(&self) -> MatrixLayout {
+        assert_eq!(3, self.rank(), "Matrix must have rank 3");
+
+        let shape = [self.shape[0], self.shape[1], self.shape[2]];
+        let strides = [self.strides[0], self.strides[1], self.strides[2]];
+
+        MatrixLayout::new(shape, strides).unwrap_or_else(|| panic!("Failed to convert {:?} to MatrixLayout", self))
     }
 
     pub fn remove(&self, axis: usize) -> StridedShape {

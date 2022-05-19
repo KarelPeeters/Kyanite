@@ -1,16 +1,19 @@
 use std::ptr::null_mut;
 
+use crate::bindings::{
+    cublasLtMatmulAlgoGetHeuristic, cublasLtMatmulHeuristicResult_t, cudnnActivationMode_t, cudnnOpTensor,
+    cudnnPoolingForward, cudnnReduceTensor,
+};
 pub use crate::bindings::{
     cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward,
-    cudnnConvolutionFwdAlgo_t, cudnnConvolutionFwdAlgoPerf_t, cudnnFindConvolutionForwardAlgorithm,
+    cudnnConvolutionFwdAlgoPerf_t, cudnnConvolutionFwdAlgo_t, cudnnFindConvolutionForwardAlgorithm,
     cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t,
 };
-use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward, cudnnReduceTensor};
 use crate::wrapper::descriptor::{
-    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor,
-    TensorOpDescriptor, TensorReduceDescriptor,
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, MatMulDesc, MatMulPreference, MatrixLayout,
+    PoolingDescriptor, TensorDescriptor, TensorOpDescriptor, TensorReduceDescriptor,
 };
-use crate::wrapper::handle::CudnnHandle;
+use crate::wrapper::handle::{CublasLtHandle, CudnnHandle};
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
@@ -42,7 +45,7 @@ pub fn find_conv_algorithms(
             &mut algo_count as *mut _,
             result.as_mut_ptr(),
         )
-            .unwrap();
+        .unwrap();
 
         result.set_len(algo_count as usize);
 
@@ -92,7 +95,7 @@ pub unsafe fn run_conv(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Run `output += input`. `input` can have dimensions of size 1 which are broadcasted to the shape of `output`.
@@ -115,7 +118,7 @@ pub unsafe fn run_add_tensor(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Run `output = act(input)`.
@@ -141,7 +144,7 @@ pub unsafe fn run_activation(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Runs `output = act(conv(input, filter) + res + bias)`.
@@ -226,7 +229,7 @@ pub unsafe fn run_conv_bias_res_activation(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Runs `output = pool(input)`.
@@ -251,7 +254,7 @@ pub unsafe fn run_pooling(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Runs `output = op(alpha_1 * input_1, alpha_2 * input_2) + b * output`
@@ -281,7 +284,7 @@ pub unsafe fn run_tensor_op(
         output_desc.inner(),
         output_ptr.ptr(),
     )
-        .unwrap();
+    .unwrap();
 }
 
 /// Runs `output = a * reduce(A) + b * output`
@@ -311,5 +314,52 @@ pub unsafe fn run_tensor_reduce(
         output_desc.inner(),
         output_ptr.ptr(),
     )
+    .unwrap();
+}
+
+pub fn find_matmul_algorithms(
+    handle: &CublasLtHandle,
+    operation: &MatMulDesc,
+    a_desc: &MatrixLayout,
+    b_desc: &MatrixLayout,
+    c_desc: &MatrixLayout,
+    d_desc: &MatrixLayout,
+    preference: &MatMulPreference,
+) -> Vec<cublasLtMatmulHeuristicResult_t> {
+    let call = |buffer: *mut cublasLtMatmulHeuristicResult_t, count: i32| unsafe {
+        let mut actual_count = 0;
+        cublasLtMatmulAlgoGetHeuristic(
+            handle.inner(),
+            operation.inner(),
+            a_desc.inner(),
+            b_desc.inner(),
+            c_desc.inner(),
+            d_desc.inner(),
+            preference.inner(),
+            count,
+            buffer,
+            &mut actual_count as *mut _,
+        )
         .unwrap();
+        actual_count
+    };
+
+    unsafe {
+        let initial_count = 1;
+
+        let mut result = Vec::with_capacity(initial_count);
+        let count = call(result.as_mut_ptr(), initial_count as i32);
+        result.set_len(initial_count);
+
+        println!("actual count: {}", count);
+
+        if count as usize != initial_count {
+            result.reserve(result.len() - count as usize);
+            let new_count = call(result.as_mut_ptr(), count);
+            assert_eq!(new_count, count);
+            result.set_len(count as usize);
+        }
+
+        result
+    }
 }
