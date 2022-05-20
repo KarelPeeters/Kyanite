@@ -260,6 +260,7 @@ impl<'a> Planner<'a> {
                 // try simple view operation, otherwise restride to dense and then copy
                 // TODO if we want the output to be simple strided immediately we need separate input/output shapes
                 //    in the scalar kernel
+                // TODO implement proper/fast transpose support in the scalar kernel
                 input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
                     let input_shape = ConcreteShape::new(input_tensor.shape().shape().to_vec());
                     let result = self.alloc_tensor_shared(input_shape);
@@ -271,7 +272,15 @@ impl<'a> Planner<'a> {
                 let input_tensor = self.visit(input);
                 input_tensor.broadcast(result_shape.dims.clone())
             }
-            &Operation::Permute { input, ref permutation } => self.visit(input).permute(permutation),
+            &Operation::Permute { input, ref permutation } => {
+                if permutation == &[1, 0, 2] {
+                    if let &Operation::MatMul { left, right } = &self.graph[input].operation {
+                        return self.visit_matmul(input, left, right, false).permute(permutation);
+                    }
+                }
+
+                self.visit(input).permute(permutation)
+            }
             &Operation::Slice { input, axis, range } => self.visit(input).slice(axis, range),
             &Operation::Flip { input, axis } => self.visit(input).flip(axis),
             &Operation::Gather { input, axis, indices } => {
@@ -312,36 +321,7 @@ impl<'a> Planner<'a> {
             &Operation::Conv { .. } => {
                 unreachable!("conv should have been handled earlier by the fuser")
             }
-            &Operation::MatMul { left, right } => {
-                let left = self.visit(left);
-                let right = self.visit(right);
-
-                assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
-                let batch_size = left.shape().shape()[0];
-                let m = left.shape().shape()[1];
-                let k = left.shape().shape()[2];
-                let n = right.shape().shape()[2];
-
-                let result = self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]));
-
-                // to ensure we get a simple strided output, we actually compute
-                //   result^T = right^T * left^T
-                let args = BatchedMatMulArgs {
-                    m: n as i32,
-                    n: m as i32,
-                    k: k as i32,
-                    alpha: 1.0,
-                    beta: 0.0,
-                    a: right.permute(&[0, 2, 1]).to_mat_mul_arg(),
-                    b: left.permute(&[0, 2, 1]).to_mat_mul_arg(),
-                    c: result.permute(&[0, 2, 1]).to_mat_mul_arg(),
-                    batch_count: batch_size as i32,
-                };
-
-                self.push(PlanStep::MatMul(args), &result_info.debug_id);
-
-                result
-            }
+            &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true),
             &Operation::Unary { input, op } => {
                 let operation = match op {
                     UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
@@ -439,6 +419,45 @@ impl<'a> Planner<'a> {
         };
 
         self.insert_mapping(value, result.clone());
+        result
+    }
+
+    fn visit_matmul(&mut self, value: Value, left: Value, right: Value, batch_first: bool) -> PlanTensor {
+        let result_info = &self.graph[value];
+        let left = self.visit(left);
+        let right = self.visit(right);
+
+        assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
+        let batch_size = left.shape().shape()[0];
+        let m = left.shape().shape()[1];
+        let k = left.shape().shape()[2];
+        let n = right.shape().shape()[2];
+
+        // TODO this could be generalized to consider any possible output permutation
+        //   and picking the transpose and storage formats that fit best
+        let result = if batch_first {
+            self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]))
+        } else {
+            self.alloc_tensor_shared(ConcreteShape::new(vec![m, batch_size, n]))
+                .permute(&[1, 0, 2])
+        };
+
+        // to ensure we (usually) get a simple strided output, we actually compute
+        //   result^T = right^T * left^T
+        let args = BatchedMatMulArgs {
+            m: n as i32,
+            n: m as i32,
+            k: k as i32,
+            alpha: 1.0,
+            beta: 0.0,
+            a: right.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            b: left.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            c: result.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            batch_count: batch_size as i32,
+        };
+
+        self.push(PlanStep::MatMul(args), &result_info.debug_id);
+
         result
     }
 
