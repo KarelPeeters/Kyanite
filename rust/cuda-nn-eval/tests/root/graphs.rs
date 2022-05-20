@@ -666,3 +666,14 @@ fn layernorm_fused() {
 
     test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
 }
+
+#[test]
+fn scalar_scalar() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(Shape::SCALAR);
+    let result = graph.unary(UnaryOp::Exp, input);
+    graph.output(result);
+
+    test_all(&graph, 0, &[manual_tensor((), vec![2.0])], None);
+}

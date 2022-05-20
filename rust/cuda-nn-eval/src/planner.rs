@@ -622,6 +622,12 @@ impl<'a> Planner<'a> {
     }
 
     fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, id: &str) {
+        let operands = if operands[0].shape().rank() == 0 {
+            operands.into_iter().map(|op| op.view(vec![1]).unwrap()).collect_vec()
+        } else {
+            operands
+        };
+
         let capability = self.device().compute_capability();
         let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
 
