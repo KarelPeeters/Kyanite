@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import time
 from typing import Optional
 
 import torch
@@ -27,10 +28,19 @@ def supervised_loop(
     with open(os.path.join(output_folder, f"settings_{start_bi}.json"), "w") as settings_f:
         json.dump(settings, settings_f, default=lambda o: o.__dict__, indent=2)
 
+    prev_start = time.perf_counter()
+
     for bi in itertools.count(start_bi):
         plotter.block_while_paused()
-        print(f"Starting batch {bi}")
         logger.start_batch()
+
+        start = time.perf_counter()
+        throughput = 1 / (start - prev_start)
+        prev_start = start
+
+        print(f"Starting batch {bi}")
+        if bi != 0:
+            print(f"Throughput: {throughput:.2f} batches/s")
 
         if schedule is not None:
             lr = schedule(bi)
