@@ -462,7 +462,14 @@ impl Graph {
             old_shape,
         );
 
-        self.push(new_shape, Operation::View { input })
+        // only keep the last view operation
+        let inner_input = if let &Operation::View { input: inner_input } = &self[input].operation {
+            inner_input
+        } else {
+            input
+        };
+
+        self.push(new_shape, Operation::View { input: inner_input })
     }
 
     /// Broadcast the `input` towards `new_shape`.
@@ -551,10 +558,29 @@ impl Graph {
             permutation
         );
 
-        let result_dims = permutation.iter().map(|&i| input_shape[i]).collect_vec();
+        // fuse consecutive permute operations
+        let (inner_input, full_permutation) = if let &Operation::Permute {
+            input: inner_input,
+            permutation: ref inner_permutation,
+        } = &self[input].operation
+        {
+            let combined = permutation.iter().map(|&i| inner_permutation[i]).collect();
+            (inner_input, combined)
+        } else {
+            (input, permutation)
+        };
+
+        let inner_input_shape = &self[inner_input].shape;
+        let result_dims = full_permutation.iter().map(|&i| inner_input_shape[i]).collect_vec();
         let result_shape = Shape::new(result_dims);
 
-        self.push(result_shape, Operation::Permute { input, permutation })
+        self.push(
+            result_shape,
+            Operation::Permute {
+                input: inner_input,
+                permutation: full_permutation,
+            },
+        )
     }
 
     /// Slice a value along an axis. See [slice_range] for a more general version.
