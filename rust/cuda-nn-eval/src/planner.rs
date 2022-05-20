@@ -363,24 +363,41 @@ impl<'a> Planner<'a> {
                 output
             }
             &Operation::Layernorm { input, axis, eps } => {
-                let input = self.visit(input);
+                let (alpha_0, input_0, alpha_1, input_1) = if let &Operation::Binary {
+                    op: BinaryOp::Add,
+                    left,
+                    right,
+                } = &self.graph[input].operation
+                {
+                    let (alpha_0, input_0) = self.visit_scalable_value(left);
+                    let (alpha_1, input_1) = self.visit_scalable_value(right);
+
+                    // TODO get this working for non-matching shapes as well
+                    assert!(input_0.shape() == input_1.shape());
+
+                    (alpha_0, input_0, alpha_1, Some(input_1))
+                } else {
+                    let (alpha_0, input_0) = self.visit_scalable_value(input);
+                    (alpha_0, input_0, 0.0, None)
+                };
+
                 let output = self.alloc_tensor_shared(result_shape);
 
                 let kernel = LayernormKernel::new(
                     self.device().compute_capability(),
-                    input.shape(),
+                    input_0.shape(),
                     output.shape(),
                     axis,
                     eps.into_inner(),
-                    1.0,
-                    0.0,
+                    alpha_0,
+                    alpha_1,
                     1.0,
                 );
 
                 let args = LayernormOpArgs {
                     kernel,
-                    input0: input,
-                    input1: None,
+                    input0: input_0,
+                    input1: input_1,
                     output: output.clone(),
                 };
 
@@ -424,6 +441,24 @@ impl<'a> Planner<'a> {
 
         self.insert_mapping(value, result.clone());
         result
+    }
+
+    fn visit_scalable_value(&mut self, value: Value) -> (f32, PlanTensor) {
+        if let &Operation::Binary {
+            op: BinaryOp::Mul,
+            left,
+            right,
+        } = &self.graph[value].operation
+        {
+            if let Some(alpha) = self.graph.as_single_const(left) {
+                return (alpha, self.visit(right));
+            }
+            if let Some(alpha) = self.graph.as_single_const(right) {
+                return (alpha, self.visit(left));
+            }
+        }
+
+        (1.0, self.visit(value))
     }
 
     fn visit_matmul(&mut self, value: Value, left: Value, right: Value, batch_first: bool) -> PlanTensor {
