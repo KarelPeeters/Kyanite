@@ -2,9 +2,9 @@ use std::ops::ControlFlow;
 
 use internal_iterator::InternalIterator;
 
-use crate::autokernel::layernorm::LayernormKernel;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 
+use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::ReduceKernel;
 use crate::autokernel::scalar::ScalarKernel;
 use crate::autokernel::softmax::SoftmaxKernel;
@@ -58,7 +58,8 @@ pub struct SoftmaxOpArgs<P> {
 #[derive(Debug)]
 pub struct LayernormOpArgs<P> {
     pub kernel: LayernormKernel,
-    pub input: PtrTensor<P>,
+    pub input0: PtrTensor<P>,
+    pub input1: Option<PtrTensor<P>>,
     pub output: PtrTensor<P>,
 }
 
@@ -116,7 +117,8 @@ impl<P> Step<P> {
             }),
             Step::LayernormOp(args) => Step::LayernormOp(LayernormOpArgs {
                 kernel: args.kernel,
-                input: args.input.map_ptr(&mut f),
+                input0: args.input0.map_ptr(&mut f),
+                input1: args.input1.map(|op| op.map_ptr(&mut f)),
                 output: args.output.map_ptr(&mut f),
             }),
             Step::Gather(args) => Step::Gather(GatherArgs {
@@ -189,10 +191,14 @@ impl<P> Step<P> {
             }
             Step::LayernormOp(LayernormOpArgs {
                 kernel: _,
-                input,
+                input0,
+                input1,
                 output,
             }) => {
-                f(input.ptr())?;
+                f(input0.ptr())?;
+                if let Some(input1) = input1 {
+                    f(input1.ptr())?;
+                }
                 f(output.ptr())?;
             }
             Step::Gather(GatherArgs {

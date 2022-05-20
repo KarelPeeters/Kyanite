@@ -1,6 +1,7 @@
 use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use std::ptr::null_mut;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -10,16 +11,19 @@ use crate::shape::StridedShape;
 
 #[derive(Debug)]
 pub struct LayernormKernel {
-    capability: ComputeCapability,
-    function: CuFunction,
-
     input_shape: StridedShape,
     output_shape: StridedShape,
 
     _norm_axis: usize,
     static_size: usize,
 
-    eps: f32,
+    _eps: f32,
+    _alpha0: f32,
+    _alpha1: f32,
+    _beta: f32,
+
+    capability: ComputeCapability,
+    function: CuFunction,
 }
 
 const LAYERNORM_SOURCE: &str = include_str!("layernorm.cu");
@@ -31,6 +35,9 @@ impl LayernormKernel {
         output_shape: &StridedShape,
         norm_axis: usize,
         eps: f32,
+        alpha_0: f32,
+        alpha_1: f32,
+        beta: f32,
     ) -> Self {
         assert_eq!(input_shape.shape(), output_shape.shape());
 
@@ -56,6 +63,10 @@ impl LayernormKernel {
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$STATIC_SIZE$", format!("{}", static_size)),
             ("$NORM_SIZE$", format!("{}", norm_size)),
+            ("$EPS$", format!("{}", eps)),
+            ("$ALPHA_0$", format!("{}", alpha_0)),
+            ("$ALPHA_1$", format!("{}", alpha_1)),
+            ("$BETA$", format!("{}", beta)),
             ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
             ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
             ("$NORM_STRIDES$", c_array_string(&norm_strides)),
@@ -78,20 +89,36 @@ impl LayernormKernel {
             output_shape: output_shape.clone(),
             _norm_axis: norm_axis,
             static_size,
-            eps,
+            _eps: eps,
+            _alpha0: alpha_0,
+            _alpha1: alpha_1,
+            _beta: beta,
         }
     }
 
-    pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
+    pub unsafe fn run(
+        &self,
+        stream: &CudaStream,
+        input0: &DeviceTensor,
+        input1: Option<&DeviceTensor>,
+        output: &DeviceTensor,
+    ) {
         assert_eq!(stream.device().compute_capability(), self.capability);
 
-        assert_eq!(input.shape(), &self.input_shape);
+        assert_eq!(input0.shape(), &self.input_shape);
+        if let Some(input1) = input1 {
+            assert_eq!(input1.shape(), &self.input_shape);
+        }
         assert_eq!(output.shape(), &self.output_shape);
 
+        if self._alpha1 != 0.0 {
+            assert_eq!(input1.is_some(), true);
+        }
+
         let mut args = KernelArgs::new();
-        args.push(input.ptr().ptr());
+        args.push(input0.ptr().ptr());
+        args.push(input1.map_or(null_mut(), |x| x.ptr().ptr()));
         args.push(output.ptr().ptr());
-        args.push::<f32>(self.eps);
         let args = args.finish();
 
         //TODO see if these settings make sense for the typically larger layernorm sizes

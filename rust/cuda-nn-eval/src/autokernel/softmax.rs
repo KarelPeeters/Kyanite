@@ -10,14 +10,14 @@ use crate::shape::StridedShape;
 
 #[derive(Debug)]
 pub struct SoftmaxKernel {
-    capability: ComputeCapability,
-    function: CuFunction,
-
     input_shape: StridedShape,
     output_shape: StridedShape,
 
     _softmax_axis: usize,
     static_size: usize,
+
+    capability: ComputeCapability,
+    function: CuFunction,
 }
 
 const SOFTMAX_SOURCE: &str = include_str!("softmax.cu");

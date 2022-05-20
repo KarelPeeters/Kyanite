@@ -19,13 +19,13 @@ pub struct ScalarKernel {
     #[allow(dead_code)]
     operation: String,
 
-    capability: ComputeCapability,
-    function: CuFunction,
-
     inner_size: usize,
     inner_shape: Vec<usize>,
     operand_types: Vec<String>,
     operand_strides: Vec<Vec<isize>>,
+
+    capability: ComputeCapability,
+    function: CuFunction,
 }
 
 const SCALAR_SOURCE: &str = include_str!("scalar.cu");

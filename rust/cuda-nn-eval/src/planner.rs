@@ -372,11 +372,15 @@ impl<'a> Planner<'a> {
                     output.shape(),
                     axis,
                     eps.into_inner(),
+                    1.0,
+                    0.0,
+                    1.0,
                 );
 
                 let args = LayernormOpArgs {
                     kernel,
-                    input,
+                    input0: input,
+                    input1: None,
                     output: output.clone(),
                 };
 

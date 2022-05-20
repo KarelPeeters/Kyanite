@@ -215,9 +215,12 @@ impl Step<DevicePtr> {
             Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
                 kernel.run(handles.cudnn.stream(), input, output)
             }
-            Step::LayernormOp(LayernormOpArgs { kernel, input, output }) => {
-                kernel.run(handles.cudnn.stream(), input, output)
-            }
+            Step::LayernormOp(LayernormOpArgs {
+                kernel,
+                input0,
+                input1,
+                output,
+            }) => kernel.run(handles.cudnn.stream(), input0, input1.as_ref(), output),
             Step::Gather(GatherArgs {
                 input,
                 axis,
