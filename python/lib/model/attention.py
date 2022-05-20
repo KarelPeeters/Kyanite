@@ -1,6 +1,7 @@
 from typing import NamedTuple
 
 import torch
+import torch.nn.functional as nnf
 from torch import nn
 
 
@@ -19,8 +20,8 @@ class AttentionTower(nn.Module):
         alpha = (2 * depth) ** (1 / 4)
         beta = (8 * depth) ** (-1 / 4)
 
-        self.expand = nn.Conv2d(input_channels, d_model, (1, 1))
-        self.embedding = nn.Parameter(torch.randn(1, d_model, board_size, board_size))
+        self.expand = nn.Linear(input_channels, d_model, bias=False)
+        self.embedding = nn.Parameter(torch.randn(board_size * board_size, d_model))
 
         self.encoders = nn.ModuleList(
             EncoderLayer(d_model, heads, d_k, d_v, d_ff, dropout, alpha=alpha, beta=beta)
@@ -28,20 +29,19 @@ class AttentionTower(nn.Module):
         )
 
     def forward(self, x):
-        b, _, h, w = x.shape
+        b, d_in, h, w = x.shape
 
-        expanded = self.expand(x)
-        embedded = expanded + self.embedding
+        # "b c h w -> (h w) b c"
+        shaped = x.permute(2, 3, 0, 1).view(h * w, b, d_in)
 
-        # "b c h w -> b (h w) c"
-        curr = embedded.permute((0, 2, 3, 1)).view((b, h * w, self.d_model))
+        expanded = self.expand(shaped.reshape(h * w * b, d_in)).view(h * w, b, self.d_model)
+        curr = expanded + self.embedding.unsqueeze(1)
 
         for encoder in self.encoders:
             curr = encoder(curr)
 
-        # "b (h w) c -> b c h w"
-        reshaped = curr.view((b, h, w, self.d_model)).permute((0, 3, 1, 2))
-
+        # "(h w) b c -> b c h w"
+        reshaped = curr.view((h, w, b, self.d_model)).permute((2, 3, 0, 1))
         return reshaped
 
 
@@ -55,33 +55,38 @@ class EncoderLayer(nn.Module):
         super().__init__()
 
         # save model sizes
+        assert d_model % heads == 0
+
         self.d_model = d_model
-        self.heads = heads
-        self.d_k = d_v
-        self.d_v = d_v
         self.d_ff = d_ff
 
-        self.dk_total = heads * d_k
+        self.heads = heads
+        self.d_k = d_k
+        self.d_v = d_v
 
-        self.project_qkv = nn.Conv1d(d_model, heads * (2 * d_k + d_v), 1)
-        self.project_out = nn.Conv1d(heads * d_v, d_model, 1)
+        self.d_kqv = 2 * d_k + d_v
+        self.d_k_total = heads * self.d_k
+
+        # build inner layers
+        self.project_qkv = nn.Linear(d_model, heads * self.d_kqv, bias=False)
+        self.project_out = nn.Linear(heads * d_v, d_model, bias=False)
 
         self.ff = nn.Sequential(
-            nn.Conv1d(d_model, d_ff, 1),
+            nn.Linear(d_model, d_ff, bias=False),
             nn.ReLU(),
-            nn.Conv1d(d_ff, d_model, 1),
+            nn.Linear(d_ff, d_model, bias=False),
         )
 
         self.dropout = nn.Dropout(dropout)
-        self.norm_att = nn.LayerNorm(d_model)
-        self.norm_ff = nn.LayerNorm(d_model)
+        self.norm_att = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.norm_ff = nn.LayerNorm(d_model, elementwise_affine=False)
 
         # initialize weights according to DeepNet/DeepNorm paper
         self.alpha = alpha
 
-        project_q = self.project_qkv.weight[:self.dk_total, :, :]
-        project_k = self.project_qkv.weight[self.dk_total:2 * self.dk_total, :, :]
-        project_v = self.project_qkv.weight[2 * self.dk_total:, :, :]
+        project_q = self.project_qkv.weight[:self.d_k_total, :]
+        project_k = self.project_qkv.weight[self.d_k_total:2 * self.d_k_total, :]
+        project_v = self.project_qkv.weight[2 * self.d_k_total:, :]
 
         for w in [self.ff[0].weight, self.ff[2].weight, project_v, self.project_out.weight]:
             nn.init.xavier_normal_(w, gain=beta)
@@ -89,17 +94,35 @@ class EncoderLayer(nn.Module):
             nn.init.xavier_normal_(w, gain=1)
 
     def forward_with_weights(self, input):
-        qkv = self.project_qkv(input.permute((0, 2, 1))).permute((0, 2, 1))
+        # input & output: (n, b, d_model)
 
-        q = qkv[:, :, :self.dk_total]
-        k = qkv[:, :, self.dk_total:2 * self.dk_total]
-        v = qkv[:, :, 2 * self.dk_total:]
+        heads = self.heads
+        (n, b, c) = input.shape
+        assert c == self.d_model
 
-        att_raw, weights = multi_head_attention(q, k, v, self.heads)
-        att_projected = self.project_out(att_raw.permute((0, 2, 1))).permute((0, 2, 1))
+        # input projection
+        qkv = self.project_qkv(input.view(n * b, self.d_model)).view(n, b * heads, self.d_kqv)
+
+        # split
+        q = qkv[:, :, :self.d_k]
+        k = qkv[:, :, self.d_k:2 * self.d_k]
+        v = qkv[:, :, 2 * self.d_k:]
+
+        # main attention calculation
+        # weights: (b*h, n_q, n_k)
+        # att_raw: (n_q, b*h, d_v)
+
+        logits = torch.bmm(q.transpose(0, 1), k.transpose(0, 1).transpose(1, 2))
+        weights = nnf.softmax(logits, -1)
+
+        # this contiguous() is not actually necessary if we could set the output strides
+        att_raw = torch.bmm(weights, v.transpose(0, 1)).transpose(0, 1).contiguous()
+
+        att_viewed = att_raw.view(n * b, heads * self.d_v)
+        att_projected = self.project_out(att_viewed).view(n, b, self.d_model)
         att_result = self.norm_att(input * self.alpha + self.dropout(att_projected))
 
-        ff_inner = self.ff(att_result.permute((0, 2, 1))).permute((0, 2, 1))
+        ff_inner = self.ff(att_result.view(n * b, self.d_model)).view(n, b, self.d_model)
         ff_result = self.norm_ff(att_result * self.alpha + self.dropout(ff_inner))
 
         return ff_result, weights
@@ -107,30 +130,6 @@ class EncoderLayer(nn.Module):
     def forward(self, input):
         result, _ = self.forward_with_weights(input)
         return result
-
-
-def multi_head_attention(q, k, v, heads: int):
-    s = check_att_shapes(q, k, v, heads)
-
-    # shuffle the inputs
-
-    # "b m (h k) -> (b h) m k"
-    q_split = q.view(s.b, s.m, heads, s.dk).permute((0, 2, 1, 3)).contiguous().view(s.b * heads, s.m, s.dk)
-    # "b n (h k) -> (b h) k n"
-    k_split = k.view(s.b, s.n, heads, s.dk).permute((0, 2, 3, 1)).contiguous().view(s.b * heads, s.dk, s.n)
-    # "b n (h v) -> (b h) n v"
-    v_split = v.view(s.b, s.n, heads, s.dv).permute((0, 2, 1, 3)).contiguous().view(s.b * heads, s.n, s.dv)
-
-    # actual attention
-    logits_split = torch.bmm(q_split, k_split) / s.dk ** .5
-    att_split = torch.softmax(logits_split, -1)
-    result_split = torch.bmm(att_split, v_split)
-
-    # shuffle the output back
-    # "(b h) m v -> b m (h v)"
-    result = result_split.view(s.b, heads, s.m, s.dv).permute((0, 2, 1, 3)).contiguous().view(s.b, s.m, heads * s.dv)
-
-    return result, att_split
 
 
 class AttShapes(NamedTuple):
@@ -143,9 +142,9 @@ class AttShapes(NamedTuple):
 
 
 def check_att_shapes(q, k, v, heads: int) -> AttShapes:
-    b0, m, dk_total0 = q.shape
-    b1, n0, dk_total1 = k.shape
-    b2, n1, dv_total = v.shape
+    m, b0, dk_total0 = q.shape
+    n0, b1, dk_total1 = k.shape
+    n1, b2, dv_total = v.shape
 
     assert b0 == b1 == b2, "Batch size mismatch"
     assert n0 == n1, "Input seq length mismatch"
