@@ -322,19 +322,19 @@ impl<'a> Planner<'a> {
                 let k = left.shape().shape()[2];
                 let n = right.shape().shape()[2];
 
-                // construct a result tensor with col-major strides
-                let result_transposed = self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, n, m]));
-                let result = result_transposed.permute(&[0, 2, 1]);
+                let result = self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]));
 
+                // to ensure we get a simple strided output, we actually compute
+                //   result^T = right^T * left^T
                 let args = BatchedMatMulArgs {
-                    m: m as i32,
-                    n: n as i32,
+                    m: n as i32,
+                    n: m as i32,
                     k: k as i32,
                     alpha: 1.0,
                     beta: 0.0,
-                    a: left.to_mat_mul_arg(),
-                    b: right.to_mat_mul_arg(),
-                    c: result.to_mat_mul_arg(),
+                    a: right.permute(&[0, 2, 1]).to_mat_mul_arg(),
+                    b: left.permute(&[0, 2, 1]).to_mat_mul_arg(),
+                    c: result.permute(&[0, 2, 1]).to_mat_mul_arg(),
                     batch_count: batch_size as i32,
                 };
 
