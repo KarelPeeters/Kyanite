@@ -264,15 +264,19 @@ impl Handles {
 
 impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let indent = "    ";
-        write!(
-            f,
-            "CudaExecutor {{\n    profile: {},\n    inputs: {:?},\n    outputs: {:?},\n    plan: {:?},\n}}",
-            self.profile,
-            debug_vec_multiline(indent, &self.inputs),
-            debug_vec_multiline(indent, &self.outputs),
-            debug_vec_multiline(indent, &self.steps),
-        )
+        writeln!(f, "CudaExecutor {{")?;
+
+        writeln!(f, "    batch_size: {},", self.batch_size)?;
+        writeln!(f, "    mem_usage: {:?},", self.mem_usage)?;
+        writeln!(f, "    profile: {},", self.profile)?;
+
+        writeln!(f, "    inputs: {:?},", debug_vec_multiline("    ", &self.inputs))?;
+        writeln!(f, "    outputs: {:?},", debug_vec_multiline("    ", &self.outputs))?;
+        writeln!(f, "    steps: {:?},", debug_vec_multiline("    ", &self.steps))?;
+
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 }
 
