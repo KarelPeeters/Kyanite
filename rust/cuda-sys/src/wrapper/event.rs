@@ -15,10 +15,6 @@ impl CudaEvent {
         }
     }
 
-    pub unsafe fn inner(&self) -> cudaEvent_t {
-        self.0
-    }
-
     /// Return the elapsed time since `start` _in seconds_.
     pub fn time_elapsed_since(&self, start: &CudaEvent) -> f32 {
         unsafe {
@@ -28,8 +24,12 @@ impl CudaEvent {
         }
     }
 
-    pub unsafe fn synchronize(&self) {
-        cudaEventSynchronize(self.inner()).unwrap()
+    pub fn synchronize(&self) {
+        unsafe { cudaEventSynchronize(self.inner()).unwrap() }
+    }
+
+    pub unsafe fn inner(&self) -> cudaEvent_t {
+        self.0
     }
 }
 

@@ -151,13 +151,18 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             } = position;
 
             let (available_mv_count, forced_pass, policy_indices) = collect_policy_indices(board, self.mapper);
+            assert_eq!(available_mv_count, zero_evaluation.policy.len());
+            assert_eq!(available_mv_count, net_evaluation.policy.len());
+            let used_policy_values: &[f32] = if forced_pass {
+                assert_eq!(available_mv_count, 1);
+                &[]
+            } else {
+                &zero_evaluation.policy
+            };
+
             let played_mv_index = self.mapper.move_to_index(board, played_mv);
             let kdl_policy = kdl_divergence(&zero_evaluation.policy, &net_evaluation.policy);
             let moves_left = game_length + 1 - pos_index;
-
-            assert!(!forced_pass || available_mv_count == 1);
-            assert_eq!(available_mv_count, zero_evaluation.policy.len());
-            assert_eq!(available_mv_count, net_evaluation.policy.len());
 
             let scalars = Scalars {
                 game_id,
@@ -168,7 +173,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 is_final_position: false,
                 is_terminal: false,
                 hit_move_limit: false,
-                available_mv_count,
+                available_mv_count: used_policy_values.len(),
                 played_mv: played_mv_index.map_or(-1, |mv| mv as isize),
                 kdl_policy,
                 final_values: ZeroValues::from_outcome(outcome.pov(board.next_player()), moves_left as f32),
@@ -176,7 +181,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 net_values: net_evaluation.values,
             };
 
-            self.append_position(board, &scalars, &policy_indices, &zero_evaluation.policy)?;
+            self.append_position(board, &scalars, &policy_indices, used_policy_values)?;
         }
 
         let scalars = Scalars {

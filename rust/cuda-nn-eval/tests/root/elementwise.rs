@@ -1,18 +1,18 @@
 use crate::root::runner::{test_elementwise, test_elementwise_pair};
+use nn_graph::graph::{BinaryOp, UnaryOp};
 
 #[test]
-fn add() {
-    test_elementwise_pair(|a, b| a + b, |g, a, b| g.add(a, b))
+fn unary() {
+    for &op in UnaryOp::ALL {
+        test_elementwise(|x| op.map(x), |g, a| g.unary(op, a));
+    }
 }
 
 #[test]
-fn sub() {
-    test_elementwise_pair(|a, b| a - b, |g, a, b| g.sub(a, b))
-}
-
-#[test]
-fn mul() {
-    test_elementwise_pair(|a, b| a * b, |g, a, b| g.mul(a, b))
+fn binary() {
+    for &op in BinaryOp::ALL {
+        test_elementwise_pair(|a, b| op.map(a, b), |g, a, b| g.binary(op, a, b))
+    }
 }
 
 #[test]

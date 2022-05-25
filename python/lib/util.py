@@ -19,7 +19,7 @@ def prod(values):
 
 def print_param_count(module: nn.Module, ):
     param_count = sum(prod(p.shape) for p in module.parameters())
-    print(f"Model has {param_count} parameters, which takes {param_count // 1024 / 1024:.3f} Mb")
+    print(f"Model has {param_count} parameters, which takes {4 * param_count // 1024 / 1024:.3f} Mb")
 
     for name, child in module.named_children():
         child_param_count = sum(prod(p.shape) for p in child.parameters())

@@ -1,62 +1,13 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
+use cuda_nn_eval::{Device, kernels};
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_nn_eval::{kernels, Device};
-use cuda_sys::wrapper::event::CudaEvent;
 use cuda_sys::wrapper::handle::CudaStream;
 use cuda_sys::wrapper::status::Status;
-
-#[test]
-fn strided_copy() {
-    let device = Device::new(0);
-    let stream = CudaStream::new(device);
-
-    let input_data = (0..128).map(|x| x as f32).collect_vec();
-    let mut output_data = vec![0f32; 128];
-
-    let input = device.alloc(input_data.len() * 4);
-    let output = device.alloc(output_data.len() * 4);
-
-    let rank = 4;
-    let size = 56;
-    let input_strides: Vec<i32> = vec![64, 8, 0, 2];
-    let output_strides: Vec<i32> = vec![24, 8, 4, 1];
-    let dense_strides: Vec<i32> = vec![24, 8, 4, 1];
-
-    let start_event = CudaEvent::new();
-    let end_event = CudaEvent::new();
-
-    unsafe {
-        input.copy_linear_from_host(cast_slice(&input_data));
-
-        stream.record_event(&start_event);
-
-        for _ in 0..128 {
-            kernels::stridedCopyFloat(
-                stream.inner(),
-                rank,
-                size,
-                input_strides.as_ptr(),
-                output_strides.as_ptr(),
-                dense_strides.as_ptr(),
-                input.ptr() as *const f32,
-                output.ptr() as *mut f32,
-            )
-            .unwrap();
-        }
-        stream.record_event(&end_event);
-
-        output.copy_linear_to_host(cast_slice_mut(&mut output_data));
-    }
-
-    let delta = end_event.time_elapsed_since(&start_event);
-    println!("Copy took {}", delta);
-    println!("{:?}", output_data);
-}
 
 #[test]
 fn gather() {
@@ -82,7 +33,7 @@ fn gather() {
             input.ptr() as *const _,
             output.ptr() as *mut _,
         )
-        .unwrap();
+            .unwrap();
 
         output.copy_linear_to_host(cast_slice_mut(&mut output_data));
     }
@@ -131,7 +82,7 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
         input.copy_linear_from_host(cast_slice(&input_data));
         indices.copy_linear_from_host(cast_slice(&indices_data));
 
-        let before = stream.record_new_event();
+        let before = stream.record_event();
 
         kernels::gather2dAxis1FloatFloat(
             stream.inner(),
@@ -144,9 +95,9 @@ fn gather_2d_axis1_impl(batch_size: usize, input_size: usize, index_count: usize
             indices.ptr() as *const f32,
             output.ptr() as *mut f32,
         )
-        .unwrap();
+            .unwrap();
 
-        let after = stream.record_new_event();
+        let after = stream.record_event();
         stream.synchronize();
         println!("Took {}s", after.time_elapsed_since(&before));
 

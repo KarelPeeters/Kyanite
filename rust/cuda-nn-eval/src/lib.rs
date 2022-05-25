@@ -2,6 +2,7 @@
 
 pub use cuda_sys::wrapper::handle::Device;
 
+pub mod autokernel;
 pub mod device_tensor;
 pub mod executor;
 pub mod quant;

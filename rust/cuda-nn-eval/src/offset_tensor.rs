@@ -1,8 +1,10 @@
-use crate::shape::StridedShape;
+use std::fmt::Debug;
+
 use cuda_sys::bindings::cublasOperation_t;
 use cuda_sys::wrapper::group::MatMulOperand;
 use nn_graph::graph::SliceRange;
-use std::fmt::Debug;
+
+use crate::shape::{StridedShape, ViewError};
 
 pub trait OffsetPtr: Debug + Clone {
     fn offset_bytes(self, offset: isize) -> Self;
@@ -32,7 +34,7 @@ impl<P> PtrTensor<P> {
         &self.shape
     }
 
-    pub fn map_inner<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
+    pub fn map_ptr<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
         PtrTensor::from_parts(f(self.ptr), self.shape)
     }
 }
@@ -46,8 +48,12 @@ impl<P: OffsetPtr> PtrTensor<P> {
         self.offset(0, self.shape.permute(permutation))
     }
 
-    pub fn view(&self, new_shape: Vec<usize>) -> Self {
-        self.offset(0, self.shape.view(new_shape.clone()).unwrap())
+    pub fn view(&self, new_shape: Vec<usize>) -> Result<Self, ViewError> {
+        self.shape.view(new_shape).map(|shape| self.offset(0, shape))
+    }
+
+    pub fn broadcast(&self, new_shape: Vec<usize>) -> Self {
+        self.offset(0, self.shape.broadcast(new_shape))
     }
 
     pub fn slice(&self, axis: usize, range: SliceRange) -> Self {
@@ -68,7 +74,9 @@ impl<P: OffsetPtr> PtrTensor<P> {
         let mut new_shape = self.shape.shape().to_vec();
         new_shape.remove(axis);
 
-        self.slice(axis, SliceRange::simple(index, index + 1)).view(new_shape)
+        self.slice(axis, SliceRange::simple(index, index + 1))
+            .view(new_shape)
+            .unwrap()
     }
 
     pub fn flip(&self, axis: usize) -> Self {
@@ -97,30 +105,22 @@ impl<P: Clone> PtrTensor<P> {
     pub fn to_mat_mul_arg(&self) -> MatMulOperand<P> {
         assert_eq!(self.shape().rank(), 3);
 
-        let inner_shape = StridedShape::new(self.shape().shape()[1..].to_vec(), self.shape().strides()[1..].to_vec());
-
-        // whether the strides are col-major (true) or row-major (false)
-        let col_major = if inner_shape.has_simple_strides() {
-            false
-        } else if inner_shape.permute(&[1, 0]).has_simple_strides() {
-            true
+        // prefer col-major in case of a tie, since cublas likes that more
+        let (trans, lead_axis) = if self.shape.strides()[1] == 1 {
+            (cublasOperation_t::CUBLAS_OP_N, 2)
+        } else if self.shape.strides()[2] == 1 {
+            (cublasOperation_t::CUBLAS_OP_T, 1)
         } else {
             panic!(
-                "GPU matmul operand must be either col- or row-major, got {:?}",
+                "GPU matmul operand must be either col- or row-dense, got {:?}",
                 self.shape
             )
         };
 
-        let lead_axis = if col_major { 1 } else { 2 };
-
         MatMulOperand {
             ptr: self.ptr().clone(),
-            trans: if col_major {
-                cublasOperation_t::CUBLAS_OP_N
-            } else {
-                cublasOperation_t::CUBLAS_OP_T
-            },
-            ld: self.shape().shape()[lead_axis] as i32,
+            trans,
+            ld: self.shape.strides()[lead_axis] as i32,
             stride: self.shape().strides()[0] as i64,
         }
     }

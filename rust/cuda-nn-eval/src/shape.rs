@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 
 use itertools::{zip, zip_eq, Itertools};
 
-use cuda_sys::wrapper::descriptor::{FilterDescriptor, TensorDescriptor};
+use cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
 use nn_graph::graph::SliceRange;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -99,6 +99,33 @@ impl StridedShape {
 
         // just flip the stride of the axis
         new_strides[axis] *= -1;
+
+        StridedShape::new(new_shape, new_strides)
+    }
+
+    pub fn broadcast(&self, new_shape: Vec<usize>) -> StridedShape {
+        assert_eq!(
+            self.rank(),
+            new_shape.len(),
+            "Can only broadcast to same rank, got {:?} and {:?}",
+            self,
+            new_shape
+        );
+
+        let new_strides = (0..self.rank())
+            .map(|i| {
+                if new_shape[i] == self.shape[i] {
+                    self.strides[i]
+                } else {
+                    assert_eq!(
+                        self.shape[i], 1,
+                        "Broadcast mismatch between {:?} and {:?} at axis {}",
+                        self, new_shape, i
+                    );
+                    0
+                }
+            })
+            .collect_vec();
 
         StridedShape::new(new_shape, new_strides)
     }
@@ -232,6 +259,27 @@ impl StridedShape {
         let dims = self.shape();
         FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
     }
+
+    pub fn matrix_layout(&self) -> MatrixLayout {
+        assert_eq!(3, self.rank(), "Matrix must have rank 3");
+
+        let shape = [self.shape[0], self.shape[1], self.shape[2]];
+        let strides = [self.strides[0], self.strides[1], self.strides[2]];
+
+        MatrixLayout::new(shape, strides).unwrap_or_else(|| panic!("Failed to convert {:?} to MatrixLayout", self))
+    }
+
+    pub fn remove(&self, axis: usize) -> StridedShape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+
+        let mut new_shape = self.shape.clone();
+        let mut new_strides = self.strides.clone();
+
+        new_shape.remove(axis);
+        new_strides.remove(axis);
+
+        StridedShape::new(new_shape, new_strides)
+    }
 }
 
 fn simple_strides(shape: &[usize]) -> Vec<isize> {
@@ -336,7 +384,7 @@ mod test {
     fn view_size_zero() {
         let shape = StridedShape::new(vec![2, 3, 0, 5], vec![0, 0, 0, 2]);
         assert_eq!(collect_groups(&shape), (vec![0], vec![1]));
-        assert_eq!(shape.view(vec![0]), Ok(StridedShape::new(vec![0], vec![1])),);
+        assert_eq!(shape.view(vec![0]), Ok(StridedShape::new(vec![0], vec![1])));
         assert_eq!(shape.view(vec![12, 0]), Ok(StridedShape::new(vec![12, 0], vec![0, 1])),);
     }
 

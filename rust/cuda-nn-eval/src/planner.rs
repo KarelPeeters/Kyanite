@@ -1,25 +1,28 @@
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
-use cuda_sys::bindings::{cudnnActivationMode_t, cudnnOpTensorOp_t};
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, TensorOpArgs};
+use cuda_sys::bindings::cudnnActivationMode_t;
+use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{ElementOp, Graph, Operation, SliceRange, Value};
-use nn_graph::optimizer::core::find_hidden_values_used_once;
+use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::layernorm::LayernormKernel;
+use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
+use crate::autokernel::scalar::ScalarKernel;
+use crate::autokernel::softmax::SoftmaxKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -37,20 +40,19 @@ struct PlanPtr {
 type PlanTensor = PtrTensor<PlanPtr>;
 type PlanStep = Step<PlanPtr>;
 type ExecStep = Step<DevicePtr>;
+type PlanStepInfo = StepInfo<PlanPtr>;
+type ExecStepInfo = StepInfo<DevicePtr>;
 
 pub(crate) struct Planner<'a> {
     handles: &'a Handles,
     graph: &'a Graph,
     batch_size: usize,
 
-    // all values that are only used once in the graph (and are thus candidates for fusing)
-    fuse_candidates: HashSet<Value>,
-
     shared_buffers_size_in_bytes: Vec<usize>,
     max_zero_size: usize,
 
     map: HashMap<Value, PlanTensor>,
-    plan: Vec<PlanStep>,
+    steps: Vec<PlanStepInfo>,
 
     dedicated_bytes: usize,
 }
@@ -59,7 +61,7 @@ pub(crate) struct Planner<'a> {
 pub struct Plan {
     pub inputs: Vec<DeviceTensor>,
     pub outputs: Vec<DeviceTensor>,
-    pub steps: Vec<Step<DevicePtr>>,
+    pub steps: Vec<ExecStepInfo>,
     pub mem_usage: MemoryUsage,
 }
 
@@ -81,19 +83,20 @@ impl<'a> Planner<'a> {
         let outputs = graph
             .outputs()
             .iter()
-            .map(|&output| planner.visit_ensure_simple_strides(output))
+            .enumerate()
+            .map(|(oi, &output)| planner.visit_ensure_simple_strides(output, &format!("output_{}", oi)))
             .collect_vec();
 
         let buffer_count = planner.shared_buffers_size_in_bytes.len();
-        let step_count = planner.plan.len();
+        let step_count = planner.steps.len();
         let mut shared_bytes = 0;
 
         // determine live ranges for shared tensors
         let live_ranges = {
             let mut live_ranges = vec![(step_count, 0); buffer_count];
 
-            for (si, step) in planner.plan.iter().enumerate() {
-                step.ptr_operands().for_each(|op| {
+            for (si, step_info) in planner.steps.iter().enumerate() {
+                step_info.step.ptr_operands().for_each(|op| {
                     if let &PlanBuffer::Shared { index } = &op.buffer {
                         let (lower, upper) = &mut live_ranges[index];
                         *lower = min(*lower, si);
@@ -192,31 +195,31 @@ impl<'a> Planner<'a> {
             inputs: inputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
             outputs: outputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
             steps: planner
-                .plan
+                .steps
                 .into_iter()
-                .map(|step| ctx.realize_step(step))
+                .map(|PlanStepInfo { step, debug_id }| ExecStepInfo {
+                    step: ctx.realize_step(step),
+                    debug_id,
+                })
                 .collect_vec(),
             mem_usage,
         }
     }
 
     fn new(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Self {
-        let fuse_candidates = find_hidden_values_used_once(graph).collect();
-
         Planner {
             handles,
             graph,
             batch_size,
-            fuse_candidates,
             shared_buffers_size_in_bytes: vec![],
             map: Default::default(),
-            plan: vec![],
+            steps: vec![],
             max_zero_size: 0,
             dedicated_bytes: 0,
         }
     }
 
-    fn visit_ensure_simple_strides(&mut self, value: Value) -> PlanTensor {
+    fn visit_ensure_simple_strides(&mut self, value: Value, id: &str) -> PlanTensor {
         let result = self.visit(value);
 
         if result.shape().has_simple_strides() {
@@ -224,7 +227,7 @@ impl<'a> Planner<'a> {
         } else {
             let shape = ConcreteShape::new(result.shape().shape().to_vec());
             let new = self.alloc_tensor_shared(shape);
-            self.plan_copy_tensor(&result, &new);
+            self.plan_copy_tensor(&result, &new, id);
             new
         }
     }
@@ -234,12 +237,9 @@ impl<'a> Planner<'a> {
             return result.clone();
         }
 
-        if self.graph[value].shape.rank() == 4 {
-            if let Some(result) = self.visit_fused_conv(value) {
-                let prev = self.map.insert(value, result.clone());
-                assert!(prev.is_none());
-                return result;
-            }
+        if let Some(result) = self.visit_fused_conv(value) {
+            self.insert_mapping(value, result.clone());
+            return result;
         }
 
         let result_info = &self.graph[value];
@@ -252,13 +252,35 @@ impl<'a> Planner<'a> {
                 unsafe {
                     result.copy_simple_from_host(cast_slice(&**data));
                 }
-                result.map_inner(PlanPtr::from)
+                result.map_ptr(PlanPtr::from)
             }
             &Operation::View { input } => {
                 let input_tensor = self.visit(input);
-                input_tensor.view(result_shape.dims.clone())
+
+                // try simple view operation, otherwise restride to dense and then copy
+                // TODO if we want the output to be simple strided immediately we need separate input/output shapes
+                //    in the scalar kernel
+                // TODO implement proper/fast transpose support in the scalar kernel
+                input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
+                    let input_shape = ConcreteShape::new(input_tensor.shape().shape().to_vec());
+                    let result = self.alloc_tensor_shared(input_shape);
+                    self.plan_copy_tensor(&input_tensor, &result, &result_info.debug_id);
+                    result.view(result_shape.dims.clone()).unwrap()
+                })
             }
-            &Operation::Permute { input, ref permutation } => self.visit(input).permute(permutation),
+            &Operation::Broadcast { input } => {
+                let input_tensor = self.visit(input);
+                input_tensor.broadcast(result_shape.dims.clone())
+            }
+            &Operation::Permute { input, ref permutation } => {
+                if permutation == &[1, 0, 2] {
+                    if let &Operation::MatMul { left, right } = &self.graph[input].operation {
+                        return self.visit_matmul(input, left, right, false).permute(permutation);
+                    }
+                }
+
+                self.visit(input).permute(permutation)
+            }
             &Operation::Slice { input, axis, range } => self.visit(input).slice(axis, range),
             &Operation::Flip { input, axis } => self.visit(input).flip(axis),
             &Operation::Gather { input, axis, indices } => {
@@ -273,7 +295,7 @@ impl<'a> Planner<'a> {
                     output: output.clone(),
                 };
 
-                self.plan.push(PlanStep::Gather(args));
+                self.push(PlanStep::Gather(args), &result_info.debug_id);
 
                 output
             }
@@ -289,7 +311,7 @@ impl<'a> Planner<'a> {
                     let curr_range = SliceRange::simple(curr_start, curr_start + curr_size);
 
                     let curr_result = result.slice(axis, curr_range);
-                    self.plan_copy_tensor(&input, &curr_result);
+                    self.plan_copy_tensor(&input, &curr_result, &result_info.debug_id);
 
                     curr_start += curr_size;
                 }
@@ -299,51 +321,182 @@ impl<'a> Planner<'a> {
             &Operation::Conv { .. } => {
                 unreachable!("conv should have been handled earlier by the fuser")
             }
-            &Operation::MatMul { left, right } => {
+            &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true),
+            &Operation::Unary { input, op } => {
+                let operation = match op {
+                    UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
+                    UnaryOp::Exp => "*x0 = exp(*x1);",
+                };
+
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                self.plan_scalar_op(operation, vec![output.clone(), input], &result_info.debug_id);
+
+                output
+            }
+            &Operation::Binary { left, right, op } => {
+                let op_str = format!("*x0 = {};", binary_op_str(op, "*x1", "*x2"));
+
                 let left = self.visit(left);
                 let right = self.visit(right);
+                let output = self.alloc_tensor_shared(result_shape);
 
-                assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
-                let batch_size = left.shape().shape()[0];
-                let m = left.shape().shape()[1];
-                let k = left.shape().shape()[2];
-                let n = right.shape().shape()[2];
+                self.plan_scalar_op(&op_str, vec![output.clone(), left, right], &result_info.debug_id);
 
-                // construct a result tensor with col-major strides
-                let result_transposed = self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, n, m]));
-                let result = result_transposed.permute(&[0, 2, 1]);
-
-                let args = BatchedMatMulArgs {
-                    m: m as i32,
-                    n: n as i32,
-                    k: k as i32,
-                    alpha: 1.0,
-                    beta: 0.0,
-                    a: left.to_mat_mul_arg(),
-                    b: right.to_mat_mul_arg(),
-                    c: result.to_mat_mul_arg(),
-                    batch_count: batch_size as i32,
-                };
-
-                self.plan.push(PlanStep::MatMul(args));
-
-                result
+                output
             }
-            &Operation::Element { left, right, op } => {
-                let (op, negate_right) = match op {
-                    ElementOp::Add => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, false),
-                    ElementOp::Sub => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, true),
-                    ElementOp::Mul => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MUL, false),
-                    ElementOp::Div => todo!("GPU elementwise division not yet supported"),
-                    ElementOp::Min => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MIN, false),
-                    ElementOp::Max => (cudnnOpTensorOp_t::CUDNN_OP_TENSOR_MAX, false),
+            &Operation::Softmax { input, axis } => {
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let kernel =
+                    SoftmaxKernel::new(self.device().compute_capability(), input.shape(), output.shape(), axis);
+
+                let args = SoftmaxOpArgs {
+                    kernel,
+                    input,
+                    output: output.clone(),
                 };
 
-                self.visit_op(result_shape, left, right, op, negate_right)
+                self.push(PlanStep::SoftmaxOp(args), &result_info.debug_id);
+                output
+            }
+            &Operation::Layernorm { input, axis, eps } => {
+                let (alpha_0, input_0, alpha_1, input_1) = if let &Operation::Binary {
+                    op: BinaryOp::Add,
+                    left,
+                    right,
+                } = &self.graph[input].operation
+                {
+                    let (alpha_0, input_0) = self.visit_scalable_value(left);
+                    let (alpha_1, input_1) = self.visit_scalable_value(right);
+
+                    // TODO get this working for non-matching shapes as well
+                    assert!(input_0.shape() == input_1.shape());
+
+                    (alpha_0, input_0, alpha_1, Some(input_1))
+                } else {
+                    let (alpha_0, input_0) = self.visit_scalable_value(input);
+                    (alpha_0, input_0, 0.0, None)
+                };
+
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let kernel = LayernormKernel::new(
+                    self.device().compute_capability(),
+                    input_0.shape(),
+                    output.shape(),
+                    axis,
+                    eps.into_inner(),
+                    alpha_0,
+                    alpha_1,
+                    1.0,
+                );
+
+                let args = LayernormOpArgs {
+                    kernel,
+                    input0: input_0,
+                    input1: input_1,
+                    output: output.clone(),
+                };
+
+                self.push(PlanStep::LayernormOp(args), &result_info.debug_id);
+                output
+            }
+            &Operation::Reduce { input, ref axes, op } => {
+                let result_size = result_shape.size();
+
+                let input = self.visit(input);
+                let output = self.alloc_tensor_shared(result_shape);
+
+                let identity = op.identity();
+                let (operation, is_mean) = op.operation();
+                let scale = if is_mean {
+                    result_size as f32 / input.shape().size() as f32
+                } else {
+                    1.0
+                };
+
+                let code = ReduceCode {
+                    ty: "float".to_owned(),
+                    identity: format!("{}", identity).replace("inf", "(1.0/0.0)"),
+                    operation: binary_op_str(operation, "curr", "x"),
+                    post_process: format!("curr * {}", scale),
+                };
+
+                let capability = self.device().compute_capability();
+                let kernel = ReduceKernel::new(capability, code, input.shape(), output.shape(), axes);
+
+                let args = ReduceOpArgs {
+                    kernel,
+                    input,
+                    output: output.clone(),
+                };
+                self.push(PlanStep::ReduceOp(args), &result_info.debug_id);
+
+                output
             }
         };
 
         self.insert_mapping(value, result.clone());
+        result
+    }
+
+    fn visit_scalable_value(&mut self, value: Value) -> (f32, PlanTensor) {
+        if let &Operation::Binary {
+            op: BinaryOp::Mul,
+            left,
+            right,
+        } = &self.graph[value].operation
+        {
+            if let Some(alpha) = self.graph.as_single_const(left) {
+                return (alpha, self.visit(right));
+            }
+            if let Some(alpha) = self.graph.as_single_const(right) {
+                return (alpha, self.visit(left));
+            }
+        }
+
+        (1.0, self.visit(value))
+    }
+
+    fn visit_matmul(&mut self, value: Value, left: Value, right: Value, batch_first: bool) -> PlanTensor {
+        let result_info = &self.graph[value];
+        let left = self.visit(left);
+        let right = self.visit(right);
+
+        assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
+        let batch_size = left.shape().shape()[0];
+        let m = left.shape().shape()[1];
+        let k = left.shape().shape()[2];
+        let n = right.shape().shape()[2];
+
+        // TODO this could be generalized to consider any possible output permutation
+        //   and picking the transpose and storage formats that fit best
+        let result = if batch_first {
+            self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]))
+        } else {
+            self.alloc_tensor_shared(ConcreteShape::new(vec![m, batch_size, n]))
+                .permute(&[1, 0, 2])
+        };
+
+        // to ensure we (usually) get a simple strided output, we actually compute
+        //   result^T = right^T * left^T
+        let args = BatchedMatMulArgs {
+            m: n as i32,
+            n: m as i32,
+            k: k as i32,
+            alpha: 1.0,
+            beta: 0.0,
+            a: right.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            b: left.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            c: result.permute(&[0, 2, 1]).to_mat_mul_arg(),
+            batch_count: batch_size as i32,
+        };
+
+        self.push(PlanStep::MatMul(args), &result_info.debug_id);
+
         result
     }
 
@@ -357,18 +510,30 @@ impl<'a> Planner<'a> {
         assert!(prev.is_none());
     }
 
+    fn push(&mut self, step: PlanStep, id: &str) {
+        let step_info = StepInfo {
+            debug_id: id.to_owned(),
+            step,
+        };
+        self.steps.push(step_info);
+    }
+
     fn visit_fused_conv(&mut self, value: Value) -> Option<PlanTensor> {
+        if self.graph[value].shape.rank() != 4 {
+            return None;
+        }
+
         let mut curr = value;
         let graph = self.graph;
 
         // relu(curr)?
-        let act_mode = if let &Operation::Element {
+        let act_mode = if let &Operation::Binary {
             left,
             right,
-            op: ElementOp::Max,
+            op: BinaryOp::Max,
         } = &graph[curr].operation
         {
-            if !self.fuse_candidates.contains(&left) || !graph.is_const_filled_with(right, 0.0) {
+            if !self.graph.is_hidden_with_users(left, 1) || !graph.is_const_filled_with(right, 0.0) {
                 return None;
             }
             curr = left;
@@ -380,31 +545,40 @@ impl<'a> Planner<'a> {
         let mut bias = None;
         let mut res = None;
 
-        while let &Operation::Element {
+        while let &Operation::Binary {
             left,
             right,
-            op: ElementOp::Add,
+            op: BinaryOp::Add,
         } = &graph[curr].operation
         {
-            if !self.fuse_candidates.contains(&left) {
+            if !self.graph.is_hidden_with_users(left, 1) {
                 return None;
             }
 
             //TODO check that left != conv input
-            //TODO check in advance whether outputs will be densely strided, instead of asserting it at the end
             //TODO try visiting both left and right for the continuation
 
-            if graph[left].shape == graph[right].shape {
-                // has to be res
-                if res.is_none() {
-                    res = Some(right);
+            let is_res = graph[left].shape == graph[right].shape;
+
+            let mut bias_inner = None;
+
+            if let Operation::Broadcast { input: right_inner } = graph[right].operation {
+                if graph[left].shape.keep(1, Size::ONE) == graph[right_inner].shape {
+                    bias_inner = Some(right_inner);
+                }
+            }
+
+            if let Some(bias_inner) = bias_inner {
+                // has to be bias
+                if bias.is_none() {
+                    bias = Some(bias_inner);
                 } else {
                     return None;
                 }
-            } else if graph[left].shape.keep(1, Size::ONE) == graph[right].shape {
-                // has to be bias
-                if bias.is_none() {
-                    bias = Some(right);
+            } else if is_res {
+                // has to be res
+                if res.is_none() {
+                    res = Some(right);
                 } else {
                     return None;
                 }
@@ -426,10 +600,12 @@ impl<'a> Planner<'a> {
             }
 
             // TODO for conv the input & res need simple strides, what about filter and bias?
-            let input = self.visit_ensure_simple_strides(input);
+            let debug_id = &self.graph[value].debug_id;
+
+            let input = self.visit_ensure_simple_strides(input, &format!("{}_input", debug_id));
             let filter = self.visit(filter);
             let bias = bias.map(|bias| self.visit(bias));
-            let res = res.map(|res| self.visit_ensure_simple_strides(res));
+            let res = res.map(|res| self.visit_ensure_simple_strides(res, &format!("{}_res", debug_id)));
 
             let bias = bias.unwrap_or_else(|| {
                 let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);
@@ -470,7 +646,7 @@ impl<'a> Planner<'a> {
                 output_desc,
                 output_ptr: output.ptr().clone(),
             };
-            self.plan.push(PlanStep::Conv(args));
+            self.push(PlanStep::Conv(args), &graph[value].debug_id);
 
             Some(output)
         } else {
@@ -478,54 +654,26 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn visit_op(
-        &mut self,
-        result_shape: ConcreteShape,
-        left: Value,
-        right: Value,
-        op: cudnnOpTensorOp_t,
-        negate_right: bool,
-    ) -> PlanTensor {
-        let left = self.visit(left);
-        let right = self.visit(right);
-        let output = self.alloc_tensor_shared(result_shape);
-        let alpha_2 = if negate_right { -1.0 } else { 1.0 };
-
-        self.plan_op(op, 1.0, &left, alpha_2, &right, &output);
-
-        output
-    }
-
-    fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor) {
+    fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, id: &str) {
         assert_eq!(old.shape().shape(), new.shape().shape());
 
-        let zero = self.alloc_tensor_zero(ConcreteShape::new(vec![1; old.shape().rank()]));
-        self.plan_op(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, 1.0, old, 0.0, &zero, &new);
+        self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()], id);
     }
 
-    fn plan_op(
-        &mut self,
-        op: cudnnOpTensorOp_t,
-        alpha_1: f32,
-        left: &PlanTensor,
-        alpha_2: f32,
-        right: &PlanTensor,
-        output: &PlanTensor,
-    ) {
-        let args = TensorOpArgs {
-            op_desc: TensorOpDescriptor::new(op),
-            alpha_1,
-            input_1_desc: left.shape().descriptor(),
-            input_1_ptr: left.ptr().clone(),
-            alpha_2,
-            input_2_desc: right.shape().descriptor(),
-            input_2_ptr: right.ptr().clone(),
-            beta: 0.0,
-            output_desc: output.shape().descriptor(),
-            output_ptr: output.ptr().clone(),
+    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, id: &str) {
+        let operands = if operands[0].shape().rank() == 0 {
+            operands.into_iter().map(|op| op.view(vec![1]).unwrap()).collect_vec()
+        } else {
+            operands
         };
 
-        self.plan.push(PlanStep::TensorOp(args));
+        let capability = self.device().compute_capability();
+        let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
+
+        let kernel = ScalarKernel::new_for_shapes(capability, operation, &shapes);
+
+        let args = ScalarOpArgs { kernel, operands };
+        self.push(PlanStep::ScalarOp(args), id);
     }
 
     fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {
@@ -577,7 +725,7 @@ impl RealizationContext {
     }
 
     fn realize_tensor(&self, tensor: PlanTensor) -> DeviceTensor {
-        tensor.map_inner(|ptr| self.realize_ptr(ptr))
+        tensor.map_ptr(|ptr| self.realize_ptr(ptr))
     }
 
     fn realize_step(&self, step: PlanStep) -> ExecStep {
@@ -600,5 +748,17 @@ impl OffsetPtr for PlanPtr {
 impl From<DevicePtr> for PlanPtr {
     fn from(ptr: DevicePtr) -> Self {
         PlanPtr::from_parts(PlanBuffer::Dedicated(ptr), 0)
+    }
+}
+
+fn binary_op_str(op: BinaryOp, a: &str, b: &str) -> String {
+    match op {
+        BinaryOp::Add => format!("{} + {}", a, b),
+        BinaryOp::Sub => format!("{} - {}", a, b),
+        BinaryOp::Mul => format!("{} * {}", a, b),
+        BinaryOp::Div => format!("{} / {}", a, b),
+        BinaryOp::Min => format!("min({}, {})", a, b),
+        BinaryOp::Max => format!("max({}, {})", a, b),
+        BinaryOp::Pow => format!("powf({}, {})", a, b),
     }
 }

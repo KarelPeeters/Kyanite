@@ -34,10 +34,12 @@ __global__ void unquantizeKernel(
         int itemsPerThread
 ) {
     int batch_index = blockIdx.x;
-    int offset = threadIdx.x * itemsPerThread;
+    int threads = blockDim.x;
+
+    int offset = threadIdx.x;
 
     for (int i = 0; i < itemsPerThread; i++) {
-        int index = offset + i;
+        int index = offset + i * threads;
         if (index >= length) {
             return;
         }

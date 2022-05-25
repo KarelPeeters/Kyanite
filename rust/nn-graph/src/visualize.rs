@@ -215,6 +215,7 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
     let has_dummy_user = graph.values().any(|other| {
         let other_operation = &graph[other].operation;
 
+        // TODO what are we even calculating here? mostly questionable heuristics?
         if other_operation.inputs().contains(&value) {
             match other_operation {
                 Operation::Input { .. } | Operation::Constant { .. } => unreachable!(),
@@ -222,14 +223,19 @@ fn should_show_value(graph: &Graph, value: Value) -> bool {
                     // check if all commons dims at the start match, which implies the only different is trailing 1s
                     zip(&graph[input].shape.dims, &graph[other].shape.dims).all(|(l, r)| l == r)
                 }
-                Operation::Permute { .. }
+                Operation::Broadcast { .. }
+                | Operation::Permute { .. }
                 | Operation::Slice { .. }
                 | Operation::Flip { .. }
                 | Operation::Gather { .. }
                 | Operation::Concat { .. }
                 | Operation::Conv { .. }
-                | Operation::MatMul { .. } => false,
-                &Operation::Element { left, right, op: _ } => graph[left].shape != graph[right].shape,
+                | Operation::MatMul { .. }
+                | Operation::Softmax { .. }
+                | Operation::Layernorm { .. }
+                | Operation::Reduce { .. }
+                | Operation::Unary { .. } => false,
+                &Operation::Binary { left, right, op: _ } => graph[left].shape != graph[right].shape,
             }
         } else {
             false
@@ -245,6 +251,7 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         Operation::Input { .. } => false,
         Operation::Constant { .. } => true,
         Operation::View { .. }
+        | Operation::Broadcast { .. }
         | Operation::Permute { .. }
         | Operation::Slice { .. }
         | Operation::Flip { .. }
@@ -252,7 +259,11 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
         | Operation::Concat { .. }
         | Operation::Conv { .. }
         | Operation::MatMul { .. }
-        | Operation::Element { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
+        | Operation::Unary { .. }
+        | Operation::Binary { .. }
+        | Operation::Softmax { .. }
+        | Operation::Layernorm { .. }
+        | Operation::Reduce { .. } => operation.inputs().iter().all(|&v| is_effectively_constant(graph, v)),
     }
 }
 

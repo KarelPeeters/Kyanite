@@ -23,3 +23,11 @@ fn pre() {
         include_bytes!("../data/pre-sttt-4x8.bin"),
     )
 }
+
+#[test]
+fn att_tiny() {
+    test_onnx_bin(
+        include_bytes!("../data/att-tiny.onnx"),
+        include_bytes!("../data/att-tiny.bin"),
+    )
+}

@@ -8,6 +8,7 @@ pub mod core;
 pub struct OptimizerSettings {
     pub optimize: bool,
     pub force_bias_through_conv: bool,
+    pub fuse_layernorm: bool,
 }
 
 pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
@@ -39,6 +40,7 @@ impl Default for OptimizerSettings {
         OptimizerSettings {
             optimize: true,
             force_bias_through_conv: false,
+            fuse_layernorm: true,
         }
     }
 }

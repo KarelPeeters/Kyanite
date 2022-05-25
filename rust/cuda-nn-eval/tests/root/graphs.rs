@@ -1,10 +1,9 @@
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_sys::wrapper::handle::Device;
 use itertools::Itertools;
 
-use nn_graph::graph::{ElementOp, Graph, SliceRange, Value};
+use cuda_nn_eval::device_tensor::DeviceTensor;
+use cuda_sys::wrapper::handle::Device;
+use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
-use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
@@ -161,6 +160,25 @@ fn linear() {
 }
 
 #[test]
+fn linear_sliced() {
+    let mut graph = Graph::new();
+
+    let left = graph.input(shape![8, 4]);
+    let left_sliced = graph.slice(left, 0, SliceRange::new(0, 8, 2));
+    let right = graph.input(shape![4, 3]);
+
+    let result = graph.mat_mul(left_sliced, right);
+    graph.output(result);
+
+    test_all(
+        &graph,
+        0,
+        &[linspace_tensor((8, 4)).into_dyn(), linspace_tensor((4, 3)).into_dyn()],
+        None,
+    );
+}
+
+#[test]
 fn mat_mul() {
     // run the "transposed" cases first since they're simpler for cublas
     for transpose_a in [true, false] {
@@ -192,7 +210,7 @@ fn mat_mul() {
                 b_orig
             };
 
-            let result = graph.mat_mul(a, b);
+            let result = graph.batched_mat_mul(a, b);
             assert_eq!(graph[result].shape, shape![4, 5, 3]);
             graph.output(result);
 
@@ -254,11 +272,11 @@ fn fuse_clamp() {
 fn ele_broadcast() {
     // don't test division, since the GPU doesn't support it yet
     for op in [
-        ElementOp::Add,
-        ElementOp::Sub,
-        ElementOp::Mul,
-        ElementOp::Min,
-        ElementOp::Max,
+        BinaryOp::Add,
+        BinaryOp::Sub,
+        BinaryOp::Mul,
+        BinaryOp::Min,
+        BinaryOp::Max,
     ] {
         println!("Testing operation {:?}", op);
 
@@ -269,7 +287,7 @@ fn ele_broadcast() {
             println!("  with right shape {}", shape);
             let size = shape.size().eval(0);
             let right = graph.constant(shape, linspace_vec(size));
-            let result = graph.ele(op, left, right);
+            let result = graph.binary(op, left, right);
             graph.output(result);
         }
 
@@ -346,15 +364,11 @@ fn affine_single_div() {
 
     let left = graph.constant(shape![2, 3], range_vec(2 * 3));
     let right = graph.constant(Shape::SCALAR, vec![2.0]);
-    let result = graph.ele(ElementOp::Div, left, right);
+    let result = graph.binary(BinaryOp::Div, left, right);
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
-
-    // only test optimized since div is not yet supported on GPU
-    // and the optimizer converts it to a scale affine operation
-    let optimized = optimize_graph(&graph, OptimizerSettings::default());
-    test_all_graph(&optimized, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
+    test_all_graph(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
 }
 
 #[test]
@@ -416,7 +430,7 @@ fn pre_act_resnet() {
     let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
     let mut tower = graph.conv(input, filter_initial, 1, 1);
-    for _ in 0..4 {
+    for _ in 0..2 {
         let mut curr = channel_batchnorm(&mut graph, tower);
         curr = graph.clamp(curr, 0.0, 6.0);
         curr = graph.conv(curr, filter_tower, 1, 1);
@@ -558,4 +572,108 @@ fn repeated_conv() {
     graph.output_all(&[x4, y4]);
 
     test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
+fn softmax() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 3]);
+
+    let result0 = graph.softmax(input, 0);
+    let result1 = graph.softmax(input, 1);
+
+    graph.output_all(&[result0, result1]);
+
+    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
+    test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);
+}
+
+#[test]
+fn reduce_easy() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![4, 3]);
+
+    for &axis in &[0, 1] {
+        for &op in ReduceOp::ALL {
+            let result = graph.reduce(input, vec![axis], op);
+            graph.output(result);
+        }
+    }
+
+    let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, -1.0 / 0.0, 0.0, 1.0, 2.0];
+    test_all(&graph, 0, &[manual_tensor((4, 3), input_data)], None);
+}
+
+#[test]
+fn reduce_mixed() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![12, 3, 7, 9, 13]);
+    let mixed = graph.permute(input, vec![0, 3, 2, 1, 4]);
+    let output = graph.reduce(mixed, vec![1, 2, 4], ReduceOp::Sum);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor((12, 3, 7, 9, 13)).into_dyn()], None);
+}
+
+#[test]
+fn reduce_single() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![4]);
+    let output = graph.reduce(input, vec![0], ReduceOp::Sum);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+}
+
+#[test]
+fn softmax_single() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![4]);
+    let output = graph.softmax(input, 0);
+    graph.output(output);
+
+    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+}
+
+#[test]
+fn layernorm_fused() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![Size::BATCH, 8, 32]);
+    let reduced_shape = shape![Size::BATCH, 8, 1];
+
+    let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
+    let const_eps = graph.constant(Shape::SCALAR, vec![1e-5]);
+
+    let mean = graph.reduce(input, vec![2], ReduceOp::Mean);
+    let mean = graph.view(mean, reduced_shape.clone());
+    let zeroed = graph.sub(input, mean);
+
+    let pow = graph.pow(zeroed, const_2);
+    let var = graph.reduce(pow, vec![2], ReduceOp::Mean);
+    let var = graph.view(var, reduced_shape.clone());
+    let var = graph.add(var, const_eps);
+
+    let std = graph.unary(UnaryOp::Sqrt, var);
+    let result = graph.binary(BinaryOp::Div, zeroed, std);
+
+    graph.output(result);
+
+    test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
+}
+
+#[test]
+fn scalar_scalar() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(Shape::SCALAR);
+    let result = graph.unary(UnaryOp::Exp, input);
+    graph.output(result);
+
+    test_all(&graph, 0, &[manual_tensor((), vec![2.0])], None);
 }

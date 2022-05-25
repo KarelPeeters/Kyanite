@@ -10,9 +10,8 @@ use nn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;
-
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, Step};
+use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -23,7 +22,7 @@ pub struct CudaExecutor {
 
     pub batch_size: usize,
     pub mem_usage: MemoryUsage,
-    steps: Vec<Step<DevicePtr>>,
+    steps: Vec<StepInfo<DevicePtr>>,
 
     profile: bool,
     last_profile: Option<Profile>,
@@ -43,7 +42,10 @@ pub struct Profile {
 
     pub conv: f32,
     pub mat_mul: f32,
-    pub tensor_op: f32,
+    pub scalar_op: f32,
+    pub reduce_op: f32,
+    pub softmax_op: f32,
+    pub layernorm_op: f32,
     pub gather: f32,
 
     pub total_cpu: f32,
@@ -122,49 +124,52 @@ impl CudaExecutor {
     /// so ensure inputs are written and synchronize before reading outputs.
     pub unsafe fn run_async(&mut self) {
         if !self.profile {
-            for step in &self.steps {
-                step.run(&self.handles);
+            for step_info in &self.steps {
+                step_info.step.run(&self.handles);
             }
 
             self.last_profile = None
         } else {
             let mut timers = vec![];
 
-            let start_gpu = self.stream().record_new_event();
+            let start_gpu = self.stream().record_event();
             start_gpu.synchronize();
 
             let start_cpu = Instant::now();
 
-            for step in &self.steps {
-                let start = self.stream().record_new_event();
-                step.run(&self.handles);
-                let end = self.stream().record_new_event();
+            for step_info in &self.steps {
+                let start = self.stream().record_event();
+                step_info.step.run(&self.handles);
+                let end = self.stream().record_event();
 
                 if self.profile {
-                    timers.push((step, start, end));
+                    timers.push((step_info, start, end));
                 }
             }
 
-            let end_gpu = self.stream().record_new_event();
+            let end_gpu = self.stream().record_event();
             self.stream().synchronize();
 
             let end_cpu = Instant::now();
 
             let mut profile = Profile::default();
 
-            for (i, (step, start, end)) in timers.iter().enumerate() {
+            for (i, (step_info, start, end)) in timers.iter().enumerate() {
                 let time = end.time_elapsed_since(start);
 
-                *match step {
+                *match step_info.step {
                     Step::Conv { .. } => &mut profile.conv,
                     Step::MatMul { .. } => &mut profile.mat_mul,
-                    Step::TensorOp { .. } => &mut profile.tensor_op,
+                    Step::ScalarOp { .. } => &mut profile.scalar_op,
+                    Step::ReduceOp { .. } => &mut profile.reduce_op,
+                    Step::SoftmaxOp { .. } => &mut profile.softmax_op,
+                    Step::LayernormOp { .. } => &mut profile.layernorm_op,
                     Step::Gather { .. } => &mut profile.gather,
                 } += time;
 
                 profile
                     .steps
-                    .push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step));
+                    .push(format!("{: >4} time {:>10.4} ms, step {:?}", i, time * 1e3, step_info));
             }
 
             let overhead_end = Instant::now();
@@ -193,19 +198,29 @@ impl Step<DevicePtr> {
             }
             Step::MatMul(args) => {
                 // schedule blas wait for cudnn
-                let cuda_event = handles.cudnn.stream().record_new_event();
+                let cuda_event = handles.cudnn.stream().record_event();
                 handles.cublas.stream().wait_for_event(&cuda_event);
 
                 // schedule operation on blas
                 args.run(&handles.cublas);
 
                 // schedule cudnn wait for blas
-                let blas_event = handles.cublas.stream().record_new_event();
+                let blas_event = handles.cublas.stream().record_event();
                 handles.cudnn.stream().wait_for_event(&blas_event);
             }
-            Step::TensorOp(args) => {
-                args.run(&handles.cudnn);
+            Step::ScalarOp(ScalarOpArgs { kernel, operands }) => {
+                kernel.run(handles.cudnn.stream(), operands);
             }
+            Step::ReduceOp(ReduceOpArgs { kernel, input, output }) => kernel.run(handles.cudnn.stream(), input, output),
+            Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
+                kernel.run(handles.cudnn.stream(), input, output)
+            }
+            Step::LayernormOp(LayernormOpArgs {
+                kernel,
+                input0,
+                input1,
+                output,
+            }) => kernel.run(handles.cudnn.stream(), input0, input1.as_ref(), output),
             Step::Gather(GatherArgs {
                 input,
                 axis,
@@ -252,15 +267,19 @@ impl Handles {
 
 impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let indent = "    ";
-        write!(
-            f,
-            "CudaExecutor {{\n    profile: {},\n    inputs: {:?},\n    outputs: {:?},\n    plan: {:?},\n}}",
-            self.profile,
-            debug_vec_multiline(indent, &self.inputs),
-            debug_vec_multiline(indent, &self.outputs),
-            debug_vec_multiline(indent, &self.steps),
-        )
+        writeln!(f, "CudaExecutor {{")?;
+
+        writeln!(f, "    batch_size: {},", self.batch_size)?;
+        writeln!(f, "    mem_usage: {:?},", self.mem_usage)?;
+        writeln!(f, "    profile: {},", self.profile)?;
+
+        writeln!(f, "    inputs: {:?},", debug_vec_multiline("    ", &self.inputs))?;
+        writeln!(f, "    outputs: {:?},", debug_vec_multiline("    ", &self.outputs))?;
+        writeln!(f, "    steps: {:?},", debug_vec_multiline("    ", &self.steps))?;
+
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 }
 
@@ -272,18 +291,20 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        let total = self.conv + self.mat_mul + self.tensor_op + self.gather;
+        let total = self.conv + self.mat_mul + self.scalar_op + self.softmax_op + self.gather;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
-        line("Conv:     ", self.conv)?;
-        line("Matmul:   ", self.mat_mul)?;
-        line("Tensor op:", self.tensor_op)?;
-        line("Gather:   ", self.gather)?;
+        line("Conv:      ", self.conv)?;
+        line("Matmul:    ", self.mat_mul)?;
+        line("Scalar:    ", self.scalar_op)?;
+        line("Softmax:   ", self.softmax_op)?;
+        line("Layernorm: ", self.layernorm_op)?;
+        line("Gather:    ", self.gather)?;
 
         writeln!(f, "  ==============================")?;
-        writeln!(f, "  Total GPU: {:>10.4} ms", self.total_gpu * 1e3)?;
-        writeln!(f, "  Total CPU: {:>10.4} ms", self.total_cpu * 1e3)?;
-        writeln!(f, "  Overhead:  {:>10.4} ms", self.timing_overhead * 1e3)?;
+        writeln!(f, "  Total GPU:  {:>10.4} ms", self.total_gpu * 1e3)?;
+        writeln!(f, "  Total CPU:  {:>10.4} ms", self.total_cpu * 1e3)?;
+        writeln!(f, "  Overhead:   {:>10.4} ms", self.timing_overhead * 1e3)?;
 
         writeln!(f, "}}")?;
 

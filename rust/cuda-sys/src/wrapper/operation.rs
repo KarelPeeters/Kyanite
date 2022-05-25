@@ -1,14 +1,19 @@
+use std::ptr::null_mut;
+
+use crate::bindings::{
+    cublasLtMatmulAlgoGetHeuristic, cublasLtMatmulHeuristicResult_t, cudnnActivationMode_t, cudnnOpTensor,
+    cudnnPoolingForward, cudnnReduceTensor,
+};
 pub use crate::bindings::{
     cudnnActivationForward, cudnnAddTensor, cudnnConvolutionBiasActivationForward, cudnnConvolutionForward,
     cudnnConvolutionFwdAlgoPerf_t, cudnnConvolutionFwdAlgo_t, cudnnFindConvolutionForwardAlgorithm,
     cudnnGetConvolutionForwardAlgorithmMaxCount, cudnnStatus_t,
 };
-use crate::bindings::{cudnnActivationMode_t, cudnnOpTensor, cudnnPoolingForward};
 use crate::wrapper::descriptor::{
-    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, PoolingDescriptor, TensorDescriptor,
-    TensorOpDescriptor,
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, MatMulDesc, MatMulPreference, MatrixLayout,
+    PoolingDescriptor, TensorDescriptor, TensorOpDescriptor, TensorReduceDescriptor,
 };
-use crate::wrapper::handle::CudnnHandle;
+use crate::wrapper::handle::{CublasLtHandle, CudnnHandle};
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
@@ -280,4 +285,81 @@ pub unsafe fn run_tensor_op(
         output_ptr.ptr(),
     )
     .unwrap();
+}
+
+/// Runs `output = a * reduce(A) + b * output`
+pub unsafe fn run_tensor_reduce(
+    handle: &CudnnHandle,
+    reduce_desc: &TensorReduceDescriptor,
+    work_size_in_bytes: usize,
+    work_ptr: &DevicePtr,
+    alpha: f32,
+    input_desc: &TensorDescriptor,
+    input_ptr: &DevicePtr,
+    beta: f32,
+    output_desc: &TensorDescriptor,
+    output_ptr: &DevicePtr,
+) {
+    cudnnReduceTensor(
+        handle.inner(),
+        reduce_desc.inner(),
+        null_mut(),
+        0,
+        work_ptr.ptr(),
+        work_size_in_bytes,
+        &alpha as *const _ as *const _,
+        input_desc.inner(),
+        input_ptr.ptr(),
+        &beta as *const _ as *const _,
+        output_desc.inner(),
+        output_ptr.ptr(),
+    )
+    .unwrap();
+}
+
+pub fn find_matmul_algorithms(
+    handle: &CublasLtHandle,
+    operation: &MatMulDesc,
+    a_desc: &MatrixLayout,
+    b_desc: &MatrixLayout,
+    c_desc: &MatrixLayout,
+    d_desc: &MatrixLayout,
+    preference: &MatMulPreference,
+) -> Vec<cublasLtMatmulHeuristicResult_t> {
+    let call = |buffer: *mut cublasLtMatmulHeuristicResult_t, count: i32| unsafe {
+        let mut actual_count = 0;
+        cublasLtMatmulAlgoGetHeuristic(
+            handle.inner(),
+            operation.inner(),
+            a_desc.inner(),
+            b_desc.inner(),
+            c_desc.inner(),
+            d_desc.inner(),
+            preference.inner(),
+            count,
+            buffer,
+            &mut actual_count as *mut _,
+        )
+        .unwrap();
+        actual_count
+    };
+
+    unsafe {
+        let initial_count = 1;
+
+        let mut result = Vec::with_capacity(initial_count);
+        let count = call(result.as_mut_ptr(), initial_count as i32);
+        result.set_len(initial_count);
+
+        println!("actual count: {}", count);
+
+        if count as usize != initial_count {
+            result.reserve(result.len() - count as usize);
+            let new_count = call(result.as_mut_ptr(), count);
+            assert_eq!(new_count, count);
+            result.set_len(count as usize);
+        }
+
+        result
+    }
 }

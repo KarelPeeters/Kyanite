@@ -4,10 +4,11 @@ use std::ptr::null_mut;
 use bytemuck::cast_slice;
 
 use crate::bindings::{
-    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasSetStream_v2, cudaDeviceProp, cudaEventRecord,
-    cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode,
-    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent,
-    cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
+    cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasLtCreate, cublasLtDestroy, cublasLtHandle_t,
+    cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount,
+    cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate,
+    cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate,
+    cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
@@ -24,6 +25,12 @@ pub fn cuda_device_count() -> i32 {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Device(i32);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct ComputeCapability {
+    pub major: i32,
+    pub minor: i32,
+}
 
 impl Device {
     pub fn new(device: i32) -> Self {
@@ -46,7 +53,7 @@ impl Device {
     // Set the current cuda device to this device.
     //TODO is this enough when there are multiple threads running?
     pub unsafe fn switch_to(self) {
-        cudaSetDevice(self.0).unwrap()
+        cudaSetDevice(self.inner()).unwrap()
     }
 
     pub fn alloc(self, len_bytes: usize) -> DevicePtr {
@@ -57,8 +64,23 @@ impl Device {
         unsafe {
             self.switch_to();
             let mut properties = MaybeUninit::uninit();
-            cudaGetDeviceProperties(properties.as_mut_ptr(), self.0).unwrap();
+            cudaGetDeviceProperties(properties.as_mut_ptr(), self.inner()).unwrap();
             properties.assume_init()
+        }
+    }
+
+    pub fn attribute(self, attribute: cudaDeviceAttr) -> i32 {
+        unsafe {
+            let mut value: i32 = 0;
+            cudaDeviceGetAttribute(&mut value as *mut _, attribute, self.inner()).unwrap();
+            value
+        }
+    }
+
+    pub fn compute_capability(self) -> ComputeCapability {
+        ComputeCapability {
+            major: self.attribute(cudaDeviceAttr::cudaDevAttrComputeCapabilityMajor),
+            minor: self.attribute(cudaDeviceAttr::cudaDevAttrComputeCapabilityMinor),
         }
     }
 
@@ -110,19 +132,20 @@ impl CudaStream {
         self.inner
     }
 
-    pub unsafe fn record_event(&self, event: &CudaEvent) {
-        cudaEventRecord(event.inner(), self.inner()).unwrap()
-    }
-
-    // TODO make this the default function with the shorter name
-    pub unsafe fn record_new_event(&self) -> CudaEvent {
+    pub fn record_event(&self) -> CudaEvent {
         let event = CudaEvent::new();
-        self.record_event(&event);
+        self.record_existing_event(&event);
         event
     }
 
-    pub unsafe fn wait_for_event(&self, event: &CudaEvent) {
-        cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+    pub fn record_existing_event(&self, event: &CudaEvent) {
+        unsafe { cudaEventRecord(event.inner(), self.inner()).unwrap() }
+    }
+
+    pub fn wait_for_event(&self, event: &CudaEvent) {
+        unsafe {
+            cudaStreamWaitEvent(self.inner, event.inner(), 0).unwrap();
+        }
     }
 
     pub unsafe fn begin_capture(&self) {
@@ -206,11 +229,37 @@ impl CublasHandle {
         }
     }
 
-    pub unsafe fn stream(&self) -> &CudaStream {
+    pub fn stream(&self) -> &CudaStream {
         &self.stream
     }
 
     pub unsafe fn inner(&self) -> cublasHandle_t {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct CublasLtHandle {
+    inner: cublasLtHandle_t,
+}
+
+impl Drop for CublasLtHandle {
+    fn drop(&mut self) {
+        unsafe { cublasLtDestroy(self.inner).unwrap_in_drop() }
+    }
+}
+
+impl CublasLtHandle {
+    pub fn new(device: Device) -> Self {
+        unsafe {
+            let mut inner = null_mut();
+            device.switch_to();
+            cublasLtCreate(&mut inner as *mut _).unwrap();
+            CublasLtHandle { inner }
+        }
+    }
+
+    pub unsafe fn inner(&self) -> cublasLtHandle_t {
         self.inner
     }
 }

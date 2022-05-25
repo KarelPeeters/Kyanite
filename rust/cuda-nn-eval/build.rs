@@ -4,9 +4,11 @@ use std::path::Path;
 fn main() {
     // based on https://github.com/termoshtt/link_cuda_kernel
 
-    let kernels_path = Path::new("cuda/kernels");
+    let kernels_path = "cuda/kernels";
+    println!("cargo:rerun-if-changed={}", kernels_path);
 
     // this is stupid, there's way to much unwrapping here
+    let kernels_path = Path::new(kernels_path);
     let mut files = vec![];
     for f in std::fs::read_dir(kernels_path).unwrap() {
         let f = f.unwrap();
@@ -19,8 +21,10 @@ fn main() {
     cc::Build::new()
         .cuda(true)
         .cudart("shared")
-        //        .flag("-gencode")
-        //        .flag("arch=compute_61,code=sm_61")
+        .debug(false)
+        .opt_level(3)
+        // .flag("-gencode")
+        // .flag("arch=compute_61,code=sm_61")
         .include("cuda")
         .files(files)
         .compile("libkernels.a")

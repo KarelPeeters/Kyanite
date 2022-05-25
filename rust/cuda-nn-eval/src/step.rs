@@ -2,15 +2,28 @@ use std::ops::ControlFlow;
 
 use internal_iterator::InternalIterator;
 
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs, MatMulOperand, TensorOpArgs};
+use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 
+use crate::autokernel::layernorm::LayernormKernel;
+use crate::autokernel::reduce::ReduceKernel;
+use crate::autokernel::scalar::ScalarKernel;
+use crate::autokernel::softmax::SoftmaxKernel;
 use crate::offset_tensor::PtrTensor;
+
+#[derive(Debug)]
+pub struct StepInfo<P> {
+    pub debug_id: String,
+    pub step: Step<P>,
+}
 
 #[derive(Debug)]
 pub enum Step<P> {
     Conv(FusedConvolutionArgs<P>),
     MatMul(BatchedMatMulArgs<P>),
-    TensorOp(TensorOpArgs<P>),
+    ScalarOp(ScalarOpArgs<P>),
+    ReduceOp(ReduceOpArgs<P>),
+    SoftmaxOp(SoftmaxOpArgs<P>),
+    LayernormOp(LayernormOpArgs<P>),
     Gather(GatherArgs<P>),
 }
 
@@ -19,6 +32,34 @@ pub struct GatherArgs<P> {
     pub input: PtrTensor<P>,
     pub axis: usize,
     pub indices: PtrTensor<P>,
+    pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
+pub struct ScalarOpArgs<P> {
+    pub kernel: ScalarKernel,
+    pub operands: Vec<PtrTensor<P>>,
+}
+
+#[derive(Debug)]
+pub struct ReduceOpArgs<P> {
+    pub kernel: ReduceKernel,
+    pub input: PtrTensor<P>,
+    pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
+pub struct SoftmaxOpArgs<P> {
+    pub kernel: SoftmaxKernel,
+    pub input: PtrTensor<P>,
+    pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
+pub struct LayernormOpArgs<P> {
+    pub kernel: LayernormKernel,
+    pub input0: PtrTensor<P>,
+    pub input1: Option<PtrTensor<P>>,
     pub output: PtrTensor<P>,
 }
 
@@ -55,28 +96,36 @@ impl<P> Step<P> {
                 k: args.k,
                 alpha: args.alpha,
                 beta: args.beta,
-                a: matmul_args_map_ptr(args.a, &mut f),
-                b: matmul_args_map_ptr(args.b, &mut f),
-                c: matmul_args_map_ptr(args.c, &mut f),
+                a: args.a.map_ptr(&mut f),
+                b: args.b.map_ptr(&mut f),
+                c: args.c.map_ptr(&mut f),
                 batch_count: args.batch_count,
             }),
-            Step::TensorOp(args) => Step::TensorOp(TensorOpArgs {
-                op_desc: args.op_desc,
-                alpha_1: args.alpha_1,
-                input_1_desc: args.input_1_desc,
-                input_1_ptr: f(args.input_1_ptr),
-                alpha_2: args.alpha_2,
-                input_2_desc: args.input_2_desc,
-                input_2_ptr: f(args.input_2_ptr),
-                beta: args.beta,
-                output_desc: args.output_desc,
-                output_ptr: f(args.output_ptr),
+            Step::ScalarOp(args) => Step::ScalarOp(ScalarOpArgs {
+                kernel: args.kernel,
+                operands: args.operands.into_iter().map(|op| op.map_ptr(&mut f)).collect(),
+            }),
+            Step::ReduceOp(args) => Step::ReduceOp(ReduceOpArgs {
+                kernel: args.kernel,
+                input: args.input.map_ptr(&mut f),
+                output: args.output.map_ptr(&mut f),
+            }),
+            Step::SoftmaxOp(args) => Step::SoftmaxOp(SoftmaxOpArgs {
+                kernel: args.kernel,
+                input: args.input.map_ptr(&mut f),
+                output: args.output.map_ptr(&mut f),
+            }),
+            Step::LayernormOp(args) => Step::LayernormOp(LayernormOpArgs {
+                kernel: args.kernel,
+                input0: args.input0.map_ptr(&mut f),
+                input1: args.input1.map(|op| op.map_ptr(&mut f)),
+                output: args.output.map_ptr(&mut f),
             }),
             Step::Gather(args) => Step::Gather(GatherArgs {
-                input: args.input.map_inner(&mut f),
+                input: args.input.map_ptr(&mut f),
                 axis: args.axis,
-                indices: args.indices.map_inner(&mut f),
-                output: args.output.map_inner(&mut f),
+                indices: args.indices.map_ptr(&mut f),
+                output: args.output.map_ptr(&mut f),
             }),
         }
     }
@@ -123,21 +172,34 @@ impl<P> Step<P> {
                 f(&b.ptr)?;
                 f(&c.ptr)?;
             }
-            Step::TensorOp(TensorOpArgs {
-                op_desc: _,
-                alpha_1: _,
-                input_1_desc: _,
-                input_1_ptr,
-                alpha_2: _,
-                input_2_desc: _,
-                input_2_ptr,
-                beta: _,
-                output_desc: _,
-                output_ptr,
+            Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => operands.iter().map(|a| a.ptr()).try_for_each(f)?,
+            Step::ReduceOp(ReduceOpArgs {
+                kernel: _,
+                input,
+                output,
             }) => {
-                f(input_1_ptr)?;
-                f(input_2_ptr)?;
-                f(output_ptr)?;
+                f(input.ptr())?;
+                f(output.ptr())?;
+            }
+            Step::SoftmaxOp(SoftmaxOpArgs {
+                kernel: _,
+                input,
+                output,
+            }) => {
+                f(input.ptr())?;
+                f(output.ptr())?;
+            }
+            Step::LayernormOp(LayernormOpArgs {
+                kernel: _,
+                input0,
+                input1,
+                output,
+            }) => {
+                f(input0.ptr())?;
+                if let Some(input1) = input1 {
+                    f(input1.ptr())?;
+                }
+                f(output.ptr())?;
             }
             Step::Gather(GatherArgs {
                 input,
@@ -152,15 +214,6 @@ impl<P> Step<P> {
         }
 
         ControlFlow::Continue(())
-    }
-}
-
-fn matmul_args_map_ptr<P, K>(operand: MatMulOperand<P>, mut f: impl FnMut(P) -> K) -> MatMulOperand<K> {
-    MatMulOperand {
-        ptr: f(operand.ptr),
-        trans: operand.trans,
-        ld: operand.ld,
-        stride: operand.stride,
     }
 }
 

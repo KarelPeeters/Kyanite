@@ -34,8 +34,13 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
         );
 
         for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
-            let abs_error = (expected_value - value).abs();
-            let rel_error = abs_error / expected_value.abs();
+            let (abs_error, rel_error) = if expected_value == value || (expected_value.is_nan() && value.is_nan()) {
+                (0.0, 0.0)
+            } else {
+                let abs_error = (expected_value - value).abs();
+                let rel_error = abs_error / expected_value.abs();
+                (abs_error, rel_error)
+            };
 
             max_abs_error = f32::max(max_abs_error, abs_error);
             max_rel_error = f32::max(max_rel_error, rel_error);

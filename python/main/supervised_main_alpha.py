@@ -3,15 +3,14 @@ import re
 from typing import Optional
 
 import torch
-from torch.optim import SGD
 
 from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.logger import Logger
-from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
+from lib.model.attention import AttentionTower
+from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads
 from lib.plotter import LogPlotter, run_with_plotter
-from lib.schedule import FixedSchedule, WarmupSchedule
 from lib.supervised import supervised_loop
 from lib.train import TrainSettings, ScalarTarget
 from lib.util import DEVICE, print_param_count
@@ -31,7 +30,7 @@ def find_last_finished_batch(path: str) -> Optional[int]:
 
 
 def main(plotter: LogPlotter):
-    output_folder = "../../data/supervised/derp"
+    output_folder = "../../data/supervised/att-again-deeper"
 
     paths = [
         fr"C:\Documents\Programming\STTT\AlphaZero\data\loop\chess\16x128\selfplay\games_{i}.bin"
@@ -44,9 +43,9 @@ def main(plotter: LogPlotter):
 
     game = Game.find("chess")
     os.makedirs(output_folder, exist_ok=True)
-    allow_resume = False
+    allow_resume = True
 
-    batch_size = 128
+    batch_size = 256
 
     test_steps = 16
     save_steps = 128
@@ -66,9 +65,11 @@ def main(plotter: LogPlotter):
     include_final: bool = False
 
     def initial_network():
-        channels = 32
+        channels = 256
         return PredictionHeads(
-            common=ResTower(8, game.full_input_channels, channels),
+            common=AttentionTower(game.board_size, game.full_input_channels, 16, channels, 8, 16, 16, 256, 0.1),
+            # common=ResTower(8, game.full_input_channels, channels),
+
             scalar_head=ScalarHead(game.board_size, channels, 4, 32),
             policy_head=AttentionPolicyHead(game, channels, channels),
         )
@@ -102,13 +103,16 @@ def main(plotter: LogPlotter):
 
         logger = Logger.load(os.path.join(output_folder, "log.npz"))
         start_bi = last_bi + 1
-        network = torch.jit.load(os.path.join(output_folder, f"network_{last_bi}.pb"))
+        network = torch.jit.load(os.path.join(output_folder, f"network_{last_bi}.pt"))
 
     network.to(DEVICE)
     print_param_count(network)
 
-    optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
-    schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [900, 2_000]))
+    # optimizer = SGD(network.parameters(), weight_decay=1e-5, lr=0.0, momentum=0.9)
+    # schedule = WarmupSchedule(100, FixedSchedule([0.02, 0.01, 0.001], [900, 2_000]))
+
+    optimizer = torch.optim.AdamW(network.parameters(), weight_decay=1e-5)
+    schedule = None
 
     plotter.set_title(f"supervised {output_folder}")
     plotter.set_can_pause(True)

@@ -72,7 +72,7 @@ fn main() {
         let stream1 = handle1.stream();
 
         for _ in 0..100 {
-            let start0 = stream0.record_new_event();
+            let start0 = stream0.record_event();
             stream1.wait_for_event(&start0);
 
             for _ in 0..1000 {
@@ -80,9 +80,9 @@ fn main() {
                 conv1.run(if par { &handle1 } else { &handle0 });
             }
 
-            let end1 = stream1.record_new_event();
+            let end1 = stream1.record_event();
             stream0.wait_for_event(&end1);
-            let end0 = stream0.record_new_event();
+            let end0 = stream0.record_event();
             end0.synchronize();
 
             println!("Took {:.4}ms", end0.time_elapsed_since(&start0));

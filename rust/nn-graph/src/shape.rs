@@ -26,6 +26,8 @@ pub struct ConcreteShape {
     pub dims: Vec<usize>,
 }
 
+// TODO unify all shape types into a generic "Shape<S>"
+//  what about strides?
 impl Shape {
     pub const SCALAR: Shape = Shape { dims: vec![] };
 
@@ -54,6 +56,15 @@ impl Shape {
         self.dims.len()
     }
 
+    pub fn as_fixed(&self) -> Option<ConcreteShape> {
+        self.dims
+            .iter()
+            .map(|d| d.try_unwrap_fixed().ok_or(()))
+            .try_collect()
+            .ok()
+            .map(|dims| ConcreteShape::new(dims))
+    }
+
     pub fn unwrap_fixed(&self, what: &str) -> ConcreteShape {
         let dims = self.dims.iter().map(|d| d.unwrap_fixed(what)).collect_vec();
         ConcreteShape { dims }
@@ -74,15 +85,24 @@ impl Shape {
     }
 
     pub fn unwrap_2(&self) -> [Size; 2] {
-        self.dims.as_slice().try_into().expect("Expected rank 2 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 2 shape, got {:?}", self))
     }
 
     pub fn unwrap_3(&self) -> [Size; 3] {
-        self.dims.as_slice().try_into().expect("Expected rank 3 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 3 shape, got {:?}", self))
     }
 
     pub fn unwrap_4(&self) -> [Size; 4] {
-        self.dims.as_slice().try_into().expect("Expected rank 4 shape")
+        self.dims
+            .as_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected rank 4 shape, got {:?}", self))
     }
 
     pub fn concat(mut self, other: &Shape) -> Shape {
@@ -95,25 +115,67 @@ impl Shape {
     }
 
     /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
-    pub fn replace(&self, axis: usize, replacement: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+    pub fn replace(&self, axis: usize, replacement: Option<Size>) -> Shape {
+        self.replace_all(&[axis], replacement)
+    }
 
-        let mut result = self.clone();
-        result[axis] = replacement;
-        result
+    pub fn replace_all(&self, axes: &[usize], replacement: Option<Size>) -> Shape {
+        assert_eq!(
+            axes.iter().unique().count(),
+            axes.len(),
+            "Axes must be unique, got {:?}",
+            axes
+        );
+
+        // check that the axes are in bounds
+        for &axis in axes {
+            assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        }
+
+        let dims = self
+            .dims
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &d)| if axes.contains(&i) { replacement } else { Some(d) })
+            .collect_vec();
+
+        Shape::new(dims)
     }
 
     /// Build a new shape with the shape at `axis` kept and all other axes replaced by `rest`.
     pub fn keep(&self, axis: usize, rest: Size) -> Shape {
         assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
 
-        let mut result = self.clone();
+        let mut dims = self.dims.clone();
         for i in 0..self.rank() {
             if i != axis {
-                result.dims[i] = rest;
+                dims[i] = rest;
             }
         }
-        result
+        Shape::new(dims)
+    }
+
+    pub fn repeat_unary(&self, axis: usize, new_size: Size) -> Shape {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        assert_eq!(
+            self.dims[axis],
+            Size::ONE,
+            "Repeated axis {} must have length 1 for {:?}",
+            axis,
+            self
+        );
+
+        let mut dims = self.dims.clone();
+        dims[axis] = new_size;
+        Shape::new(dims)
+    }
+
+    pub fn insert(&self, axis: usize, size: Size) -> Shape {
+        assert!(axis <= self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+
+        let mut dims = self.dims.clone();
+        dims.insert(axis, size);
+        Shape::new(dims)
     }
 }
 
@@ -190,6 +252,10 @@ impl ConcreteShape {
     }
 
     pub fn unwrap_2(&self) -> [usize; 2] {
+        self.dims.as_slice().try_into().expect("Expected rank 2 shape")
+    }
+
+    pub fn unwrap_3(&self) -> [usize; 3] {
         self.dims.as_slice().try_into().expect("Expected rank 2 shape")
     }
 
