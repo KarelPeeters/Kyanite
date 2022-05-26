@@ -6,10 +6,10 @@ use board_game::board::Board;
 use board_game::wdl::Flip;
 use itertools::Itertools;
 
+use kz_util::display::display_option;
+
 use crate::mapping::BoardMapper;
 use crate::muzero::node::MuNode;
-use kz_util::display_option;
-
 use crate::network::ZeroEvaluation;
 use crate::zero::node::ZeroValues;
 

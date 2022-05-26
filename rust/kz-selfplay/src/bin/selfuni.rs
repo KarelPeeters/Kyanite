@@ -15,17 +15,17 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 use kz_core::mapping::ataxx::AtaxxStdMapper;
+use kz_core::mapping::BoardMapper;
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
-use kz_core::mapping::BoardMapper;
 use kz_core::network::dummy::{uniform_policy, uniform_values};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::node::ZeroValues;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::server::protocol::Game;
 use kz_selfplay::simulation::{Position, Simulation};
-use kz_util::PrintThroughput;
+use kz_util::throughput::PrintThroughput;
 
 #[derive(Debug, Parser)]
 struct Args {

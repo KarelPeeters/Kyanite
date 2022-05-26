@@ -5,7 +5,7 @@ use internal_iterator::{InternalIterator, IteratorExt};
 use itertools::Itertools;
 
 use cuda_nn_eval::quant::QuantizedStorage;
-use kz_util::top_k_indices_sorted;
+use kz_util::sequence::top_k_indices_sorted;
 
 use crate::mapping::BoardMapper;
 use crate::muzero::node::{MuNode, MuNodeInner};

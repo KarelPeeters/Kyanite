@@ -9,7 +9,7 @@ use serde::Deserialize;
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::quant::{BatchQuantizer, QuantizedStorage};
 use cuda_sys::wrapper::handle::Device;
-use kz_util::Pad;
+use kz_util::sequence::Pad;
 use nn_graph::graph::{Graph, SliceRange};
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};

@@ -5,7 +5,7 @@ use board_game::ai::Bot;
 use board_game::board::Board;
 use itertools::Itertools;
 
-use kz_util::zip_eq_exact;
+use kz_util::sequence::zip_eq_exact;
 
 use crate::network::Network;
 use crate::oracle::Oracle;

@@ -1,7 +1,7 @@
 use flume::{Receiver, Selector};
 use superluminal_perf::{begin_event_with_color, end_event};
 
-use kz_util::zip_eq_exact;
+use kz_util::sequence::zip_eq_exact;
 
 use crate::server::job_channel::{Job, JobServer};
 use crate::server::server::GraphReceiver;

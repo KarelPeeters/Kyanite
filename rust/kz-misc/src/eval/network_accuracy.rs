@@ -4,7 +4,8 @@ use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
 use kz_core::network::{Network, ZeroEvaluation};
-use kz_util::{kdl_divergence, zip_eq_exact};
+use kz_util::math::kdl_divergence;
+use kz_util::sequence::zip_eq_exact;
 
 #[derive(Debug)]
 pub struct Challenge<B> {

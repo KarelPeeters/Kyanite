@@ -10,7 +10,7 @@ use kz_core::network::ZeroEvaluation;
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
-use kz_util::zip_eq_exact;
+use kz_util::sequence::zip_eq_exact;
 
 use crate::move_selector::MoveSelector;
 use crate::server::job_channel::JobClient;

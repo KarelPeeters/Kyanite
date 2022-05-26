@@ -5,14 +5,14 @@ use std::marker::PhantomData;
 use board_game::board::Board;
 use itertools::Itertools;
 
-use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
-use kz_util::Pad;
+use cuda_nn_eval::executor::CudaExecutor;
+use kz_util::sequence::Pad;
 use nn_graph::graph::Graph;
 
 use crate::mapping::BoardMapper;
-use crate::network::common::{check_graph_shapes, decode_output};
 use crate::network::{Network, ZeroEvaluation};
+use crate::network::common::{check_graph_shapes, decode_output};
 
 pub struct CudaNetwork<B: Board, M: BoardMapper<B>> {
     mapper: M,

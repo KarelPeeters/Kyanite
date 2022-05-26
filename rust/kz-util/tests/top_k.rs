@@ -1,6 +1,8 @@
 use itertools::Itertools;
-use kz_util::{top_k_indices_sorted, PrintThroughput};
 use rand::{thread_rng, Rng};
+
+use kz_util::sequence::top_k_indices_sorted;
+use kz_util::throughput::PrintThroughput;
 
 #[test]
 #[ignore]

@@ -3,7 +3,7 @@ use board_game::wdl::{Flip, OutcomeWDL, POV};
 use decorum::N32;
 use internal_iterator::InternalIterator;
 
-use kz_util::zip_eq_exact;
+use kz_util::sequence::zip_eq_exact;
 
 use crate::network::ZeroEvaluation;
 use crate::oracle::Oracle;

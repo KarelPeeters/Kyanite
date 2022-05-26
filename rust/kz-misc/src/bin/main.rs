@@ -27,7 +27,7 @@ use kz_core::zero::node::{Uct, UctWeights, ZeroValues};
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::tree::Tree;
 use kz_core::zero::wrapper::ZeroSettings;
-use kz_util::display_option_empty;
+use kz_util::display::display_option_empty;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 

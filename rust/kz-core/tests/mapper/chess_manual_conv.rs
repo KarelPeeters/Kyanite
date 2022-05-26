@@ -4,7 +4,7 @@ use chess::{ChessMove, Piece, Square};
 
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
 use kz_core::mapping::PolicyMapper;
-use kz_util::display_option;
+use kz_util::display::display_option;
 
 use crate::mapper::{test_valid_mapping, test_valid_policy_mapping};
 

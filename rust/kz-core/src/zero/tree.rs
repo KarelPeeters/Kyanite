@@ -6,7 +6,7 @@ use board_game::board::{Board, Outcome};
 use board_game::wdl::{Flip, OutcomeWDL};
 use itertools::Itertools;
 
-use kz_util::display_option;
+use kz_util::display::display_option;
 
 use crate::network::ZeroEvaluation;
 use crate::zero::node::{Node, ZeroValues};

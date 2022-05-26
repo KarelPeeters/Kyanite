@@ -11,7 +11,7 @@ use kz_core::network::ZeroEvaluation;
 use kz_core::zero::node::ZeroValues;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::simulation::{Position, Simulation};
-use kz_util::PrintThroughput;
+use kz_util::throughput::PrintThroughput;
 
 // TODO remove either this or the selfuni bin, make sure to combine the best choices
 pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(

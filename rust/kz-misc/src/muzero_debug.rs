@@ -12,7 +12,7 @@ use kz_core::network::common::{softmax, softmax_in_place, zero_values_from_scala
 use kz_core::network::muzero::{ExpandArgs, MuZeroGraphs, RootArgs};
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
-use kz_util::display_option;
+use kz_util::display::display_option;
 use nn_graph::graph::SliceRange;
 use nn_graph::optimizer::OptimizerSettings;
 

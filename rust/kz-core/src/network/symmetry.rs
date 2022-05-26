@@ -9,7 +9,7 @@ use itertools::izip;
 use rand::distributions::Distribution;
 use rand::Rng;
 
-use kz_util::IndexOf;
+use kz_util::sequence::IndexOf;
 
 use crate::network::{Network, ZeroEvaluation};
 

@@ -14,7 +14,7 @@ use serde::Serialize;
 use kz_core::mapping::bit_buffer::BitBuffer;
 use kz_core::mapping::BoardMapper;
 use kz_core::zero::node::ZeroValues;
-use kz_util::kdl_divergence;
+use kz_util::math::kdl_divergence;
 
 use crate::simulation::{Position, Simulation};
 
