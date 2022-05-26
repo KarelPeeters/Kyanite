@@ -1,9 +1,9 @@
 use flume::{Receiver, Selector};
 use superluminal_perf::{begin_event_with_color, end_event};
 
+use kz_core::network::job_channel::{Job, JobServer};
 use kz_util::sequence::zip_eq_exact;
 
-use crate::server::job_channel::{Job, JobServer};
 use crate::server::server::GraphReceiver;
 use crate::superluminal::{CL_BLUE, CL_GREEN, CL_YELLOW};
 

@@ -1,15 +1,17 @@
-use crate::server::executor::batched_executor_loop;
-use crate::server::generator_muzero::generator_muzero_main;
-use crate::server::job_channel::job_pair;
-use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
-use crate::server::server::{GraphSender, ZeroSpecialization};
 use board_game::board::Board;
 use crossbeam::thread::Scope;
-use cuda_sys::wrapper::handle::Device;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
+
+use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
+use kz_core::network::job_channel::job_pair;
 use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
+
+use crate::server::executor::batched_executor_loop;
+use crate::server::generator_muzero::generator_muzero_main;
+use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
+use crate::server::server::{GraphSender, ZeroSpecialization};
 
 #[derive(Debug)]
 pub struct MuZeroSpecialization;

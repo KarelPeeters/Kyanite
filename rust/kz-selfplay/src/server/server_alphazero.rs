@@ -3,17 +3,17 @@ use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
 
-use crate::server::executor::batched_executor_loop;
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
 use kz_core::network::cudnn::CudaNetwork;
+use kz_core::network::job_channel::job_pair;
 use kz_core::network::Network;
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
+use crate::server::executor::batched_executor_loop;
 use crate::server::generator_alphazero::generator_alphazero_main;
-use crate::server::job_channel::job_pair;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
 

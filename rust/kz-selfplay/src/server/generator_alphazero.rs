@@ -6,19 +6,16 @@ use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
 
-use kz_core::network::ZeroEvaluation;
+use kz_core::network::{EvalClient, ZeroEvaluation};
 use kz_core::oracle::DummyOracle;
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
 use crate::move_selector::MoveSelector;
-use crate::server::job_channel::JobClient;
 use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::server::server::UpdateSender;
 use crate::simulation::{Position, Simulation};
-
-type EvalClient<B> = JobClient<B, ZeroEvaluation<'static>>;
 
 pub async fn generator_alphazero_main<B: Board>(
     generator_id: usize,

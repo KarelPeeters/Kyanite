@@ -11,5 +11,4 @@ pub mod executor;
 pub mod generator_alphazero;
 pub mod generator_muzero;
 
-pub mod job_channel;
 pub mod rebatcher;

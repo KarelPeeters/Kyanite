@@ -1,5 +1,6 @@
-use crate::server::job_channel::{job_pair, Job, JobClient, JobServer};
-use itertools::{zip, Itertools};
+use itertools::{Itertools, zip};
+
+use kz_core::network::job_channel::{Job, job_pair, JobClient, JobServer};
 
 pub struct Rebatcher<X, Y> {
     batch_size_in: usize,

@@ -19,6 +19,10 @@ use nn_graph::shape::{Shape, Size};
 use crate::mapping::BoardMapper;
 use crate::muzero::MuZeroEvaluation;
 use crate::network::common::zero_values_from_scalars;
+use crate::network::job_channel::JobClient;
+
+pub type RootClient<B> = JobClient<RootArgs<B>, MuZeroEvaluation<'static>>;
+pub type ExpandClient = JobClient<ExpandArgs, MuZeroEvaluation<'static>>;
 
 #[derive(Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct MuZeroNetworkInfo {

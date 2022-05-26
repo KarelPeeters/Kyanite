@@ -18,21 +18,17 @@ use kz_core::muzero::step::{
 use kz_core::muzero::tree::MuTree;
 use kz_core::muzero::MuZeroEvaluation;
 use kz_core::network::common::{softmax_in_place, unsoftmax_in_place};
-use kz_core::network::muzero::{ExpandArgs, RootArgs};
+use kz_core::network::muzero::{ExpandArgs, ExpandClient, RootArgs, RootClient};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::FpuMode;
 
 use crate::move_selector::MoveSelector;
-use crate::server::job_channel::JobClient;
 use crate::server::protocol::{GeneratorUpdate, Settings};
 use crate::server::server::UpdateSender;
 use crate::simulation::{Position, Simulation};
 
 // TODO we're reusing quantized states from one network as inputs to a potentially updated network
 //   hopefully that doesn't cause too many issues
-type RootClient<B> = JobClient<RootArgs<B>, MuZeroEvaluation<'static>>;
-type ExpandClient = JobClient<ExpandArgs, MuZeroEvaluation<'static>>;
-
 pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
     generator_id: usize,
     device: Device,

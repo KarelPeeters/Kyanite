@@ -3,6 +3,7 @@ use std::fmt::Debug;
 
 use board_game::board::Board;
 
+use crate::network::job_channel::JobClient;
 use crate::zero::node::ZeroValues;
 
 pub mod common;
@@ -12,6 +13,7 @@ pub mod symmetry;
 pub mod cpu;
 pub mod cudnn;
 
+pub mod job_channel;
 pub mod muzero;
 
 /// A board evaluation, either as returned by the network or as the final output of a zero tree search.
@@ -33,7 +35,9 @@ impl ZeroEvaluation<'_> {
     }
 }
 
-//TODO maybe remove the debug bound on networks? are we using it anywhere?
+pub type EvalClient<B> = JobClient<B, ZeroEvaluation<'static>>;
+pub type BatchEvalClient<B> = JobClient<Vec<B>, Vec<ZeroEvaluation<'static>>>;
+
 pub trait Network<B: Board>: Debug {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>>;
 
