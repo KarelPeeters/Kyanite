@@ -89,6 +89,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
+name = "async-trait"
+version = "0.1.53"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed6aa3524a2dfcf9fe180c51eae2b58738348d819517ceadf95789c51fff7600"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1201,12 +1212,15 @@ dependencies = [
 name = "kz-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "board-game",
  "bytemuck",
  "chess",
  "cuda-nn-eval",
  "cuda-sys",
  "decorum",
+ "flume",
+ "futures",
  "internal-iterator",
  "itertools",
  "kz-util",
@@ -1240,6 +1254,7 @@ dependencies = [
 name = "kz-misc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "board-game",
  "bzip2",
  "chess",
@@ -1250,6 +1265,7 @@ dependencies = [
  "cuda-sys",
  "decorum",
  "flume",
+ "futures",
  "image",
  "internal-iterator",
  "itertools",
@@ -1263,6 +1279,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "shakmaty",
+ "tabled",
  "tar",
  "tui",
  "vampirc-uci",
@@ -1740,6 +1757,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "papergrid"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "608b6444acf7f5ea39e8bd06dd6037e34a4b5ddfb29ae840edad49ea798e9e79"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]
@@ -2589,6 +2615,27 @@ dependencies = [
  "quote",
  "syn",
  "unicode-xid",
+]
+
+[[package]]
+name = "tabled"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2407502760ccfd538f2fb1f843dd87b6daf1a17848d57bc5a25617e408ef4c7a"
+dependencies = [
+ "papergrid",
+ "tabled_derive",
+]
+
+[[package]]
+name = "tabled_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "278ea3921cee8c5a69e0542998a089f7a14fa43c9c4e4f9951295da89bd0c943"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

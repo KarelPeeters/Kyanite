@@ -32,3 +32,8 @@ tar = "0.4.38"
 bzip2 = "0.4.3"
 image = { version = "0.24.1", default-features = false, features = ["png"] }
 palette = { version = "0.6.0", default-features = false, features = ["std"] }
+
+futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
+async-trait = "0.1.53"
+
+tabled = "0.7.0"
