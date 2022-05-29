@@ -6,7 +6,6 @@ use internal_iterator::InternalIterator;
 use kz_util::sequence::zip_eq_exact;
 
 use crate::network::ZeroEvaluation;
-use crate::oracle::Oracle;
 use crate::zero::node::{Node, UctWeights, ZeroValues};
 use crate::zero::range::IdxRange;
 use crate::zero::tree::Tree;
@@ -40,7 +39,6 @@ pub enum FpuMode {
 ///
 pub fn zero_step_gather<B: Board>(
     tree: &mut Tree<B>,
-    oracle: &impl Oracle<B>,
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
@@ -58,7 +56,7 @@ pub fn zero_step_gather<B: Board>(
         tree[curr_node].virtual_visits += 1;
 
         // if the board is done backpropagate the real value
-        if let Some(outcome) = oracle.best_outcome(&curr_board) {
+        if let Some(outcome) = curr_board.outcome() {
             let outcome = outcome.pov(curr_board.next_player());
             //TODO what value to use for moves_left?
             tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome, 0.0));

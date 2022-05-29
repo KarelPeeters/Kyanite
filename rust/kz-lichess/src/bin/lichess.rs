@@ -9,13 +9,12 @@ use tokio_stream::StreamExt;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
-use kz_core::network::cudnn::CudaNetwork;
-use kz_core::network::Network;
-use kz_core::oracle::DummyOracle;
+use kz_core::network::job_channel::job_pair;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::tree::Tree;
 use kz_core::zero::wrapper::ZeroSettings;
+use kz_selfplay::server::executor::{alphazero_batched_executor_loop, RunCondition};
 use licorice::client::{Lichess, LichessResult};
 use licorice::models::board::{BoardState, GameFull};
 use licorice::models::game::UserGame;
@@ -27,31 +26,49 @@ const MAX_TIME: f32 = 60.0;
 const MAX_TIME_FRACTION: f32 = 1.2 / 30.0;
 const MAX_CACHE_SIZE: usize = 10;
 
+const EVAL_BATCH_SIZE: usize = 128;
+const SEARCH_BATCH_SIZE: usize = 128;
+
 type Cache = VecDeque<Tree<ChessBoard>>;
+type EvalClient = kz_core::network::EvalClient<ChessBoard>;
 
 fn main() {
-    let batch_size = (MAX_VISITS / 10).clamp(1, 128) as usize;
-
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent);
-    println!("Using {:?}", settings);
-
-    println!("Loading graph & constructing network");
+    println!("Loading graph");
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
     let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
-    let mut network = CudaNetwork::new(ChessStdMapper, &graph, settings.batch_size, Device::new(0));
+
+    println!("Spawning executor");
+    let (eval_client, eval_server) = job_pair(4);
+    std::thread::Builder::new()
+        .name("executor".to_owned())
+        .spawn(move || {
+            alphazero_batched_executor_loop(
+                EVAL_BATCH_SIZE,
+                Device::new(0),
+                ChessStdMapper,
+                RunCondition::Any,
+                graph,
+                eval_server,
+            )
+        })
+        .unwrap();
+
+    let settings = ZeroSettings::new(SEARCH_BATCH_SIZE, UctWeights::default(), false, FpuMode::Parent);
+    println!("Using {:?}", settings);
 
     let mut cache = Cache::default();
 
+    println!("Starting runtime");
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async { main_async(settings, &mut network, &mut cache).await })
+        .block_on(async { main_async(settings, &eval_client, &mut cache).await })
 }
 
-async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoard>, cache: &mut Cache) {
+async fn main_async(settings: ZeroSettings, eval_client: &EvalClient, cache: &mut Cache) {
     loop {
-        if let Err(e) = main_inner(settings, network, cache).await {
+        if let Err(e) = main_inner(settings, eval_client, cache).await {
             println!("Got error {:?}", e);
         }
 
@@ -59,11 +76,7 @@ async fn main_async(settings: ZeroSettings, network: &mut impl Network<ChessBoar
     }
 }
 
-async fn main_inner(
-    settings: ZeroSettings,
-    network: &mut impl Network<ChessBoard>,
-    cache: &mut Cache,
-) -> LichessResult<()> {
+async fn main_inner(settings: ZeroSettings, eval_client: &EvalClient, cache: &mut Cache) -> LichessResult<()> {
     println!("Connecting to lichess");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
     let lichess = Lichess::new(token);
@@ -76,6 +89,8 @@ async fn main_inner(
         // the games are already sorted by urgency by the lichess API
         let games = lichess.get_ongoing_games(50).await?;
 
+        // TODO this loop should really spawn a bunch of distinct async jobs
+        //   to fully make use of this we really need executors for multiple batch sizes
         for game in games {
             if !game.is_my_turn {
                 continue;
@@ -105,7 +120,7 @@ async fn main_inner(
                     }
                     BoardState::GameFull(state) => {
                         let print = info_game_ids.contains(&state.id);
-                        make_move(&lichess, &game, &state, print, settings, network, cache).await?;
+                        make_move(&lichess, &game, &state, print, settings, eval_client, cache).await?;
                     }
                 }
             }
@@ -137,7 +152,7 @@ async fn make_move(
     state: &GameFull,
     info: bool,
     settings: ZeroSettings,
-    network: &mut impl Network<ChessBoard>,
+    eval_client: &EvalClient,
     cache: &mut Cache,
 ) -> LichessResult<()> {
     let board = board_from_state(state);
@@ -157,12 +172,14 @@ async fn make_move(
     let start = Instant::now();
     let start_visits = tree.root_visits();
 
-    settings.expand_tree(&mut tree, network, &DummyOracle, |tree| {
-        let time_used = (Instant::now() - start).as_secs_f32();
-        let fraction_time_used = time_used / game.seconds_left as f32;
-        let visits = tree.root_visits();
-        visits > 0 && (visits >= MAX_VISITS || time_used >= MAX_TIME || fraction_time_used >= MAX_TIME_FRACTION)
-    });
+    settings
+        .expand_tree_async(&mut tree, eval_client, |tree| {
+            let time_used = (Instant::now() - start).as_secs_f32();
+            let fraction_time_used = time_used / game.seconds_left as f32;
+            let visits = tree.root_visits();
+            visits > 0 && (visits >= MAX_VISITS || time_used >= MAX_TIME || fraction_time_used >= MAX_TIME_FRACTION)
+        })
+        .await;
 
     let time_used = Instant::now() - start;
     println!("Took {:?}", (time_used));

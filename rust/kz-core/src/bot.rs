@@ -9,10 +9,12 @@ pub trait AsyncBot<B: Board>: Debug {
     async fn select_move(&mut self, board: &B) -> B::Move;
 }
 
-// TODO is this implementation a good idea? Bots are written to consume as much (blocking) CPU as they want
+#[derive(Debug)]
+pub struct WrapAsync<T>(pub T);
+
 #[async_trait]
-impl<B: Board, T: Bot<B> + Send> AsyncBot<B> for T {
+impl<B: Board, T: Bot<B> + Send> AsyncBot<B> for WrapAsync<T> {
     async fn select_move(&mut self, board: &B) -> B::Move {
-        Bot::select_move(self, board)
+        self.0.select_move(board)
     }
 }

@@ -30,3 +30,4 @@ flume = "0.10.12"
 futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
 
 async-trait = "0.1.53"
+crossbeam = "0.8.1"

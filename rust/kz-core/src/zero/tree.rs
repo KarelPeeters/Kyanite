@@ -58,7 +58,6 @@ impl<B: Board> Tree<B> {
         })
     }
 
-    //TODO this doesn't really work for oracle moves any more
     pub fn best_move(&self) -> Option<B::Move> {
         self.best_child(0).map(|c| self[c].last_move.unwrap())
     }
@@ -101,7 +100,7 @@ impl<B: Board> Tree<B> {
     }
 
     /// Return the policy vector for the root node.
-    pub fn policy(&self) -> impl Iterator<Item = f32> + '_ {
+    pub fn policy(&self) -> impl Iterator<Item=f32> + '_ {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         self[0]

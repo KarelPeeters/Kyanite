@@ -153,7 +153,7 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                             output_state: output_state.clone(),
                         };
 
-                        let mut eval = root_client.map_async(root_args).await;
+                        let mut eval = root_client.map_async_single(root_args).await;
 
                         root_net_eval = Some(extract_zero_eval(mapper, &board, &eval));
 
@@ -175,7 +175,7 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
                             move_index,
                             output_state: output_state.clone(),
                         };
-                        let eval = expand_client.map_async(expand_args).await;
+                        let eval = expand_client.map_async_single(expand_args).await;
 
                         MuZeroResponse {
                             node,

@@ -7,10 +7,9 @@ use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
 
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::oracle::DummyOracle;
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
-use kz_util::sequence::zip_eq_exact;
+use kz_util::sequence::{zip_eq_exact};
 
 use crate::move_selector::MoveSelector;
 use crate::server::protocol::{GeneratorUpdate, Settings};
@@ -99,7 +98,6 @@ async fn generate_simulation<B: Board>(
             // TODO add oracle support (once that actually works)
             let request = zero_step_gather(
                 &mut tree,
-                &DummyOracle,
                 settings.weights.to_uct(),
                 settings.use_value,
                 FpuMode::Parent,
@@ -111,7 +109,7 @@ async fn generate_simulation<B: Board>(
                     cached_evals += 1;
                     eval.clone()
                 } else {
-                    let eval = eval_client.map_async(board.clone()).await;
+                    let eval = eval_client.map_async_single(board.clone()).await;
                     cache.put(board.clone(), eval.clone());
                     eval
                 };
@@ -155,7 +153,7 @@ async fn generate_simulation<B: Board>(
         if cached_evals != 0 {
             update_sender
                 .send(GeneratorUpdate::Evals {
-                    cached_evals: cached_evals,
+                    cached_evals,
                     real_evals: 0,
                     root_evals: 0,
                 })

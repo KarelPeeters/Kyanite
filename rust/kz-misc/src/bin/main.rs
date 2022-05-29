@@ -15,14 +15,13 @@ use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
 use tui::style::{Color, Modifier, Style};
-use tui::widgets::Widget;
 use tui::Terminal;
+use tui::widgets::Widget;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::dummy::DummyNetwork;
-use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::{Uct, UctWeights, ZeroValues};
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::tree::Tree;
@@ -363,8 +362,8 @@ fn build_tree(real: bool) -> Tree<ChessBoard> {
     if real {
         let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
         let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-        settings.build_tree(&board, &mut network, &DummyOracle, stop)
+        settings.build_tree(&board, &mut network, stop)
     } else {
-        settings.build_tree(&board, &mut DummyNetwork, &DummyOracle, stop)
+        settings.build_tree(&board, &mut DummyNetwork, stop)
     }
 }

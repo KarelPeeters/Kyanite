@@ -1,4 +1,4 @@
-use std::fs::{read_to_string, File};
+use std::fs::{File, read_to_string};
 use std::io::BufReader;
 
 use board_game::board::{Board, BoardMoves, Outcome};
@@ -11,7 +11,6 @@ use itertools::Itertools;
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
-use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::wrapper::ZeroSettings;
@@ -63,7 +62,7 @@ fn main() {
                 let mut zero_correct_policy_history = vec![];
 
                 // see if we can find the move
-                let tree = settings.build_tree(&board, &mut network, &DummyOracle, |tree| {
+                let tree = settings.build_tree(&board, &mut network, |tree| {
                     if tree.root_visits() > 0 {
                         let zero_correct_policy: f32 = tree[0]
                             .children

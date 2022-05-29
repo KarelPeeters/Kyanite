@@ -12,7 +12,7 @@ use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
-use crate::server::executor::batched_executor_loop;
+use crate::server::executor::{batched_executor_loop, RunCondition};
 use crate::server::generator_alphazero::generator_alphazero_main;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
@@ -77,6 +77,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
                 .spawn(move |_| {
                     batched_executor_loop(
                         gpu_batch_size,
+                        RunCondition::FullBatch,
                         graph_receiver,
                         eval_server,
                         |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),

@@ -8,7 +8,7 @@ use kz_core::mapping::BoardMapper;
 use kz_core::network::job_channel::job_pair;
 use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
 
-use crate::server::executor::batched_executor_loop;
+use crate::server::executor::{batched_executor_loop, RunCondition};
 use crate::server::generator_muzero::generator_muzero_main;
 use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
@@ -73,7 +73,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                     expand_client,
                     update_sender,
                 )
-                .await;
+                    .await;
             });
         }
 
@@ -90,6 +90,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                 .spawn(move |_| {
                     batched_executor_loop(
                         gpu_batch_size_expand,
+                        RunCondition::FullBatch,
                         graph_receiver,
                         expand_server,
                         |graph| graph.expand_executor(device, gpu_batch_size_expand),
@@ -122,6 +123,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                 .spawn(move |_| {
                     batched_executor_loop(
                         gpu_batch_size_root,
+                        RunCondition::FullBatch,
                         graph_receiver,
                         root_server,
                         |graph| graph.root_executor(device, gpu_batch_size_root),

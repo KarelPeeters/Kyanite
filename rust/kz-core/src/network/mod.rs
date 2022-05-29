@@ -9,12 +9,12 @@ use crate::zero::node::ZeroValues;
 pub mod common;
 pub mod dummy;
 pub mod symmetry;
+pub mod muzero;
 
 pub mod cpu;
 pub mod cudnn;
 
 pub mod job_channel;
-pub mod muzero;
 
 /// A board evaluation, either as returned by the network or as the final output of a zero tree search.
 #[derive(Debug, Clone)]
@@ -36,7 +36,6 @@ impl ZeroEvaluation<'_> {
 }
 
 pub type EvalClient<B> = JobClient<B, ZeroEvaluation<'static>>;
-pub type BatchEvalClient<B> = JobClient<Vec<B>, Vec<ZeroEvaluation<'static>>>;
 
 pub trait Network<B: Board>: Debug {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>>;

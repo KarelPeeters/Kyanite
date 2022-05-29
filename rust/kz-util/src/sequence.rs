@@ -108,13 +108,24 @@ impl<T: PartialEq, I: Iterator<Item = T>> IndexOf<T> for I {
     }
 }
 
-pub trait Pad {
+pub trait VecExtPad {
     type T;
     fn pad(&mut self, result_size: usize, value: Self::T);
 }
 
-impl<T: Clone> Pad for Vec<T> {
+#[derive(Debug)]
+pub struct SingleErr {
+    pub len: usize,
+}
+
+pub trait VecExtSingle {
+    type T;
+    fn single(self) -> Result<Self::T, SingleErr>;
+}
+
+impl<T: Clone> VecExtPad for Vec<T> {
     type T = T;
+
     fn pad(&mut self, result_size: usize, value: T) {
         assert!(
             result_size >= self.len(),
@@ -123,5 +134,17 @@ impl<T: Clone> Pad for Vec<T> {
             result_size
         );
         self.resize(result_size, value)
+    }
+}
+
+impl<T> VecExtSingle for Vec<T> {
+    type T = T;
+
+    fn single(mut self) -> Result<T, SingleErr> {
+        if self.len() == 1 {
+            Ok(self.pop().unwrap())
+        } else {
+            Err(SingleErr { len: self.len() })
+        }
     }
 }

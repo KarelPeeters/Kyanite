@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::Write;
 use std::io::{BufRead, BufReader};
+use std::io::Write;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardMoves};
@@ -15,7 +15,6 @@ use vampirc_uci::UciMessage;
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
-use kz_core::oracle::DummyOracle;
 use kz_core::zero::node::UctWeights;
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::tree::Tree;
@@ -50,7 +49,7 @@ fn main() -> std::io::Result<()> {
             if let Some(tree) = &mut tree {
                 let mut prev_send = Instant::now();
 
-                settings.expand_tree(tree, &mut network, &DummyOracle, |tree| {
+                settings.expand_tree(tree, &mut network, |tree| {
                     let now = Instant::now();
                     if tree.root_visits() > 0 && (now - prev_send).as_secs_f32() > INFO_PERIOD {
                         let root = &tree[0];
