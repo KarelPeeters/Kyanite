@@ -57,7 +57,7 @@ impl TensorDescriptor {
 
         assert!(
             shape.iter().all(|&x| x > 0),
-            "Shape cannot be negative, got shape {:?} with strides {:?}",
+            "Sizes must be strictly positive, got shape {:?} with strides {:?}",
             shape,
             strides,
         );
