@@ -49,7 +49,9 @@ fn main() {
                 RunCondition::Any,
                 graph,
                 eval_server,
-            )
+            );
+
+            println!("Executor exit");
         })
         .unwrap();
 

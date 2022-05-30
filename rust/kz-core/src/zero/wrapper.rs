@@ -11,10 +11,10 @@ use itertools::Itertools;
 use kz_util::sequence::zip_eq_exact;
 
 use crate::bot::AsyncBot;
+use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
-use crate::network::job_channel::{Job, job_pair};
 use crate::zero::node::UctWeights;
-use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
+use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
@@ -91,7 +91,7 @@ impl ZeroSettings {
 
             // implicitly join async thread
         })
-            .unwrap();
+        .unwrap();
     }
 
     // Continue expanding an existing tree.

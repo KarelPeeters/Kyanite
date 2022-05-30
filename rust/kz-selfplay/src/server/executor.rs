@@ -41,7 +41,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
     let mut network: Option<N> = None;
 
     // this is a separate flag and not just `graph_receiver.is_disconnected`
-    //   to ensure we properly handle the disconnection event itself
+    //   to ensure we have properly handled the disconnection event itself
     let mut graph_disconnected = false;
 
     loop {
@@ -91,7 +91,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
                             }
                         }
 
-                        // optionally do an eval
+                        // optionally evaluate some batches
                         if state.should_eval(run_condition, max_batch_size) {
                             run_eval(&mut state, network, &evaluate_batch, max_batch_size);
                         }
@@ -151,7 +151,7 @@ pub fn alphazero_batched_executor_loop<B: Board, M: BoardMapper<B>>(
     graph: Graph,
     server: JobServer<B, ZeroEvaluation<'static>>,
 ) {
-    let (graph_sender, graph_receiver) = flume::bounded(0);
+    let (graph_sender, graph_receiver) = flume::bounded(1);
     graph_sender.send(Some(graph)).unwrap();
     drop(graph_sender);
 
@@ -223,8 +223,15 @@ impl<X, Y> State<X, Y> {
         //   this is pretty complicated and shouldn't matter too much though
 
         let Job { x, sender } = job;
-        self.senders.push_back((x.len(), sender));
-        self.x.extend(x.into_iter());
+
+        if x.len() == 0 {
+            // avoid ever putting empty senders in the queue since that introduces tricky edge cases
+            let _ = sender.send(vec![]);
+        } else {
+            self.senders.push_back((x.len(), sender));
+            self.x.extend(x.into_iter());
+        }
+
         self.check_invariants();
     }
 

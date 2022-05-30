@@ -33,8 +33,15 @@ pub fn job_pair<X, Y>(cap: usize) -> (JobClient<X, Y>, JobServer<X, Y>) {
 impl<X, Y: 'static> JobClient<X, Y> {
     pub fn map(&self, x: Vec<X>) -> Receiver<Vec<Y>> {
         let (sender, receiver) = flume::bounded(1);
-        let item = Job { x, sender };
-        self.sender.send(item).unwrap();
+
+        if x.len() == 0 {
+            // easy short-circuit case that avoids additional channel communication
+            let _ = sender.send(vec![]);
+        } else {
+            let item = Job { x, sender };
+            self.sender.send(item).unwrap();
+        }
+
         receiver
     }
 
@@ -42,11 +49,11 @@ impl<X, Y: 'static> JobClient<X, Y> {
         self.map(x).recv().unwrap()
     }
 
-    pub fn map_async(&self, x: Vec<X>) -> impl Future<Output=Vec<Y>> {
+    pub fn map_async(&self, x: Vec<X>) -> impl Future<Output = Vec<Y>> {
         self.map(x).into_recv_async().map(Result::unwrap)
     }
 
-    pub fn map_async_single(&self, x: X) -> impl Future<Output=Y> {
+    pub fn map_async_single(&self, x: X) -> impl Future<Output = Y> {
         // Universal Function Call Syntax to help IDE type inference
         FutureExt::map(self.map_async(vec![x]), |y: Vec<Y>| y.single().unwrap())
     }
