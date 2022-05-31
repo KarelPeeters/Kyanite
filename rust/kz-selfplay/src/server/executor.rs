@@ -101,9 +101,11 @@ pub fn batched_executor_loop<G, N, X, Y>(
                     Err(RecvError::Disconnected) => {
                         // the job channel has disconnected
 
-                        // evaluate all remaining jobs
+                        // evaluate all remaining jobs if any
                         assert!(state.items_to_eval() < max_batch_size);
-                        run_eval(&mut state, network, &evaluate_batch, max_batch_size);
+                        if state.items_to_eval() > 0 {
+                            run_eval(&mut state, network, &evaluate_batch, max_batch_size);
+                        }
                         assert!(state.items_to_eval() == 0 && state.items_to_send() == 0);
 
                         // at this point we can safely exit, we won't get any more jobs
