@@ -53,17 +53,18 @@ pub fn box_bot<B: Board, T: AsyncBot<B> + Send + 'static>(
     Box::new(move || Box::new(f()))
 }
 
-pub fn run_tournament<S: Display, B: Board>(
+pub fn run_tournament<S: Display, B: Board, F: Fn() + Send + 'static>(
     bots: Vec<(S, BoxBotFn<B>)>,
     start_positions: Vec<B>,
     thread_count: usize,
     self_games: bool,
+    on_print: F,
 ) -> Tournament<B> {
     let bot_count = bots.len();
     let pos_count = start_positions.len();
 
     let (bot_names, bots) = bots.into_iter().map(|(s, b)| (s.to_string(), b)).unzip();
-    let rounds = run_rounds(bots, &start_positions, thread_count, self_games);
+    let rounds = run_rounds(bots, &start_positions, thread_count, self_games, on_print);
 
     let mut total_wdl = vec![WDL::<usize>::default(); bot_count];
     let mut grid_wdl = vec![vec![WDL::<usize>::default(); bot_count]; bot_count];
@@ -93,6 +94,7 @@ fn run_rounds<B: Board>(
     start_positions: &Vec<B>,
     thread_count: usize,
     self_games: bool,
+    on_print: impl Fn() + Send + 'static,
 ) -> Vec<Round<B>> {
     let pool = ThreadPoolBuilder::new()
         .name_prefix("tournament")
@@ -171,6 +173,7 @@ fn run_rounds<B: Board>(
                     "Done moves per game: min {} avg {} max {}",
                     moves_min, moves_avg, moves_max
                 );
+                on_print();
 
                 last_time = now;
                 delta_moves = 0;
