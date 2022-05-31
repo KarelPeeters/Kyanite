@@ -1,8 +1,13 @@
+use std::fmt::{Display, Formatter};
+use std::time::Instant;
+
 use board_game::board::{Board, Outcome};
 use board_game::wdl::{Flip, OutcomeWDL, POV, WDL};
+use flume::Sender;
 use futures::executor::{block_on, ThreadPoolBuilder};
 use futures::task::SpawnExt;
-use std::fmt::{Display, Formatter};
+use futures::StreamExt;
+use itertools::Itertools;
 use tabled::{Margin, Style};
 
 use kz_core::bot::AsyncBot;
@@ -22,11 +27,24 @@ pub struct Tournament<B: Board> {
 
 #[derive(Debug)]
 pub struct Round<B: Board> {
-    pub i: usize,
-    pub j: usize,
+    pub id: RoundId,
     pub start: B,
     pub moves: Vec<B::Move>,
     outcome: Outcome,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct RoundId {
+    pub i: usize,
+    pub j: usize,
+    pub s: usize,
+    pub global: usize,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Message {
+    FinishedRound { id: RoundId },
+    FinishedMove { id: RoundId, mv: usize },
 }
 
 pub fn box_bot<B: Board, T: AsyncBot<B> + Send + 'static>(
@@ -51,13 +69,14 @@ pub fn run_tournament<S: Display, B: Board>(
     let mut grid_wdl = vec![vec![WDL::<usize>::default(); bot_count]; bot_count];
 
     for round in &rounds {
+        let id = round.id;
         let wdl_i = round.outcome_i().to_wdl();
         let wdl_j = round.outcome_i().flip().to_wdl();
 
-        total_wdl[round.i] += wdl_i;
-        total_wdl[round.j] += wdl_j;
-        grid_wdl[round.i][round.j] += wdl_i;
-        grid_wdl[round.j][round.i] += wdl_j;
+        total_wdl[id.i] += wdl_i;
+        total_wdl[id.j] += wdl_j;
+        grid_wdl[id.i][id.j] += wdl_i;
+        grid_wdl[id.j][id.i] += wdl_j;
     }
 
     Tournament {
@@ -82,26 +101,82 @@ fn run_rounds<B: Board>(
         .unwrap();
 
     let mut handles = vec![];
+    let (sender, receiver) = flume::bounded(8);
 
     // this nested loop automatically includes flipped bots
+    let mut started_games = 0;
     for i in 0..bots.len() {
         for j in 0..bots.len() {
-            for start in start_positions {
+            for (s, start) in start_positions.iter().enumerate() {
                 if (i == j) ^ self_games {
                     break;
                 }
+                let global = started_games;
+                let id = RoundId { i, j, s, global };
+                started_games += 1;
 
+                let sender = sender.clone();
                 let start = start.clone();
                 let bot_i = bots[i]();
                 let bot_j = bots[j]();
 
                 let handle = pool
-                    .spawn_with_handle(async move { run_game(start, i, j, bot_i, bot_j).await })
+                    .spawn_with_handle(async move { run_round(id, bot_i, bot_j, start, sender).await })
                     .unwrap();
                 handles.push(handle);
             }
         }
     }
+
+    let started_games = started_games;
+    drop(sender);
+
+    pool.spawn_ok(async move {
+        let mut finished_games = 0;
+        let mut moves = vec![0; started_games];
+
+        let mut last_time = Instant::now();
+        let mut delta_moves = 0;
+
+        while let Some(message) = receiver.stream().next().await {
+            match message {
+                Message::FinishedRound { id } => {
+                    moves[id.global] = usize::MAX;
+                    finished_games += 1;
+                }
+                Message::FinishedMove { id, mv } => {
+                    moves[id.global] = mv;
+                    delta_moves += 1;
+                }
+            }
+
+            if finished_games == started_games {
+                break;
+            }
+
+            let now = Instant::now();
+            let delta = (now - last_time).as_secs_f32();
+
+            if delta >= 1.0 {
+                let move_tp = delta_moves as f32 / delta;
+                let running_games = started_games - finished_games;
+
+                let moves = moves.iter().copied().filter(|&m| m != usize::MAX);
+                let (moves_min, moves_max) = moves.clone().minmax().into_option().unwrap();
+                let moves_avg = moves.sum::<usize>() as f32 / running_games as f32;
+
+                println!("Throughput: {} moves/s", move_tp);
+                println!("Finished {}/{} games", finished_games, started_games);
+                println!(
+                    "Done moves per game: min {} avg {} max {}",
+                    moves_min, moves_avg, moves_max
+                );
+
+                last_time = now;
+                delta_moves = 0;
+            }
+        }
+    });
 
     let handle = pool
         .spawn_with_handle(async move {
@@ -116,7 +191,13 @@ fn run_rounds<B: Board>(
     block_on(handle)
 }
 
-async fn run_game<B: Board>(start: B, i: usize, j: usize, mut bot_i: BoxBot<B>, mut bot_j: BoxBot<B>) -> Round<B> {
+async fn run_round<B: Board>(
+    id: RoundId,
+    mut bot_i: BoxBot<B>,
+    mut bot_j: BoxBot<B>,
+    start: B,
+    sender: Sender<Message>,
+) -> Round<B> {
     let mut board = start.clone();
     let mut moves = vec![];
 
@@ -129,6 +210,11 @@ async fn run_game<B: Board>(start: B, i: usize, j: usize, mut bot_i: BoxBot<B>, 
         moves.push(mv_i);
         board.play(mv_i);
 
+        sender
+            .send_async(Message::FinishedMove { id, mv: moves.len() })
+            .await
+            .unwrap();
+
         if let Some(outcome) = board.outcome() {
             break outcome;
         }
@@ -136,11 +222,17 @@ async fn run_game<B: Board>(start: B, i: usize, j: usize, mut bot_i: BoxBot<B>, 
         let mv_j = bot_j.select_move(&board).await;
         moves.push(mv_j);
         board.play(mv_j);
+
+        sender
+            .send_async(Message::FinishedMove { id, mv: moves.len() })
+            .await
+            .unwrap();
     };
 
+    sender.send_async(Message::FinishedRound { id }).await.unwrap();
+
     Round {
-        i,
-        j,
+        id,
         start,
         moves,
         outcome,
