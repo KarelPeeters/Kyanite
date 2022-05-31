@@ -1,8 +1,9 @@
+use std::fmt::{Display, Formatter};
+
 use board_game::board::Board;
 use serde::{Deserialize, Serialize};
 
 use kz_core::zero::node::UctWeights;
-use std::fmt::{Display, Formatter};
 
 use crate::simulation::Simulation;
 
@@ -34,6 +35,16 @@ pub enum Command {
     Stop,
 }
 
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+pub struct Evals {
+    // evals that actually happened, does not include cached
+    pub real: usize,
+    // evals that would have happened if the batch was full
+    pub potential: usize,
+    // evals that hit the cache
+    pub cached: usize,
+}
+
 #[derive(Debug)]
 pub enum GeneratorUpdate<B: Board> {
     Stop,
@@ -52,14 +63,8 @@ pub enum GeneratorUpdate<B: Board> {
         simulation: Simulation<B>,
     },
 
-    Evals {
-        // the number of evaluations that hit the cache
-        cached_evals: u64,
-        // the number of (expand) evaluations that did not hit the cache
-        real_evals: u64,
-        // the number of root muzero evals
-        root_evals: u64,
-    },
+    ExpandEvals(Evals),
+    RootEvals(Evals),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,5 +162,33 @@ impl Display for Game {
             Game::ChessHist { length } => write!(f, "chess-hist-{}", length),
             Game::Ataxx { size } => write!(f, "ataxx-{}", size),
         }
+    }
+}
+
+impl Evals {
+    pub fn new(real: usize, potential: usize, cached: usize) -> Self {
+        Self {
+            real,
+            potential,
+            cached,
+        }
+    }
+}
+
+impl std::ops::Add for Evals {
+    type Output = Evals;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Evals {
+            real: self.real + rhs.real,
+            potential: self.potential + rhs.potential,
+            cached: self.cached + rhs.cached,
+        }
+    }
+}
+
+impl std::ops::AddAssign for Evals {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }

@@ -10,7 +10,7 @@ use kz_core::network::muzero::{MuZeroFusedGraphs, MuZeroGraphs};
 
 use crate::server::executor::{batched_executor_loop, RunCondition};
 use crate::server::generator_muzero::generator_muzero_main;
-use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
+use crate::server::protocol::{Evals, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
 
 #[derive(Debug)]
@@ -96,13 +96,8 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                         |graph| graph.expand_executor(device, gpu_batch_size_expand),
                         |network, x| {
                             let y = network.eval_expand(&x);
-                            update_sender
-                                .send(GeneratorUpdate::Evals {
-                                    cached_evals: 0,
-                                    real_evals: x.len() as u64,
-                                    root_evals: 0,
-                                })
-                                .unwrap();
+                            let msg = GeneratorUpdate::ExpandEvals(Evals::new(x.len(), gpu_batch_size_expand, 0));
+                            update_sender.send(msg).unwrap();
                             y
                         },
                     );
@@ -129,13 +124,8 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                         |graph| graph.root_executor(device, gpu_batch_size_root),
                         |network, x| {
                             let y = network.eval_root(&x);
-                            update_sender
-                                .send(GeneratorUpdate::Evals {
-                                    cached_evals: 0,
-                                    real_evals: 0,
-                                    root_evals: x.len() as u64,
-                                })
-                                .unwrap();
+                            let msg = GeneratorUpdate::RootEvals(Evals::new(x.len(), gpu_batch_size_root, 0));
+                            update_sender.send(msg).unwrap();
                             y
                         },
                     );

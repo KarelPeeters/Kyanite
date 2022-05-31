@@ -9,10 +9,10 @@ use rand_distr::Dirichlet;
 use kz_core::network::{EvalClient, ZeroEvaluation};
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
-use kz_util::sequence::{zip_eq_exact};
+use kz_util::sequence::zip_eq_exact;
 
 use crate::move_selector::MoveSelector;
-use crate::server::protocol::{GeneratorUpdate, Settings};
+use crate::server::protocol::{Evals, GeneratorUpdate, Settings};
 use crate::server::server::UpdateSender;
 use crate::simulation::{Position, Simulation};
 
@@ -151,13 +151,8 @@ async fn generate_simulation<B: Board>(
 
         // send updates
         if cached_evals != 0 {
-            update_sender
-                .send(GeneratorUpdate::Evals {
-                    cached_evals,
-                    real_evals: 0,
-                    root_evals: 0,
-                })
-                .unwrap();
+            let msg = GeneratorUpdate::ExpandEvals(Evals::new(0, 0, cached_evals));
+            update_sender.send(msg).unwrap();
         }
         update_sender
             .send(GeneratorUpdate::FinishedMove {

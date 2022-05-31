@@ -1,20 +1,21 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::fs::create_dir_all;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Write as _};
 use std::time::Instant;
 
 use board_game::board::Board;
 use flume::Receiver;
-use std::fmt::Write as fmtWrite;
 
 use kz_core::mapping::BoardMapper;
 
 use crate::binary_output::BinaryOutput;
-use crate::server::protocol::{GeneratorUpdate, ServerUpdate};
+use crate::server::protocol::{Evals, GeneratorUpdate, ServerUpdate};
 
 pub fn collector_main<B: Board>(
     game: &str,
-    mut writer: BufWriter<impl Write>,
+    mut writer: BufWriter<impl std::io::Write>,
+    muzero: bool,
     games_per_file: usize,
     first_gen: u32,
     output_folder: &str,
@@ -81,14 +82,11 @@ pub fn collector_main<B: Board>(
                     writer.flush().unwrap();
                 }
             }
-            GeneratorUpdate::Evals {
-                cached_evals,
-                real_evals,
-                root_evals,
-            } => {
-                counter.cached_evals += cached_evals;
-                counter.real_evals += real_evals;
-                counter.root_evals += root_evals;
+            GeneratorUpdate::RootEvals(evals) => {
+                counter.root_evals += evals;
+            }
+            GeneratorUpdate::ExpandEvals(evals) => {
+                counter.expand_evals += evals;
             }
         }
 
@@ -100,7 +98,7 @@ pub fn collector_main<B: Board>(
             total_moves += counter.moves;
 
             let info = counter
-                .to_string(delta, total_moves, total_games, &curr_game_lengths)
+                .to_string(delta, total_moves, total_games, &curr_game_lengths, muzero)
                 .unwrap();
             print!("{}", info);
 
@@ -121,9 +119,8 @@ struct Counter {
     moves: u64,
     games: u64,
 
-    cached_evals: u64,
-    real_evals: u64,
-    root_evals: u64,
+    root_evals: Evals,
+    expand_evals: Evals,
 }
 
 impl Counter {
@@ -133,14 +130,10 @@ impl Counter {
         total_moves: u64,
         total_games: u64,
         game_lengths: &HashMap<usize, usize>,
+        muzero: bool,
     ) -> Result<String, std::fmt::Error> {
-        let real_eval_throughput = self.real_evals as f32 / delta;
-        let cached_eval_throughput = self.cached_evals as f32 / delta;
-        let root_eval_throughput = self.root_evals as f32 / delta;
         let move_throughput = self.moves as f32 / delta;
         let game_throughput = self.games as f32 / delta;
-
-        let cache_hit_rate = cached_eval_throughput / (cached_eval_throughput + real_eval_throughput);
 
         let min_game_length = game_lengths.values().copied().min().unwrap_or(0);
         let max_game_length = game_lengths.values().copied().max().unwrap_or(0);
@@ -150,12 +143,13 @@ impl Counter {
         let f = &mut result;
 
         writeln!(f, "Selfplay info:")?;
-        writeln!(
-            f,
-            "  {:.2} gpu evals/s, {:.2} cached evals/s, (hit rate {:.2})",
-            real_eval_throughput, cached_eval_throughput, cache_hit_rate
-        )?;
-        writeln!(f, "  {:.2} root evals/s", root_eval_throughput)?;
+        if muzero {
+            write_evals(f, "expand evals", self.expand_evals, delta);
+            write_evals(f, "root   evals", self.root_evals, delta);
+        } else {
+            assert_eq!(self.root_evals, Evals::default());
+            write_evals(f, "evals", self.expand_evals, delta);
+        }
         writeln!(
             f,
             "  {:.2} moves/s => {} moves {:.2} games/s => {} games",
@@ -169,4 +163,26 @@ impl Counter {
 
         Ok(result)
     }
+}
+
+fn write_evals(f: &mut String, name: &str, evals: Evals, delta: f32) {
+    let Evals {
+        real,
+        potential,
+        cached,
+    } = evals;
+
+    let real_tp = real as f32 / delta;
+    let cached_tp = cached as f32 / delta;
+    let potential_tp = potential as f32 / delta;
+
+    let hit_rate = (cached as f32) / (real + cached) as f32;
+    let fill_rate = (real as f32) / (potential as f32);
+
+    writeln!(
+        f,
+        "  {}/s: real: {:.1}, cached: {:.1}, potential: {:.1} (hit: {:.2}, fill: {:.2})",
+        name, real_tp, cached_tp, potential_tp, hit_rate, fill_rate
+    )
+    .unwrap();
 }

@@ -14,7 +14,7 @@ use nn_graph::optimizer::optimize_graph;
 
 use crate::server::executor::{batched_executor_loop, RunCondition};
 use crate::server::generator_alphazero::generator_alphazero_main;
-use crate::server::protocol::{GeneratorUpdate, Settings, StartupSettings};
+use crate::server::protocol::{Evals, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
 
 #[derive(Debug)]
@@ -83,13 +83,8 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
                         |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),
                         |network, x| {
                             let y = network.evaluate_batch(&x);
-                            update_sender
-                                .send(GeneratorUpdate::Evals {
-                                    cached_evals: 0,
-                                    real_evals: x.len() as u64,
-                                    root_evals: 0,
-                                })
-                                .unwrap();
+                            let msg = GeneratorUpdate::ExpandEvals(Evals::new(x.len(), gpu_batch_size, 0));
+                            update_sender.send(msg).unwrap();
                             y
                         },
                     );

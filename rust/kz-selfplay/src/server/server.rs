@@ -189,6 +189,7 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
                 collector_main(
                     &game.to_string(),
                     writer,
+                    startup.muzero,
                     startup.games_per_gen,
                     startup.first_gen,
                     &startup.output_folder,
