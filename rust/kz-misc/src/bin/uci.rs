@@ -8,8 +8,9 @@ use board_game::games::chess::{ChessBoard, Rules};
 use board_game::wdl::WDL;
 use flume::{Receiver, RecvError, Sender, TryRecvError};
 use internal_iterator::InternalIterator;
-use rand::prelude::SliceRandom;
-use rand::thread_rng;
+use rand::{SeedableRng, thread_rng};
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use vampirc_uci::UciMessage;
 
 use cuda_nn_eval::Device;
@@ -38,6 +39,7 @@ fn main() -> std::io::Result<()> {
 
     let graph = load_graph_from_onnx_path(path);
     let mut network = CudaNetwork::new(ChessStdMapper, &graph, batch_size, Device::new(0));
+    let mut rng = StdRng::from_entropy();
 
     // state
     let mut tree = None;
@@ -49,7 +51,7 @@ fn main() -> std::io::Result<()> {
             if let Some(tree) = &mut tree {
                 let mut prev_send = Instant::now();
 
-                settings.expand_tree(tree, &mut network, |tree| {
+                settings.expand_tree(tree, &mut network, &mut rng, |tree| {
                     let now = Instant::now();
                     if tree.root_visits() > 0 && (now - prev_send).as_secs_f32() > INFO_PERIOD {
                         let root = &tree[0];

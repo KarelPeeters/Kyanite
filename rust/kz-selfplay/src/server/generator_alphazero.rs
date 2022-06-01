@@ -2,12 +2,12 @@ use board_game::board::Board;
 use board_game::games::max_length::MaxMovesBoard;
 use flume::{Receiver, TryRecvError};
 use lru::LruCache;
-use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use rand_distr::Dirichlet;
 
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use kz_core::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
@@ -50,7 +50,7 @@ pub async fn generator_alphazero_main<B: Board>(
             start_pos(),
             &mut rng,
         )
-        .await;
+            .await;
 
         update_sender
             .send(GeneratorUpdate::FinishedSimulation {
@@ -101,6 +101,7 @@ async fn generate_simulation<B: Board>(
                 settings.weights.to_uct(),
                 settings.use_value,
                 FpuMode::Parent,
+                rng,
             );
             if let Some(request) = request {
                 let board = request.board.inner();

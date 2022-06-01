@@ -11,6 +11,8 @@ use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use decorum::N32;
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
@@ -358,12 +360,14 @@ fn build_tree(real: bool) -> Tree<ChessBoard> {
     // let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/ataxx-7/16x128/training/gen_661/network.onnx";
     // let mapper = AtaxxStdMapper::new(board.size());
 
+    let mut rng = StdRng::from_entropy();
     let stop = |tree: &Tree<_>| tree.root_visits() >= visits;
+
     if real {
         let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
         let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-        settings.build_tree(&board, &mut network, stop)
+        settings.build_tree(&board, &mut network, &mut rng, stop)
     } else {
-        settings.build_tree(&board, &mut DummyNetwork, stop)
+        settings.build_tree(&board, &mut DummyNetwork, &mut rng, stop)
     }
 }

@@ -17,3 +17,5 @@ tokio-stream = "0.1.8"
 futures-core = "0.3.21"
 itertools = "0.10.3"
 tokio = { version = "1.17.0", features = ["macros"] }
+
+rand = "0.8.5"

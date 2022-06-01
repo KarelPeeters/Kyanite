@@ -7,6 +7,8 @@ use chess::ChessMove;
 use decorum::Total;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
@@ -28,6 +30,7 @@ fn main() {
 
     let mapper = ChessStdMapper;
     let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
+    let mut rng = StdRng::from_entropy();
 
     let puzzle_path = "../data/lichess/lichess_db_puzzle.csv";
     let puzzle_read = BufReader::new(File::open(puzzle_path).unwrap());
@@ -62,7 +65,7 @@ fn main() {
                 let mut zero_correct_policy_history = vec![];
 
                 // see if we can find the move
-                let tree = settings.build_tree(&board, &mut network, |tree| {
+                let tree = settings.build_tree(&board, &mut network, &mut rng, |tree| {
                     if tree.root_visits() > 0 {
                         let zero_correct_policy: f32 = tree[0]
                             .children

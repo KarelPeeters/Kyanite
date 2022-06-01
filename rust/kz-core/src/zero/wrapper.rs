@@ -7,14 +7,15 @@ use board_game::board::Board;
 use flume::RecvError;
 use futures::executor::block_on;
 use itertools::Itertools;
+use rand::Rng;
 
 use kz_util::sequence::zip_eq_exact;
 
 use crate::bot::AsyncBot;
-use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
+use crate::network::job_channel::{Job, job_pair};
 use crate::zero::node::UctWeights;
-use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
@@ -42,10 +43,11 @@ impl ZeroSettings {
         self,
         root_board: &B,
         network: &mut impl Network<B>,
+        rng: &mut (impl Rng + Send),
         stop: impl FnMut(&Tree<B>) -> bool + Send,
     ) -> Tree<B> {
         let mut tree = Tree::new(root_board.clone());
-        self.expand_tree(&mut tree, network, stop);
+        self.expand_tree(&mut tree, network, rng, stop);
         tree
     }
 
@@ -54,10 +56,11 @@ impl ZeroSettings {
         self,
         root_board: &B,
         eval_client: &EvalClient<B>,
+        rng: &mut impl Rng,
         stop: impl FnMut(&Tree<B>) -> bool,
     ) -> Tree<B> {
         let mut tree = Tree::new(root_board.clone());
-        self.expand_tree_async(&mut tree, eval_client, stop).await;
+        self.expand_tree_async(&mut tree, eval_client, rng, stop).await;
         tree
     }
 
@@ -66,6 +69,7 @@ impl ZeroSettings {
         self,
         tree: &mut Tree<B>,
         network: &mut impl Network<B>,
+        rng: &mut (impl Rng + Send),
         stop: impl FnMut(&Tree<B>) -> bool + Send,
     ) {
         let (client, server) = job_pair(1);
@@ -74,7 +78,7 @@ impl ZeroSettings {
             // build the tree itself in a new thread
             s.spawn(|_| {
                 block_on(async move {
-                    self.expand_tree_async(tree, &client, stop).await;
+                    self.expand_tree_async(tree, &client, rng, stop).await;
                     drop(client);
                 })
             });
@@ -91,7 +95,7 @@ impl ZeroSettings {
 
             // implicitly join async thread
         })
-        .unwrap();
+            .unwrap();
     }
 
     // Continue expanding an existing tree.
@@ -99,6 +103,7 @@ impl ZeroSettings {
         self,
         tree: &mut Tree<B>,
         eval_client: &EvalClient<B>,
+        rng: &mut impl Rng,
         mut stop: impl FnMut(&Tree<B>) -> bool,
     ) {
         'outer: loop {
@@ -111,7 +116,7 @@ impl ZeroSettings {
             let mut terminal_gathers = 0;
 
             while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
-                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_mode) {
+                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_mode, rng) {
                     Some(request) => {
                         requests.push(request);
                     }
@@ -133,20 +138,22 @@ impl ZeroSettings {
     }
 }
 
-pub struct ZeroBot<B: Board, N: Network<B>> {
+pub struct ZeroBot<B: Board, N: Network<B>, R: Rng + Send> {
     network: N,
     settings: ZeroSettings,
     visits: u64,
+    rng: R,
     ph: PhantomData<B>,
 }
 
-impl<B: Board, N: Network<B>> ZeroBot<B, N> {
-    pub fn new(network: N, settings: ZeroSettings, visits: u64) -> Self {
+impl<B: Board, N: Network<B>, R: Rng + Send> ZeroBot<B, N, R> {
+    pub fn new(network: N, settings: ZeroSettings, visits: u64, rng: R) -> Self {
         assert!(visits > 0, "Need at least one visit to pick the best move");
         ZeroBot {
             network,
             settings,
             visits,
+            rng,
             ph: PhantomData,
         }
     }
@@ -154,19 +161,19 @@ impl<B: Board, N: Network<B>> ZeroBot<B, N> {
     pub fn build_tree(&mut self, board: &B) -> Tree<B> {
         let visits = self.visits;
         let stop = |tree: &Tree<B>| tree.root_visits() >= visits;
-        let tree = self.settings.build_tree(board, &mut self.network, stop);
+        let tree = self.settings.build_tree(board, &mut self.network, &mut self.rng, stop);
         tree
     }
 }
 
-impl<B: Board, N: Network<B>> Bot<B> for ZeroBot<B, N> {
+impl<B: Board, N: Network<B>, R: Rng + Send> Bot<B> for ZeroBot<B, N, R> {
     fn select_move(&mut self, board: &B) -> B::Move {
         assert!(!board.is_done());
         self.build_tree(board).best_move().unwrap()
     }
 }
 
-impl<B: Board, N: Network<B>> Debug for ZeroBot<B, N> {
+impl<B: Board, N: Network<B>, R: Rng + Send> Debug for ZeroBot<B, N, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZeroBot")
             .field("settings", &self.settings)
@@ -176,38 +183,43 @@ impl<B: Board, N: Network<B>> Debug for ZeroBot<B, N> {
     }
 }
 
-pub struct AsyncZeroBot<B: Board> {
+pub struct AsyncZeroBot<B: Board, R: Rng + Send> {
     eval_client: EvalClient<B>,
     settings: ZeroSettings,
     visits: u64,
+    rng: R,
 }
 
-impl<B: Board> AsyncZeroBot<B> {
-    pub fn new(eval_client: EvalClient<B>, settings: ZeroSettings, visits: u64) -> Self {
+impl<B: Board, R: Rng + Send> AsyncZeroBot<B, R> {
+    pub fn new(eval_client: EvalClient<B>, settings: ZeroSettings, visits: u64, rng: R) -> Self {
         AsyncZeroBot {
             eval_client,
             settings,
             visits,
+            rng,
         }
     }
 
     pub async fn build_tree(&mut self, board: &B) -> Tree<B> {
         let visits = self.visits;
         let stop = |tree: &Tree<B>| tree.root_visits() >= visits;
-        let tree = self.settings.build_tree_async(board, &self.eval_client, stop).await;
+        let tree = self
+            .settings
+            .build_tree_async(board, &self.eval_client, &mut self.rng, stop)
+            .await;
         tree
     }
 }
 
 #[async_trait]
-impl<B: Board> AsyncBot<B> for AsyncZeroBot<B> {
+impl<B: Board, R: Rng + Send> AsyncBot<B> for AsyncZeroBot<B, R> {
     async fn select_move(&mut self, board: &B) -> B::Move {
         assert!(!board.is_done());
         self.build_tree(board).await.best_move().unwrap()
     }
 }
 
-impl<B: Board> Debug for AsyncZeroBot<B> {
+impl<B: Board, R: Rng + Send> Debug for AsyncZeroBot<B, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AsyncZeroBot")
             .field("settings", &self.settings)

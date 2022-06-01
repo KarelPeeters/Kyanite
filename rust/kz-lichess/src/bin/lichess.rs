@@ -5,6 +5,8 @@ use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 use board_game::util::pathfind::pathfind_exact_length;
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use tokio_stream::StreamExt;
 
 use cuda_nn_eval::Device;
@@ -174,8 +176,10 @@ async fn make_move(
     let start = Instant::now();
     let start_visits = tree.root_visits();
 
+    let mut rng = StdRng::from_entropy();
+
     settings
-        .expand_tree_async(&mut tree, eval_client, |tree| {
+        .expand_tree_async(&mut tree, eval_client, &mut rng, |tree| {
             let time_used = (Instant::now() - start).as_secs_f32();
             let fraction_time_used = time_used / game.seconds_left as f32;
             let visits = tree.root_visits();

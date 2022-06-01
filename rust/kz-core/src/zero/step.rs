@@ -2,8 +2,9 @@ use board_game::board::Board;
 use board_game::wdl::{Flip, OutcomeWDL, POV};
 use decorum::N32;
 use internal_iterator::InternalIterator;
+use rand::Rng;
 
-use kz_util::sequence::zip_eq_exact;
+use kz_util::sequence::{choose_max_by_key, zip_eq_exact};
 
 use crate::network::ZeroEvaluation;
 use crate::zero::node::{Node, UctWeights, ZeroValues};
@@ -42,6 +43,7 @@ pub fn zero_step_gather<B: Board>(
     weights: UctWeights,
     use_value: bool,
     fpu_mode: FpuMode,
+    rng: &mut impl Rng,
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
@@ -94,14 +96,16 @@ pub fn zero_step_gather<B: Board>(
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].total_visits();
 
-        let selected = children
-            .iter()
-            .max_by_key(|&child| {
-                let x = tree[child]
+        let selected = choose_max_by_key(
+            children,
+            |&child| {
+                let uct = tree[child]
                     .uct(parent_total_visits, fpu_mode.select(fpu), use_value)
                     .total(weights);
-                N32::from_inner(x)
-            })
+                N32::from_inner(uct)
+            },
+            rng,
+        )
             .expect("Board is not done, this node should have a child");
 
         curr_node = selected;

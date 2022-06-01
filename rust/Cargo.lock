@@ -1248,6 +1248,7 @@ dependencies = [
  "kz-util",
  "licorice",
  "nn-graph",
+ "rand 0.8.5",
  "tokio",
  "tokio-stream",
 ]
