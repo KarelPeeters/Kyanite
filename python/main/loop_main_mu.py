@@ -102,6 +102,7 @@ def main():
     settings = LoopSettings(
         gui=sys.platform == "win32",
         root_path=f"data/loop_mu/{game.name}/profile/",
+        port=63105,
 
         dummy_network=None,
         initial_network=initial_network,

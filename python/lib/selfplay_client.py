@@ -69,12 +69,12 @@ class SelfplaySettings:
 CONNECT_TRY_PERIOD = 1.0
 
 
-def connect_to_selfplay_server() -> socket.socket:
+def connect_to_selfplay_server(port: int) -> socket.socket:
     while True:
         last_attempt_start = time.time()
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect(("127.0.0.1", 63105))
+            s.connect(("127.0.0.1", port))
             return s
         except ConnectionRefusedError as e:
             print(e)
@@ -85,8 +85,8 @@ def connect_to_selfplay_server() -> socket.socket:
 
 
 class SelfplayClient:
-    def __init__(self):
-        self.s = connect_to_selfplay_server()
+    def __init__(self, port: int):
+        self.s = connect_to_selfplay_server(port)
         self.f = self.s.makefile("r")
 
     def send(self, message: Union[dict, str]):

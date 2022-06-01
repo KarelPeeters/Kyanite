@@ -58,6 +58,7 @@ class FixedSelfplaySettings:
 class LoopSettings:
     gui: bool
     root_path: str
+    port: int
 
     dummy_network: Optional[Callable[[], nn.Module]]
     initial_network: Callable[[], nn.Module]
@@ -191,7 +192,7 @@ class LoopSettings:
         else:
             initial_onnx_path = self.save_tmp_onnx_network(network, f"network_{start_gen.gi}")
 
-        client = SelfplayClient()
+        client = SelfplayClient(self.port)
         client.send_startup_settings(startup_settings)
         client.send_new_settings(self.selfplay_settings)
         client.send_new_network(initial_onnx_path)
