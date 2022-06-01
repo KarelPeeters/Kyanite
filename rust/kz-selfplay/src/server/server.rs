@@ -8,6 +8,7 @@ use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
+use clap::Parser;
 use crossbeam::thread::Scope;
 use flume::{Receiver, Sender};
 use itertools::Itertools;
@@ -25,9 +26,28 @@ use crate::server::protocol::{Command, Game, GeneratorUpdate, Settings, StartupS
 use crate::server::server_alphazero::AlphaZeroSpecialization;
 use crate::server::server_muzero::MuZeroSpecialization;
 
+#[derive(Debug, clap::Parser)]
+struct Args {
+    #[clap(short, long)]
+    port: Option<u16>,
+    #[clap(short, long)]
+    device: Vec<i32>,
+}
+
 pub fn selfplay_server_main() {
-    println!("Waiting for connection");
-    let (stream, addr) = TcpListener::bind("127.0.0.1:63105").unwrap().accept().unwrap();
+    let args: Args = Args::parse();
+
+    let devices = if args.device.is_empty() {
+        Device::all().collect_vec()
+    } else {
+        args.device.iter().map(|&d| Device::new(d)).collect_vec()
+    };
+    assert!(!devices.is_empty(), "No cuda devices found");
+    println!("Using devices: {:?}", devices);
+
+    let port = args.port.unwrap_or(63105);
+    println!("Waiting for connection on port {}", port);
+    let (stream, addr) = TcpListener::bind(("127.0.0.1", port)).unwrap().accept().unwrap();
     println!("Accepted connection {:?} on {:?}", stream, addr);
 
     let writer = BufWriter::new(&stream);
@@ -63,43 +83,99 @@ pub fn selfplay_server_main() {
     let game =
         Game::parse(&startup_settings.game).unwrap_or_else(|| panic!("Unknown game '{}'", startup_settings.game));
 
+    selfplay_start_dispatch_game(game, devices, startup_settings, writer, reader)
+}
+
+fn selfplay_start_dispatch_game(
+    game: Game,
+    devices: Vec<Device>,
+    startup_settings: StartupSettings,
+    writer: BufWriter<&TcpStream>,
+    reader: BufReader<&TcpStream>,
+) {
     //TODO static dispatch this early means we're generating a lot of code N times
     //  is it actually that much? -> investigate with objdump or similar
-    //  would it be relatively easy to this dispatch some more?
+    //  would it be relatively easy to delay this dispatch some more?
     match game {
-        Game::TTT => selfplay_start(game, startup_settings, TTTBoard::default, TTTStdMapper, reader, writer),
-        Game::STTT => selfplay_start(
+        Game::TTT => selfplay_start_dispatch_spec(
             game,
+            devices,
+            startup_settings,
+            TTTBoard::default,
+            TTTStdMapper,
+            reader,
+            writer,
+        ),
+        Game::STTT => selfplay_start_dispatch_spec(
+            game,
+            devices,
             startup_settings,
             STTTBoard::default,
             STTTStdMapper,
             reader,
             writer,
         ),
-        Game::Ataxx { size } => selfplay_start(
+        Game::Ataxx { size } => selfplay_start_dispatch_spec(
             game,
+            devices,
             startup_settings,
             move || AtaxxBoard::diagonal(size),
             AtaxxStdMapper::new(size),
             reader,
             writer,
         ),
-        Game::Chess => selfplay_start(
+        Game::Chess => selfplay_start_dispatch_spec(
             game,
+            devices,
             startup_settings,
             ChessBoard::default,
             ChessStdMapper,
             reader,
             writer,
         ),
-        Game::ChessHist { length } => selfplay_start(
+        Game::ChessHist { length } => selfplay_start_dispatch_spec(
             game,
+            devices,
             startup_settings,
             ChessBoard::default,
             ChessHistoryMapper::new(length),
             reader,
             writer,
         ),
+    }
+}
+
+fn selfplay_start_dispatch_spec<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Send + Sync + Clone + 'static>(
+    game: Game,
+    devices: Vec<Device>,
+    startup: StartupSettings,
+    start_pos: F,
+    mapper: M,
+    reader: BufReader<impl Read + Send>,
+    writer: BufWriter<impl Write + Send>,
+) {
+    if startup.muzero {
+        selfplay_start(
+            game,
+            devices,
+            startup,
+            mapper,
+            start_pos,
+            reader,
+            writer,
+            MuZeroSpecialization,
+        );
+    } else {
+        selfplay_start(
+            game,
+            devices,
+            startup,
+            mapper,
+            start_pos,
+            reader,
+            writer,
+            AlphaZeroSpecialization,
+        );
     }
 }
 
@@ -110,29 +186,6 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
             "Must receive startup settings before any other command, got {:?}",
             command
         ),
-    }
-}
-
-fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Send + Sync + Clone + 'static>(
-    game: Game,
-    startup: StartupSettings,
-    start_pos: F,
-    mapper: M,
-    reader: BufReader<impl Read + Send>,
-    writer: BufWriter<impl Write + Send>,
-) {
-    if startup.muzero {
-        selfplay_start_impl(game, startup, mapper, start_pos, reader, writer, MuZeroSpecialization);
-    } else {
-        selfplay_start_impl(
-            game,
-            startup,
-            mapper,
-            start_pos,
-            reader,
-            writer,
-            AlphaZeroSpecialization,
-        );
     }
 }
 
@@ -157,8 +210,9 @@ pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
     fn load_graph(&self, path: &str, mapper: M, startup: &StartupSettings) -> Self::G;
 }
 
-fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecialization<B, M> + Send + Sync>(
+fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecialization<B, M> + Send + Sync>(
     game: Game,
+    devices: Vec<Device>,
     startup: StartupSettings,
     mapper: M,
     start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
@@ -166,8 +220,7 @@ fn selfplay_start_impl<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecializat
     writer: BufWriter<impl Write + Send>,
     spec: Z,
 ) {
-    let devices = Device::all().collect_vec();
-    assert!(!devices.is_empty(), "No cuda devices found");
+    assert!(!devices.is_empty());
 
     let total_cpu_threads = startup.cpu_threads_per_device * devices.len();
     let startup = &startup;

@@ -36,7 +36,7 @@ impl Device {
     pub fn new(device: i32) -> Self {
         assert!(
             0 <= device && device < cuda_device_count(),
-            "Device doesn't exist {}",
+            "Device with id {} doesn't exist",
             device
         );
         Device(device)
