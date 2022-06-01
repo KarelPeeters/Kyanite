@@ -152,13 +152,16 @@ impl Counter {
         }
         writeln!(
             f,
-            "  {:.2} moves/s => {} moves {:.2} games/s => {} games",
+            "  moves: {:.2}/s => {}, games: {:.2}/s => {}",
             move_throughput, total_moves, game_throughput, total_games
         )?;
         writeln!(
             f,
-            "  game lengths: min {} max {} mean {:.2}",
-            min_game_length, max_game_length, mean_game_length
+            "  running games: {}, lengths: min {} max {} mean {:.2}",
+            game_lengths.len(),
+            min_game_length,
+            max_game_length,
+            mean_game_length
         )?;
 
         Ok(result)
