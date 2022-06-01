@@ -9,7 +9,7 @@ from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.layers import Flip
 from lib.model.post_act import ScalarHead, PredictionHeads, ResTower, ConcatInputsChannelwise, \
-    ResBlock, AttentionPolicyHead, ConvPolicyHead
+    ResBlock, ConvPolicyHead
 from lib.networks import MuZeroNetworks
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
@@ -27,8 +27,9 @@ def main():
 
         cpu_threads_per_device=4,
         gpu_threads_per_device=1,
-        gpu_batch_size=512,
+        gpu_batch_size=1024,
         gpu_batch_size_root=64,
+        search_batch_size=16,
 
         saved_state_channels=saved_state_channels,
     )

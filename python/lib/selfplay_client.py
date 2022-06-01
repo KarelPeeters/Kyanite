@@ -20,6 +20,7 @@ class StartupSettings:
     gpu_threads_per_device: int
     gpu_batch_size: int
     gpu_batch_size_root: int
+    search_batch_size: int
 
     saved_state_channels: int
 

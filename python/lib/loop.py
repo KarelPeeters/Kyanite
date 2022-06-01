@@ -34,6 +34,7 @@ class FixedSelfplaySettings:
     gpu_threads_per_device: int
     gpu_batch_size: int
     gpu_batch_size_root: int
+    search_batch_size: int
 
     saved_state_channels: int
 
@@ -48,6 +49,7 @@ class FixedSelfplaySettings:
             gpu_threads_per_device=self.gpu_threads_per_device,
             gpu_batch_size=self.gpu_batch_size,
             gpu_batch_size_root=self.gpu_batch_size_root,
+            search_batch_size=self.search_batch_size,
             saved_state_channels=self.saved_state_channels,
         )
 
