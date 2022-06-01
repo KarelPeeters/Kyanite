@@ -42,6 +42,10 @@ pub fn selfplay_server_main() {
             startup_settings.gpu_batch_size_root, 0,
             "For muzero root batch size must be nonzero"
         );
+        assert_eq!(
+            startup_settings.search_batch_size, 1,
+            "For muzero search batch size must be 1, minibatching is not yet supported"
+        )
     }
 
     let output_folder = Path::new(&startup_settings.output_folder);

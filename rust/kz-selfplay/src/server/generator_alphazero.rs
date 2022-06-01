@@ -1,13 +1,14 @@
 use board_game::board::Board;
 use board_game::games::max_length::MaxMovesBoard;
 use flume::{Receiver, TryRecvError};
+use itertools::Itertools;
 use lru::LruCache;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
 
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
@@ -20,15 +21,14 @@ pub async fn generator_alphazero_main<B: Board>(
     generator_id: usize,
     start_pos: impl Fn() -> B,
     settings_receiver: Receiver<Settings>,
+    search_batch_size: usize,
     eval_client: EvalClient<B>,
     update_sender: UpdateSender<B>,
 ) {
+    let mut rng = StdRng::from_entropy();
+
     // wait for initial settings
     let mut settings = settings_receiver.recv_async().await.unwrap();
-
-    //TODO try with a different(faster) rng
-    //  really? can the rng be that significant?
-    let mut rng = StdRng::from_entropy();
 
     loop {
         // possibly get new settings
@@ -45,12 +45,13 @@ pub async fn generator_alphazero_main<B: Board>(
         let simulation = generate_simulation(
             generator_id,
             &settings,
+            search_batch_size,
             &update_sender,
             &eval_client,
             start_pos(),
             &mut rng,
         )
-            .await;
+        .await;
 
         update_sender
             .send(GeneratorUpdate::FinishedSimulation {
@@ -61,9 +62,12 @@ pub async fn generator_alphazero_main<B: Board>(
     }
 }
 
+type Cache<B> = LruCache<B, ZeroEvaluation<'static>>;
+
 async fn generate_simulation<B: Board>(
     generator_id: usize,
     settings: &Settings,
+    search_batch_size: usize,
     update_sender: &UpdateSender<B>,
     eval_client: &EvalClient<B>,
     start: B,
@@ -71,7 +75,7 @@ async fn generate_simulation<B: Board>(
 ) -> Simulation<B> {
     // create a new cache for every game, to prevent long-term stale values for short games
     // TODO maybe explicitly clear the cache when a new network is loaded instead?
-    let mut cache: LruCache<B, ZeroEvaluation> = LruCache::new(settings.cache_size);
+    let mut cache: Cache<B> = LruCache::new(settings.cache_size);
 
     let mut positions = vec![];
 
@@ -79,9 +83,6 @@ async fn generate_simulation<B: Board>(
     let mut curr_board = MaxMovesBoard::new(start, max_moves);
 
     while !curr_board.is_done() {
-        // update stats to collect
-        let mut cached_evals = 0;
-
         // determinate search settings
         let is_full_search = rng.gen_bool(settings.full_search_prob);
         let target_visits = if is_full_search {
@@ -91,43 +92,16 @@ async fn generate_simulation<B: Board>(
         };
 
         // run tree search
-        let mut tree = Tree::new(curr_board.clone());
-        let mut root_net_eval = None;
-
-        while tree.root_visits() < target_visits {
-            // TODO add oracle support (once that actually works)
-            let request = zero_step_gather(
-                &mut tree,
-                settings.weights.to_uct(),
-                settings.use_value,
-                FpuMode::Parent,
-                rng,
-            );
-            if let Some(request) = request {
-                let board = request.board.inner();
-
-                let mut eval: ZeroEvaluation = if let Some(eval) = cache.get(board) {
-                    cached_evals += 1;
-                    eval.clone()
-                } else {
-                    let eval = eval_client.map_async_single(board.clone()).await;
-                    cache.put(board.clone(), eval.clone());
-                    eval
-                };
-
-                // add dirichlet noise to the evaluation if this is the root eval
-                if root_net_eval.is_none() {
-                    root_net_eval = Some(eval.clone());
-                    add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
-                }
-
-                let response = request.respond(eval);
-                zero_step_apply(&mut tree, response);
-            }
-        }
-
-        // extract stats
-        let net_evaluation = root_net_eval.unwrap();
+        let (tree, cached_evals, net_evaluation) = build_tree(
+            settings,
+            search_batch_size,
+            eval_client,
+            &mut cache,
+            &curr_board,
+            target_visits,
+            rng,
+        )
+        .await;
         let zero_evaluation = tree.eval();
 
         // pick a move to play
@@ -151,6 +125,8 @@ async fn generate_simulation<B: Board>(
         curr_board.play(picked_move);
 
         // send updates
+        // TODO these cached evals are somewhat temporally misaligned with when the evals actually take place,
+        //   can this cause issues when reporting things like cache hit rate?
         if cached_evals != 0 {
             let msg = GeneratorUpdate::ExpandEvals(Evals::new(0, 0, cached_evals));
             update_sender.send(msg).unwrap();
@@ -167,6 +143,86 @@ async fn generate_simulation<B: Board>(
         positions,
         final_board: curr_board.into_inner(),
     }
+}
+
+async fn build_tree<B: Board>(
+    settings: &Settings,
+    search_batch_size: usize,
+    eval_client: &EvalClient<B>,
+    cache: &mut Cache<B>,
+    curr_board: &MaxMovesBoard<B>,
+    target_visits: u64,
+    rng: &mut impl Rng,
+) -> (Tree<MaxMovesBoard<B>>, usize, ZeroEvaluation<'static>) {
+    let mut tree = Tree::new(curr_board.clone());
+    let mut cached_evals = 0;
+    let mut root_net_eval = None;
+
+    while tree.root_visits() < target_visits {
+        let mut requests = vec![];
+        let mut terminal_gathers = 0;
+
+        // collect a batch of requests
+        while requests.len() < search_batch_size && terminal_gathers < search_batch_size {
+            let request = zero_step_gather(
+                &mut tree,
+                settings.weights.to_uct(),
+                settings.use_value,
+                FpuMode::Parent,
+                rng,
+            );
+
+            match request {
+                Some(request) => {
+                    let board = request.board.inner();
+
+                    match cache.get(board) {
+                        Some(eval) => {
+                            cached_evals += 1;
+                            let mut eval = eval.clone();
+
+                            // root eval recording and noise
+                            if request.node == 0 {
+                                root_net_eval = Some(eval.clone());
+                                add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
+                            }
+
+                            // add to tree
+                            zero_step_apply(&mut tree, request.respond(eval));
+                        }
+                        None => {
+                            requests.push(request);
+                        }
+                    }
+                }
+                None => {
+                    terminal_gathers += 1;
+                }
+            }
+        }
+
+        // evaluate requests
+        let boards = requests.iter().map(|r| r.board.inner().clone()).collect_vec();
+        let evals = eval_client.map_async(boards).await;
+
+        // apply all of them
+        for (req, mut eval) in zip_eq_exact(requests, evals) {
+            // store in cache
+            cache.put(req.board.inner().clone(), eval.clone());
+
+            // root eval recording and noise
+            if req.node == 0 {
+                root_net_eval = Some(eval.clone());
+                add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
+            }
+
+            // add to tree
+            zero_step_apply(&mut tree, req.respond(eval));
+        }
+    }
+
+    let net_evaluation = root_net_eval.unwrap();
+    (tree, cached_evals, net_evaluation)
 }
 
 fn add_dirichlet_noise(policy: &mut [f32], settings: &Settings, rng: &mut impl Rng) {

@@ -21,6 +21,7 @@ pub struct StartupSettings {
     pub gpu_threads_per_device: usize,
     pub gpu_batch_size: usize,
     pub gpu_batch_size_root: usize,
+    pub search_batch_size: usize,
 
     pub saved_state_channels: usize,
 }

@@ -1324,6 +1324,7 @@ version = "0.1.0"
 dependencies = [
  "decorum",
  "itertools",
+ "num-traits",
  "rand 0.8.5",
 ]
 

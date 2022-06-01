@@ -12,10 +12,10 @@ use rand::Rng;
 use kz_util::sequence::zip_eq_exact;
 
 use crate::bot::AsyncBot;
+use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
-use crate::network::job_channel::{Job, job_pair};
 use crate::zero::node::UctWeights;
-use crate::zero::step::{FpuMode, zero_step_apply, zero_step_gather};
+use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
@@ -95,7 +95,7 @@ impl ZeroSettings {
 
             // implicitly join async thread
         })
-            .unwrap();
+        .unwrap();
     }
 
     // Continue expanding an existing tree.
@@ -106,11 +106,7 @@ impl ZeroSettings {
         rng: &mut impl Rng,
         mut stop: impl FnMut(&Tree<B>) -> bool,
     ) {
-        'outer: loop {
-            if stop(tree) {
-                break 'outer;
-            }
-
+        while !stop(tree) {
             // collect requests until the batch is full or we repeatedly fail to find new positions to evaluate
             let mut requests = vec![];
             let mut terminal_gathers = 0;

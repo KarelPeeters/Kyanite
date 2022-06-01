@@ -8,6 +8,7 @@ use kz_core::mapping::BoardMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::job_channel::job_pair;
 use kz_core::network::Network;
+use kz_util::math::ceil_div;
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
@@ -34,15 +35,17 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         update_sender: Sender<GeneratorUpdate<B>>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Graph>>) {
         let gpu_batch_size = startup.gpu_batch_size;
+        let search_batch_size = startup.search_batch_size;
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
-        let concurrent_games = (gpu_threads + 1) * gpu_batch_size;
+        let concurrent_games = ceil_div((gpu_threads + 1) * gpu_batch_size, search_batch_size);
         println!("Running {} concurrent games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
         let mut graph_senders: Vec<GraphSender<Graph>> = vec![];
 
-        let (eval_client, eval_server) = job_pair(gpu_threads * gpu_batch_size);
+        let job_buffer_size = ceil_div(gpu_threads * gpu_batch_size, search_batch_size);
+        let (eval_client, eval_server) = job_pair(job_buffer_size);
 
         // spawn cpu threads
         let pool = ThreadPoolBuilder::new()
@@ -60,7 +63,15 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
             settings_senders.push(settings_sender);
 
             pool.spawn_ok(async move {
-                generator_alphazero_main(generator_id, start_pos, settings_receiver, eval_client, update_sender).await;
+                generator_alphazero_main(
+                    generator_id,
+                    start_pos,
+                    settings_receiver,
+                    search_batch_size,
+                    eval_client,
+                    update_sender,
+                )
+                .await;
             });
         }
 

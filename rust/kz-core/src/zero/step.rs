@@ -13,7 +13,7 @@ use crate::zero::tree::Tree;
 
 #[derive(Debug)]
 pub struct ZeroRequest<B> {
-    node: usize,
+    pub node: usize,
     pub board: B,
 }
 
