@@ -5,8 +5,8 @@ import torch.jit
 from torch import nn
 from torch.optim import AdamW
 
-from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
+from lib.data.file_list import FileListSampler, FileList
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.layers import Flip
@@ -29,7 +29,8 @@ def main(plotter: LogPlotter):
     files = [DataFile.open(game, p) for p in paths]
 
     include_final = True
-    sampler = FileListSampler(game, files, batch_size=128, unroll_steps=5, include_final=include_final, threads=1)
+    file_list = FileList(game, files)
+    sampler = FileListSampler(file_list, batch_size=128, unroll_steps=5, include_final=include_final, threads=1)
 
     train = TrainSettings(
         game=game,

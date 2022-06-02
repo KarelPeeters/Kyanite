@@ -11,24 +11,70 @@ from lib.queue import CQueue, CQueueClosed
 from lib.util import PIN_MEMORY
 
 
+class FileList:
+    def __init__(self, game: Game, files: List[DataFile]):
+        self.game = game
+        self.files = files
+
+        self.file_ends = np.cumsum(np.array([len(f) for f in self.files]))
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, fi: int):
+        return self.files[fi]
+
+    @property
+    def positions(self):
+        return PositionsView(self)
+
+    def split_index(self, i: int) -> (int, int):
+        assert 0 <= i < len(self.positions), f"Index {i} out of bounds for length {len(self.positions)}"
+
+        fi = np.searchsorted(self.file_ends, i, "right")
+        if fi == 0:
+            pi = i
+        else:
+            pi = i - self.file_ends[fi - 1]
+        return fi, pi
+
+    def with_new_handles(self) -> 'FileList':
+        return FileList(
+            game=self.game,
+            files=[f.with_new_handle() for f in self.files]
+        )
+
+    def close(self):
+        for f in self.files:
+            f.close()
+
+
+class PositionsView:
+    def __init__(self, file_list: FileList):
+        self.file_list = file_list
+
+    def __len__(self):
+        return self.file_list.file_ends[-1] if len(self.file_list.file_ends) else 0
+
+    def __getitem__(self, i: int):
+        fi, pi = self.file_list.split_index(i)
+        return self.file_list[fi][pi]
+
+
 class FileListSampler:
     def __init__(
             self,
-            game: Game, files: List[DataFile],
+            files: FileList,
             batch_size: int,
             unroll_steps: Optional[int], include_final: bool,
             threads: int
     ):
-        self.game = game
+        self.files = files
+        self.game = files.game
+
         self.batch_size = batch_size
         self.unroll_steps = unroll_steps
         self.include_final = include_final
-
-        self.files = files
-        self.file_ends = np.cumsum(np.array([len(f) for f in self.files]))
-
-        assert len(self.file_ends), "There must be at least one file"
-        assert self.file_ends[-1] != 0, "All files are empty"
 
         self.queue = CQueue(threads + 1)
 
@@ -39,27 +85,11 @@ class FileListSampler:
         for thread in self.threads:
             thread.start()
 
-    def total_position_count(self):
-        return self.file_ends[-1] if len(self.file_ends) else 0
-
-    def split_index(self, i: int) -> (int, int):
-        assert 0 <= i < len(self)
-        fi = np.searchsorted(self.file_ends, i, "right")
-        if fi == 0:
-            pi = i
-        else:
-            pi = i - self.file_ends[fi - 1]
-        return fi, pi
-
     def close(self):
         self.queue.close()
 
     def __len__(self):
-        return self.file_ends[-1] if len(self.file_ends) else 0
-
-    def __getitem__(self, i: int):
-        (fi, pi) = self.split_index(i)
-        return self.files[fi][pi]
+        return len(self.files.positions)
 
     def next_batch_either(self) -> Union[PositionBatch, UnrolledPositionBatch]:
         if self.unroll_steps is None:
@@ -77,7 +107,7 @@ class FileListSampler:
 
 
 def thread_main(sampler: FileListSampler):
-    files = [f.with_new_handle() for f in sampler.files]
+    files = sampler.files.with_new_handles()
     unroll_steps = sampler.unroll_steps
 
     try:
@@ -88,26 +118,25 @@ def thread_main(sampler: FileListSampler):
                 sampler.queue.push_blocking(collect_unrolled_batch(sampler, files, unroll_steps))
 
     except CQueueClosed:
-        for f in files:
-            f.close()
+        files.close()
 
 
-def collect_simple_batch(sampler: FileListSampler, files: List[DataFile]):
+def collect_simple_batch(sampler: FileListSampler, files: FileList):
     positions = []
 
     for _ in range(sampler.batch_size):
         _, _, p = sample_position(sampler, files)
         positions.append(p)
 
-    return PositionBatch(sampler.game, positions, PIN_MEMORY)
+    return PositionBatch(files.game, positions, PIN_MEMORY)
 
 
-def collect_unrolled_batch(sampler: FileListSampler, files: List[DataFile], unroll_steps: int):
+def collect_unrolled_batch(sampler: FileListSampler, files: FileList, unroll_steps: int):
     chains = []
 
     for _ in range(sampler.batch_size):
         (fi, pi, first_position) = sample_position(sampler, files)
-        file = files[fi]
+        file = files.files[fi]
 
         chain = [first_position]
 
@@ -131,14 +160,14 @@ def collect_unrolled_batch(sampler: FileListSampler, files: List[DataFile], unro
     return UnrolledPositionBatch(sampler.game, unroll_steps, chains, PIN_MEMORY)
 
 
-def sample_position(sampler: FileListSampler, files: List[DataFile]) -> (int, int, Position):
+def sample_position(sampler: FileListSampler, file_list: FileList) -> (int, int, Position):
     """
     Sample a position, skipping final positions if necessary.
     """
     while True:
-        i = random.randrange(len(sampler))
-        fi, pi = sampler.split_index(i)
-        p = files[fi][pi]
+        i = random.randrange(len(file_list.positions))
+        fi, pi = file_list.split_index(i)
+        p = file_list[fi][pi]
 
         if sampler.include_final or not p.is_final_position:
             return fi, pi, p

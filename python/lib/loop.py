@@ -9,8 +9,8 @@ import torch
 from torch import nn
 from torch.optim import Optimizer
 
-from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
+from lib.data.file_list import FileListSampler, FileList
 from lib.games import Game
 from lib.logger import Logger
 from lib.plotter import LogPlotter, run_with_plotter
@@ -378,4 +378,5 @@ class LoopBuffer:
 
     def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool):
         files = [self.files[-1]] if only_last else self.files
-        return FileListSampler(self.game, files, batch_size, unroll_steps=unroll_steps, include_final=include_final, threads=1)
+        file_list = FileList(self.game, files)
+        return FileListSampler(file_list, batch_size, unroll_steps=unroll_steps, include_final=include_final, threads=1)

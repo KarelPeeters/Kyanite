@@ -9,7 +9,7 @@ import torch.nn.functional as nnf
 from torch import nn
 from torch.optim import Optimizer
 
-from lib.data.buffer import FileListSampler
+from lib.data.file_list import FileListSampler
 from lib.logger import Logger
 from lib.plotter import LogPlotter
 from lib.save_onnx import save_onnx

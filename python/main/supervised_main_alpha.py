@@ -4,8 +4,8 @@ from typing import Optional
 
 import torch
 
-from lib.data.buffer import FileListSampler
 from lib.data.file import DataFile
+from lib.data.file_list import FileListSampler, FileList
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.attention import AttentionTower
@@ -81,8 +81,8 @@ def main(plotter: LogPlotter):
         train_files = train_files[-min(limit_file_count, len(train_files)):]
         test_files = test_files[-min(limit_file_count, len(train_files)):]
 
-    train_sampler = FileListSampler(game, train_files, batch_size, None, include_final, threads=1)
-    test_sampler = FileListSampler(game, test_files, batch_size, None, include_final, threads=1)
+    train_sampler = FileListSampler(FileList(game, train_files), batch_size, None, include_final, threads=1)
+    test_sampler = FileListSampler(FileList(game, test_files), batch_size, None, include_final, threads=1)
 
     print(f"Train file count: {len(train_files)}")
     print(f"Train file game count: {sum(f.info.game_count for f in train_files)}")
