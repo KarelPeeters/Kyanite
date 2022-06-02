@@ -56,7 +56,7 @@ pub fn box_bot<B: Board, T: AsyncBot<B> + Send + 'static>(
 pub fn run_tournament<S: Display, B: Board, F: Fn() + Send + 'static>(
     bots: Vec<(S, BoxBotFn<B>)>,
     start_positions: Vec<B>,
-    thread_count: usize,
+    limit_threads: Option<usize>,
     self_games: bool,
     on_print: F,
 ) -> Tournament<B> {
@@ -64,7 +64,7 @@ pub fn run_tournament<S: Display, B: Board, F: Fn() + Send + 'static>(
     let pos_count = start_positions.len();
 
     let (bot_names, bots) = bots.into_iter().map(|(s, b)| (s.to_string(), b)).unzip();
-    let rounds = run_rounds(bots, &start_positions, thread_count, self_games, on_print);
+    let rounds = run_rounds(bots, &start_positions, limit_threads, self_games, on_print);
 
     let mut total_wdl = vec![WDL::<usize>::default(); bot_count];
     let mut grid_wdl = vec![vec![WDL::<usize>::default(); bot_count]; bot_count];
@@ -92,15 +92,16 @@ pub fn run_tournament<S: Display, B: Board, F: Fn() + Send + 'static>(
 fn run_rounds<B: Board>(
     bots: Vec<BoxBotFn<B>>,
     start_positions: &Vec<B>,
-    thread_count: usize,
+    limit_threads: Option<usize>,
     self_games: bool,
     on_print: impl Fn() + Send + 'static,
 ) -> Vec<Round<B>> {
-    let pool = ThreadPoolBuilder::new()
-        .name_prefix("tournament")
-        .pool_size(thread_count)
-        .create()
-        .unwrap();
+    let mut builder = ThreadPoolBuilder::new();
+    builder.name_prefix("tournament");
+    if let Some(thread_count) = limit_threads {
+        builder.pool_size(thread_count);
+    }
+    let pool = builder.create().unwrap();
 
     let mut handles = vec![];
     let (sender, receiver) = flume::bounded(8);
