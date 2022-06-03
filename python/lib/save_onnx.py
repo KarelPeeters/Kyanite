@@ -1,5 +1,6 @@
 import json
 import os.path
+import warnings
 from pathlib import Path
 from typing import Optional, List
 
@@ -104,15 +105,18 @@ def save_onnx_inner(
     network.to("cpu")
 
     batch_axis = {0: "batch_size"}
-    torch.onnx.export(
-        model=network,
-        args=tuple(check_inputs),
-        f=path_onnx,
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes={k: batch_axis for k in input_names + output_names},
-        opset_version=10,
-    )
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Model has no forward function")
+        torch.onnx.export(
+            model=network,
+            args=tuple(check_inputs),
+            f=path_onnx,
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes={k: batch_axis for k in input_names + output_names},
+            opset_version=10,
+        )
 
     # move the network back to the original device
     network.to(guessed_device)
