@@ -1,4 +1,5 @@
 import itertools
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -169,6 +170,11 @@ class LoopSettings:
             logger: Logger, plotter: Optional[LogPlotter],
             network: nn.Module,
     ):
+        print("Saving current settings")
+        os.makedirs(start_gen.train_path, exist_ok=True)
+        with open(start_gen.settings_path, "w") as settings_f:
+            json.dump(self, settings_f, default=lambda o: o.__dict__, indent=2)
+
         print("Main network parameters:")
         print_param_count(network)
 
@@ -322,6 +328,7 @@ class Generation:
     train_path: str
     network_path_pt: str
     finished_path: str
+    settings_path: str
 
     @classmethod
     def from_gi(cls, settings: 'LoopSettings', gi: int):
@@ -335,6 +342,7 @@ class Generation:
             train_path=train_path,
             network_path_pt=os.path.join(train_path, "network.pt"),
             finished_path=os.path.join(train_path, "finished.txt"),
+            settings_path=os.path.join(train_path, "settings.json"),
         )
 
     @property
