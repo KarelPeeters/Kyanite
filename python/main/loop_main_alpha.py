@@ -89,6 +89,7 @@ def main():
 
         train_batch_size=128,
         samples_per_position=0.3,
+        test_ratio=0.05,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 

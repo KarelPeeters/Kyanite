@@ -67,7 +67,8 @@ class FileListSampler:
             files: FileList,
             batch_size: int,
             unroll_steps: Optional[int], include_final: bool,
-            threads: int
+            threads: int,
+            pi_range: (float, float) = (0.0, 1.0)
     ):
         self.files = files
         self.game = files.game
@@ -75,6 +76,7 @@ class FileListSampler:
         self.batch_size = batch_size
         self.unroll_steps = unroll_steps
         self.include_final = include_final
+        self.pi_range = pi_range
 
         self.queue = CQueue(threads + 1)
 
@@ -165,9 +167,20 @@ def sample_position(sampler: FileListSampler, file_list: FileList) -> (int, int,
     Sample a position, skipping final positions if necessary.
     """
     while True:
-        i = random.randrange(len(file_list.positions))
-        fi, pi = file_list.split_index(i)
-        p = file_list[fi][pi]
+        # TODO rethink how the train/test split is supposed to work,
+        #   right now a game can be split in the middle
+        #   ideally we'd fully randomly split games instead of taking test from the front
+        # i = random.randrange(len(file_list.positions))
+        # fi, pi = file_list.split_index(i)
+
+        fi = random.randrange(len(file_list))
+        file = file_list[fi]
+
+        pi_min = int(sampler.pi_range[0] * len(file))
+        pi_max = int(sampler.pi_range[1] * len(file))
+
+        pi = random.randrange(pi_min, pi_max)
+        p = file[pi]
 
         if sampler.include_final or not p.is_final_position:
             return fi, pi, p

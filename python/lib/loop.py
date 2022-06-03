@@ -71,6 +71,7 @@ class LoopSettings:
 
     train_batch_size: int
     samples_per_position: float
+    test_ratio: float
 
     # TODO re-implement testing
     # test_fraction: float
@@ -226,7 +227,10 @@ class LoopSettings:
                 client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
-                train_sampler = buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)
+                train_sampler = buffer.sampler(
+                    self.train_batch_size, self.muzero_steps, self.include_final,
+                    only_last=False, test=False
+                )
                 print(f"Training network on buffer with size {len(train_sampler)} for {batch_count_per_gen} batches")
                 train_start = time.perf_counter()
 
@@ -250,7 +254,7 @@ class LoopSettings:
 
     def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module]:
         game = self.fixed_settings.game
-        buffer = LoopBuffer(game, self.max_buffer_size)
+        buffer = LoopBuffer(game, self.max_buffer_size, self.test_ratio)
 
         for file in self.initial_data_files:
             buffer.append(None, file)
@@ -280,8 +284,14 @@ class LoopSettings:
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network):
         setups = [
-            ("test-buffer", buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, False)),
-            ("test-last", buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, True)),
+            (
+                "test-buffer",
+                buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, only_last=False, test=True)
+            ),
+            (
+                "test-last",
+                buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, only_last=True, test=True)
+            ),
         ]
 
         network.eval()
@@ -335,9 +345,10 @@ class Generation:
 
 
 class LoopBuffer:
-    def __init__(self, game: Game, target_positions: int):
+    def __init__(self, game: Game, target_positions: int, test_ratio: float):
         self.game = game
         self.target_positions = target_positions
+        self.test_ratio = test_ratio
 
         self.position_count = 0
         self.game_count = 0
@@ -376,7 +387,17 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", info.root_wdl[1])
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
-    def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool):
+    def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool, test: bool):
         files = [self.files[-1]] if only_last else self.files
         file_list = FileList(self.game, files)
-        return FileListSampler(file_list, batch_size, unroll_steps=unroll_steps, include_final=include_final, threads=1)
+
+        if test:
+            pi_range = (0, self.test_ratio)
+        else:
+            pi_range = (self.test_ratio, 1)
+
+        return FileListSampler(
+            file_list, batch_size,
+            unroll_steps=unroll_steps, include_final=include_final,
+            pi_range=pi_range, threads=1
+        )

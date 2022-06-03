@@ -104,6 +104,8 @@ class PositionBatch:
         policy_values.fill_(-1)
 
         played_mv = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        game_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        pos_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
 
         if game.input_mv_channels is not None:
@@ -133,6 +135,9 @@ class PositionBatch:
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
             played_mv[i] = p.played_mv
+            pos_index[i] = p.pos_index
+            game_index[i] = p.game_id
+
             if game.input_mv_channels is not None:
                 played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
             is_terminal[i] = p.is_terminal
@@ -141,7 +146,9 @@ class PositionBatch:
         self.policy_indices = policy_indices.to(DEVICE)
         self.policy_values = policy_values.to(DEVICE)
 
-        self.played_mv = played_mv
+        self.played_mv = played_mv.to(DEVICE)
+        self.pos_index = pos_index.to(DEVICE)
+        self.game_index = game_index.to(DEVICE)
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
         self.is_terminal = is_terminal.to(DEVICE)
 
