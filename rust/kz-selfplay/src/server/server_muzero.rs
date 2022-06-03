@@ -34,7 +34,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
         let concurrent_games = (gpu_threads + 1) * gpu_batch_size_expand + 2 * gpu_batch_size_root;
-        println!("Running {} concurrent games", concurrent_games);
+        println!("Spawning {} games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
         let mut graph_senders: Vec<GraphSender<Self::G>> = vec![];
@@ -50,7 +50,9 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
             .create()
             .unwrap();
 
-        for generator_id in 0..concurrent_games {
+        for local_generator_id in 0..concurrent_games {
+            let generator_id = concurrent_games * device_id + local_generator_id;
+
             let start_pos = start_pos.clone();
             let root_client = root_client.clone();
             let expand_client = expand_client.clone();
@@ -73,7 +75,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
                     expand_client,
                     update_sender,
                 )
-                    .await;
+                .await;
             });
         }
 

@@ -39,7 +39,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
         let concurrent_games = ceil_div((gpu_threads + 1) * gpu_batch_size, search_batch_size);
-        println!("Running {} concurrent games", concurrent_games);
+        println!("Spawning {} games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
         let mut graph_senders: Vec<GraphSender<Graph>> = vec![];
@@ -54,7 +54,9 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
             .create()
             .unwrap();
 
-        for generator_id in 0..concurrent_games {
+        for local_generator_id in 0..concurrent_games {
+            let generator_id = concurrent_games * device_id + local_generator_id;
+
             let start_pos = start_pos.clone();
             let eval_client = eval_client.clone();
             let update_sender = update_sender.clone();

@@ -57,10 +57,11 @@ pub fn collector_main<B: Board>(
             }
 
             GeneratorUpdate::FinishedSimulation {
-                generator_id: _,
+                generator_id,
                 simulation,
             } => {
                 counter.games += 1;
+                curr_game_lengths.remove(&generator_id);
 
                 // write file to disk, possibly starting a new generation
                 curr_output
