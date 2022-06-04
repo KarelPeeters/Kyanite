@@ -27,6 +27,8 @@ struct Args {
 
     #[clap(short, long)]
     device: Option<i32>,
+    #[clap(short, long)]
+    skip_io: bool,
 
     #[clap(long)]
     n: Option<usize>,
@@ -49,6 +51,7 @@ fn main() {
         path,
         cpu,
         device,
+        skip_io,
     } = Args::parse();
 
     let n = n.unwrap_or(DEFAULT_ITERATIONS);
@@ -95,7 +98,7 @@ fn main() {
         if cpu {
             profile_single_batch_size_cpu(&graph, batch_size as usize, n)
         } else {
-            profile_single_batch_size_cudnn(device, &graph, batch_size as usize, n);
+            profile_single_batch_size_cudnn(device, &graph, batch_size as usize, n, skip_io);
         }
     }
 }
@@ -128,7 +131,7 @@ fn profile_different_batch_sizes(device: Device, graph: &Graph) {
     println!("{:?}", result);
 }
 
-fn profile_single_batch_size_cudnn(device: Device, graph: &Graph, batch_size: usize, n: usize) {
+fn profile_single_batch_size_cudnn(device: Device, graph: &Graph, batch_size: usize, n: usize, skip_io: bool) {
     let mut executor = CudaExecutor::new(device, &graph, batch_size);
 
     let inputs = dummy_inputs(&graph, batch_size);
@@ -142,8 +145,18 @@ fn profile_single_batch_size_cudnn(device: Device, graph: &Graph, batch_size: us
     println!("Throughput test");
     let start = Instant::now();
     for _ in 0..n {
-        executor.evaluate(&inputs);
+        if skip_io {
+            unsafe {
+                executor.run_async();
+            }
+        } else {
+            executor.evaluate(&inputs);
+        }
     }
+    if skip_io {
+        executor.stream().synchronize();
+    }
+
     let delta = (Instant::now() - start).as_secs_f32();
     let throughput = (batch_size * n) as f32 / delta;
 

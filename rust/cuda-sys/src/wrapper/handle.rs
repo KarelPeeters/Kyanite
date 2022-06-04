@@ -120,8 +120,8 @@ impl CudaStream {
         }
     }
 
-    pub unsafe fn synchronize(&self) {
-        cudaStreamSynchronize(self.inner()).unwrap()
+    pub fn synchronize(&self) {
+        unsafe { cudaStreamSynchronize(self.inner()).unwrap() }
     }
 
     pub fn device(&self) -> Device {
