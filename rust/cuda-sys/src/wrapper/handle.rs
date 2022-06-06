@@ -5,23 +5,15 @@ use bytemuck::cast_slice;
 
 use crate::bindings::{
     cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasLtCreate, cublasLtDestroy, cublasLtHandle_t,
-    cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDeviceCount,
-    cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate,
-    cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate,
-    cudnnDestroy, cudnnHandle_t, cudnnSetStream,
+    cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDevice,
+    cudaGetDeviceCount, cudaGetDeviceProperties, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode,
+    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent,
+    cudaStream_t, cudnnCreate, cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
-
-pub fn cuda_device_count() -> i32 {
-    unsafe {
-        let mut count = 0;
-        cudaGetDeviceCount(&mut count as *mut _).unwrap();
-        count
-    }
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Device(i32);
@@ -44,6 +36,14 @@ impl Device {
 
     pub fn all() -> impl Iterator<Item = Self> {
         (0..cuda_device_count()).map(Device::new)
+    }
+
+    pub fn current() -> Device {
+        unsafe {
+            let mut inner = 0;
+            cudaGetDevice(&mut inner as *mut _).unwrap();
+            Device::new(inner)
+        }
     }
 
     pub fn inner(self) -> i32 {
@@ -92,6 +92,14 @@ impl Device {
         std::str::from_utf8(cast_slice::<i8, u8>(&name[..len]))
             .unwrap()
             .to_owned()
+    }
+}
+
+fn cuda_device_count() -> i32 {
+    unsafe {
+        let mut count = 0;
+        cudaGetDeviceCount(&mut count as *mut _).unwrap();
+        count
     }
 }
 
