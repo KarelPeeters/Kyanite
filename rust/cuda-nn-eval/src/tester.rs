@@ -1,5 +1,5 @@
 use bytemuck::cast_slice_mut;
-use itertools::{zip_eq, Itertools};
+use itertools::{enumerate, zip_eq, Itertools};
 
 use cuda_sys::wrapper::handle::Device;
 use nn_graph::cpu::Tensor;
@@ -13,64 +13,7 @@ use crate::executor::CudaExecutor;
 pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
     let (batch_size, inputs, expected_outputs) = load_check_data(graph, check_data_bytes);
     let outputs = eval_cudnn(graph, batch_size, &inputs, true);
-    assert_outputs_match(graph.outputs(), &expected_outputs, &outputs, true);
-}
-
-const ERROR_ABS_TOLERANCE: f32 = 0.001;
-const ERROR_REL_TOLERANCE: f32 = 0.001;
-
-pub fn assert_outputs_match(
-    output_values: &[Value],
-    expected_outputs: &[Tensor],
-    outputs: &[Tensor],
-    print_match: bool,
-) {
-    assert_eq!(expected_outputs.len(), outputs.len(), "Wrong number of outputs");
-
-    let mut max_abs_error = 0.0;
-    let mut max_rel_error = 0.0;
-
-    for (i, (expected_output, output)) in zip_eq(expected_outputs, outputs).enumerate() {
-        assert_eq!(
-            expected_output.shape(),
-            output.shape(),
-            "Wrong output shape for output {}",
-            i
-        );
-
-        for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
-            let (abs_error, rel_error) = if expected_value == value || (expected_value.is_nan() && value.is_nan()) {
-                (0.0, 0.0)
-            } else {
-                let abs_error = (expected_value - value).abs();
-                let rel_error = abs_error / expected_value.abs();
-                (abs_error, rel_error)
-            };
-
-            max_abs_error = f32::max(max_abs_error, abs_error);
-            max_rel_error = f32::max(max_rel_error, rel_error);
-
-            assert!(
-                (abs_error < ERROR_ABS_TOLERANCE) || (rel_error < ERROR_REL_TOLERANCE),
-                "Wrong output value '{}', expected '{}' at indices {:?} in output {} (value {:?})",
-                value,
-                expected_value,
-                indices.slice(),
-                i,
-                output_values[i],
-            )
-        }
-
-        if print_match {
-            println!(
-                "Output {} with shape {:?} matched, max error: abs {}, rel {}",
-                i,
-                output.shape(),
-                max_abs_error,
-                max_rel_error
-            );
-        }
-    }
+    assert_tensors_match(&expected_outputs, &outputs, true);
 }
 
 pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print_executor: bool) -> Vec<Tensor> {
@@ -79,6 +22,157 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print_exe
         println!("{:?}", executor);
     }
     executor.evaluate_tensors(inputs)
+}
+
+const TOLERANCE_ABS_DIFF: f32 = 0.001;
+const TOLERANCE_REL_DIFF: f32 = 0.001;
+const MAX_LOGGED_ERRORS: usize = 8;
+
+pub fn assert_tensors_match(expected: &[Tensor], actual: &[Tensor], print_match: bool) {
+    match check_tensors_match(expected, actual) {
+        Ok(Match {
+            diff_per_tensor: diff_per_output,
+        }) => {
+            if print_match {
+                for (i, diff) in enumerate(diff_per_output) {
+                    let Difference {
+                        max_abs_diff,
+                        max_rel_diff,
+                    } = diff;
+
+                    println!(
+                        "Output {} with shape {:?} matched, max diff: abs {}, rel {}",
+                        i,
+                        actual[i].shape(),
+                        max_abs_diff,
+                        max_rel_diff
+                    );
+                }
+            }
+        }
+        Err(Mismatch {
+            error_count,
+            total_count,
+            first_errors,
+        }) => {
+            eprintln!("Mismatch in {}/{} values:", error_count, total_count);
+
+            for error in &first_errors {
+                let Error {
+                    tensor,
+                    ref indices,
+                    expected_value,
+                    actual_value,
+                } = *error;
+
+                eprintln!(
+                    "  Wrong output value {}, expected {} at indices {:?} in tensor {} (shape {:?})",
+                    actual_value,
+                    expected_value,
+                    indices,
+                    tensor,
+                    expected[tensor].shape()
+                )
+            }
+
+            if error_count > first_errors.len() {
+                eprintln!("  ...");
+            }
+
+            panic!("Output mismatch");
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Match {
+    pub diff_per_tensor: Vec<Difference>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Difference {
+    pub max_rel_diff: f32,
+    pub max_abs_diff: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Mismatch {
+    pub error_count: usize,
+    pub total_count: usize,
+    pub first_errors: Vec<Error>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Error {
+    pub tensor: usize,
+    pub indices: Vec<usize>,
+    pub expected_value: f32,
+    pub actual_value: f32,
+}
+
+pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Match, Mismatch> {
+    assert_eq!(expected.len(), actual.len(), "Wrong number of tensors");
+
+    let mut error_count = 0;
+    let mut total_count = 0;
+
+    let mut diff_per_tensor = vec![];
+    let mut first_errors = vec![];
+
+    for (i, (expected_output, output)) in zip_eq(expected, actual).enumerate() {
+        assert_eq!(
+            expected_output.shape(),
+            output.shape(),
+            "Wrong output shape for tensor {}",
+            i
+        );
+
+        let mut max_abs_diff = 0.0;
+        let mut max_rel_diff = 0.0;
+
+        for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
+            let (abs_diff, rel_diff) = if expected_value == value || (expected_value.is_nan() && value.is_nan()) {
+                (0.0, 0.0)
+            } else {
+                let abs_diff = (expected_value - value).abs();
+                let rel_diff = abs_diff / expected_value.abs();
+                (abs_diff, rel_diff)
+            };
+
+            max_abs_diff = f32::max(max_abs_diff, abs_diff);
+            max_rel_diff = f32::max(max_rel_diff, rel_diff);
+
+            total_count += 1;
+
+            if abs_diff >= TOLERANCE_ABS_DIFF && rel_diff >= TOLERANCE_REL_DIFF {
+                error_count += 1;
+
+                if first_errors.len() < MAX_LOGGED_ERRORS {
+                    first_errors.push(Error {
+                        tensor: i,
+                        indices: indices.slice().to_vec(),
+                        expected_value,
+                        actual_value: value,
+                    });
+                }
+            }
+        }
+
+        diff_per_tensor.push(Difference {
+            max_rel_diff,
+            max_abs_diff,
+        });
+    }
+
+    if error_count == 0 {
+        Ok(Match { diff_per_tensor })
+    } else {
+        Err(Mismatch {
+            error_count,
+            total_count,
+            first_errors,
+        })
+    }
 }
 
 /// Load the check data into `(batch_size, inputs, expected_outputs)`.

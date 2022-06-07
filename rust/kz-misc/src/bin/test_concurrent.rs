@@ -1,13 +1,14 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use clap::Parser;
 use itertools::{enumerate, Itertools};
-use ndarray::{IxDyn, OwnedArcRepr};
 use rand::distributions::Standard;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
 use cuda_nn_eval::executor::CudaExecutor;
-use cuda_nn_eval::tester::assert_outputs_match;
+use cuda_nn_eval::tester::{assert_tensors_match, check_tensors_match};
 use cuda_sys::wrapper::handle::Device;
 use nn_graph::cpu::Tensor;
 use nn_graph::graph::Graph;
@@ -53,16 +54,19 @@ fn main() {
     let pairs = generate_io_pairs(*devices.first().unwrap(), &graph, batch_size, 16, &mut rng);
 
     println!("Launching threads");
+    let failed = AtomicBool::new(false);
+
     crossbeam::scope(|s| {
         let graph = &graph;
         let pairs = &pairs;
+        let failed = &failed;
 
         for (di, device) in enumerate(devices) {
             for thread in 0..threads {
                 s.builder()
                     .name(format!("thread-{}-{}", di, thread))
                     .spawn(move |_| {
-                        device_thread_main(device, &graph, batch_size, pairs);
+                        device_thread_main(device, &graph, batch_size, pairs, failed);
                     })
                     .unwrap();
             }
@@ -99,7 +103,7 @@ fn generate_io_pairs(
         .collect_vec()
 }
 
-fn device_thread_main(device: Device, graph: &Graph, batch_size: usize, pairs: &[IOPair]) {
+fn device_thread_main(device: Device, graph: &Graph, batch_size: usize, pairs: &[IOPair], failed: &AtomicBool) {
     let rng = &mut SmallRng::from_entropy();
     let thread_name = std::thread::current().name().unwrap().to_owned();
 
@@ -107,11 +111,20 @@ fn device_thread_main(device: Device, graph: &Graph, batch_size: usize, pairs: &
     let mut executor = CudaExecutor::new(device, graph, batch_size);
 
     for i in 0.. {
-        let (input, output) = pairs.choose(rng).unwrap();
+        if failed.load(Ordering::SeqCst) {
+            break;
+        }
 
+        let (input, expected) = pairs.choose(rng).unwrap();
         let actual = executor.evaluate_tensors(&input);
-        assert_outputs_match(graph.outputs(), output, &actual, false);
 
-        println!("{}: Iteration {} success", thread_name, i);
+        if check_tensors_match(&expected, &actual).is_err() {
+            failed.store(true, Ordering::SeqCst);
+
+            eprintln!("{} Iteration {} failed", thread_name, i);
+            assert_tensors_match(expected, &actual, false);
+        } else {
+            println!("{}: Iteration {} success", thread_name, i);
+        }
     }
 }

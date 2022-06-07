@@ -1,4 +1,4 @@
-use cuda_nn_eval::tester::{assert_outputs_match, eval_cudnn, load_check_data};
+use cuda_nn_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
 use nn_graph::cpu::{cpu_execute_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
@@ -37,7 +37,7 @@ pub fn test_all_graph(
     let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
 
     let expected_outputs = if let Some(expected_outputs) = expected_outputs {
-        assert_outputs_match(graph.outputs(), expected_outputs, &cpu_outputs, true);
+        assert_tensors_match(expected_outputs, &cpu_outputs, true);
         expected_outputs
     } else {
         &cpu_outputs
@@ -46,7 +46,7 @@ pub fn test_all_graph(
 
     println!("Testing Cudnn without graph");
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
-    assert_outputs_match(graph.outputs(), expected_outputs, &gpu_outputs, true);
+    assert_tensors_match(expected_outputs, &gpu_outputs, true);
     println!();
 
     cpu_outputs
