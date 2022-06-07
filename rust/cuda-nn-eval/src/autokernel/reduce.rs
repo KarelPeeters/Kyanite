@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
+use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 
@@ -15,7 +15,6 @@ pub struct ReduceKernel {
     _code: ReduceCode,
     _reduced_axes: Vec<usize>,
 
-    capability: ComputeCapability,
     function: CuFunction,
 
     input_shape: StridedShape,
@@ -34,7 +33,7 @@ pub struct ReduceCode {
 
 impl ReduceKernel {
     pub fn new(
-        capability: ComputeCapability,
+        device: Device,
         code: ReduceCode,
         input_shape: &StridedShape,
         output_shape: &StridedShape,
@@ -114,7 +113,7 @@ impl ReduceKernel {
         // compile the kernel
         let source = fill_replacements(REDUCE_SOURCE, &replacements);
         let key = KernelKey {
-            capability,
+            device,
             source,
             func_name: "reduce_kernel".to_owned(),
         };
@@ -122,7 +121,6 @@ impl ReduceKernel {
 
         // wrap everything up
         ReduceKernel {
-            capability,
             function,
             _code: code,
             _reduced_axes: reduced_axes.to_owned(),
@@ -132,8 +130,6 @@ impl ReduceKernel {
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
-        assert_eq!(stream.device().compute_capability(), self.capability);
-
         assert_eq!(input.shape(), &self.input_shape);
         assert_eq!(output.shape(), &self.output_shape);
 

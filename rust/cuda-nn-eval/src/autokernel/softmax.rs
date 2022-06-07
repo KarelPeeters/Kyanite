@@ -1,4 +1,4 @@
-use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
+use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 
@@ -16,19 +16,13 @@ pub struct SoftmaxKernel {
     _softmax_axis: usize,
     static_size: usize,
 
-    capability: ComputeCapability,
     function: CuFunction,
 }
 
 const SOFTMAX_SOURCE: &str = include_str!("softmax.cu");
 
 impl SoftmaxKernel {
-    pub fn new(
-        capability: ComputeCapability,
-        input_shape: &StridedShape,
-        output_shape: &StridedShape,
-        softmax_axis: usize,
-    ) -> Self {
+    pub fn new(device: Device, input_shape: &StridedShape, output_shape: &StridedShape, softmax_axis: usize) -> Self {
         assert_eq!(input_shape.shape(), output_shape.shape());
 
         let softmax_size = input_shape.shape()[softmax_axis];
@@ -64,7 +58,7 @@ impl SoftmaxKernel {
         // compile the kernel
         let source = fill_replacements(SOFTMAX_SOURCE, &replacements);
         let key = KernelKey {
-            capability,
+            device,
             source,
             func_name: "softmax_kernel".to_owned(),
         };
@@ -72,7 +66,6 @@ impl SoftmaxKernel {
 
         // wrap everything up
         SoftmaxKernel {
-            capability,
             function,
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
@@ -82,8 +75,6 @@ impl SoftmaxKernel {
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
-        assert_eq!(stream.device().compute_capability(), self.capability);
-
         assert_eq!(input.shape(), &self.input_shape);
         assert_eq!(output.shape(), &self.output_shape);
 

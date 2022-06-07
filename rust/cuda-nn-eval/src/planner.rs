@@ -350,8 +350,7 @@ impl<'a> Planner<'a> {
                 let input = self.visit(input);
                 let output = self.alloc_tensor_shared(result_shape);
 
-                let kernel =
-                    SoftmaxKernel::new(self.device().compute_capability(), input.shape(), output.shape(), axis);
+                let kernel = SoftmaxKernel::new(self.device(), input.shape(), output.shape(), axis);
 
                 let args = SoftmaxOpArgs {
                     kernel,
@@ -384,7 +383,7 @@ impl<'a> Planner<'a> {
                 let output = self.alloc_tensor_shared(result_shape);
 
                 let kernel = LayernormKernel::new(
-                    self.device().compute_capability(),
+                    self.device(),
                     input_0.shape(),
                     output.shape(),
                     axis,
@@ -425,8 +424,7 @@ impl<'a> Planner<'a> {
                     post_process: format!("curr * {}", scale),
                 };
 
-                let capability = self.device().compute_capability();
-                let kernel = ReduceKernel::new(capability, code, input.shape(), output.shape(), axes);
+                let kernel = ReduceKernel::new(self.device(), code, input.shape(), output.shape(), axes);
 
                 let args = ReduceOpArgs {
                     kernel,
@@ -667,10 +665,8 @@ impl<'a> Planner<'a> {
             operands
         };
 
-        let capability = self.device().compute_capability();
         let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
-
-        let kernel = ScalarKernel::new_for_shapes(capability, operation, &shapes);
+        let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes);
 
         let args = ScalarOpArgs { kernel, operands };
         self.push(PlanStep::ScalarOp(args), id);

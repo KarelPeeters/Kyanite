@@ -145,7 +145,7 @@ impl CudaExecutor {
     /// Run the steps in this executor. Does no explicit before/after synchronization,
     /// so ensure inputs are written and synchronize before reading outputs.
     pub unsafe fn run_async(&mut self) {
-        assert_eq!(Device::current(), self.stream().device());
+        assert_eq!(self.stream().device(), Device::current());
 
         if !self.profile {
             for step_info in &self.steps {

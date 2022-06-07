@@ -15,7 +15,7 @@ use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Device(i32);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

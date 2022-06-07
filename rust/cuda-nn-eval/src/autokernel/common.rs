@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
-use cuda_sys::wrapper::handle::ComputeCapability;
+use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
 lazy_static! {
@@ -18,7 +18,7 @@ lazy_static! {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct KernelKey {
-    pub capability: ComputeCapability,
+    pub device: Device,
     pub source: String,
     pub func_name: String,
 }
@@ -28,7 +28,7 @@ pub fn compile_cached_kernel(key: KernelKey) -> CuFunction {
     let mut cache = KERNEL_CACHE.lock().unwrap();
 
     let func = cache.entry(key).or_insert_with_key(|key| {
-        let module = CuModule::from_source(key.capability, &key.source, None, &[&key.func_name], &HEADERS);
+        let module = CuModule::from_source(key.device, &key.source, None, &[&key.func_name], &HEADERS);
 
         if !module.log.is_empty() {
             eprintln!("Kernel source:\n{}\nLog:\n{}\n", key.source, module.log);

@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use itertools::zip_eq;
 
-use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
+use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 
@@ -24,7 +24,6 @@ pub struct ScalarKernel {
     operand_types: Vec<String>,
     operand_strides: Vec<Vec<isize>>,
 
-    capability: ComputeCapability,
     function: CuFunction,
 }
 
@@ -32,7 +31,7 @@ const SCALAR_SOURCE: &str = include_str!("scalar.cu");
 
 impl ScalarKernel {
     pub fn new(
-        capability: ComputeCapability,
+        device: Device,
         operation: &str,
         inner_shape: Vec<usize>,
         operand_types: Vec<String>,
@@ -67,7 +66,7 @@ impl ScalarKernel {
         let source = fill_replacements(SCALAR_SOURCE, &replacements);
 
         let key = KernelKey {
-            capability,
+            device,
             source,
             func_name: "scalar_kernel".to_owned(),
         };
@@ -77,7 +76,6 @@ impl ScalarKernel {
 
         ScalarKernel {
             operation: operation.to_owned(),
-            capability,
             function,
             inner_size,
             inner_shape,
@@ -87,7 +85,7 @@ impl ScalarKernel {
     }
 
     /// Wrapper around [Self::new] that's a bit easier to use if you know the full shape of the operands up front.
-    pub fn new_for_shapes(capability: ComputeCapability, operation: &str, shapes: &[StridedShape]) -> Self {
+    pub fn new_for_shapes(device: Device, operation: &str, shapes: &[StridedShape]) -> Self {
         assert!(shapes.len() > 0);
         let expected_shape = shapes[0].shape();
         assert!(expected_shape.len() > 0);
@@ -100,7 +98,7 @@ impl ScalarKernel {
         let operand_types = vec![String::from("float"); shapes.len()];
         let operand_strides = shapes.iter().map(|s| s.strides().to_vec()).collect();
 
-        Self::new(capability, operation, inner_shape, operand_types, operand_strides)
+        Self::new(device, operation, inner_shape, operand_types, operand_strides)
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, tensors: &[DeviceTensor]) {
@@ -116,7 +114,6 @@ impl ScalarKernel {
         items_per_thread: u32,
         threads_per_block: u32,
     ) {
-        assert_eq!(stream.device().compute_capability(), self.capability);
         assert_eq!(tensors.len(), self.operand_types.len());
         //TODO verify tensor types once that's implemented
 

@@ -1,4 +1,4 @@
-use cuda_sys::wrapper::handle::{ComputeCapability, CudaStream};
+use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use std::ptr::null_mut;
@@ -22,7 +22,6 @@ pub struct LayernormKernel {
     _alpha1: f32,
     _beta: f32,
 
-    capability: ComputeCapability,
     function: CuFunction,
 }
 
@@ -30,7 +29,7 @@ const LAYERNORM_SOURCE: &str = include_str!("layernorm.cu");
 
 impl LayernormKernel {
     pub fn new(
-        capability: ComputeCapability,
+        device: Device,
         input_shape: &StridedShape,
         output_shape: &StridedShape,
         norm_axis: usize,
@@ -75,7 +74,7 @@ impl LayernormKernel {
         // compile the kernel
         let source = fill_replacements(LAYERNORM_SOURCE, &replacements);
         let key = KernelKey {
-            capability,
+            device,
             source,
             func_name: "layernorm_kernel".to_owned(),
         };
@@ -83,7 +82,6 @@ impl LayernormKernel {
 
         // wrap everything up
         LayernormKernel {
-            capability,
             function,
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
@@ -103,8 +101,6 @@ impl LayernormKernel {
         input1: Option<&DeviceTensor>,
         output: &DeviceTensor,
     ) {
-        assert_eq!(stream.device().compute_capability(), self.capability);
-
         assert_eq!(input0.shape(), &self.input_shape);
         if let Some(input1) = input1 {
             assert_eq!(input1.shape(), &self.input_shape);

@@ -11,7 +11,7 @@ use crate::bindings::{
     nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
     CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
 };
-use crate::wrapper::handle::{ComputeCapability, CudaStream};
+use crate::wrapper::handle::{CudaStream, Device};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -21,13 +21,15 @@ pub struct CuModule {
 
 #[derive(Debug)]
 struct CuModuleInner {
+    device: Device,
     inner: crate::bindings::CUmodule,
 }
 
 #[derive(Debug, Clone)]
 pub struct CuFunction {
     // field is never used, but is present to keep module from being dropped
-    _module: Arc<CuModuleInner>,
+    //   this is necessary because CUfunction points to something inside of the CUmodule structure
+    module: Arc<CuModuleInner>,
     function: crate::bindings::CUfunction,
 }
 
@@ -59,7 +61,7 @@ impl Drop for CuModuleInner {
 }
 
 impl CuModule {
-    pub unsafe fn from_ptx(ptx: &[u8]) -> CuModule {
+    pub unsafe fn from_ptx(device: Device, ptx: &[u8]) -> CuModule {
         let mut inner = null_mut();
         cuModuleLoadDataEx(
             &mut inner as *mut _,
@@ -70,17 +72,19 @@ impl CuModule {
         )
         .unwrap();
         CuModule {
-            inner: Arc::new(CuModuleInner { inner }),
+            inner: Arc::new(CuModuleInner { device, inner }),
         }
     }
 
     pub fn from_source(
-        cap: ComputeCapability,
+        device: Device,
         src: &str,
         name: Option<&str>,
         expected_names: &[&str],
         headers: &HashMap<&str, &str>,
     ) -> CompileResult {
+        device.switch_to();
+
         unsafe {
             let mut program = null_mut();
 
@@ -116,6 +120,7 @@ impl CuModule {
             }
 
             // figure out the arguments
+            let cap = device.compute_capability();
             let args = vec![
                 format!("--gpu-architecture=compute_{}{}", cap.major, cap.minor),
                 "-std=c++11".to_string(),
@@ -174,7 +179,7 @@ impl CuModule {
 
             nvrtcDestroyProgram(&mut program as *mut _).unwrap();
 
-            let module = CuModule::from_ptx(&ptx);
+            let module = CuModule::from_ptx(device, &ptx);
 
             CompileResult {
                 log,
@@ -196,11 +201,15 @@ impl CuModule {
             } else {
                 result.unwrap();
                 Some(CuFunction {
-                    _module: Arc::clone(&self.inner),
+                    module: Arc::clone(&self.inner),
                     function,
                 })
             }
         }
+    }
+
+    pub fn device(&self) -> Device {
+        self.inner.device
     }
 }
 
@@ -213,6 +222,8 @@ impl CuFunction {
         stream: &CudaStream,
         args: &[*mut c_void],
     ) {
+        assert_eq!(self.device(), Device::current());
+
         cuLaunchKernel(
             self.function,
             grid_dim.x,
@@ -237,6 +248,8 @@ impl CuFunction {
         stream: &CudaStream,
         args: &[u8],
     ) -> CUresult {
+        assert_eq!(self.device(), Device::current());
+
         let mut config = [
             CU_LAUNCH_PARAM_BUFFER_POINTER,
             args.as_ptr() as *mut c_void,
@@ -258,6 +271,10 @@ impl CuFunction {
             null_mut(),
             config.as_mut_ptr(),
         )
+    }
+
+    pub fn device(&self) -> Device {
+        self.module.device
     }
 }
 
