@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Barrier;
 
 use clap::Parser;
 use itertools::{enumerate, Itertools};
@@ -54,11 +55,13 @@ fn main() {
     let pairs = generate_io_pairs(*devices.first().unwrap(), &graph, batch_size, 16, &mut rng);
 
     println!("Launching threads");
+    let barrier = Barrier::new(devices.len() * threads);
     let failed = AtomicBool::new(false);
 
     crossbeam::scope(|s| {
         let graph = &graph;
         let pairs = &pairs;
+        let barrier = &barrier;
         let failed = &failed;
 
         for (di, device) in enumerate(devices) {
@@ -66,7 +69,7 @@ fn main() {
                 s.builder()
                     .name(format!("thread-{}-{}", di, thread))
                     .spawn(move |_| {
-                        device_thread_main(device, &graph, batch_size, pairs, failed);
+                        device_thread_main(device, &graph, batch_size, pairs, barrier, failed);
                     })
                     .unwrap();
             }
@@ -103,12 +106,23 @@ fn generate_io_pairs(
         .collect_vec()
 }
 
-fn device_thread_main(device: Device, graph: &Graph, batch_size: usize, pairs: &[IOPair], failed: &AtomicBool) {
+fn device_thread_main(
+    device: Device,
+    graph: &Graph,
+    batch_size: usize,
+    pairs: &[IOPair],
+    barrier: &Barrier,
+    failed: &AtomicBool,
+) {
     let rng = &mut SmallRng::from_entropy();
     let thread_name = std::thread::current().name().unwrap().to_owned();
 
     println!("{}: Building executor", thread_name);
     let mut executor = CudaExecutor::new(device, graph, batch_size);
+
+    // wait for all executors to be constructed, since the memcopies
+    // they cause cannot run in parallel with other threads
+    barrier.wait();
 
     for i in 0.. {
         if failed.load(Ordering::SeqCst) {
