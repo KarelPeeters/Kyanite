@@ -19,7 +19,12 @@ pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
 const ERROR_ABS_TOLERANCE: f32 = 0.001;
 const ERROR_REL_TOLERANCE: f32 = 0.001;
 
-pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor], outputs: &[Tensor], print: bool) {
+pub fn assert_outputs_match(
+    output_values: &[Value],
+    expected_outputs: &[Tensor],
+    outputs: &[Tensor],
+    print_match: bool,
+) {
     assert_eq!(expected_outputs.len(), outputs.len(), "Wrong number of outputs");
 
     let mut max_abs_error = 0.0;
@@ -56,7 +61,7 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
             )
         }
 
-        if print {
+        if print_match {
             println!(
                 "Output {} with shape {:?} matched, max error: abs {}, rel {}",
                 i,
@@ -68,28 +73,12 @@ pub fn assert_outputs_match(output_values: &[Value], expected_outputs: &[Tensor]
     }
 }
 
-pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print: bool) -> Vec<Tensor> {
-    let inputs = inputs
-        .iter()
-        .map(|x| x.as_slice().expect("Only sliceable inputs supported in test framework"))
-        .collect_vec();
-
+pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[Tensor], print_executor: bool) -> Vec<Tensor> {
     let mut executor = CudaExecutor::new(Device::new(0), graph, batch_size);
-    if print {
+    if print_executor {
         println!("{:?}", executor);
     }
-
-    let gpu_outputs = executor.evaluate(&inputs);
-
-    // turn into Tensors, using the cpu shapes
-    let outputs = zip_eq(graph.outputs(), gpu_outputs)
-        .map(|(&value, output)| {
-            let shape = graph[value].shape.eval(batch_size);
-            Tensor::from_shape_vec(&*shape.dims, output.clone()).expect("GPU output has wrong length")
-        })
-        .collect_vec();
-
-    outputs
+    executor.evaluate_tensors(inputs)
 }
 
 /// Load the check data into `(batch_size, inputs, expected_outputs)`.

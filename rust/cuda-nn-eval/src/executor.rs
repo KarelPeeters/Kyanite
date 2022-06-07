@@ -1,11 +1,12 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use itertools::zip;
+use itertools::{enumerate, zip, Itertools};
 
 use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::status::Status;
+use nn_graph::cpu::Tensor;
 use nn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
@@ -82,6 +83,27 @@ impl CudaExecutor {
 
     pub fn stream(&self) -> &CudaStream {
         self.handles.stream()
+    }
+
+    pub fn evaluate_tensors(&mut self, inputs: &[Tensor]) -> Vec<Tensor> {
+        // map the inputs to slices
+        let inputs = enumerate(inputs)
+            .map(|(i, x)| {
+                assert_eq!(x.shape(), self.inputs[i].shape().shape());
+                x.as_slice().expect("Only sliceable inputs supported")
+            })
+            .collect_vec();
+
+        // eval, the outputs are written to self.output_buffers
+        let _ = self.evaluate(&inputs);
+
+        // map the outputs to tensors
+        let output_buffers = self.output_buffers.as_ref().unwrap();
+        let outputs = (0..self.outputs.len())
+            .map(|i| Tensor::from_shape_vec(self.outputs[i].shape().shape(), output_buffers[i].to_owned()).unwrap())
+            .collect_vec();
+
+        outputs
     }
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
