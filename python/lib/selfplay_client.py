@@ -77,7 +77,7 @@ def connect_to_selfplay_server(port: int) -> socket.socket:
             s.connect(("127.0.0.1", port))
             return s
         except ConnectionRefusedError as e:
-            print(e)
+            print(e, f"on port {port}")
 
         delay = CONNECT_TRY_PERIOD - (time.time() - last_attempt_start)
         if delay > 0:
