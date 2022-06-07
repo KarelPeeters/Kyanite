@@ -52,8 +52,8 @@ impl Device {
 
     // Set the current cuda device to this device.
     //TODO is this enough when there are multiple threads running?
-    pub unsafe fn switch_to(self) {
-        cudaSetDevice(self.inner()).unwrap()
+    pub fn switch_to(self) {
+        unsafe { cudaSetDevice(self.inner()).unwrap() }
     }
 
     pub fn alloc(self, len_bytes: usize) -> DevicePtr {
