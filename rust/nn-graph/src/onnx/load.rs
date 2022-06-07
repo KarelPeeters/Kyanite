@@ -593,6 +593,11 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let dims = shape.dims.iter().copied().map(SizeOrInt::Size).collect_vec();
                 TypedValue::Shape(dims)
             }
+            "Identity" => {
+                assert_eq!(1, inputs.len());
+                let input = inputs[0];
+                input.clone()
+            }
             "Softmax" => {
                 assert_eq!(1, inputs.len());
                 let input = inputs[0].unwrap_float();
