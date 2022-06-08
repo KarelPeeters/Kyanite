@@ -56,7 +56,9 @@ impl<P: OffsetPtr> PtrTensor<P> {
         self.offset(0, self.shape.broadcast(new_shape))
     }
 
-    pub fn slice(&self, axis: usize, range: SliceRange) -> Self {
+    pub fn slice(&self, axis: usize, range: impl Into<SliceRange>) -> Self {
+        let range = range.into();
+
         // use the new shape & strides (which only change along `axis`)
         let result_shape = self.shape.slice(axis, range);
 

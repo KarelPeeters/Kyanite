@@ -1032,6 +1032,13 @@ impl Debug for Value {
     }
 }
 
+impl From<std::ops::Range<usize>> for SliceRange {
+    fn from(range: std::ops::Range<usize>) -> Self {
+        let std::ops::Range { start, end } = range;
+        SliceRange::simple(start, end)
+    }
+}
+
 impl SliceRange {
     pub fn new(start: usize, end: usize, step: usize) -> Self {
         let result = Self { start, end, step };

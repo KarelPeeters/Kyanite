@@ -216,13 +216,15 @@ impl CuModule {
 impl CuFunction {
     pub unsafe fn launch_kernel_pointers(
         &self,
-        grid_dim: Dim3,
-        block_dim: Dim3,
+        grid_dim: impl Into<Dim3>,
+        block_dim: impl Into<Dim3>,
         shared_mem_bytes: u32,
         stream: &CudaStream,
         args: &[*mut c_void],
     ) {
         assert_eq!(self.device(), Device::current());
+        let grid_dim = grid_dim.into();
+        let block_dim = block_dim.into();
 
         cuLaunchKernel(
             self.function,
@@ -242,13 +244,15 @@ impl CuFunction {
 
     pub unsafe fn launch_kernel(
         &self,
-        grid_dim: Dim3,
-        block_dim: Dim3,
+        grid_dim: impl Into<Dim3>,
+        block_dim: impl Into<Dim3>,
         shared_mem_bytes: u32,
         stream: &CudaStream,
         args: &[u8],
     ) -> CUresult {
         assert_eq!(self.device(), Device::current());
+        let grid_dim = grid_dim.into();
+        let block_dim = block_dim.into();
 
         let mut config = [
             CU_LAUNCH_PARAM_BUFFER_POINTER,
@@ -285,5 +289,11 @@ impl Dim3 {
 
     pub fn new(x: u32, y: u32, z: u32) -> Self {
         Self { x, y, z }
+    }
+}
+
+impl From<u32> for Dim3 {
+    fn from(x: u32) -> Self {
+        Dim3::single(x)
     }
 }
