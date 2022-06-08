@@ -28,7 +28,7 @@ def main():
     assert input_path.endswith(".pt"), f"Input must be a .pt file"
     assert output_path.endswith(".onnx"), f"Output must be an .onnx file"
 
-    assert os.path.exists(input_path), "Input path does not exist"
+    assert os.path.exists(input_path), f"Input path does not exist: '{input_path}'"
 
     if os.path.exists(output_path):
         if not force and os.path.getmtime(output_path) > os.path.getmtime(input_path):
