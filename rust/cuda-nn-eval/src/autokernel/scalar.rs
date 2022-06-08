@@ -30,6 +30,9 @@ pub struct ScalarKernel {
 const SCALAR_SOURCE: &str = include_str!("scalar.cu");
 
 impl ScalarKernel {
+    /// Compile an instance of a new scalar kernel.
+    ///
+    /// `operation` has the format `*x0 = *x1 + *x2;`.
     pub fn new(
         device: Device,
         operation: &str,
@@ -44,7 +47,7 @@ impl ScalarKernel {
         }
 
         assert!(
-            operation.ends_with(";"),
+            operation.trim_end().ends_with(";"),
             "Operation should end with ';', got {:?}",
             operation
         );

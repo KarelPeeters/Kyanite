@@ -37,3 +37,4 @@ futures = { version = "0.3.21", default-features = false, features = ["executor"
 async-trait = "0.1.53"
 
 tabled = "0.7.0"
+bytemuck = "1.9.1"

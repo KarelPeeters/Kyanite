@@ -1,10 +1,12 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use itertools::{enumerate, zip, Itertools};
+use bytemuck::cast_slice;
+use itertools::{enumerate, multizip, zip_eq, Itertools};
 
 use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
+use cuda_sys::wrapper::mem::pinned::PinnedMem;
 use cuda_sys::wrapper::status::Status;
 use nn_graph::cpu::Tensor;
 use nn_graph::graph::Graph;
@@ -28,7 +30,9 @@ pub struct CudaExecutor {
     profile: bool,
     last_profile: Option<Profile>,
 
-    output_buffers: Option<Vec<Vec<f32>>>,
+    // TODO maybe these could just be one buffer each?
+    input_buffers: Vec<PinnedMem>,
+    output_buffers: Vec<PinnedMem>,
 }
 
 #[derive(Debug)]
@@ -68,6 +72,15 @@ impl CudaExecutor {
             mem_usage,
         } = Planner::plan(&handles, graph, batch_size);
 
+        let input_buffers = inputs
+            .iter()
+            .map(|x| PinnedMem::alloc(x.shape().size() * 4, false))
+            .collect();
+        let output_buffers = outputs
+            .iter()
+            .map(|x| PinnedMem::alloc(x.shape().size() * 4, false))
+            .collect();
+
         CudaExecutor {
             handles,
             batch_size,
@@ -77,7 +90,8 @@ impl CudaExecutor {
             steps,
             profile: false,
             last_profile: None,
-            output_buffers: None,
+            input_buffers,
+            output_buffers,
         }
     }
 
@@ -98,47 +112,49 @@ impl CudaExecutor {
         let _ = self.evaluate(&inputs);
 
         // map the outputs to tensors
-        let output_buffers = self.output_buffers.as_ref().unwrap();
         let outputs = (0..self.outputs.len())
-            .map(|i| Tensor::from_shape_vec(self.outputs[i].shape().shape(), output_buffers[i].to_owned()).unwrap())
+            .map(|i| unsafe {
+                Tensor::from_shape_vec(
+                    self.outputs[i].shape().shape(),
+                    cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned(),
+                )
+                .unwrap()
+            })
             .collect_vec();
 
         outputs
     }
 
-    pub fn evaluate(&mut self, inputs: &[&[f32]]) -> &[Vec<f32>] {
+    pub fn evaluate(&mut self, inputs: &[&[f32]]) -> Vec<&[f32]> {
         assert_eq!(inputs.len(), self.inputs.len());
 
         unsafe {
-            // copy inputs
+            // make sure there is no other leftover memcpy running
             self.stream().synchronize();
-            for (tensor, buffer) in zip(&self.inputs, inputs) {
-                tensor.copy_from_host_staged(buffer);
+
+            // copy inputs to buffers and then to device
+            for (slice, buffer, tensor) in multizip((inputs, &self.input_buffers, &self.inputs)) {
+                buffer.as_slice().copy_from_slice(cast_slice::<f32, u8>(slice));
+                assert!(tensor.shape().has_simple_strides());
+                tensor.ptr().copy_linear_from_host_async(buffer, self.stream());
             }
 
             // run the steps
-            self.stream().synchronize();
             self.run_async();
+
+            // copy outputs to buffers
+            for (buffer, tensor) in zip_eq(&mut self.output_buffers, &self.outputs) {
+                tensor.ptr().copy_linear_to_host_async(buffer, self.handles.stream());
+            }
+
+            // wait for everything to complete
             self.stream().synchronize();
 
-            // initialize output buffers if this is the first time we need them
-            let outputs = &self.outputs;
-            let output_buffers = self.output_buffers.get_or_insert_with(|| {
-                outputs
-                    .iter()
-                    .map(|tensor| vec![f32::NAN; tensor.shape().size()])
-                    .collect()
-            });
-
-            // copy outputs
-            assert_eq!(output_buffers.len(), self.outputs.len());
-            for (tensor, buffer) in zip(&self.outputs, output_buffers) {
-                tensor.copy_to_host_staged(buffer);
-            }
-            self.handles.stream().synchronize();
-
-            // cannot be None, we just initialized this
-            self.output_buffers.as_ref().unwrap()
+            // interpret buffers
+            self.output_buffers
+                .iter()
+                .map(|x| cast_slice::<u8, f32>(x.as_slice()))
+                .collect_vec()
         }
     }
 

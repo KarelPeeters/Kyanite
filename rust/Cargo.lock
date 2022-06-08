@@ -1259,6 +1259,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "board-game",
+ "bytemuck",
  "bzip2",
  "chess",
  "clap 3.1.12",

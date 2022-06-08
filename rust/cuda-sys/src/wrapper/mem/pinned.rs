@@ -8,7 +8,7 @@ use crate::wrapper::status::Status;
 #[derive(Debug)]
 pub struct PinnedMem {
     ptr: *mut c_void,
-    size_bytes: usize,
+    len_bytes: usize,
 }
 
 impl Drop for PinnedMem {
@@ -20,7 +20,7 @@ impl Drop for PinnedMem {
 }
 
 impl PinnedMem {
-    pub fn alloc(size_bytes: usize, write_combined: bool) -> Self {
+    pub fn alloc(len_bytes: usize, write_combined: bool) -> Self {
         //TODO should we set cudaHostAllocPortable/Mapped here?
         let flags = if write_combined {
             cudaHostAllocWriteCombined
@@ -30,10 +30,10 @@ impl PinnedMem {
 
         unsafe {
             let mut result = null_mut();
-            cudaHostAlloc(&mut result as *mut _, size_bytes, flags).unwrap();
+            cudaHostAlloc(&mut result as *mut _, len_bytes, flags).unwrap();
             PinnedMem {
                 ptr: result,
-                size_bytes,
+                len_bytes,
             }
         }
     }
@@ -43,12 +43,11 @@ impl PinnedMem {
     }
 
     /// Safety: ensure no other slice currently exists and no device is writing to this memory.
-    pub unsafe fn slice(&self) -> &[u8] {
-        slice::from_raw_parts(self.ptr as *const u8, self.size_bytes)
+    pub unsafe fn as_slice(&self) -> &mut [u8] {
+        slice::from_raw_parts_mut(self.ptr as *mut u8, self.len_bytes)
     }
 
-    /// Safety: ensure no other slice currently exists and no device is writing to this memory.
-    pub unsafe fn slice_mut(&mut self) -> &mut [u8] {
-        slice::from_raw_parts_mut(self.ptr as *mut u8, self.size_bytes)
+    pub fn len_bytes(&self) -> usize {
+        self.len_bytes
     }
 }

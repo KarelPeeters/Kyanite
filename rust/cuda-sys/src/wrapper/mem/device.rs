@@ -2,8 +2,9 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::Arc;
 
-use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyKind};
-use crate::wrapper::handle::Device;
+use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyAsync, cudaMemcpyKind};
+use crate::wrapper::handle::{CudaStream, Device};
+use crate::wrapper::mem::pinned::PinnedMem;
 use crate::wrapper::status::Status;
 
 /// A pointer pointing somewhere inside of a [DeviceBuffer].
@@ -106,6 +107,20 @@ impl DevicePtr {
         .unwrap();
     }
 
+    pub unsafe fn copy_linear_from_host_async(&self, buffer: &PinnedMem, stream: &CudaStream) {
+        self.assert_linear_in_bounds(buffer.len_bytes());
+
+        self.device().switch_to();
+        cudaMemcpyAsync(
+            self.ptr(),
+            buffer.ptr(),
+            buffer.len_bytes(),
+            cudaMemcpyKind::cudaMemcpyDeviceToHost,
+            stream.inner(),
+        )
+        .unwrap();
+    }
+
     pub unsafe fn copy_linear_to_host(&self, buffer: &mut [u8]) {
         self.assert_linear_in_bounds(buffer.len());
 
@@ -115,6 +130,20 @@ impl DevicePtr {
             self.ptr(),
             buffer.len(),
             cudaMemcpyKind::cudaMemcpyDeviceToHost,
+        )
+        .unwrap();
+    }
+
+    pub unsafe fn copy_linear_to_host_async(&self, buffer: &mut PinnedMem, stream: &CudaStream) {
+        self.assert_linear_in_bounds(buffer.len_bytes());
+
+        self.device().switch_to();
+        cudaMemcpyAsync(
+            buffer.ptr(),
+            self.ptr(),
+            buffer.len_bytes(),
+            cudaMemcpyKind::cudaMemcpyDeviceToHost,
+            stream.inner(),
         )
         .unwrap();
     }
