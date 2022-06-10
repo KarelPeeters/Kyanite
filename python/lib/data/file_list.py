@@ -16,7 +16,7 @@ class FileList:
         self.game = game
         self.files = files
 
-        self.file_ends = np.cumsum(np.array([len(f) for f in self.files]))
+        self.file_ends = np.cumsum(np.array([len(f.positions) for f in self.files]))
 
     def __len__(self):
         return len(self.files)
@@ -58,7 +58,7 @@ class PositionsView:
 
     def __getitem__(self, i: int):
         fi, pi = self.file_list.split_index(i)
-        return self.file_list[fi][pi]
+        return self.file_list[fi].positions[pi]
 
 
 class FileListSampler:
@@ -144,8 +144,8 @@ def collect_unrolled_batch(sampler: FileListSampler, files: FileList, unroll_ste
 
         for ri in range(unroll_steps):
             ni = pi + 1 + ri
-            if ni < len(file):
-                next_position = file[ni]
+            if ni < len(file.positions):
+                next_position = file.positions[ni]
 
                 same_game = next_position.game_id == first_position.game_id
                 allowed_final = sampler.include_final or not next_position.is_final_position
@@ -176,11 +176,11 @@ def sample_position(sampler: FileListSampler, file_list: FileList) -> (int, int,
         fi = random.randrange(len(file_list))
         file = file_list[fi]
 
-        pi_min = int(sampler.pi_range[0] * len(file))
-        pi_max = int(sampler.pi_range[1] * len(file))
+        pi_min = int(sampler.pi_range[0] * len(file.positions))
+        pi_max = int(sampler.pi_range[1] * len(file.positions))
 
         pi = random.randrange(pi_min, pi_max)
-        p = file[pi]
+        p = file.positions[pi]
 
         if sampler.include_final or not p.is_final_position:
             return fi, pi, p

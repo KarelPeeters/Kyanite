@@ -1,4 +1,5 @@
 import random
+from dataclasses import dataclass
 from typing import List
 
 import numpy as np
@@ -7,6 +8,14 @@ import torch
 from lib.data.taker import Taker
 from lib.games import Game
 from lib.util import DEVICE, prod, map_none, map_none_or
+
+
+@dataclass
+class GameSimulation:
+    id: int
+    start_pi: int
+    end_pi: int
+    length: int
 
 
 class Position:

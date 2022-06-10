@@ -366,14 +366,14 @@ class LoopBuffer:
         assert file.info.game == self.game, f"Expected game {self.game.name}, got game {file.info.game.name}"
 
         self.files.append(file)
-        self.position_count += len(file)
+        self.position_count += len(file.positions)
         self.game_count += file.info.game_count
 
-        while self.position_count - len(self.files[0]) > self.target_positions:
+        while self.position_count - len(self.files[0].positions) > self.target_positions:
             old_file = self.files[0]
             del self.files[0]
 
-            self.position_count -= len(old_file)
+            self.position_count -= len(old_file.positions)
             self.game_count -= old_file.info.game_count
             old_file.close()
 

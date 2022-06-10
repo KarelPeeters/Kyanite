@@ -29,6 +29,7 @@ struct MetaData<'a> {
     game_count: usize,
     position_count: usize,
     includes_terminal_positions: bool,
+    includes_game_start_indices: bool,
 
     max_game_length: i32,
     min_game_length: i32,
@@ -38,7 +39,6 @@ struct MetaData<'a> {
     scalar_names: &'static [&'static str],
 }
 
-//TODO include terminal position in output?
 #[derive(Debug)]
 pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     game: String,
@@ -58,6 +58,8 @@ pub struct BinaryOutput<B: Board, M: BoardMapper<B>> {
     hit_move_limit_count: u64,
 
     next_offset: u64,
+    game_start_indices: Vec<u64>,
+
     finished: bool,
 
     mapper: M,
@@ -114,6 +116,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             hit_move_limit_count: 0,
 
             next_offset: 0,
+            game_start_indices: vec![],
 
             finished: false,
             mapper,
@@ -129,6 +132,8 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         let game_id = self.game_count;
         let game_length = positions.len();
 
+        self.game_start_indices.push(self.position_count as u64);
+
         self.game_count += 1;
         self.position_count += 1 + game_length;
 
@@ -139,7 +144,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         self.total_root_wdl += outcome.pov(positions[0].board.next_player()).to_wdl();
         self.hit_move_limit_count += final_board.outcome().is_none() as u8 as u64;
 
-        // write of the positions
+        // write the positions
         for (pos_index, position) in positions.iter().enumerate() {
             let &Position {
                 ref board,
@@ -270,6 +275,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             game_count: self.game_count,
             position_count: self.position_count,
             includes_terminal_positions: true,
+            includes_game_start_indices: true,
             max_game_length: self.max_game_length.unwrap_or(-1),
             min_game_length: self.min_game_length.unwrap_or(-1),
             root_wdl: (self.total_root_wdl.cast::<f32>() / self.game_count as f32).to_slice(),
@@ -277,6 +283,8 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         };
 
         serde_json::to_writer_pretty(&mut self.json_tmp_write, &meta)?;
+        self.off_write.write_all(cast_slice(&self.game_start_indices))?;
+
         self.json_tmp_write.flush()?;
         self.bin_write.flush()?;
         self.off_write.flush()?;
