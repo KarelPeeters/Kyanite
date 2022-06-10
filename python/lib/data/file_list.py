@@ -147,7 +147,7 @@ def collect_unrolled_batch(sampler: FileListSampler, files: FileList, unroll_ste
             if ni < len(file.positions):
                 next_position = file.positions[ni]
 
-                same_game = next_position.game_id == first_position.game_id
+                same_game = next_position.index == first_position.index
                 allowed_final = sampler.include_final or not next_position.is_final_position
 
                 if same_game and allowed_final:

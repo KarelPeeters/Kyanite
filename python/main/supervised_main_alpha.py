@@ -85,11 +85,11 @@ def main(plotter: LogPlotter):
     test_sampler = FileListSampler(FileList(game, test_files), batch_size, None, include_final, threads=1)
 
     print(f"Train file count: {len(train_files)}")
-    print(f"Train file game count: {sum(f.info.game_count for f in train_files)}")
+    print(f"Train file game count: {sum(f.info.simulation_count for f in train_files)}")
     print(f"Train position count: {len(train_sampler)}")
 
     print(f"Test file count: {len(test_files)}")
-    print(f"Train file game count: {sum(f.info.game_count for f in test_files)}")
+    print(f"Train file game count: {sum(f.info.simulation_count for f in test_files)}")
     print(f"Test position count: {len(test_sampler)}")
 
     last_bi = find_last_finished_batch(output_folder)

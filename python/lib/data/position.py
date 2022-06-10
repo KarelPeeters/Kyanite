@@ -11,24 +11,45 @@ from lib.util import DEVICE, prod, map_none, map_none_or
 
 
 @dataclass
-class GameSimulation:
-    id: int
+class Simulation:
+    index: int
     start_pi: int
-    end_pi: int
-    length: int
+    move_count: int
+    includes_terminal: bool
+
+    @property
+    def position_count(self):
+        return self.move_count + self.includes_terminal
+
+    @property
+    def end_pi(self):
+        return self.start_pi + self.position_count
+
+    @property
+    def position_ids(self):
+        return range(self.start_pi, self.end_pi)
 
 
 class Position:
-    def __init__(self, game: Game, scalar_names: List[str], data: bytes):
+    def __init__(self, game: Game, pi: int, includes_terminal: bool, scalar_names: List[str], data: bytes):
         self.game = game
         data = Taker(data)
 
         scalar_array = np.frombuffer(data.take(len(scalar_names) * 4), dtype=np.float32)
         scalars = {n: v for n, v in zip(scalar_names, scalar_array)}
 
-        self.game_id = int(scalars.pop("game_id"))
+        self.pi = pi
         self.pos_index = int(scalars.pop("pos_index"))
-        self.game_length = int(scalars.pop("game_length"))
+
+        move_count = int(scalars.pop("game_length"))
+
+        self.simulation = Simulation(
+            index=int(scalars.pop("game_id")),
+            start_pi=self.pi - self.pos_index,
+            move_count=move_count,
+            includes_terminal=includes_terminal,
+        )
+
         self.zero_visits = int(scalars.pop("zero_visits"))
         self.available_mv_count = int(scalars.pop("available_mv_count"))
 
@@ -48,7 +69,7 @@ class Position:
         self.zero_wdl = np.array([scalars.pop("zero_wdl_w"), scalars.pop("zero_wdl_d"), scalars.pop("zero_wdl_l")])
         self.net_wdl = np.array([scalars.pop("net_wdl_w"), scalars.pop("net_wdl_d"), scalars.pop("net_wdl_l")])
 
-        self.final_moves_left = float(scalars.pop("final_moves_left", self.game_length - self.pos_index))
+        self.final_moves_left = float(scalars.pop("final_moves_left", move_count - self.pos_index))
         self.zero_moves_left = float(scalars.pop("zero_moves_left", np.nan))
         self.net_moves_left = float(scalars.pop("net_moves_left", np.nan))
 
@@ -113,7 +134,7 @@ class PositionBatch:
         policy_values.fill_(-1)
 
         played_mv = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
-        game_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        sim_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         pos_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
 
@@ -145,7 +166,7 @@ class PositionBatch:
 
             played_mv[i] = p.played_mv
             pos_index[i] = p.pos_index
-            game_index[i] = p.game_id
+            sim_index[i] = p.simulation.index
 
             if game.input_mv_channels is not None:
                 played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
@@ -157,7 +178,7 @@ class PositionBatch:
 
         self.played_mv = played_mv.to(DEVICE)
         self.pos_index = pos_index.to(DEVICE)
-        self.game_index = game_index.to(DEVICE)
+        self.sim_index = sim_index.to(DEVICE)
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
         self.is_terminal = is_terminal.to(DEVICE)
 
