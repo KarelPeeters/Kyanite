@@ -33,6 +33,8 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroS
         let gpu_batch_size_expand = startup.gpu_batch_size;
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
+
+        assert!(startup.search_batch_size == 1);
         let concurrent_games = (gpu_threads + 1) * gpu_batch_size_expand + 2 * gpu_batch_size_root;
         println!("Spawning {} games", concurrent_games);
 

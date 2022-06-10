@@ -56,7 +56,13 @@ pub fn selfplay_server_main() {
     let startup_settings = wait_for_startup_settings(&mut reader);
     println!("Received startup settings:\n{:#?}", startup_settings);
 
-    assert_ne!(startup_settings.gpu_batch_size, 0, "GPU batch size must be nonzero");
+    assert_ne!(startup_settings.gpu_batch_size, 0, "GPU batch size cannot be 0");
+    assert_ne!(startup_settings.search_batch_size, 0, "Search batch size cannot be 0");
+    assert!(
+        startup_settings.gpu_batch_size >= startup_settings.search_batch_size,
+        "It's not useful to have a GPU batch size smaller than the search batch size"
+    );
+
     if startup_settings.muzero {
         assert_ne!(
             startup_settings.gpu_batch_size_root, 0,

@@ -38,7 +38,10 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         let search_batch_size = startup.search_batch_size;
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
+
         let concurrent_games = ceil_div((gpu_threads + 1) * gpu_batch_size, search_batch_size);
+        let eval_job_count = gpu_batch_size / search_batch_size;
+
         println!("Spawning {} games", concurrent_games);
 
         let mut settings_senders: Vec<Sender<Settings>> = vec![];
@@ -90,7 +93,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
                 .spawn(move |_| {
                     batched_executor_loop(
                         gpu_batch_size,
-                        RunCondition::FullBatch,
+                        RunCondition::JobCount(eval_job_count),
                         graph_receiver,
                         eval_server,
                         |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),
