@@ -76,8 +76,9 @@ def len_from_cum_sums(cum_sums: np.array) -> int:
 def split_index(i: int, cum_sums: np.array) -> (int, int):
     length = len_from_cum_sums(cum_sums)
 
-    if not (0 <= i < length):
+    if not (-length <= i < length):
         raise IndexError(f"Index {i} out of bounds for length {cum_sums[-1]}")
+    i %= length
 
     outer = np.searchsorted(cum_sums, i, "right")
     if outer == 0:
