@@ -147,7 +147,7 @@ class DataFile:
             index=si,
             start_file_pi=start_pi,
             move_count=(end_pi - start_pi + 1 - self.info.includes_final_positions),
-            includes_terminal=self.info.includes_final_positions,
+            includes_final=self.info.includes_final_positions,
         )
 
     @cached_property

@@ -15,11 +15,11 @@ class Simulation:
     index: int
     start_file_pi: int
     move_count: int
-    includes_terminal: bool
+    includes_final: bool
 
     @property
     def position_count(self):
-        return self.move_count + self.includes_terminal
+        return self.move_count + self.includes_final
 
     @property
     def end_file_pi(self):
@@ -32,7 +32,7 @@ class Simulation:
 
 
 class Position:
-    def __init__(self, game: Game, file_pi: int, includes_terminal: bool, scalar_names: List[str], data: bytes):
+    def __init__(self, game: Game, file_pi: int, includes_final: bool, scalar_names: List[str], data: bytes):
         self.game = game
         data = Taker(data)
 
@@ -48,7 +48,7 @@ class Position:
             index=int(scalars.pop("game_id")),
             start_file_pi=self.file_pi - self.move_index,
             move_count=move_count,
-            includes_terminal=includes_terminal,
+            includes_final=includes_final,
         )
 
         self.zero_visits = int(scalars.pop("zero_visits"))
@@ -90,8 +90,8 @@ class Position:
 
 
 class PostFinalPosition:
-    def __init__(self, terminal: Position):
-        game = terminal.game
+    def __init__(self, final_position: Position):
+        game = final_position.game
         self.game = game
 
         self.available_mv_count = 0
@@ -108,8 +108,9 @@ class PostFinalPosition:
             index=-1,
             start_file_pi=-1,
             move_count=-1,
-            includes_terminal=False,
+            includes_final=False,
         )
+        self.final_position = final_position
 
         # pick a random move to teach that any more stays in the terminal state
         mv_size = prod(game.input_mv_shape)
@@ -117,12 +118,12 @@ class PostFinalPosition:
 
         # TODO is this right? we "extremify" the values here
         #  doesn't really matter since usually we train on terminal values
-        self.final_wdl = terminal.final_wdl
-        self.zero_wdl = terminal.final_wdl
-        self.net_wdl = terminal.final_wdl
-        self.final_v = terminal.final_v
-        self.zero_v = terminal.final_v
-        self.net_v = terminal.final_v
+        self.final_wdl = final_position.final_wdl
+        self.zero_wdl = final_position.final_wdl
+        self.net_wdl = final_position.final_wdl
+        self.final_v = final_position.final_v
+        self.zero_v = final_position.final_v
+        self.net_v = final_position.final_v
         self.final_moves_left = 0.0
         self.zero_moves_left = 0.0
         self.net_moves_left = 0.0
