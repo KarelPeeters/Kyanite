@@ -15,10 +15,10 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 use kz_core::mapping::ataxx::AtaxxStdMapper;
-use kz_core::mapping::BoardMapper;
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
 use kz_core::mapping::ttt::TTTStdMapper;
+use kz_core::mapping::BoardMapper;
 use kz_core::network::dummy::{uniform_policy, uniform_values};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::node::ZeroValues;
@@ -45,9 +45,10 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    let mut args: Args = Args::parse();
 
     let game = Game::parse(&args.game).unwrap();
+    args.game = game.to_string();
 
     match game {
         Game::TTT => main_impl(&args, TTTBoard::default, TTTStdMapper),
