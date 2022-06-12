@@ -15,6 +15,7 @@ class PositionSampler:
             batch_size: int,
             unroll_steps: Optional[int],
             include_final: bool,
+            include_final_for_each: bool,
             threads: int,
     ):
         self.group = group
@@ -22,6 +23,7 @@ class PositionSampler:
         self.batch_size = batch_size
         self.unroll_steps = unroll_steps
         self.include_final = include_final
+        self.include_final_for_each = include_final_for_each
 
         self.queue = CQueue(threads + 1)
 
@@ -69,17 +71,17 @@ def collect_simple_batch(sampler: PositionSampler, group: DataGroup):
     positions = []
 
     for _ in range(sampler.batch_size):
-        _, p = sample_position(group, sampler.include_final)
+        _, p = sample_position(group, sampler.include_final, sampler.include_final_for_each)
         positions.append(p)
 
-    return PositionBatch(group.game, positions, PIN_MEMORY)
+    return PositionBatch(group.game, positions, sampler.include_final_for_each, PIN_MEMORY)
 
 
 def collect_unrolled_batch(sampler: PositionSampler, group: DataGroup, unroll_steps: int):
     chains = []
 
     for _ in range(sampler.batch_size):
-        (first_pi, first_position) = sample_position(group, sampler.include_final)
+        (first_pi, first_position) = sample_position(group, sampler.include_final, sampler.include_final_for_each)
         chain = [first_position]
 
         for ri in range(unroll_steps):
@@ -110,15 +112,24 @@ def collect_unrolled_batch(sampler: PositionSampler, group: DataGroup, unroll_st
 
         chains.append(chain)
 
-    return UnrolledPositionBatch(group.game, unroll_steps, sampler.batch_size, chains, PIN_MEMORY)
+    return UnrolledPositionBatch(
+        group.game,
+        unroll_steps, sampler.include_final_for_each, sampler.batch_size,
+        chains, PIN_MEMORY
+    )
 
 
-def sample_position(group: DataGroup, include_final: bool) -> (int, Position):
+def sample_position(group: DataGroup, include_final: bool, include_final_for_each: bool) -> (int, Position):
     while True:
         pi = random.randrange(len(group.positions))
         pos = group.positions[pi]
 
         if pos.is_final_position and not include_final:
             continue
+
+        if include_final_for_each:
+            assert pos.simulation.includes_final, "Cannot include final position for file without any"
+            final_pos = group.positions[pi + int(pos.final_moves_left) - 1]
+            pos.final_position = final_pos
 
         return pi, pos

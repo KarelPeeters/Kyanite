@@ -1,6 +1,6 @@
 import random
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -32,7 +32,15 @@ class Simulation:
 
 
 class Position:
-    def __init__(self, game: Game, file_pi: int, includes_final: bool, scalar_names: List[str], data: bytes):
+    def __init__(
+            self,
+            game: Game,
+            file_pi: int,
+            includes_final: bool,
+            scalar_names: List[str],
+            data: bytes,
+            final_position: Optional['Position']
+    ):
         self.game = game
         data = Taker(data)
 
@@ -50,6 +58,7 @@ class Position:
             move_count=move_count,
             includes_final=includes_final,
         )
+        self.final_position = final_position
 
         self.zero_visits = int(scalars.pop("zero_visits"))
         self.available_mv_count = int(scalars.pop("available_mv_count"))
@@ -131,13 +140,16 @@ class PostFinalPosition:
 
 
 class PositionBatch:
-    def __init__(self, game: Game, positions: List[Position], pin_memory: bool):
+    def __init__(self, game: Game, positions: List[Position], include_final_for_each: bool, pin_memory: bool):
         self.max_available_moves = max(p.available_mv_count if p is not None else 0 for p in positions)
 
         input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory)
         all_wdls = torch.empty(len(positions), 3 * 3, pin_memory=pin_memory)
         all_values = torch.empty(len(positions), 3, pin_memory=pin_memory)
         all_moves_left = torch.empty(len(positions), 3, pin_memory=pin_memory)
+
+        final_input_full = torch.empty(len(positions), *game.full_input_shape, pin_memory=pin_memory) \
+            if include_final_for_each else None
 
         # positions with less available moves get padded extra indices 0 and values -1
         policy_indices = torch.zeros(len(positions), self.max_available_moves, dtype=torch.int64, pin_memory=pin_memory)
@@ -158,10 +170,10 @@ class PositionBatch:
         for i, p in enumerate(positions):
             assert p.game == game
 
-            input_full[i, :game.input_scalar_channels, :, :] = torch.tensor(p.input_scalars) \
-                .view(-1, 1, 1).expand(*game.input_scalar_shape)
-            input_full[i, game.input_scalar_channels:, :, :] = torch.tensor(p.input_bools) \
-                .view(*game.input_bool_shape)
+            write_input(game, input_full[i, :, :, :], p)
+            if include_final_for_each:
+                assert p.final_position is not None
+                write_input(game, final_input_full[i, :, :, :], p.final_position)
 
             all_wdls[i, 0:3] = torch.from_numpy(p.final_wdl)
             all_wdls[i, 3:6] = torch.from_numpy(p.zero_wdl)
@@ -186,6 +198,8 @@ class PositionBatch:
             is_terminal[i] = p.is_terminal
 
         self.input_full = input_full.to(DEVICE)
+        self.final_input_full = final_input_full.to(DEVICE) if include_final_for_each else None
+
         self.policy_indices = policy_indices.to(DEVICE)
         self.policy_values = policy_values.to(DEVICE)
 
@@ -214,8 +228,23 @@ class PositionBatch:
         return len(self.input_full)
 
 
+def write_input(game: Game, target, position: Position):
+    target[:game.input_scalar_channels, :, :] = torch.tensor(position.input_scalars) \
+        .view(-1, 1, 1).expand(*game.input_scalar_shape)
+    target[game.input_scalar_channels:, :, :] = torch.tensor(position.input_bools) \
+        .view(*game.input_bool_shape)
+
+
 class UnrolledPositionBatch:
-    def __init__(self, game: Game, unroll_steps: int, batch_size: int, chains: List[List[Position]], pin_memory: bool):
+    def __init__(
+            self,
+            game: Game,
+            unroll_steps: int,
+            include_final_for_each: bool,
+            batch_size: int,
+            chains: List[List[Position]],
+            pin_memory: bool
+    ):
         assert unroll_steps >= 0, "Negative unroll steps don't make sense"
         for chain in chains:
             assert len(chain) == unroll_steps + 1, f"Expected {unroll_steps + 1} positions, got chain with {len(chain)}"
@@ -236,7 +265,7 @@ class UnrolledPositionBatch:
         self.unroll_steps = unroll_steps
         self.batch_size = batch_size
         self.positions = [
-            PositionBatch(game, positions, pin_memory)
+            PositionBatch(game, positions, include_final_for_each, pin_memory)
             for positions in positions_by_step
         ]
 

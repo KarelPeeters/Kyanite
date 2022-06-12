@@ -116,7 +116,14 @@ class DataFile:
             self.bin_handle.seek(start_offset)
             data = self.bin_handle.read(end_offset - start_offset)
 
-        return Position(self.info.game, pi, self.info.includes_final_positions, self.info.scalar_names, data)
+        return Position(
+            game=self.info.game,
+            file_pi=pi,
+            includes_final=self.info.includes_final_positions,
+            scalar_names=self.info.scalar_names,
+            data=data,
+            final_position=None
+        )
 
     def load_simulation(self, si: int) -> Simulation:
         is_final_simulation = si == self.info.simulation_count - 1
