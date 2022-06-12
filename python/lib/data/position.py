@@ -13,7 +13,7 @@ from lib.util import DEVICE, prod, map_none, map_none_or
 @dataclass
 class Simulation:
     index: int
-    start_pi: int
+    start_file_pi: int
     move_count: int
     includes_terminal: bool
 
@@ -22,30 +22,31 @@ class Simulation:
         return self.move_count + self.includes_terminal
 
     @property
-    def end_pi(self):
-        return self.start_pi + self.position_count
+    def end_file_pi(self):
+        """ The end position index, exclusive """
+        return self.start_file_pi + self.position_count
 
     @property
-    def position_ids(self):
-        return range(self.start_pi, self.end_pi)
+    def file_pis(self):
+        return range(self.start_file_pi, self.end_file_pi)
 
 
 class Position:
-    def __init__(self, game: Game, pi: int, includes_terminal: bool, scalar_names: List[str], data: bytes):
+    def __init__(self, game: Game, file_pi: int, includes_terminal: bool, scalar_names: List[str], data: bytes):
         self.game = game
         data = Taker(data)
 
         scalar_array = np.frombuffer(data.take(len(scalar_names) * 4), dtype=np.float32)
         scalars = {n: v for n, v in zip(scalar_names, scalar_array)}
 
-        self.pi = pi
-        self.pos_index = int(scalars.pop("pos_index"))
+        self.file_pi = file_pi
+        self.move_index = int(scalars.pop("pos_index"))
 
         move_count = int(scalars.pop("game_length"))
 
         self.simulation = Simulation(
             index=int(scalars.pop("game_id")),
-            start_pi=self.pi - self.pos_index,
+            start_file_pi=self.file_pi - self.move_index,
             move_count=move_count,
             includes_terminal=includes_terminal,
         )
@@ -69,7 +70,7 @@ class Position:
         self.zero_wdl = np.array([scalars.pop("zero_wdl_w"), scalars.pop("zero_wdl_d"), scalars.pop("zero_wdl_l")])
         self.net_wdl = np.array([scalars.pop("net_wdl_w"), scalars.pop("net_wdl_d"), scalars.pop("net_wdl_l")])
 
-        self.final_moves_left = float(scalars.pop("final_moves_left", move_count - self.pos_index))
+        self.final_moves_left = float(scalars.pop("final_moves_left", move_count - self.move_index))
         self.zero_moves_left = float(scalars.pop("zero_moves_left", np.nan))
         self.net_moves_left = float(scalars.pop("net_moves_left", np.nan))
 
@@ -88,7 +89,7 @@ class Position:
         data.finish()
 
 
-class PostTerminalPosition:
+class PostFinalPosition:
     def __init__(self, terminal: Position):
         game = terminal.game
         self.game = game
@@ -100,6 +101,15 @@ class PostTerminalPosition:
 
         self.policy_indices = np.zeros(0, dtype=np.int32)
         self.policy_values = np.zeros(0, dtype=np.float32)
+
+        self.move_index = -1
+        self.file_pi = -1
+        self.simulation = Simulation(
+            index=-1,
+            start_file_pi=-1,
+            move_count=-1,
+            includes_terminal=False,
+        )
 
         # pick a random move to teach that any more stays in the terminal state
         mv_size = prod(game.input_mv_shape)
@@ -135,7 +145,8 @@ class PositionBatch:
 
         played_mv = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         sim_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
-        pos_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        move_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+        file_pi = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
 
         if game.input_mv_channels is not None:
@@ -165,7 +176,8 @@ class PositionBatch:
             policy_values[i, :p.available_mv_count] = torch.from_numpy(p.policy_values.copy())
 
             played_mv[i] = p.played_mv
-            pos_index[i] = p.pos_index
+            move_index[i] = p.move_index
+            file_pi[i] = p.file_pi
             sim_index[i] = p.simulation.index
 
             if game.input_mv_channels is not None:
@@ -177,7 +189,8 @@ class PositionBatch:
         self.policy_values = policy_values.to(DEVICE)
 
         self.played_mv = played_mv.to(DEVICE)
-        self.pos_index = pos_index.to(DEVICE)
+        self.move_index = move_index.to(DEVICE)
+        self.file_pi = file_pi.to(DEVICE)
         self.sim_index = sim_index.to(DEVICE)
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
         self.is_terminal = is_terminal.to(DEVICE)
@@ -201,7 +214,7 @@ class PositionBatch:
 
 
 class UnrolledPositionBatch:
-    def __init__(self, game: Game, unroll_steps: int, chains: List[List[Position]], pin_memory: bool):
+    def __init__(self, game: Game, unroll_steps: int, batch_size: int, chains: List[List[Position]], pin_memory: bool):
         assert unroll_steps >= 0, "Negative unroll steps don't make sense"
         for chain in chains:
             assert len(chain) == unroll_steps + 1, f"Expected {unroll_steps + 1} positions, got chain with {len(chain)}"
@@ -217,10 +230,14 @@ class UnrolledPositionBatch:
                     last_position = p
                 else:
                     assert last_position is not None, "Each chain must contain at least one position"
-                    positions_by_step[si].append(PostTerminalPosition(last_position))
+                    positions_by_step[si].append(PostFinalPosition(last_position))
 
         self.unroll_steps = unroll_steps
+        self.batch_size = batch_size
         self.positions = [
             PositionBatch(game, positions, pin_memory)
             for positions in positions_by_step
         ]
+
+    def __len__(self):
+        return self.batch_size

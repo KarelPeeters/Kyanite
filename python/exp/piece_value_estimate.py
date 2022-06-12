@@ -8,7 +8,8 @@ from matplotlib import pyplot as plt
 from torch.optim import SGD
 
 from lib.data.file import DataFile
-from lib.data.file_list import FileListSampler, FileList
+from lib.data.group import DataGroup
+from lib.data.sampler import PositionSampler
 from lib.games import Game
 from lib.schedule import LinearSchedule
 from lib.util import DEVICE
@@ -27,7 +28,8 @@ def collect_training_data(data_gens, network_gens, batch_size: int, positions: i
         DataFile.open(game, f"C:/Documents/Programming/STTT/AlphaZero/data/loop/chess/16x128/selfplay/games_{gi}")
         for gi in data_gens
     ]
-    sampler = FileListSampler(FileList(game, files), batch_size, None, False, 1)
+    group = DataGroup.from_files(game, files)
+    sampler = PositionSampler(group, batch_size, None, False, 1)
 
     networks = []
     for gi in network_gens:

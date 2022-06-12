@@ -6,7 +6,8 @@ from torch import nn
 from torch.optim import AdamW
 
 from lib.data.file import DataFile
-from lib.data.file_list import FileListSampler, FileList
+from lib.data.group import DataGroup
+from lib.data.sampler import PositionSampler
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.layers import Flip
@@ -26,11 +27,16 @@ def main(plotter: LogPlotter):
     paths = [
         fr"C:\Documents\Programming\STTT\AlphaZero\data\selfuni\test_final.json"
     ]
-    files = [DataFile.open(game, p) for p in paths]
 
-    include_final = True
-    file_list = FileList(game, files)
-    sampler = FileListSampler(file_list, batch_size=128, unroll_steps=5, include_final=include_final, threads=1)
+    files = [DataFile.open(game, p) for p in paths]
+    group = DataGroup.from_files(game, files)
+    sampler = PositionSampler(
+        group,
+        batch_size=128,
+        unroll_steps=5,
+        include_final=True,
+        threads=1
+    )
 
     train = TrainSettings(
         game=game,

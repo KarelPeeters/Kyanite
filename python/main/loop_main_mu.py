@@ -23,7 +23,7 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game,
         muzero=True,
-        games_per_gen=200,
+        simulations_per_gen=200,
 
         cpu_threads_per_device=4,
         gpu_threads_per_device=1,
@@ -115,7 +115,7 @@ def main():
 
         train_batch_size=128,
         samples_per_position=10,
-        test_ratio=0.05,
+        test_fraction=0.05,
 
         optimizer=lambda params: AdamW(params, weight_decay=1e-3),
 

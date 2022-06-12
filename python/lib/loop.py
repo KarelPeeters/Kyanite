@@ -11,7 +11,8 @@ from torch import nn
 from torch.optim import Optimizer
 
 from lib.data.file import DataFile
-from lib.data.file_list import FileListSampler, FileList
+from lib.data.group import DataGroup
+from lib.data.sampler import PositionSampler
 from lib.games import Game
 from lib.logger import Logger
 from lib.plotter import LogPlotter, run_with_plotter
@@ -72,7 +73,7 @@ class LoopSettings:
 
     train_batch_size: int
     samples_per_position: float
-    test_ratio: float
+    test_fraction: float
 
     # TODO re-implement testing
     # test_fraction: float
@@ -237,7 +238,8 @@ class LoopSettings:
                     self.train_batch_size, self.muzero_steps, self.include_final,
                     only_last=False, test=False
                 )
-                print(f"Training network on buffer with size {len(train_sampler)} for {batch_count_per_gen} batches")
+                print(
+                    f"Training network on buffer with size {len(train_sampler.group.positions)} for {batch_count_per_gen} batches")
                 train_start = time.perf_counter()
 
                 for bi in range(batch_count_per_gen):
@@ -260,7 +262,7 @@ class LoopSettings:
 
     def load_start_state(self) -> Tuple['Generation', 'LoopBuffer', Logger, nn.Module]:
         game = self.fixed_settings.game
-        buffer = LoopBuffer(game, self.max_buffer_size, self.test_ratio)
+        buffer = LoopBuffer(game, self.max_buffer_size, self.test_fraction)
 
         for file in self.initial_data_files:
             buffer.append(None, file)
@@ -353,10 +355,10 @@ class Generation:
 
 
 class LoopBuffer:
-    def __init__(self, game: Game, target_positions: int, test_ratio: float):
+    def __init__(self, game: Game, target_positions: int, test_fraction: float):
         self.game = game
         self.target_positions = target_positions
-        self.test_ratio = test_ratio
+        self.test_fraction = test_fraction
 
         self.position_count = 0
         self.simulation_count = 0
@@ -397,15 +399,20 @@ class LoopBuffer:
 
     def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool, test: bool):
         files = [self.files[-1]] if only_last else self.files
-        file_list = FileList(self.game, files)
 
         if test:
-            pi_range = (0, self.test_ratio)
+            range_min = 1 - self.test_fraction
+            range_max = 1.0
         else:
-            pi_range = (self.test_ratio, 1)
+            range_min = 0.0
+            range_max = 1 - self.test_fraction
 
-        return FileListSampler(
-            file_list, batch_size,
-            unroll_steps=unroll_steps, include_final=include_final,
-            pi_range=pi_range, threads=1
+        group = DataGroup.from_files(self.game, files, range_min, range_max)
+
+        return PositionSampler(
+            group,
+            batch_size,
+            unroll_steps=unroll_steps,
+            include_final=include_final,
+            threads=1
         )

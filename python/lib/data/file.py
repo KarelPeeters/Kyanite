@@ -1,8 +1,9 @@
 import json
 import os
+from functools import cached_property
 from pathlib import Path
 from threading import RLock
-from typing import BinaryIO, Sequence
+from typing import BinaryIO, Sequence, overload, Union
 
 import numpy as np
 
@@ -47,15 +48,13 @@ class DataFile:
         assert isinstance(info, DataFileInfo)
 
         self.info = info
-        self.simulations = FileSimulations(self)
-        self.positions = FilePositions(self)
+        self.simulations = FileSimulationsView(self, range(self.info.simulation_count))
+        self.positions = FilePositionsView(self, range(self.info.position_count))
 
         # this lock is specifically for seeking in both handles
         self.lock = RLock()
         self.bin_handle = bin_handle
         self.off_handle = off_handle
-
-        self._cached_simulation_indices = None
 
     @staticmethod
     def open(game: Game, path: str) -> 'DataFile':
@@ -92,7 +91,9 @@ class DataFile:
 
         return DataFile(info, bin_handle, off_handle)
 
-    def with_new_handle(self) -> 'DataFile':
+    def with_new_handles(self) -> 'DataFile':
+        # TODO do we actually need any of this?
+        #   typically we're sampling from many files at once so there shouldn't be too much locking
         return DataFile(
             self.info,
             random_access_handle(self.info.bin_path),
@@ -133,7 +134,7 @@ class DataFile:
                     start_pi = int.from_bytes(index_bytes[:OFFSET_SIZE_IN_BYTES], "little")
                     end_pi = int.from_bytes(index_bytes[OFFSET_SIZE_IN_BYTES:], "little") - 1
             else:
-                start_indices = self._simulation_start_indices()
+                start_indices = self._simulation_start_indices
 
                 start_pi = start_indices[si]
 
@@ -144,14 +145,17 @@ class DataFile:
 
         return Simulation(
             index=si,
-            start_pi=start_pi,
+            start_file_pi=start_pi,
             move_count=(end_pi - start_pi + 1 - self.info.includes_final_positions),
             includes_terminal=self.info.includes_final_positions,
         )
 
+    @cached_property
     def _simulation_start_indices(self):
-        if self._cached_simulation_indices is not None:
-            return self._cached_simulation_indices
+        """
+        The start position index for each simulation, calculated based on the positions themselves.
+        Useful for backwards compatibility for files without includes_game_start_indices.
+        """
 
         starts = np.empty(self.info.simulation_count, dtype=int)
         pi = 0
@@ -160,10 +164,9 @@ class DataFile:
             starts[gi] = pi
 
             position = self.load_position(pi)
-            assert position.pos_index == 0
+            assert position.move_index == 0
             pi += position.simulation.position_count
 
-        self._cached_simulation_indices = starts
         return starts
 
     def close(self):
@@ -171,32 +174,71 @@ class DataFile:
         self.off_handle.close()
 
 
-class FilePositions(Sequence[Position]):
-    def __init__(self, file: DataFile):
+class FileSimulationsView(Sequence[Simulation]):
+    def __init__(self, file: DataFile, si_range: range):
         self.file = file
+        self.si_range = si_range
 
     def __len__(self):
-        return self.file.info.position_count
+        return len(self.si_range)
 
-    def __getitem__(self, item: int) -> Position:
-        if not (0 <= item < len(self)):
-            raise IndexError(f"Index {item} out of bounds for {len(self)} positions")
+    @overload
+    def __getitem__(self, si: int) -> Simulation:
+        pass
 
-        return self.file.load_position(item)
+    @overload
+    def __getitem__(self, si_slice: slice) -> 'FileSimulationsView':
+        pass
 
+    @cached_property
+    def positions(self) -> 'FilePositionsView':
+        assert self.si_range.step == 1, "Cannot get positions for simulation slice with step, since it would be non-affine"
 
-class FileSimulations(Sequence[Simulation]):
-    def __init__(self, file: DataFile):
-        self.file = file
+        if len(self) == 0:
+            return FilePositionsView(self.file, range(self.si_range.start, self.si_range.start))
 
-    def __len__(self):
-        return self.file.info.simulation_count
+        start_pi = self[0].start_file_pi
+        end_pi = self[-1].end_file_pi
+        return FilePositionsView(self.file, range(start_pi, end_pi))
 
-    def __getitem__(self, item: int) -> Simulation:
-        if not (0 <= item < len(self)):
+    def __getitem__(self, item: Union[int, slice]) -> Union[Simulation, 'FileSimulationsView']:
+        if isinstance(item, slice):
+            return FileSimulationsView(self.file, self.si_range[item])
+
+        if not (-len(self) <= item < len(self)):
             raise IndexError(f"Index {item} out of bounds for {len(self)} simulations")
+        return self.file.load_simulation(self.si_range[item])
 
-        return self.file.load_simulation(item)
+    def with_new_handles(self) -> 'FileSimulationsView':
+        return FileSimulationsView(self.file.with_new_handles(), self.si_range)
+
+
+class FilePositionsView(Sequence[Position]):
+    def __init__(self, file: DataFile, pi_range: range):
+        self.file = file
+        self.pi_range = pi_range
+
+    def __len__(self):
+        return len(self.pi_range)
+
+    @overload
+    def __getitem__(self, pi: int) -> Position:
+        pass
+
+    @overload
+    def __getitem__(self, pi_slice: slice) -> 'FilePositionsView':
+        pass
+
+    def __getitem__(self, item: Union[int, slice]) -> Union[Position, 'FilePositionsView']:
+        if isinstance(item, slice):
+            return FilePositionsView(self.file, self.pi_range[item])
+
+        if not (-len(self) <= item < len(self)):
+            raise IndexError(f"Index {item} out of bounds for {len(self)} positions")
+        return self.file.load_position(self.pi_range[item])
+
+    def with_new_handles(self) -> 'FilePositionsView':
+        return FilePositionsView(self.file.with_new_handles(), self.pi_range)
 
 
 def random_access_handle(path: Path) -> BinaryIO:

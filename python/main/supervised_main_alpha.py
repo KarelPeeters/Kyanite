@@ -5,7 +5,8 @@ from typing import Optional
 import torch
 
 from lib.data.file import DataFile
-from lib.data.file_list import FileListSampler, FileList
+from lib.data.group import DataGroup
+from lib.data.sampler import PositionSampler
 from lib.games import Game
 from lib.logger import Logger
 from lib.model.attention import AttentionTower
@@ -37,8 +38,6 @@ def main(plotter: LogPlotter):
         for i in range(2600, 3600)
     ]
 
-    train_paths = paths
-    test_paths = paths
     limit_file_count: Optional[int] = None
 
     game = Game.find("chess")
@@ -49,6 +48,7 @@ def main(plotter: LogPlotter):
 
     test_steps = 16
     save_steps = 128
+    test_fraction = 0.05
 
     settings = TrainSettings(
         game=game,
@@ -74,23 +74,20 @@ def main(plotter: LogPlotter):
             policy_head=AttentionPolicyHead(game, channels, channels),
         )
 
-    train_files = sorted((DataFile.open(game, p) for p in train_paths), key=lambda f: f.info.timestamp)
-    test_files = sorted((DataFile.open(game, p) for p in test_paths), key=lambda f: f.info.timestamp)
-
+    files = sorted((DataFile.open(game, p) for p in paths), key=lambda f: f.info.timestamp)
     if limit_file_count is not None:
-        train_files = train_files[-min(limit_file_count, len(train_files)):]
-        test_files = test_files[-min(limit_file_count, len(train_files)):]
+        files = files[-min(limit_file_count, len(files)):]
 
-    train_sampler = FileListSampler(FileList(game, train_files), batch_size, None, include_final, threads=1)
-    test_sampler = FileListSampler(FileList(game, test_files), batch_size, None, include_final, threads=1)
+    train_group = DataGroup.from_files(game, files, 0, 1 - test_fraction)
+    test_group = DataGroup.from_files(game, files, 1 - test_fraction, 1)
+    train_sampler = PositionSampler(train_group, batch_size, None, include_final, threads=1)
+    test_sampler = PositionSampler(test_group, batch_size, None, include_final, threads=1)
 
-    print(f"Train file count: {len(train_files)}")
-    print(f"Train file game count: {sum(f.info.simulation_count for f in train_files)}")
-    print(f"Train position count: {len(train_sampler)}")
-
-    print(f"Test file count: {len(test_files)}")
-    print(f"Train file game count: {sum(f.info.simulation_count for f in test_files)}")
-    print(f"Test position count: {len(test_sampler)}")
+    print(f"File count: {len(files)}")
+    print(f"  Train simulation count: {len(train_group.simulations)}")
+    print(f"  Train position count: {len(train_group.positions)}")
+    print(f"  Test simulation count: {len(test_group.simulations)}")
+    print(f"  Test position count: {len(test_group.positions)}")
 
     last_bi = find_last_finished_batch(output_folder)
 

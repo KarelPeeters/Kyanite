@@ -9,7 +9,7 @@ import torch.nn.functional as nnf
 from torch import nn
 from torch.optim import Optimizer
 
-from lib.data.file_list import FileListSampler
+from lib.data.sampler import PositionSampler
 from lib.logger import Logger
 from lib.plotter import LogPlotter
 from lib.save_onnx import save_onnx
@@ -22,7 +22,7 @@ def supervised_loop(
         start_bi: int, output_folder: str,
         logger: Logger, plotter: LogPlotter,
         network: nn.Module,
-        train_sampler: FileListSampler, test_sampler: FileListSampler,
+        train_sampler: PositionSampler, test_sampler: PositionSampler,
         test_steps: int, save_steps: int,
 ):
     with open(os.path.join(output_folder, f"settings_{start_bi}.json"), "w") as settings_f:
@@ -58,7 +58,7 @@ def supervised_loop(
             settings.evaluate_batch(network, train_batch, "test-train", logger)
 
             test_batch = test_sampler.next_batch()
-            settings.evaluate_batch(network, train_batch, "test-test", logger)
+            settings.evaluate_batch(network, test_batch, "test-test", logger)
 
             # compare to just predicting the mean value
             train_batch_wdl = settings.scalar_target.pick(final=train_batch.wdl_final, zero=train_batch.wdl_zero)
