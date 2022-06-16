@@ -43,6 +43,21 @@ type ExecStep = Step<DevicePtr>;
 type PlanStepInfo = StepInfo<PlanPtr>;
 type ExecStepInfo = StepInfo<DevicePtr>;
 
+type VisitResult<T> = Result<T, Value>;
+
+/// Planner converts a Graph into a concrete cuda execution plan.
+///
+/// This planner is implemented fully recursively, but this means that we can hit stack-overflows for deep graphs.
+/// To solve this we "break" the recursion using the `VisitResult<T>` type:
+/// * `Ok(T)` means the mapping was completed.
+/// * `Err(other_value)` means `other_value` should be visited first, after which the original value should be tried again.
+///
+/// This has a few consequences:
+/// * All operands should be visited before
+///     * any step is pushed
+///     * any dedicated tensor is allocated
+///     * any other non-idempotent state is modified
+/// * We might repeatedly "allocate" tensors, but this is fine since dead allocations are skipped later.
 pub(crate) struct Planner<'a> {
     handles: &'a Handles,
     graph: &'a Graph,
@@ -71,13 +86,6 @@ pub struct MemoryUsage {
     pub shared_bytes: usize,
     pub zero_bytes: usize,
 }
-
-/// This planner is implemented fully recursively, but this means that we can hit stack-overflows for deep graphs.
-/// To solve this we "break" the recursion using this type:
-/// * `Ok(T)` means the mapping was completed.
-/// * `Err(other_value)` means `other_value` should be visited first,
-///   after which the original value should be tried again.
-type VisitResult<T> = Result<T, Value>;
 
 impl<'a> Planner<'a> {
     pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Plan {
@@ -157,13 +165,13 @@ impl<'a> Planner<'a> {
                 }
             }
 
-            for (ti, &(_, end)) in live_ranges.iter().enumerate() {
-                if end == si {
+            for (ti, &(start, end)) in live_ranges.iter().enumerate() {
+                if start < si && end == si {
                     // free the given tensor
                     let size_bytes = planner.shared_buffers_size_in_bytes[ti];
                     let vec = free_allocations.get_mut(&size_bytes).unwrap();
 
-                    let ptr = shared_allocations[ti].clone().unwrap();
+                    let ptr = shared_allocations[ti].as_ref().unwrap().clone();
                     vec.push(ptr);
                 }
             }
@@ -174,11 +182,18 @@ impl<'a> Planner<'a> {
             .into_iter()
             .enumerate()
             .map(|(i, ptr)| {
-                ptr.unwrap_or_else(|| {
-                    // allocate leftover buffers that are never used before the end (eg. empty concat output tensors)
-                    let size_bytes = planner.shared_buffers_size_in_bytes[i];
-                    shared_bytes += size_bytes;
-                    device.alloc(size_bytes)
+                ptr.or_else(|| {
+                    let (start, end) = live_ranges[i];
+
+                    if start <= end {
+                        // allocate leftover buffers that are never used before the end (eg. empty concat output tensors)
+                        let size_bytes = planner.shared_buffers_size_in_bytes[i];
+                        shared_bytes += size_bytes;
+                        Some(device.alloc(size_bytes))
+                    } else {
+                        // don't allocate buffers that are actually never used
+                        None
+                    }
                 })
             })
             .collect_vec();
@@ -230,18 +245,13 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn visit_completely_ensure_simple_strides(&mut self, value: Value, id: &str) -> PlanTensor {
-        self.visit_completely(value);
-        self.visit_ensure_simple_strides(value, id).unwrap()
-    }
-
     fn visit_completely(&mut self, value: Value) -> PlanTensor {
         let mut stack = vec![value];
 
         loop {
             let curr = *stack.last().unwrap();
 
-            match self.visit(curr) {
+            match self.visit_single(curr) {
                 Ok(tensor) => {
                     stack.pop().unwrap();
                     if stack.is_empty() {
@@ -253,7 +263,19 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn visit(&mut self, value: Value) -> VisitResult<PlanTensor> {
+    fn visit_completely_ensure_simple_strides(&mut self, value: Value, id: &str) -> PlanTensor {
+        self.visit_completely(value);
+        self.visit_ensure_simple_strides(value, id).unwrap()
+    }
+
+    fn visit(&mut self, value: Value) -> Result<PlanTensor, Value> {
+        if let Some(result) = self.map.get(&value) {
+            return Ok(result.clone());
+        }
+        return Err(value);
+    }
+
+    fn visit_single(&mut self, value: Value) -> VisitResult<PlanTensor> {
         if let Some(result) = self.map.get(&value) {
             return Ok(result.clone());
         }
@@ -744,6 +766,7 @@ impl<'a> Planner<'a> {
         DeviceTensor::alloc_simple(self.device(), shape.dims)
     }
 
+    // TODO add skip for zero-sized buffers?
     fn alloc_buffer_shared(&mut self, size_in_bytes: usize) -> PlanPtr {
         let index = self.shared_buffers_size_in_bytes.len();
         self.shared_buffers_size_in_bytes.push(size_in_bytes);
@@ -774,7 +797,7 @@ impl<'a> Planner<'a> {
 
 #[derive(Debug)]
 struct RealizationContext {
-    shared_allocations: Vec<DevicePtr>,
+    shared_allocations: Vec<Option<DevicePtr>>,
     zero_allocation: DevicePtr,
 }
 
@@ -784,7 +807,10 @@ impl RealizationContext {
 
         let base = match buffer {
             PlanBuffer::Dedicated(buffer) => buffer,
-            PlanBuffer::Shared { index } => self.shared_allocations[index].clone(),
+            PlanBuffer::Shared { index } => self.shared_allocations[index]
+                .as_ref()
+                .unwrap_or_else(|| panic!("Unused shared buffer {index} is actually used"))
+                .clone(),
             PlanBuffer::Zero => self.zero_allocation.clone(),
         };
 
