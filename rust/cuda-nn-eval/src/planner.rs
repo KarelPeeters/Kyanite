@@ -659,6 +659,7 @@ impl<'a> Planner<'a> {
     }
 
     fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, id: &str) {
+        // add extra axis since ironically the scalar kernel doesn't work for scalar operands
         let operands = if operands[0].shape().rank() == 0 {
             operands.into_iter().map(|op| op.view(vec![1]).unwrap()).collect_vec()
         } else {
