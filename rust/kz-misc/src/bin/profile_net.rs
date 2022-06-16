@@ -72,6 +72,13 @@ fn main() {
 
     if print {
         println!("{}", graph);
+
+        if !cpu {
+            assert!(batch_size > 0, "Error: must set batch size");
+
+            let executor = CudaExecutor::new(device, &graph, batch_size as usize);
+            println!("{:?}", executor);
+        }
     } else {
         if batch_size < 1 {
             if cpu {
