@@ -121,6 +121,7 @@ class LogPlotter(QObject):
             self.pauseButton.setText("Pause")
 
     def block_while_paused(self):
+        self.set_can_pause(True)
         self.running.wait()
 
     def widget_for_group(self, g: str):
