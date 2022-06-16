@@ -374,23 +374,11 @@ impl<'a> Planner<'a> {
                 output
             }
             &Operation::Layernorm { input, axis, eps } => {
-                let (alpha_0, input_0, alpha_1, input_1) = if let &Operation::Binary {
-                    op: BinaryOp::Add,
-                    left,
-                    right,
-                } = &self.graph[input].operation
-                {
-                    let (alpha_0, input_0) = self.visit_scalable_value(left)?;
-                    let (alpha_1, input_1) = self.visit_scalable_value(right)?;
+                let (alpha_0, input_0, alpha_1, input_1) = self.visit_scalable_added_pair(input)?;
 
-                    // TODO get this working for non-matching shapes as well
+                if let Some(input_1) = &input_1 {
                     assert_eq!(input_0.shape(), input_1.shape());
-
-                    (alpha_0, input_0, alpha_1, Some(input_1))
-                } else {
-                    let (alpha_0, input_0) = self.visit_scalable_value(input)?;
-                    (alpha_0, input_0, 0.0, None)
-                };
+                }
 
                 let output = self.alloc_tensor_shared(result_shape);
 
@@ -450,6 +438,31 @@ impl<'a> Planner<'a> {
         };
 
         self.insert_mapping(value, result.clone());
+        Ok(result)
+    }
+
+    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(f32, PlanTensor, f32, Option<PlanTensor>)> {
+        let result = if let &Operation::Binary {
+            op: BinaryOp::Add,
+            left,
+            right,
+        } = &self.graph[input].operation
+        {
+            let (alpha_0, input_0) = self.visit_scalable_value(left)?;
+            let (alpha_1, input_1) = self.visit_scalable_value(right)?;
+
+            if input_0.shape() != input_1.shape() {
+                // fallback to scalar operation
+                let total = self.visit(input)?;
+                (1.0, total, 0.0, None)
+            } else {
+                (alpha_0, input_0, alpha_1, Some(input_1))
+            }
+        } else {
+            let (alpha_0, input_0) = self.visit_scalable_value(input)?;
+            (alpha_0, input_0, 0.0, None)
+        };
+
         Ok(result)
     }
 
