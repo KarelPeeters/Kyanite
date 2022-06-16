@@ -19,8 +19,6 @@ struct Args {
     #[clap(short, long)]
     optimize: bool,
     #[clap(short, long)]
-    graph: bool,
-    #[clap(short, long)]
     print: bool,
     #[clap(short, long)]
     cpu: bool,
@@ -37,7 +35,7 @@ struct Args {
 }
 
 const TEST_BATCH_SIZES: &[usize] = &[1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
-const TEST_BATCH_ITERATIONS: &[usize] = &[100, 100, 100, 100, 100, 100, 100, 100, 50, 25, 12, 6, 3];
+const TEST_BATCH_ITERATIONS: &[usize] = &[100, 100, 100, 100, 100, 100, 100, 100, 50, 25, 12, 8, 4];
 
 const DEFAULT_ITERATIONS: usize = 100;
 
@@ -45,7 +43,6 @@ fn main() {
     let Args {
         batch_size,
         optimize,
-        graph: use_graph,
         print,
         n,
         path,
@@ -59,17 +56,6 @@ fn main() {
 
     if cfg!(debug_assertions) {
         println!("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
-    }
-
-    if use_graph {
-        println!("Warning: graph mode is currently not implemented");
-    }
-
-    if cpu && use_graph {
-        println!("Warning: ignoring graph mode when using CPU");
-    }
-    if !cpu && use_graph {
-        println!("Warning: not using cuda graph (recording) mode");
     }
 
     let abs_path = std::fs::canonicalize(path).unwrap();
@@ -86,19 +72,19 @@ fn main() {
 
     if print {
         println!("{}", graph);
-    }
-
-    if batch_size < 1 {
-        if cpu {
-            profile_different_batch_sizes(device, &graph);
-        } else {
-            println!("Error: profiling different batch sizes for CPU not yet implemented");
-        }
     } else {
-        if cpu {
-            profile_single_batch_size_cpu(&graph, batch_size as usize, n)
+        if batch_size < 1 {
+            if cpu {
+                println!("Error: profiling different batch sizes for CPU not yet implemented");
+            } else {
+                profile_different_batch_sizes(device, &graph);
+            }
         } else {
-            profile_single_batch_size_cudnn(device, &graph, batch_size as usize, n, skip_io);
+            if cpu {
+                profile_single_batch_size_cpu(&graph, batch_size as usize, n)
+            } else {
+                profile_single_batch_size_cudnn(device, &graph, batch_size as usize, n, skip_io);
+            }
         }
     }
 }
