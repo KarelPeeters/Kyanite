@@ -13,7 +13,7 @@ pub struct ArimaaSplitMapper;
 
 impl InputMapper<ArimaaBoard> for ArimaaSplitMapper {
     fn input_bool_shape(&self) -> [usize; 3] {
-        [4 * 6, 8, 8]
+        [4 * 6 + 2, 8, 8]
     }
 
     fn input_scalar_count(&self) -> usize {
@@ -45,6 +45,10 @@ impl InputMapper<ArimaaBoard> for ArimaaSplitMapper {
         // pull and push squares
         append_push_pull_planes(bools, pull, next_player);
         append_push_pull_planes(bools, push, next_player);
+
+        // placement and traps
+        bools.push_block(pov_ranks(board.placement(), next_player).0);
+        bools.push_block(pov_ranks(ArimaaBoard::TRAP_MASK, next_player).0);
 
         // main scalars
         scalars.push(place as u8 as f32);

@@ -156,7 +156,7 @@ GAMES = {
     "arimaa-split": Game(
         name="arimaa-split",
         board_size=8,
-        input_bool_channels=4 * 6,
+        input_bool_channels=4 * 6 + 2,
         input_scalar_channels=12,
         input_mv_channels=None,
         policy_shape=(1 + 6 + 256,),
