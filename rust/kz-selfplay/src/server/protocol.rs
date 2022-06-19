@@ -129,6 +129,7 @@ pub enum Game {
     Chess,
     ChessHist { length: usize },
     Ataxx { size: u8 },
+    ArimaaSplit,
 }
 
 impl Game {
@@ -138,6 +139,7 @@ impl Game {
             "sttt" => return Some(Game::STTT),
             "chess" => return Some(Game::Chess),
             "ataxx" => return Some(Game::Ataxx { size: 7 }),
+            "arimaa-split" => return Some(Game::ArimaaSplit),
             _ => {}
         };
 
@@ -162,6 +164,7 @@ impl Display for Game {
             Game::Chess => write!(f, "chess"),
             Game::ChessHist { length } => write!(f, "chess-hist-{}", length),
             Game::Ataxx { size } => write!(f, "ataxx-{}", size),
+            Game::ArimaaSplit => write!(f, "arimaa-split"),
         }
     }
 }

@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use board_game::board::Board;
+use board_game::games::arimaa::ArimaaBoard;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
@@ -14,6 +15,7 @@ use flume::{Receiver, Sender};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::Device;
+use kz_core::mapping::arimaa::ArimaaSplitMapper;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
@@ -145,6 +147,15 @@ fn selfplay_start_dispatch_game(
             startup_settings,
             ChessBoard::default,
             ChessHistoryMapper::new(length),
+            reader,
+            writer,
+        ),
+        Game::ArimaaSplit => selfplay_start_dispatch_spec(
+            game,
+            devices,
+            startup_settings,
+            ArimaaBoard::default,
+            ArimaaSplitMapper,
             reader,
             writer,
         ),

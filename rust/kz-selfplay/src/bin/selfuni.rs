@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use board_game::ai::solver::solve_all_moves;
 use board_game::board::Board;
+use board_game::games::arimaa::ArimaaBoard;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
@@ -11,6 +12,7 @@ use board_game::wdl::OutcomeWDL;
 use clap::Parser;
 use flume::{Receiver, Sender};
 use internal_iterator::InternalIterator;
+use kz_core::mapping::arimaa::ArimaaSplitMapper;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -56,6 +58,7 @@ fn main() {
         Game::Chess => main_impl(&args, ChessBoard::default, ChessStdMapper),
         Game::Ataxx { size } => main_impl(&args, || AtaxxBoard::diagonal(size), AtaxxStdMapper::new(size)),
         Game::ChessHist { length } => main_impl(&args, ChessBoard::default, ChessHistoryMapper::new(length)),
+        Game::ArimaaSplit => main_impl(&args, ArimaaBoard::default, ArimaaSplitMapper),
     }
 }
 
@@ -94,7 +97,7 @@ fn main_collector<B: Board, M: BoardMapper<B>>(args: &Args, mapper: M, receiver:
     }
 
     output.finish().unwrap();
-    std::mem::drop(receiver);
+    drop(receiver);
 }
 
 fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Sender<Simulation<B>>) {
