@@ -47,7 +47,8 @@ class ConvPolicyHead(nn.Module):
 class AttentionPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int, query_channels: int):
         super().__init__()
-        assert game.name == "chess" or game.name.startswith("chess-hist"), "Attention policy head only works for chess for now"
+        assert game.name == "chess" or game.name.startswith("chess-hist"), \
+            "Attention policy head only works for chess for now"
 
         self.query_channels = query_channels
         self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
@@ -70,6 +71,38 @@ class AttentionPolicyHead(nn.Module):
 
         flat_policy = policy.flatten(1)[:, self.FLAT_TO_ATT]
         return flat_policy
+
+
+class ArimaaPolicyHead(nn.Module):
+    def __init__(self, game: Game, channels: int, hidden_channels: int, hidden_size: int):
+        super().__init__()
+        assert game.name == "arimaa-split", "This policy head only supports arimaa-split"
+
+        self.bulk = nn.Sequential(
+            conv2d(channels, channels, 1),
+            nn.ReLU(),
+            conv2d(channels, 4, 1),
+        )
+
+        self.scalar = nn.Sequential(
+            conv2d(channels, hidden_channels, 1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(hidden_channels * game.board_size * game.board_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1 + 6)
+        )
+
+    def forward(self, common):
+        bulk = self.bulk(common)
+        scalar = self.scalar(common)
+
+        policy = torch.concat([
+            scalar,
+            torch.flatten(bulk, 1)
+        ], dim=1)
+
+        return policy
 
 
 class ConcatInputsChannelwise(nn.Module):
