@@ -1,9 +1,9 @@
-use std::fs::{File, read_to_string};
+use std::fs::{read_to_string, File};
 use std::io::BufReader;
 
 use board_game::board::{Board, BoardMoves, Outcome};
+use board_game::chess::ChessMove;
 use board_game::games::chess::{ChessBoard, Rules};
-use chess::ChessMove;
 use decorum::Total;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;

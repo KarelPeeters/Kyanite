@@ -4,8 +4,8 @@ use std::fs::File;
 use std::io::Write;
 use std::unreachable;
 
+use board_game::chess::{Piece, Square};
 use board_game::games::chess::ChessBoard;
-use chess::{Piece, Square};
 
 use kz_core::mapping::chess::{generate_all_flat_moves_pov, ChessLegacyConvPolicyMapper};
 use kz_core::mapping::PolicyMapper;

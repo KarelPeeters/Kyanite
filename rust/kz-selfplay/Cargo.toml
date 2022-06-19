@@ -13,8 +13,6 @@ nn-graph = { path = "../nn-graph" }
 kz-core = { path = "../kz-core" }
 kz-util = { path = "../kz-util" }
 
-chess = "3.2.0"
-
 rand = "0.8.5"
 rand_distr = "0.4.3"
 

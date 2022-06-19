@@ -3,9 +3,9 @@ use std::ops::ControlFlow;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardMoves, Outcome, Player};
+use board_game::chess::ChessMove;
 use board_game::games::chess::{ChessBoard, Rules};
 use board_game::wdl::WDL;
-use chess::ChessMove;
 use internal_iterator::InternalIterator;
 
 use kz_core::mapping::BoardMapper;

@@ -1,6 +1,6 @@
 use board_game::board::Board;
+use board_game::chess::{ChessMove, Piece, Square};
 use board_game::games::chess::{ChessBoard, Rules};
-use chess::{ChessMove, Piece, Square};
 
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
 use kz_core::mapping::PolicyMapper;
