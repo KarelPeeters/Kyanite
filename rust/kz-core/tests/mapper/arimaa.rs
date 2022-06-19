@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use board_game::board::{Board, BoardMoves, Player};
+use board_game::board::{Board, BoardMoves};
 use board_game::games::arimaa::ArimaaBoard;
 use internal_iterator::InternalIterator;
 
