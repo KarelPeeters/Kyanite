@@ -83,7 +83,7 @@ fn append_push_pull_planes(bools: &mut BitBuffer, pair: Option<(Square, Piece)>,
 
 impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
     fn policy_shape(&self) -> &[usize] {
-        &[1 + 6 + 255]
+        &[1 + 6 + 256]
     }
 
     fn move_to_index(&self, _: &ArimaaBoard, mv: Action) -> Option<usize> {
