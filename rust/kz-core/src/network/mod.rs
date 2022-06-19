@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use board_game::board::Board;
 
 use crate::network::job_channel::JobClient;
-use crate::zero::node::ZeroValues;
+use crate::zero::values::ZeroValuesPov;
 
 pub mod common;
 pub mod dummy;
@@ -20,7 +20,7 @@ pub mod job_channel;
 #[derive(Debug, Clone)]
 pub struct ZeroEvaluation<'a> {
     /// The (normalized) values.
-    pub values: ZeroValues,
+    pub values: ZeroValuesPov,
 
     /// The (normalized) policy "vector", only containing the available moves in the order they are yielded by `available_moves`.
     pub policy: Cow<'a, [f32]>,

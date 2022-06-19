@@ -1,16 +1,17 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
 use board_game::board::{Board, BoardMoves};
 use board_game::games::chess::{ChessBoard, Rules};
+use board_game::pov::NonPov;
 use board_game::wdl::WDL;
 use flume::{Receiver, RecvError, Sender, TryRecvError};
 use internal_iterator::InternalIterator;
-use rand::{SeedableRng, thread_rng};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{thread_rng, SeedableRng};
 use vampirc_uci::UciMessage;
 
 use cuda_nn_eval::Device;
@@ -55,6 +56,7 @@ fn main() -> std::io::Result<()> {
                     let now = Instant::now();
                     if tree.root_visits() > 0 && (now - prev_send).as_secs_f32() > INFO_PERIOD {
                         let root = &tree[0];
+                        let root_player = tree.root_board().next_player();
 
                         let mut children: Vec<_> = root.children.unwrap().iter().collect();
                         children.sort_by_key(|&c| tree[c].complete_visits);
@@ -62,7 +64,7 @@ fn main() -> std::io::Result<()> {
 
                         for (i, &child_index) in children.iter().enumerate() {
                             let child = &tree[child_index];
-                            let wdl: WDL<u32> = (child.values().wdl * 1000.0).cast();
+                            let wdl: WDL<u32> = (child.values().wdl_abs.pov(root_player) * 1000.0).cast();
                             let (min_depth, max_depth) = tree.depth_range(child_index);
 
                             println!(

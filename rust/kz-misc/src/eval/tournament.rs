@@ -2,7 +2,8 @@ use std::fmt::{Display, Formatter};
 use std::time::Instant;
 
 use board_game::board::{Board, Outcome};
-use board_game::wdl::{Flip, OutcomeWDL, POV, WDL};
+use board_game::pov::{NonPov, Pov};
+use board_game::wdl::{OutcomeWDL, WDL};
 use flume::Sender;
 use futures::executor::{block_on, ThreadPoolBuilder};
 use futures::task::SpawnExt;

@@ -1,7 +1,7 @@
 use board_game::ai::Bot;
 use std::fmt::{Debug, Formatter};
 
-use board_game::board::Board;
+use board_game::board::AltBoard;
 use cuda_nn_eval::quant::QuantizedStorage;
 
 use crate::mapping::BoardMapper;
@@ -36,7 +36,7 @@ impl MuZeroSettings {
 
 impl MuZeroSettings {
     /// Construct a new tree from scratch on the given board.
-    pub fn build_tree<B: Board, M: BoardMapper<B>>(
+    pub fn build_tree<B: AltBoard, M: BoardMapper<B>>(
         self,
         root_board: &B,
         draw_depth: u32,
@@ -53,7 +53,7 @@ impl MuZeroSettings {
 
     // Continue expanding an existing tree.
     // TODO maybe unify this code with the async implementation written for the generator?
-    pub fn expand_tree<B: Board, M: BoardMapper<B>>(
+    pub fn expand_tree<B: AltBoard, M: BoardMapper<B>>(
         self,
         tree: &mut MuTree<B, M>,
         root_exec: &mut MuZeroRootExecutor<B, M>,
@@ -117,7 +117,7 @@ impl MuZeroSettings {
     }
 }
 
-pub struct MuZeroBot<B: Board, M: BoardMapper<B>> {
+pub struct MuZeroBot<B: AltBoard, M: BoardMapper<B>> {
     settings: MuZeroSettings,
     visits: u64,
     mapper: M,
@@ -125,7 +125,7 @@ pub struct MuZeroBot<B: Board, M: BoardMapper<B>> {
     expand_exec: MuZeroExpandExecutor<B, M>,
 }
 
-impl<B: Board, M: BoardMapper<B>> Debug for MuZeroBot<B, M> {
+impl<B: AltBoard, M: BoardMapper<B>> Debug for MuZeroBot<B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MuZeroBot")
             .field("settings", &self.settings)
@@ -135,7 +135,7 @@ impl<B: Board, M: BoardMapper<B>> Debug for MuZeroBot<B, M> {
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> MuZeroBot<B, M> {
+impl<B: AltBoard, M: BoardMapper<B>> MuZeroBot<B, M> {
     pub fn new(
         settings: MuZeroSettings,
         visits: u64,
@@ -153,7 +153,7 @@ impl<B: Board, M: BoardMapper<B>> MuZeroBot<B, M> {
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
+impl<B: AltBoard, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
     fn select_move(&mut self, board: &B) -> B::Move {
         let tree = self
             .settings

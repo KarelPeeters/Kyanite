@@ -6,14 +6,15 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use board_game::board::{Board, Outcome};
-use board_game::wdl::{POV, WDL};
+use board_game::pov::NonPov;
+use board_game::wdl::WDL;
 use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use serde::Serialize;
 
 use kz_core::mapping::bit_buffer::BitBuffer;
 use kz_core::mapping::BoardMapper;
-use kz_core::zero::node::ZeroValues;
+use kz_core::zero::values::ZeroValuesPov;
 use kz_util::math::kdl_divergence;
 
 use crate::simulation::{Position, Simulation};
@@ -79,9 +80,9 @@ struct Scalars {
     available_mv_count: usize,
     played_mv: isize,
     kdl_policy: f32,
-    final_values: ZeroValues,
-    zero_values: ZeroValues,
-    net_values: ZeroValues,
+    final_values: ZeroValuesPov,
+    zero_values: ZeroValuesPov,
+    net_values: ZeroValuesPov,
 }
 
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
@@ -181,7 +182,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 available_mv_count: used_policy_values.len(),
                 played_mv: played_mv_index.map_or(-1, |mv| mv as isize),
                 kdl_policy,
-                final_values: ZeroValues::from_outcome(outcome.pov(board.next_player()), moves_left as f32),
+                final_values: ZeroValuesPov::from_outcome(outcome.pov(board.next_player()), moves_left as f32),
                 zero_values: zero_evaluation.values,
                 net_values: net_evaluation.values,
             };
@@ -201,10 +202,10 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
             available_mv_count: 0,
             played_mv: -1,
             kdl_policy: f32::NAN,
-            final_values: ZeroValues::from_outcome(outcome.pov(final_board.next_player()), 0.0),
-            zero_values: ZeroValues::nan(),
+            final_values: ZeroValuesPov::from_outcome(outcome.pov(final_board.next_player()), 0.0),
+            zero_values: ZeroValuesPov::nan(),
             //TODO in theory we could ask the network, but this is only really meaningful for muzero
-            net_values: ZeroValues::nan(),
+            net_values: ZeroValuesPov::nan(),
         };
 
         self.append_position(&final_board, &scalars, &[], &[])?;

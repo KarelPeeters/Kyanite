@@ -8,7 +8,7 @@ use rand::thread_rng;
 
 use kz_core::mapping::BoardMapper;
 use kz_core::network::ZeroEvaluation;
-use kz_core::zero::node::ZeroValues;
+use kz_core::zero::values::ZeroValuesPov;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::simulation::{Position, Simulation};
 use kz_util::throughput::PrintThroughput;
@@ -56,11 +56,11 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
                 played_mv: mv,
                 zero_visits: 0,
                 net_evaluation: ZeroEvaluation {
-                    values: ZeroValues::nan(),
+                    values: ZeroValuesPov::nan(),
                     policy: Cow::Owned(vec![f32::NAN; mv_count]),
                 },
                 zero_evaluation: ZeroEvaluation {
-                    values: ZeroValues::nan(),
+                    values: ZeroValuesPov::nan(),
                     policy: Cow::Owned(policy),
                 },
             });

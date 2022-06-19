@@ -1,5 +1,5 @@
-use board_game::board::Board;
-use board_game::wdl::{Flip, OutcomeWDL, POV};
+use board_game::board::{Board, Outcome};
+use board_game::pov::{NonPov, Pov};
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
@@ -7,9 +7,10 @@ use rand::Rng;
 use kz_util::sequence::{choose_max_by_key, zip_eq_exact};
 
 use crate::network::ZeroEvaluation;
-use crate::zero::node::{Node, UctWeights, ZeroValues};
+use crate::zero::node::{Node, UctWeights};
 use crate::zero::range::IdxRange;
 use crate::zero::tree::Tree;
+use crate::zero::values::{ZeroValuesAbs, ZeroValuesPov};
 
 #[derive(Debug)]
 pub struct ZeroRequest<B> {
@@ -26,7 +27,7 @@ pub struct ZeroResponse<'a, B> {
 
 #[derive(Debug, Copy, Clone)]
 pub enum FpuMode {
-    Fixed(ZeroValues),
+    Fixed(ZeroValuesPov),
     Parent,
 }
 
@@ -51,7 +52,7 @@ pub fn zero_step_gather<B: Board>(
     //TODO what moves_left to pass here? does it matter?
     //  it's probably better to just switch to q-only fpu
     //  also this while propagating concept may just overcomplicating things
-    let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0);
+    let mut last_parent_values = ZeroValuesAbs::from_outcome(Outcome::Draw, 0.0);
 
     loop {
         // count each node as visited
@@ -59,9 +60,7 @@ pub fn zero_step_gather<B: Board>(
 
         // if the board is done backpropagate the real value
         if let Some(outcome) = curr_board.outcome() {
-            let outcome = outcome.pov(curr_board.next_player());
-            //TODO what value to use for moves_left?
-            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(outcome, 0.0));
+            tree_propagate_values(tree, curr_node, ZeroValuesAbs::from_outcome(outcome, 0.0));
             return None;
         }
 
@@ -86,27 +85,36 @@ pub fn zero_step_gather<B: Board>(
             Some(children) => children,
         };
 
-        // update fpu
+        // update fpu if we have any information
+        // TODO consider using a bigger threshold here?
+        // TODO should we set fpu to zero again if we have no information? -> no (?)
         if tree[curr_node].complete_visits > 0 {
-            fpu = tree[curr_node].values();
+            last_parent_values = tree[curr_node].values();
         }
-        //TODO should this be flip or parent? or maybe child?
-        fpu = fpu.flip();
+
+        // go to pov to ensure fixed fpu value is meaningful, quickly convert back to avoid mistakes
+        let curr_player = curr_board.next_player();
+        let used_fpu = fpu_mode.select(last_parent_values.pov(curr_player)).un_pov(curr_player);
 
         // continue selecting, pick the best child
         let parent_total_visits = tree[curr_node].total_visits();
-
         let selected = choose_max_by_key(
             children,
             |&child| {
                 let uct = tree[child]
-                    .uct(parent_total_visits, fpu_mode.select(fpu), use_value)
+                    .uct(
+                        parent_total_visits,
+                        last_parent_values.moves_left,
+                        used_fpu,
+                        use_value,
+                        curr_player,
+                    )
                     .total(weights);
                 N32::from_inner(uct)
             },
             rng,
         )
-            .expect("Board is not done, this node should have a child");
+        .expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
@@ -117,21 +125,23 @@ pub fn zero_step_gather<B: Board>(
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
 pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) {
-    // we don't explicitly assert that we're expecting this node since wdl already checks for net_wdl and virtual_visits
+    // whether we are indeed expecting this node is checked based on (net_values) and (virtual visits in propagate_values)
     let ZeroResponse {
         node: curr_node,
-        board: _,
+        board: curr_board,
         eval,
     } = response;
+    let curr_player = curr_board.next_player();
 
-    // wdl
+    // values
     assert!(
         tree[curr_node].net_values.is_none(),
         "Node {} was already evaluated by the network",
         curr_node
     );
-    tree[curr_node].net_values = Some(eval.values);
-    tree_propagate_values(tree, curr_node, eval.values);
+    let values_abs = eval.values.un_pov(curr_player);
+    tree[curr_node].net_values = Some(values_abs);
+    tree_propagate_values(tree, curr_node, values_abs);
 
     // policy
     let children = tree[curr_node]
@@ -144,7 +154,7 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) 
 }
 
 /// Propagate the given `wdl` up to the root.
-fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: ZeroValues) {
+fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: ZeroValuesAbs) {
     values = values.flip();
     let mut curr_index = node;
 
@@ -166,10 +176,10 @@ fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: 
 }
 
 impl FpuMode {
-    pub fn select(&self, parent_flipped: ZeroValues) -> ZeroValues {
+    pub fn select(&self, parent: ZeroValuesPov) -> ZeroValuesPov {
         match self {
             FpuMode::Fixed(values) => *values,
-            FpuMode::Parent => parent_flipped,
+            FpuMode::Parent => parent,
         }
     }
 }

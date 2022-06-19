@@ -1,6 +1,6 @@
 use std::iter;
 
-use board_game::board::Board;
+use board_game::board::AltBoard;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::executor::CudaExecutor;
@@ -16,7 +16,7 @@ use kz_util::display::display_option;
 use nn_graph::graph::SliceRange;
 use nn_graph::optimizer::OptimizerSettings;
 
-pub fn muzero_debug_utility<B: Board, M: BoardMapper<B>>(
+pub fn muzero_debug_utility<B: AltBoard, M: BoardMapper<B>>(
     path: &str,
     start: B,
     mapper: M,
@@ -30,7 +30,7 @@ pub fn muzero_debug_utility<B: Board, M: BoardMapper<B>>(
     }
 }
 
-unsafe fn muzero_debug_utility_inner<B: Board, M: BoardMapper<B>>(
+unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
     path: &str,
     start: B,
     mapper: M,

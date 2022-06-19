@@ -2,8 +2,8 @@ use std::cmp::{max, min};
 use std::fmt::{Display, Formatter};
 use std::ops::{Index, IndexMut};
 
-use board_game::board::Board;
-use board_game::wdl::Flip;
+use board_game::board::{AltBoard, Board};
+use board_game::pov::Pov;
 use itertools::Itertools;
 
 use kz_util::display::display_option;
@@ -11,7 +11,7 @@ use kz_util::display::display_option;
 use crate::mapping::BoardMapper;
 use crate::muzero::node::MuNode;
 use crate::network::ZeroEvaluation;
-use crate::zero::node::ZeroValues;
+use crate::zero::values::ZeroValuesPov;
 
 /// The result of a zero search.
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct MuTree<B, M> {
     pub(super) current_node_index: Option<usize>,
 }
 
-impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
+impl<B: AltBoard, M: BoardMapper<B>> MuTree<B, M> {
     pub fn new(root_board: B, draw_depth: u32, mapper: M) -> Self {
         assert!(!root_board.is_done(), "Cannot build tree for done board");
         assert_ne!(
@@ -83,8 +83,8 @@ impl<B: Board, M: BoardMapper<B>> MuTree<B, M> {
     }
 
     /// The values corresponding to `root_board` from the POV of `root_board.next_player`.
-    pub fn values(&self) -> ZeroValues {
-        self[0].values().parent()
+    pub fn values(&self) -> ZeroValuesPov {
+        self[0].values().parent_flip()
     }
 
     pub fn root_visits(&self) -> u64 {
@@ -170,7 +170,7 @@ impl Display for PolicyDisplay {
     }
 }
 
-impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
+impl<B: AltBoard, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tree = self.tree;
 
@@ -187,8 +187,8 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
             writeln!(
                 f,
                 "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
-                ZeroValues::FORMAT_SUMMARY,
-                ZeroValues::FORMAT_SUMMARY
+                ZeroValuesPov::FORMAT_SUMMARY,
+                ZeroValuesPov::FORMAT_SUMMARY
             )?;
         }
 
@@ -203,11 +203,11 @@ impl<B: Board, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
         let net_values = node
             .inner
             .as_ref()
-            .map_or_else(ZeroValues::nan, |inner| inner.net_values)
+            .map_or_else(ZeroValuesPov::nan, |inner| inner.net_values)
             .flip();
 
         let parent_visits = parent.map_or(node.visits, |p| p.visits);
-        let parent_fpu = parent.map_or(ZeroValues::nan(), |p| p.values().flip());
+        let parent_fpu = parent.map_or(ZeroValuesPov::nan(), |p| p.values().flip());
 
         let zero_policy = if parent_visits > 0 {
             (node.visits as f32) / (parent_visits as f32 - 1.0)

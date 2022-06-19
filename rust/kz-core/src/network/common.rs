@@ -1,9 +1,10 @@
 use std::borrow::{Borrow, Cow};
 
 use board_game::board::Board;
+use board_game::pov::ScalarPov;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
-use ndarray::{ArrayView1, ArrayView2, s};
+use ndarray::{s, ArrayView1, ArrayView2};
 
 use nn_graph::graph::Graph;
 use nn_graph::shape;
@@ -11,7 +12,7 @@ use nn_graph::shape::{Shape, Size};
 
 use crate::mapping::{BoardMapper, PolicyMapper};
 use crate::network::ZeroEvaluation;
-use crate::zero::node::ZeroValues;
+use crate::zero::values::ZeroValuesPov;
 
 pub fn decode_output<B: Board, P: PolicyMapper<B>>(
     policy_mapper: P,
@@ -85,7 +86,11 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
             softmax_in_place(&mut policy);
 
             // combine everything
-            let values = ZeroValues { value, wdl, moves_left };
+            let values = ZeroValuesPov {
+                value: ScalarPov::new(value),
+                wdl,
+                moves_left,
+            };
             ZeroEvaluation {
                 values,
                 policy: Cow::Owned(policy),
@@ -157,7 +162,7 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
     }
 }
 
-pub fn zero_values_from_scalars(scalars: &[f32]) -> ZeroValues {
+pub fn zero_values_from_scalars(scalars: &[f32]) -> ZeroValuesPov {
     assert_eq!(scalars.len(), 5, "Expected 5 scalars, got len {}", scalars.len());
 
     let value = scalars[0].tanh();
@@ -167,8 +172,8 @@ pub fn zero_values_from_scalars(scalars: &[f32]) -> ZeroValues {
 
     let moves_left = scalars[4];
 
-    ZeroValues {
-        value,
+    ZeroValuesPov {
+        value: ScalarPov::new(value),
         wdl: WDL::new(wdl[0], wdl[1], wdl[2]),
         moves_left,
     }

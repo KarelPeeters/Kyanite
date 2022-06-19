@@ -23,7 +23,7 @@ use kz_core::mapping::ttt::TTTStdMapper;
 use kz_core::mapping::BoardMapper;
 use kz_core::network::dummy::{uniform_policy, uniform_values};
 use kz_core::network::ZeroEvaluation;
-use kz_core::zero::node::ZeroValues;
+use kz_core::zero::values::ZeroValuesPov;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::server::protocol::Game;
 use kz_selfplay::simulation::{Position, Simulation};
@@ -127,7 +127,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
                     .collect();
 
                 let zero_eval = ZeroEvaluation {
-                    values: ZeroValues::from_outcome(outcome, 0.0),
+                    values: ZeroValuesPov::from_outcome(outcome, 0.0),
                     policy: Cow::Owned(policy),
                 };
 

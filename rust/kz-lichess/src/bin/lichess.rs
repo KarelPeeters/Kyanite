@@ -217,7 +217,7 @@ async fn make_move(
         let message = format!(
             "zero: {:.2?}, net: {:.2?}",
             tree.values().wdl.to_slice(),
-            tree[0].net_values.unwrap().wdl.to_slice(),
+            tree.net_values().unwrap().wdl.to_slice(),
         );
         println!("Sending {:?}", message);
         lichess.write_in_bot_chat(&game.game_id, "player", &message).await?;
