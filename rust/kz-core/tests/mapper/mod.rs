@@ -3,10 +3,11 @@ use std::panic::resume_unwind;
 use board_game::board::Board;
 use internal_iterator::InternalIterator;
 
-use kz_core::mapping::{BoardMapper, InputMapper, PolicyMapper};
 use kz_core::mapping::bit_buffer::BitBuffer;
+use kz_core::mapping::{BoardMapper, InputMapper, PolicyMapper};
 use kz_util::display::display_option;
 
+mod arimaa;
 mod ataxx;
 mod chess_flat_gen;
 mod chess_manual_conv;
