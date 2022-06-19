@@ -155,16 +155,17 @@ impl<N> Node<N> {
         let total_value = select_value(self.sum_values, use_value).pov(pov).value;
         let node_value = (total_value - self.virtual_visits as f32) / total_visits as f32;
 
-        let (v, m) = if total_visits == 0 {
-            // don't even bother with moves_left if we don't have any information
-            (fpu_value, 0.0)
-        } else {
-            // this node has been visited, so we know parent_moves_left is also a useful value
-            let m = self.values().moves_left - parent_moves_left - 1.0;
-            (node_value, m)
-        };
+        let v = if total_visits == 0 { fpu_value } else { node_value };
 
         let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
+
+        let m = if self.complete_visits == 0 {
+            // don't even bother with moves_left if we don't have any information
+            0.0
+        } else {
+            // this node has been visited, so we know parent_moves_left is also a useful value
+            self.values().moves_left - parent_moves_left - 1.0
+        };
 
         Uct { v, u, m }
     }

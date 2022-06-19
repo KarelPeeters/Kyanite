@@ -155,7 +155,6 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) 
 
 /// Propagate the given `wdl` up to the root.
 fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: ZeroValuesAbs) {
-    values = values.flip();
     let mut curr_index = node;
 
     loop {

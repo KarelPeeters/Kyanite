@@ -359,7 +359,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     tree: self.tree,
 
                     node: child,
-                    curr_board: curr_board.clone_and_play(node.last_move.unwrap()),
+                    curr_board: curr_board.clone_and_play(tree[child].last_move.unwrap()),
                     parent_player: curr_player,
                     curr_depth: self.curr_depth + 1,
 
