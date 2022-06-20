@@ -61,7 +61,7 @@ class Game:
             game = _chess_hist_game(int(m.group(1)))
 
         if game is None:
-            raise KeyError("Game '{}' not found", name)
+            raise KeyError(f"Game '{name}' not found")
 
         GAMES[name] = game
         assert game.name == name
