@@ -37,7 +37,7 @@ impl InputMapper<ArimaaBoard> for ArimaaSplitMapper {
         for player in [next_player, next_player.other()] {
             for piece in Piece::ALL {
                 let board_raw = board.bits_for_piece(piece, player);
-                let board_pov = pov_ranks(board_raw, next_player);
+                let board_pov = board_from_pov(board_raw, next_player);
                 bools.push_block(board_pov.0)
             }
         }
@@ -47,8 +47,10 @@ impl InputMapper<ArimaaBoard> for ArimaaSplitMapper {
         append_push_pull_planes(bools, push, next_player);
 
         // placement and traps
-        bools.push_block(pov_ranks(board.placement(), next_player).0);
-        bools.push_block(pov_ranks(ArimaaBoard::TRAP_MASK, next_player).0);
+        // TODO fix inconsistent placement order in board
+        //   gold places middle first then edge, silver the other way around
+        bools.push_block(board_from_pov(board.placement(), next_player).0);
+        bools.push_block(board_from_pov(ArimaaBoard::TRAP_MASK, next_player).0);
 
         // main scalars
         scalars.push(place as u8 as f32);
@@ -74,7 +76,7 @@ fn append_push_pull_planes(bools: &mut BitBuffer, pair: Option<(Square, Piece)>,
         Some((square, piece)) => (BitBoard8(square.as_bit_board()), Some(piece)),
     };
 
-    let board = pov_ranks(board_raw, pov);
+    let board = board_from_pov(board_raw, pov);
 
     for curr in Piece::ALL {
         if piece == Some(curr) {
@@ -87,17 +89,18 @@ fn append_push_pull_planes(bools: &mut BitBuffer, pair: Option<(Square, Piece)>,
 
 impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
     fn policy_shape(&self) -> &[usize] {
-        &[1 + 6 + 256]
+        &[1 + 6 + 4 * 8 * 8]
     }
 
-    fn move_to_index(&self, _: &ArimaaBoard, mv: Action) -> Option<usize> {
+    fn move_to_index(&self, board: &ArimaaBoard, mv: Action) -> Option<usize> {
         let index = match mv {
             Action::Pass => 0,
             Action::Place(piece) => {
                 let piece_index = Piece::ALL.iter().index_of(&piece).unwrap();
                 1 + piece_index
             }
-            Action::Move(square, direction) => {
+            Action::Move(square_abs, direction) => {
+                let square = square_from_pov(square_abs, board.next_player());
                 let direction_index = Direction::ALL.iter().index_of(&direction).unwrap();
                 let tensor_index = direction_index * 64 + square.index();
                 1 + Piece::ALL.len() + tensor_index
@@ -107,7 +110,7 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
         Some(index)
     }
 
-    fn index_to_move(&self, _: &ArimaaBoard, index: usize) -> Option<Action> {
+    fn index_to_move(&self, board: &ArimaaBoard, index: usize) -> Option<Action> {
         let piece_count = Piece::ALL.len();
 
         let mv = if index == 0 {
@@ -117,10 +120,11 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
         } else {
             let tensor_index = index - 1 - piece_count;
 
-            let square = Square::from_index((tensor_index % 64) as u8);
+            let square_pov = Square::from_index((tensor_index % 64) as u8);
             let direction = Direction::ALL[tensor_index / 64];
 
-            Action::Move(square, direction)
+            let square_abs = square_from_pov(square_pov, board.next_player());
+            Action::Move(square_abs, direction)
         };
 
         Some(mv)
@@ -141,9 +145,16 @@ impl MuZeroMapper<ArimaaBoard> for ArimaaSplitMapper {
     }
 }
 
-fn pov_ranks(board: BitBoard8, player: Player) -> BitBoard8 {
+fn board_from_pov(board: BitBoard8, player: Player) -> BitBoard8 {
     match player {
         Player::A => board,
         Player::B => board.flip_y(),
+    }
+}
+
+fn square_from_pov(square: Square, player: Player) -> Square {
+    match player {
+        Player::A => square,
+        Player::B => Square::from_bit_board(BitBoard8(square.as_bit_board()).flip_y().0),
     }
 }
