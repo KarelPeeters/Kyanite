@@ -76,11 +76,11 @@ fn append_push_pull_planes(bools: &mut BitBuffer, pair: Option<(Square, Piece)>,
         Some((square, piece)) => (BitBoard8(square.as_bit_board()), Some(piece)),
     };
 
-    let board = board_from_pov(board_raw, pov);
+    let board_pov = board_from_pov(board_raw, pov);
 
     for curr in Piece::ALL {
         if piece == Some(curr) {
-            bools.push_block(board.0)
+            bools.push_block(board_pov.0)
         } else {
             bools.push_block(0);
         }
@@ -99,10 +99,13 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
                 let piece_index = Piece::ALL.iter().index_of(&piece).unwrap();
                 1 + piece_index
             }
-            Action::Move(square_abs, direction) => {
-                let square = square_from_pov(square_abs, board.next_player());
-                let direction_index = Direction::ALL.iter().index_of(&direction).unwrap();
-                let tensor_index = direction_index * 64 + square.index();
+            Action::Move(square_abs, direction_abs) => {
+                let pov = board.next_player();
+                let square_pov = square_from_pov(square_abs, pov);
+                let direction_pov = direction_from_pov(direction_abs, pov);
+
+                let direction_index = Direction::ALL.iter().index_of(&direction_pov).unwrap();
+                let tensor_index = direction_index * 64 + square_pov.index();
                 1 + Piece::ALL.len() + tensor_index
             }
         };
@@ -121,10 +124,13 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
             let tensor_index = index - 1 - piece_count;
 
             let square_pov = Square::from_index((tensor_index % 64) as u8);
-            let direction = Direction::ALL[tensor_index / 64];
+            let direction_pov = Direction::ALL[tensor_index / 64];
 
-            let square_abs = square_from_pov(square_pov, board.next_player());
-            Action::Move(square_abs, direction)
+            let pov = board.next_player();
+            let square_abs = square_from_pov(square_pov, pov);
+            let direction_abs = direction_from_pov(direction_pov, pov);
+
+            Action::Move(square_abs, direction_abs)
         };
 
         Some(mv)
@@ -156,5 +162,15 @@ fn square_from_pov(square: Square, player: Player) -> Square {
     match player {
         Player::A => square,
         Player::B => Square::from_bit_board(BitBoard8(square.as_bit_board()).flip_y().0),
+    }
+}
+
+fn direction_from_pov(direction: Direction, player: Player) -> Direction {
+    match (player, direction) {
+        (Player::A, direction) => direction,
+        (Player::B, Direction::Up) => Direction::Down,
+        (Player::B, Direction::Down) => Direction::Up,
+        (Player::B, Direction::Left) => Direction::Left,
+        (Player::B, Direction::Right) => Direction::Right,
     }
 }
