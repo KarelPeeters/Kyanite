@@ -2,15 +2,17 @@ use std::cmp::{max, min};
 use std::fmt::{Display, Formatter};
 use std::ops::{Index, IndexMut};
 
-use board_game::board::{Board, Outcome};
-use board_game::wdl::{Flip, OutcomeWDL};
+use board_game::board::{Board, Outcome, Player};
+use board_game::pov::NonPov;
+use board_game::wdl::OutcomeWDL;
 use itertools::Itertools;
 
 use kz_util::display::display_option;
 
 use crate::network::ZeroEvaluation;
-use crate::zero::node::{Node, ZeroValues};
+use crate::zero::node::Node;
 use crate::zero::range::IdxRange;
+use crate::zero::values::{ZeroValuesAbs, ZeroValuesPov};
 
 /// The result of a zero search.
 #[derive(Debug, Clone)]
@@ -71,8 +73,14 @@ impl<B: Board> Tree<B> {
     }
 
     /// The values corresponding to `root_board` from the POV of `root_board.next_player`.
-    pub fn values(&self) -> ZeroValues {
-        self[0].values().parent()
+    pub fn values(&self) -> ZeroValuesPov {
+        self[0].values().pov(self.root_board.next_player())
+    }
+
+    pub fn net_values(&self) -> Option<ZeroValuesPov> {
+        self[0]
+            .net_values
+            .map(|values| values.pov(self.root_board.next_player()))
     }
 
     pub fn root_visits(&self) -> u64 {
@@ -100,7 +108,7 @@ impl<B: Board> Tree<B> {
     }
 
     /// Return the policy vector for the root node.
-    pub fn policy(&self) -> impl Iterator<Item=f32> + '_ {
+    pub fn policy(&self) -> impl Iterator<Item = f32> + '_ {
         assert!(self.len() > 1, "Must have run for at least 1 iteration");
 
         self[0]
@@ -182,8 +190,12 @@ impl<B: Board> Tree<B> {
     pub fn display(&self, max_depth: usize, sort: bool, max_children: usize, expand_all: bool) -> TreeDisplay<B> {
         TreeDisplay {
             tree: self,
+
             node: 0,
+            curr_board: self.root_board.clone(),
+            parent_player: self.root_board.next_player(),
             curr_depth: 0,
+
             max_depth,
             max_children,
             sort,
@@ -195,8 +207,12 @@ impl<B: Board> Tree<B> {
 #[derive(Debug)]
 pub struct TreeDisplay<'a, B: Board> {
     tree: &'a Tree<B>,
+
     node: usize,
+    curr_board: B,
+    parent_player: Player,
     curr_depth: usize,
+
     max_depth: usize,
     max_children: usize,
     sort: bool,
@@ -218,6 +234,9 @@ impl Display for PolicyDisplay {
 impl<B: Board> Display for TreeDisplay<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tree = self.tree;
+        let parent_player = self.parent_player;
+        let curr_board = &self.curr_board;
+        let curr_player = curr_board.next_player();
 
         if self.curr_depth == 0 {
             let data = tree.values();
@@ -232,8 +251,8 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             writeln!(
                 f,
                 "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
-                ZeroValues::FORMAT_SUMMARY,
-                ZeroValues::FORMAT_SUMMARY
+                ZeroValuesPov::FORMAT_SUMMARY,
+                ZeroValuesPov::FORMAT_SUMMARY
             )?;
         }
 
@@ -244,7 +263,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let node = &self.tree[self.node];
         let parent = node.parent.map(|p| &self.tree[p]);
 
-        let terminal = match node.outcome() {
+        let terminal = match node.outcome().map(|outcome| outcome.pov(curr_player)) {
             Ok(None) => "N",
             Ok(Some(OutcomeWDL::Win)) => "W",
             Ok(Some(OutcomeWDL::Draw)) => "D",
@@ -258,12 +277,12 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             String::default()
         };
 
-        let node_values = node.values();
-        let net_values = node.net_values.unwrap_or_else(ZeroValues::nan).flip();
+        let node_values = node.values().pov(parent_player);
+        let net_values = node.net_values.unwrap_or_else(ZeroValuesAbs::nan).pov(parent_player);
 
         let parent_complete_visits = parent.map_or(f32::NAN, |p| p.complete_visits as f32);
         let parent_total_visits = parent.map_or(node.total_visits(), |p| p.total_visits());
-        let parent_fpu = parent.map_or(ZeroValues::nan(), |p| p.values().flip());
+        let parent_values = parent.map_or(ZeroValuesAbs::nan(), |p| p.values());
 
         let zero_policy = if parent_complete_visits > 0.0 {
             (node.complete_visits as f32) / (parent_complete_visits - 1.0)
@@ -272,18 +291,18 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         };
 
         // TODO use the settings actually used to build the tree here
-        let uct = node.uct(parent_total_visits, parent_fpu, false);
-
-        let player = if self.curr_depth % 2 == 0 {
-            tree.root_board.next_player().other()
-        } else {
-            tree.root_board.next_player()
-        };
+        let uct = node.uct(
+            parent_total_visits,
+            parent_values.moves_left,
+            parent_values,
+            false,
+            parent_player,
+        );
 
         writeln!(
             f,
             "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
-            player.to_char(),
+            curr_player.to_char(),
             display_option(node.last_move),
             terminal,
             node.complete_visits,
@@ -338,8 +357,12 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
 
                 let child_display = TreeDisplay {
                     tree: self.tree,
+
                     node: child,
+                    curr_board: curr_board.clone_and_play(tree[child].last_move.unwrap()),
+                    parent_player: curr_player,
                     curr_depth: self.curr_depth + 1,
+
                     max_depth: next_max_depth,
                     max_children: self.max_children,
                     sort: self.sort,

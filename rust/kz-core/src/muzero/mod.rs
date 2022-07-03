@@ -1,6 +1,5 @@
+use crate::zero::values::ZeroValuesPov;
 use std::borrow::{Borrow, Cow};
-
-use crate::zero::node::ZeroValues;
 
 pub mod node;
 pub mod tree;
@@ -12,7 +11,7 @@ pub mod wrapper;
 #[derive(Debug, Clone)]
 pub struct MuZeroEvaluation<'a> {
     /// The (normalized) values.
-    pub values: ZeroValues,
+    pub values: ZeroValuesPov,
 
     /// The (un-normalized) policy "vector", containing all possible moves.
     pub policy_logits: Cow<'a, [f32]>,

@@ -1,4 +1,5 @@
-use board_game::games::ataxx::{AtaxxBoard, Coord, Move};
+use board_game::games::ataxx::{AtaxxBoard, Move};
+use board_game::util::coord::Coord8;
 
 use crate::mapping::bit_buffer::BitBuffer;
 use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
@@ -33,9 +34,9 @@ impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
 
     fn encode_input(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
         let (next_tiles, other_tiles) = board.tiles_pov();
-        bools.extend(Coord::all(self.size).map(|c| next_tiles.has(c)));
-        bools.extend(Coord::all(self.size).map(|c| other_tiles.has(c)));
-        bools.extend(Coord::all(self.size).map(|c| board.gaps().has(c)));
+        bools.extend(board.full_mask().into_iter().map(|c| next_tiles.has(c)));
+        bools.extend(board.full_mask().into_iter().map(|c| other_tiles.has(c)));
+        bools.extend(board.full_mask().into_iter().map(|c| board.gaps().has(c)));
     }
 }
 
@@ -78,7 +79,7 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
 
         let area = (size * size) as usize;
         let to_index = (index % area) as u8;
-        let to = Coord::from_xy(to_index % size, to_index / size);
+        let to = Coord8::from_xy(to_index % size, to_index / size);
 
         if index < area {
             Some(Move::Copy { to })
@@ -89,7 +90,7 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
             let fy = to.y() as i32 + dy as i32;
 
             if (0..size as i32).contains(&fx) && (0..size as i32).contains(&fy) {
-                let from = Coord::from_xy(fx as u8, fy as u8);
+                let from = Coord8::from_xy(fx as u8, fy as u8);
                 Some(Move::Jump { from, to })
             } else {
                 None

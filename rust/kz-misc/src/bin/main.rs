@@ -1,9 +1,8 @@
 use std::cmp::{max, min, Reverse};
 use std::collections::HashSet;
 
-use board_game::board::Board;
+use board_game::board::{Board, Outcome, Player};
 use board_game::games::chess::ChessBoard;
-use board_game::wdl::{Flip, OutcomeWDL};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
 };
@@ -17,16 +16,17 @@ use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
 use tui::style::{Color, Modifier, Style};
-use tui::Terminal;
 use tui::widgets::Widget;
+use tui::Terminal;
 
 use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::dummy::DummyNetwork;
-use kz_core::zero::node::{Uct, UctWeights, ZeroValues};
+use kz_core::zero::node::{Uct, UctWeights};
 use kz_core::zero::step::FpuMode;
 use kz_core::zero::tree::Tree;
+use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_util::display::display_option_empty;
 use nn_graph::onnx::load_graph_from_onnx_path;
@@ -227,12 +227,13 @@ impl<B: Board> State<B> {
             ">"
         };
 
+        //TODO convert to pov W D L again?
         let terminal = match node.outcome() {
             Err(_) => '?',
             Ok(None) => '.',
-            Ok(Some(OutcomeWDL::Win)) => 'W',
-            Ok(Some(OutcomeWDL::Draw)) => 'D',
-            Ok(Some(OutcomeWDL::Loss)) => 'L',
+            Ok(Some(Outcome::WonBy(Player::A))) => 'A',
+            Ok(Some(Outcome::Draw)) => 'D',
+            Ok(Some(Outcome::WonBy(Player::B))) => 'B',
         };
 
         let mut result = vec![];
@@ -248,11 +249,14 @@ impl<B: Board> State<B> {
         }
 
         {
+            // TODO convert to pov again?
+            // TODO fix uct again
             let zero = node.values();
-            let net = node.net_values.unwrap_or(ZeroValues::nan()).flip();
+            let net = node.net_values.unwrap_or(ZeroValuesAbs::nan());
             let (uct, zero_policy) = if let Some(parent) = node.parent {
                 let parent = &self.tree[parent];
-                let uct = node.uct(parent.total_visits(), parent.values().flip(), false);
+                // let uct = node.uct(parent.total_visits(), parent.values(), false);
+                let uct = Uct::nan();
                 let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0);
                 (uct, zero_policy)
             } else {
@@ -260,14 +264,14 @@ impl<B: Board> State<B> {
             };
 
             let values = [
-                zero.wdl.win,
-                zero.wdl.draw,
-                zero.wdl.loss,
+                zero.wdl_abs.win_a,
+                zero.wdl_abs.draw,
+                zero.wdl_abs.win_b,
                 zero.moves_left,
                 zero_policy,
-                net.wdl.win,
-                net.wdl.draw,
-                net.wdl.loss,
+                net.wdl_abs.win_a,
+                net.wdl_abs.draw,
+                net.wdl_abs.win_b,
                 net.moves_left,
                 node.net_policy,
                 uct.v,
@@ -291,14 +295,14 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Move", "", false, Color::Gray),
     ("T", "", false, Color::Gray),
     ("Visits", "", true, Color::Gray),
-    ("Zero", "W", true, Color::Green),
+    ("Zero", "A", true, Color::Green),
     ("Zero", "D", true, Color::DarkGray),
-    ("Zero", "L", true, Color::Red),
+    ("Zero", "B", true, Color::Red),
     ("Zero", "M", true, Color::Yellow),
     ("Zero", "P", true, Color::LightBlue),
-    ("Net", "W", true, Color::Green),
+    ("Net", "A", true, Color::Green),
     ("Net", "D", true, Color::DarkGray),
-    ("Net", "L", true, Color::Red),
+    ("Net", "B", true, Color::Red),
     ("Net", "M", true, Color::Yellow),
     ("Net", "P", true, Color::LightBlue),
     ("Uct", "V", true, Color::Green),

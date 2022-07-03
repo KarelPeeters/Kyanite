@@ -1,5 +1,6 @@
-use board_game::board::Board;
-use board_game::wdl::{Flip, OutcomeWDL};
+use board_game::board::AltBoard;
+use board_game::pov::Pov;
+use board_game::wdl::OutcomeWDL;
 use decorum::N32;
 use internal_iterator::{InternalIterator, IteratorExt};
 use itertools::Itertools;
@@ -11,9 +12,10 @@ use crate::mapping::BoardMapper;
 use crate::muzero::node::{MuNode, MuNodeInner};
 use crate::muzero::tree::MuTree;
 use crate::muzero::MuZeroEvaluation;
-use crate::zero::node::{UctWeights, ZeroValues};
+use crate::zero::node::UctWeights;
 use crate::zero::range::IdxRange;
 use crate::zero::step::FpuMode;
+use crate::zero::values::ZeroValuesPov;
 
 #[derive(Debug)]
 pub enum MuZeroRequest<B> {
@@ -41,7 +43,7 @@ pub struct MuZeroResponse<'a> {
     pub eval: MuZeroEvaluation<'a>,
 }
 
-pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
+pub fn muzero_step_gather<B: AltBoard, M: BoardMapper<B>>(
     tree: &mut MuTree<B, M>,
     weights: UctWeights,
     use_value: bool,
@@ -61,7 +63,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     }
 
     let mut curr_node = 0;
-    let mut fpu = ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0);
+    let mut fpu = ZeroValuesPov::from_outcome(OutcomeWDL::Draw, 0.0);
     let mut depth = 0;
 
     let mut last_move_index = None;
@@ -70,7 +72,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
     loop {
         if depth >= tree.draw_depth {
             //TODO what value to use for moves_left?
-            tree_propagate_values(tree, curr_node, ZeroValues::from_outcome(OutcomeWDL::Draw, 0.0));
+            tree_propagate_values(tree, curr_node, ZeroValuesPov::from_outcome(OutcomeWDL::Draw, 0.0));
             return None;
         }
 
@@ -123,7 +125,7 @@ pub fn muzero_step_gather<B: Board, M: BoardMapper<B>>(
 /// The second half of a step. Applies a network evaluation to the given node,
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
-pub fn muzero_step_apply<B: Board, M: BoardMapper<B>>(
+pub fn muzero_step_apply<B: AltBoard, M: BoardMapper<B>>(
     tree: &mut MuTree<B, M>,
     top_moves: usize,
     response: MuZeroResponse,
@@ -194,7 +196,7 @@ fn create_child_nodes(
 }
 
 /// Propagate the given `values` up to the root.
-fn tree_propagate_values<B: Board, M>(tree: &mut MuTree<B, M>, node: usize, mut values: ZeroValues) {
+fn tree_propagate_values<B: AltBoard, M>(tree: &mut MuTree<B, M>, node: usize, mut values: ZeroValuesPov) {
     values = values.flip();
     let mut curr_index = node;
 
@@ -209,6 +211,6 @@ fn tree_propagate_values<B: Board, M>(tree: &mut MuTree<B, M>, node: usize, mut 
             None => break,
         };
 
-        values = values.parent();
+        values = values.parent_flip();
     }
 }

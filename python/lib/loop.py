@@ -414,5 +414,6 @@ class LoopBuffer:
             batch_size,
             unroll_steps=unroll_steps,
             include_final=include_final,
-            threads=1
+            threads=1,
+            include_final_for_each=False,
         )

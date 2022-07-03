@@ -3,7 +3,8 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
 
-use board_game::board::Board;
+use board_game::board::{AltBoard, Board};
+use board_game::games::arimaa::ArimaaBoard;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
@@ -14,6 +15,7 @@ use flume::{Receiver, Sender};
 use itertools::Itertools;
 
 use cuda_sys::wrapper::handle::Device;
+use kz_core::mapping::arimaa::ArimaaSplitMapper;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessStdMapper};
 use kz_core::mapping::sttt::STTTStdMapper;
@@ -103,7 +105,7 @@ fn selfplay_start_dispatch_game(
     //  is it actually that much? -> investigate with objdump or similar
     //  would it be relatively easy to delay this dispatch some more?
     match game {
-        Game::TTT => selfplay_start_dispatch_spec(
+        Game::TTT => selfplay_start_dispatch_spec_alt(
             game,
             devices,
             startup_settings,
@@ -112,7 +114,7 @@ fn selfplay_start_dispatch_game(
             reader,
             writer,
         ),
-        Game::STTT => selfplay_start_dispatch_spec(
+        Game::STTT => selfplay_start_dispatch_spec_alt(
             game,
             devices,
             startup_settings,
@@ -121,7 +123,7 @@ fn selfplay_start_dispatch_game(
             reader,
             writer,
         ),
-        Game::Ataxx { size } => selfplay_start_dispatch_spec(
+        Game::Ataxx { size } => selfplay_start_dispatch_spec_alt(
             game,
             devices,
             startup_settings,
@@ -130,7 +132,7 @@ fn selfplay_start_dispatch_game(
             reader,
             writer,
         ),
-        Game::Chess => selfplay_start_dispatch_spec(
+        Game::Chess => selfplay_start_dispatch_spec_alt(
             game,
             devices,
             startup_settings,
@@ -139,7 +141,7 @@ fn selfplay_start_dispatch_game(
             reader,
             writer,
         ),
-        Game::ChessHist { length } => selfplay_start_dispatch_spec(
+        Game::ChessHist { length } => selfplay_start_dispatch_spec_alt(
             game,
             devices,
             startup_settings,
@@ -148,10 +150,23 @@ fn selfplay_start_dispatch_game(
             reader,
             writer,
         ),
+        Game::ArimaaSplit => selfplay_start_dispatch_spec_non_alt(
+            game,
+            devices,
+            startup_settings,
+            ArimaaBoard::default,
+            ArimaaSplitMapper,
+            reader,
+            writer,
+        ),
     }
 }
 
-fn selfplay_start_dispatch_spec<B: Board, M: BoardMapper<B> + 'static, F: Fn() -> B + Send + Sync + Clone + 'static>(
+fn selfplay_start_dispatch_spec_alt<
+    B: AltBoard,
+    M: BoardMapper<B> + 'static,
+    F: Fn() -> B + Send + Sync + Clone + 'static,
+>(
     game: Game,
     devices: Vec<Device>,
     startup: StartupSettings,
@@ -171,6 +186,35 @@ fn selfplay_start_dispatch_spec<B: Board, M: BoardMapper<B> + 'static, F: Fn() -
             writer,
             MuZeroSpecialization,
         );
+    } else {
+        selfplay_start(
+            game,
+            devices,
+            startup,
+            mapper,
+            start_pos,
+            reader,
+            writer,
+            AlphaZeroSpecialization,
+        );
+    }
+}
+
+fn selfplay_start_dispatch_spec_non_alt<
+    B: Board,
+    M: BoardMapper<B> + 'static,
+    F: Fn() -> B + Send + Sync + Clone + 'static,
+>(
+    game: Game,
+    devices: Vec<Device>,
+    startup: StartupSettings,
+    start_pos: F,
+    mapper: M,
+    reader: BufReader<impl Read + Send>,
+    writer: BufWriter<impl Write + Send>,
+) {
+    if startup.muzero {
+        panic!("MuZero only supports alternating boards for now");
     } else {
         selfplay_start(
             game,

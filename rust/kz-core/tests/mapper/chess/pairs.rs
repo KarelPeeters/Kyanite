@@ -1,6 +1,6 @@
 use board_game::board::Board;
+use board_game::chess::{ChessMove, Piece, Square};
 use board_game::games::chess::{ChessBoard, Rules};
-use chess::{ChessMove, Piece, Square};
 
 use kz_core::mapping::chess::{ChessHistoryMapper, ChessLegacyConvPolicyMapper, ChessStdMapper, ClassifiedPovMove};
 use kz_core::mapping::PolicyMapper;
@@ -18,7 +18,7 @@ fn queen_distance_white() {
     // mostly empty with white queen on A1
     let board = board("8/8/8/6k1/8/6K1/8/Q7 w - - 0 1");
 
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (Some(0 * 64), Some(ChessMove::new(Square::A1, Square::A2, None))),
@@ -37,7 +37,7 @@ fn queen_distance_black() {
     // mostly empty with black queen on A8
     let board = board("q7/8/8/6k1/8/6K1/8/8 b - - 0 1");
 
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (Some(0 * 64), Some(ChessMove::new(Square::A8, Square::A7, None))),
@@ -57,7 +57,7 @@ fn queen_direction_white() {
     let board = board("8/8/6k1/8/3Q4/6K1/8/8 w - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (
@@ -102,7 +102,7 @@ fn queen_direction_black() {
     let board = board("8/8/6k1/3q4/8/6K1/8/8 b - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (
@@ -147,7 +147,7 @@ fn knight_direction_white() {
     let board = board("8/8/6k1/8/3N4/6K1/8/8 w - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (Some(56 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E6, None))),
@@ -168,7 +168,7 @@ fn knight_direction_black() {
     let board = board("8/8/6k1/3n4/8/6K1/8/8 b - - 0 1");
 
     let d4 = Square::D4.to_index();
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             (Some(56 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E3, None))),
@@ -188,7 +188,7 @@ fn white_potential_promotions() {
     // lots of promotion opportunities for white
     let board = board("r1r5/1P4R1/5RNP/2k5/5K2/pnr5/1r4p1/5R1R w - - 0 1");
 
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             // rook, no promotion
@@ -269,7 +269,7 @@ fn black_potential_promotions() {
     let board = board("r1r5/1P4R1/5RNP/2k5/5K2/pnr5/1r4p1/5R1R b - - 0 1");
 
     // careful, move indices are from the POV of black!
-    test_conv_policy_pairs(
+    test_pairs(
         &board,
         &[
             // rook, no promotion
@@ -349,7 +349,7 @@ fn en_passant() {
     let white_board = board("8/8/5k2/1pP5/8/5K2/8/8 w - b6 0 2");
     let black_board = board("8/8/5k2/8/1pP5/5K2/8/8 b - c3 0 1");
 
-    test_conv_policy_pairs(
+    test_pairs(
         &white_board,
         &[(
             Some((7 * 7 + 0) * 64 + Square::C5.to_index()),
@@ -358,7 +358,7 @@ fn en_passant() {
     );
 
     // careful, move indices are from the POV of black!
-    test_conv_policy_pairs(
+    test_pairs(
         &black_board,
         &[(
             Some((1 * 7 + 0) * 64 + Square::B5.to_index()),
@@ -373,7 +373,7 @@ fn castles() {
     let white_board = board("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
     let black_board = board("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
 
-    test_conv_policy_pairs(
+    test_pairs(
         &white_board,
         &[
             (
@@ -388,7 +388,7 @@ fn castles() {
     );
 
     // careful, move indices are from the POV of black!
-    test_conv_policy_pairs(
+    test_pairs(
         &black_board,
         &[
             (
@@ -407,7 +407,7 @@ fn board(fen: &str) -> ChessBoard {
     ChessBoard::new_without_history_fen(fen, Rules::default())
 }
 
-fn test_conv_policy_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
+fn test_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
     // test other mapper with a variety of chess boards
     test_valid_mapping(ChessStdMapper, board);
     test_valid_policy_mapping(ChessLegacyConvPolicyMapper, board);

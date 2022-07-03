@@ -77,6 +77,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arimaa_engine_step"
+version = "1.0.1"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -191,6 +201,7 @@ dependencies = [
 name = "board-game"
 version = "0.5.0"
 dependencies = [
+ "arimaa_engine_step",
  "cast_trait",
  "chess",
  "decorum",
@@ -198,6 +209,7 @@ dependencies = [
  "itertools",
  "nom",
  "num-traits",
+ "once_cell",
  "rand 0.8.5",
  "rand_xoshiro",
  "rayon",
@@ -1215,7 +1227,6 @@ dependencies = [
  "async-trait",
  "board-game",
  "bytemuck",
- "chess",
  "crossbeam",
  "cuda-nn-eval",
  "cuda-sys",
@@ -1261,7 +1272,6 @@ dependencies = [
  "board-game",
  "bytemuck",
  "bzip2",
- "chess",
  "clap 3.1.12",
  "crossbeam",
  "crossterm",
@@ -1296,7 +1306,6 @@ dependencies = [
  "board-game",
  "bytemuck",
  "bzip2",
- "chess",
  "clap 3.1.12",
  "crossbeam",
  "cuda-nn-eval",
@@ -1686,9 +1695,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.9.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da32515d9f6e6e489d7bc9d84c71b060db7247dc035bbe44eac88cf87486d8d5"
+checksum = "7709cef83f0c1f58f666e746a08b21e0085f7440fa6a29cc194d68aac97a4225"
 
 [[package]]
 name = "oorandom"

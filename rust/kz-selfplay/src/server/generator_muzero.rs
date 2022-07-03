@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::min;
 
-use board_game::board::Board;
+use board_game::board::AltBoard;
 use flume::{Receiver, TryRecvError};
 use internal_iterator::InternalIterator;
 use rand::rngs::StdRng;
@@ -29,7 +29,7 @@ use crate::simulation::{Position, Simulation};
 
 // TODO we're reusing quantized states from one network as inputs to a potentially updated network
 //   hopefully that doesn't cause too many issues
-pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
+pub async fn generator_muzero_main<B: AltBoard, M: BoardMapper<B>>(
     generator_id: usize,
     device: Device,
     start_pos: impl Fn() -> B,
@@ -93,7 +93,7 @@ pub async fn generator_muzero_main<B: Board, M: BoardMapper<B>>(
     }
 }
 
-async fn generate_simulation<B: Board, M: BoardMapper<B>>(
+async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
     generator_id: usize,
     settings: &Settings,
     update_sender: &UpdateSender<B>,
@@ -236,7 +236,7 @@ async fn generate_simulation<B: Board, M: BoardMapper<B>>(
     }
 }
 
-fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(
+fn add_dirichlet_noise<B: AltBoard, M: BoardMapper<B>>(
     policy_logits: &mut [f32],
     settings: &Settings,
     board: &B,
@@ -273,7 +273,7 @@ fn add_dirichlet_noise<B: Board, M: BoardMapper<B>>(
     unsoftmax_in_place(policy, 0.0);
 }
 
-fn extract_zero_eval<B: Board, M: BoardMapper<B>>(
+fn extract_zero_eval<B: AltBoard, M: BoardMapper<B>>(
     mapper: M,
     board: &B,
     eval: &MuZeroEvaluation,

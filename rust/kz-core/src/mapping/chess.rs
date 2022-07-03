@@ -1,15 +1,16 @@
+use board_game::chess;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use board_game::chess::{BitBoard, ChessMove, Color, File, Piece, Rank, Square};
 use board_game::games::chess::ChessBoard;
-use chess::{BitBoard, ChessMove, Color, File, Piece, Rank, Square};
 use lazy_static::lazy_static;
 
 use kz_util::sequence::IndexOf;
 
-use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 use crate::mapping::bit_buffer::BitBuffer;
+use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ChessHistoryMapper {

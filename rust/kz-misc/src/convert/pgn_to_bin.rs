@@ -3,14 +3,15 @@ use std::ops::ControlFlow;
 use std::time::Instant;
 
 use board_game::board::{Board, BoardMoves, Outcome, Player};
+use board_game::chess::ChessMove;
 use board_game::games::chess::{ChessBoard, Rules};
+use board_game::pov::ScalarPov;
 use board_game::wdl::WDL;
-use chess::ChessMove;
 use internal_iterator::InternalIterator;
 
 use kz_core::mapping::BoardMapper;
 use kz_core::network::ZeroEvaluation;
-use kz_core::zero::node::ZeroValues;
+use kz_core::zero::values::ZeroValuesPov;
 use kz_selfplay::binary_output::BinaryOutput;
 use kz_selfplay::simulation::{Position, Simulation};
 use pgn_reader::buffered_reader::BufferedReader;
@@ -213,14 +214,14 @@ impl Logger {
 fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, moves_left: f32) -> Position<ChessBoard> {
     let policy: Vec<f32> = board.available_moves().map(|cand| (cand == mv) as u8 as f32).collect();
 
-    let zero_values = eval.map_or(ZeroValues::nan(), |eval| {
+    let zero_values = eval.map_or(ZeroValuesPov::nan(), |eval| {
         let win = match board.next_player() {
             Player::A => eval.as_white_win_prob(),
             Player::B => 1.0 - eval.as_white_win_prob(),
         };
 
-        ZeroValues {
-            value: win * 2.0 - 1.0,
+        ZeroValuesPov {
+            value: ScalarPov::new(win * 2.0 - 1.0),
             wdl: WDL::new(win, 0.0, 1.0 - win),
             moves_left: moves_left as f32,
         }
@@ -232,7 +233,7 @@ fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, move
         played_mv: mv,
         zero_visits: 0,
         net_evaluation: ZeroEvaluation {
-            values: ZeroValues::nan(),
+            values: ZeroValuesPov::nan(),
             policy: Cow::Owned(vec![f32::NAN; policy.len()]),
         },
         zero_evaluation: ZeroEvaluation {

@@ -10,7 +10,6 @@ cuda-sys = { path = "../cuda-sys" }
 cuda-nn-eval = { path = "../cuda-nn-eval" }
 kz-util = { path = "../kz-util" }
 
-chess = "3.2.0"
 shakmaty = "0.21.1"
 shakmaty-syzygy = "0.19.0"
 

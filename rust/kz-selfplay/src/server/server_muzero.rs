@@ -1,4 +1,4 @@
-use board_game::board::Board;
+use board_game::board::AltBoard;
 use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
@@ -16,7 +16,7 @@ use crate::server::server::{GraphSender, ZeroSpecialization};
 #[derive(Debug)]
 pub struct MuZeroSpecialization;
 
-impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroSpecialization {
+impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZeroSpecialization {
     type G = MuZeroFusedGraphs<B, M>;
 
     fn spawn_device_threads<'s>(

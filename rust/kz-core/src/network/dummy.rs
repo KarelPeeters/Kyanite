@@ -3,12 +3,13 @@ use std::marker::PhantomData;
 
 use board_game::board::Board;
 use board_game::games::max_length::MaxMovesBoard;
+use board_game::pov::ScalarPov;
 use board_game::wdl::WDL;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
 use crate::network::{Network, ZeroEvaluation};
-use crate::zero::node::ZeroValues;
+use crate::zero::values::ZeroValuesPov;
 
 /// A `Network` that always returns uniform wdl and policy..
 #[derive(Debug)]
@@ -78,9 +79,9 @@ impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
     }
 }
 
-pub fn uniform_values() -> ZeroValues {
-    ZeroValues {
-        value: 0.0,
+pub fn uniform_values() -> ZeroValuesPov {
+    ZeroValuesPov {
+        value: ScalarPov::new(0.0),
         wdl: WDL {
             win: 1.0 / 3.0,
             draw: 1.0 / 3.0,

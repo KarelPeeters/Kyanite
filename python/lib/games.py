@@ -61,7 +61,7 @@ class Game:
             game = _chess_hist_game(int(m.group(1)))
 
         if game is None:
-            raise KeyError("Game '{}' not found", name)
+            raise KeyError(f"Game '{name}' not found")
 
         GAMES[name] = game
         assert game.name == name
@@ -90,7 +90,7 @@ def _chess_hist_game(length: int):
     return Game(
         name=f"chess-hist-{length}",
         board_size=chess.board_size,
-        input_bool_channels=1 + (length + 1) * (2*6),
+        input_bool_channels=1 + (length + 1) * (2 * 6),
         input_scalar_channels=7 + (length + 1),
         input_mv_channels=chess.input_mv_channels,
         policy_shape=chess.policy_shape,
@@ -153,4 +153,15 @@ GAMES = {
         estimate_moves_per_game=5,
         encode_mv=encode_ttt_move,
     ),
+    "arimaa-split": Game(
+        name="arimaa-split",
+        board_size=8,
+        input_bool_channels=4 * 6 + 2,
+        input_scalar_channels=12,
+        input_mv_channels=None,
+        policy_shape=(1 + 6 + 256,),
+        policy_conv_channels=None,
+        estimate_moves_per_game=300,
+        encode_mv=None,
+    )
 }
