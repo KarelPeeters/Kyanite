@@ -17,7 +17,7 @@ class DenseNetwork(nn.Module):
             *[DenseBlock(size, res) for _ in range(depth)],
             nn.BatchNorm1d(size),
             nn.ReLU(),
-            nn.Linear(size, 5 + prod(game.policy_shape))
+            nn.Linear(size, 5 + game.policy_size)
         ]
 
         self.seq = nn.Sequential(*layers)

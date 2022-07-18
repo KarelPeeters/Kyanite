@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 from torch import nn
 
@@ -19,6 +21,34 @@ class ScalarHead(nn.Module):
 
     def forward(self, common):
         return self.seq(common)
+
+
+class DensePolicyHead(nn.Module):
+    def __init__(self, game: Game, channels: int, hidden_channels: Optional[int], hidden_size: Optional[int]):
+        super().__init__()
+
+        seq = nn.Sequential()
+
+        if hidden_channels is not None:
+            seq.append(nn.Conv2d(channels, hidden_channels, 1))
+            seq.append(nn.ReLU())
+            channels = hidden_channels
+
+        seq.append(nn.Flatten())
+        size = channels * game.board_size * game.board_size
+
+        if hidden_size is not None:
+            seq.append(nn.Linear(size, hidden_size))
+            seq.append(nn.ReLU())
+            size = hidden_size
+
+        seq.append(nn.Linear(size, game.policy_size))
+
+        self.seq = seq
+        self.policy_shape = game.policy_shape
+
+    def forward(self, common):
+        return self.seq(common).view(-1, *self.policy_shape)
 
 
 class ConvPolicyHead(nn.Module):

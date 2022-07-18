@@ -5,6 +5,7 @@ from typing import Tuple, Optional, Callable
 import numpy as np
 
 from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_MOVE_INPUT
+from lib.util import prod
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Game:
 
     policy_shape: Tuple[int, ...]
     policy_conv_channels: Optional[int]
+    policy_size: int = field(init=False)
 
     estimate_moves_per_game: float
 
@@ -41,6 +43,8 @@ class Game:
             self.input_mv_shape = (self.input_mv_channels, self.board_size, self.board_size)
         else:
             self.input_mv_shape = None
+
+        self.policy_size = prod(self.policy_shape)
 
     @classmethod
     def find(cls, name: str):
