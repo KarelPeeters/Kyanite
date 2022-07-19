@@ -41,18 +41,19 @@ def main(plotter: LogPlotter):
 
     train = TrainSettings(
         game=game,
-        value_weight=1.0,
-        wdl_weight=0.0,
+        value_weight=0.1,
+        wdl_weight=1.0,
         policy_weight=1.0,
+        sim_weight=0.01,
         moves_left_delta=20,
-        moves_left_weight=0.0,
+        moves_left_weight=0.0001,
         clip_norm=4.0,
         scalar_target=ScalarTarget.Final,
         train_in_eval_mode=False,
         mask_policy=False,
     )
 
-    output_path = "../../data/muzero/restart-pol-fc"
+    output_path = "../../data/muzero/restart-sim"
     os.makedirs(output_path, exist_ok=False)
 
     channels = 128
