@@ -65,9 +65,10 @@ class Position:
 
         self.played_mv = map_none(scalars.pop("played_mv", None), int)
         self.is_full_search = map_none_or(scalars.pop("is_full_search", None), bool, True)
-        self.is_final_position = map_none_or(scalars.pop("is_final_position", None), bool, False)
+        self.is_final = map_none_or(scalars.pop("is_final_position", None), bool, False)
         self.is_terminal = map_none_or(scalars.pop("is_terminal", None), bool, False)
         self.hit_move_limit = map_none(scalars.pop("hit_move_limit", None), bool)
+        self.is_post_final = False
 
         self.kdl_policy = float(scalars.pop("kdl_policy"))
 
@@ -136,7 +137,13 @@ class PostFinalPosition:
         self.final_moves_left = 0.0
         self.zero_moves_left = 0.0
         self.net_moves_left = 0.0
-        self.is_terminal = True
+
+        # TODO what about these values?
+        self.is_full_search = False
+        self.is_final = final_position.is_final
+        self.is_terminal = final_position.is_terminal
+        self.hit_move_limit = final_position.hit_move_limit
+        self.is_post_final = True
 
 
 class PositionBatch:
@@ -160,7 +167,10 @@ class PositionBatch:
         sim_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         move_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         file_pi = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+
         is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
+        is_final = torch.empty((len(positions)), dtype=torch.bool, pin_memory=pin_memory)
+        is_post_final = torch.empty((len(positions)), dtype=torch.bool, pin_memory=pin_memory)
 
         if game.input_mv_channels is not None:
             played_mv_full = torch.zeros(len(positions), *game.input_mv_shape, pin_memory=pin_memory)
@@ -195,7 +205,10 @@ class PositionBatch:
 
             if game.input_mv_channels is not None:
                 played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
+
             is_terminal[i] = p.is_terminal
+            is_final[i] = p.is_final
+            is_post_final[i] = p.is_post_final
 
         self.input_full = input_full.to(DEVICE)
         self.final_input_full = final_input_full.to(DEVICE) if include_final_for_each else None
@@ -208,7 +221,10 @@ class PositionBatch:
         self.file_pi = file_pi.to(DEVICE)
         self.sim_index = sim_index.to(DEVICE)
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
+
         self.is_terminal = is_terminal.to(DEVICE)
+        self.is_final = is_final.to(DEVICE)
+        self.is_post_final = is_post_final.to(DEVICE)
 
         self.all_wdls = all_wdls.to(DEVICE)
         self.all_values = all_values.to(DEVICE)

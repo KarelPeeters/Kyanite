@@ -100,7 +100,7 @@ def collect_unrolled_batch(sampler: PositionSampler, group: DataGroup, unroll_st
             if position.simulation.index != first_position.simulation.index:
                 break
             # maybe we don't want the final position
-            if position.is_final_position and not sampler.include_final:
+            if position.is_final and not sampler.include_final:
                 break
 
             # finally we can include the position
@@ -124,7 +124,7 @@ def sample_position(group: DataGroup, include_final: bool, include_final_for_eac
         pi = random.randrange(len(group.positions))
         pos = group.positions[pi]
 
-        if pos.is_final_position and not include_final:
+        if pos.is_final and not include_final:
             continue
 
         if include_final_for_each:
