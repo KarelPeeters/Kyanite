@@ -34,6 +34,10 @@ fn link_cuda() -> Vec<PathBuf> {
             "cargo:rustc-link-search=native={}",
             path.join("lib/x64").to_str().unwrap()
         );
+        println!(
+            "cargo:rustc-link-search=native={}",
+            path.join("lib").to_str().unwrap()
+        );
     }
 
     vec![
