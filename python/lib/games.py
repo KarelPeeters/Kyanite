@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from typing import Tuple, Optional, Callable
+from typing import Tuple, Optional, Callable, Sequence
 
 import numpy as np
 
@@ -31,6 +31,7 @@ class Game:
     full_input_shape: Tuple[int, int, int] = field(init=False)
 
     encode_mv: Optional[Callable[[int], np.array]]
+    possible_mvs: Sequence[int]
 
     def __post_init__(self):
         self.input_bool_shape = (self.input_bool_channels, self.board_size, self.board_size)
@@ -85,6 +86,7 @@ def _ataxx_game(size: int):
         # estimated from fully random games
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
         encode_mv=None,
+        possible_mvs=range(17 * size * size)
     )
 
 
@@ -101,6 +103,7 @@ def _chess_hist_game(length: int):
         policy_conv_channels=chess.policy_conv_channels,
         estimate_moves_per_game=chess.estimate_moves_per_game,
         encode_mv=chess.encode_mv,
+        possible_mvs=chess.possible_mvs,
     )
 
 
@@ -134,6 +137,7 @@ GAMES = {
         policy_conv_channels=73,
         estimate_moves_per_game=150,
         encode_mv=encode_chess_move,
+        possible_mvs=range(1880),
     ),
     "sttt": Game(
         name="sttt",
@@ -145,6 +149,7 @@ GAMES = {
         policy_conv_channels=1,
         estimate_moves_per_game=40,
         encode_mv=None,
+        possible_mvs=range(9 * 9),
     ),
     "ttt": Game(
         name="ttt",
@@ -156,6 +161,7 @@ GAMES = {
         policy_conv_channels=1,
         estimate_moves_per_game=5,
         encode_mv=encode_ttt_move,
+        possible_mvs=range(3 * 3),
     ),
     "arimaa-split": Game(
         name="arimaa-split",
@@ -167,5 +173,6 @@ GAMES = {
         policy_conv_channels=None,
         estimate_moves_per_game=300,
         encode_mv=None,
+        possible_mvs=range(1 + 6 + 256),
     )
 }
