@@ -44,7 +44,7 @@ fn main() -> std::io::Result<()> {
     for (flat_i, &mv_pov) in moves.iter().enumerate() {
         // moves are already POV, and that's the only reason ChessStdMapper needs the board anyway, so this is fine
         // also queen promotion doesn't matter, so just keep none for that
-        let conv_i = ChessLegacyConvPolicyMapper.move_to_index(&dummy_board, mv_pov).unwrap();
+        let conv_i = ChessLegacyConvPolicyMapper.move_to_index(&dummy_board, mv_pov);
 
         let att_from = mv_pov.get_source().to_index();
         let att_to = match mv_pov.get_promotion() {

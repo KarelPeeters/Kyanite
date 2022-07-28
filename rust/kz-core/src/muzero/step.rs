@@ -151,8 +151,7 @@ pub fn muzero_step_apply<B: AltBoard, M: BoardMapper<B>>(
     } else {
         // keep all moves deeper in the tree
         // TODO use the fact that moves are sorted by policy to optimize UCT calculations later on
-        // TODO this doesn't work for the pass move, maybe it's finally time to retire it
-        let indices = top_k_indices_sorted(&policy_logits, top_moves).into_iter().map(Some);
+        let indices = top_k_indices_sorted(&policy_logits, top_moves).into_iter();
         create_child_nodes(&mut tree.nodes, node, indices.into_internal(), &policy_logits)
     };
 
@@ -171,7 +170,7 @@ pub fn muzero_step_apply<B: AltBoard, M: BoardMapper<B>>(
 fn create_child_nodes(
     nodes: &mut Vec<MuNode>,
     parent_node: usize,
-    indices: impl InternalIterator<Item = Option<usize>>,
+    indices: impl InternalIterator<Item = usize>,
     policy_logits: &[f32],
 ) -> IdxRange {
     let start = nodes.len();
@@ -179,10 +178,10 @@ fn create_child_nodes(
     // temporarily create nodes with un-normalized policy
     let mut total_p = 0.0;
     indices.for_each(|index| {
-        let logit = index.map_or(0.0, |index| policy_logits[index]);
+        let logit = policy_logits[index];
         let p = logit.exp();
         total_p += p;
-        nodes.push(MuNode::new(Some(parent_node), index, p))
+        nodes.push(MuNode::new(Some(parent_node), Some(index), p))
     });
 
     let end = nodes.len();

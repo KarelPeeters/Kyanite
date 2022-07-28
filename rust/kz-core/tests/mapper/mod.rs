@@ -37,25 +37,23 @@ pub fn test_valid_policy_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board:
 
 pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     let mut prev = vec![vec![]; mapper.policy_len()];
-    board.available_moves().for_each(|mv: B::Move| {
-        match mapper.move_to_index(board, mv) {
-            None => assert_eq!(1, board.available_moves().count()),
-            Some(index) => {
-                //check that roundtrip works out
-                let remapped_move = mapper.index_to_move(board, index);
-                assert_eq!(
-                    Some(mv),
-                    remapped_move,
-                    "Failed move roundtrip: {} -> {} -> {}",
-                    mv,
-                    index,
-                    display_option(remapped_move)
-                );
 
-                // keep the move so we can report duplicate indices later
-                prev[index].push(mv);
-            }
-        }
+    board.available_moves().for_each(|mv: B::Move| {
+        let index = mapper.move_to_index(board, mv);
+
+        //check that roundtrip works out
+        let remapped_move = mapper.index_to_move(board, index);
+        assert_eq!(
+            Some(mv),
+            remapped_move,
+            "Failed move roundtrip: {} -> {} -> {}",
+            mv,
+            index,
+            display_option(remapped_move)
+        );
+
+        // keep the move so we can report duplicate indices later
+        prev[index].push(mv);
     });
 
     // now we can easily check for duplicate moves and report all of them

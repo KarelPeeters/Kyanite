@@ -7,14 +7,15 @@ use crate::mapping::{InputMapper, MuZeroMapper, PolicyMapper};
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct AtaxxStdMapper {
     size: u8,
-    policy_shape: [usize; 3],
+    policy_shape: [usize; 1],
 }
 
 impl AtaxxStdMapper {
     pub fn new(size: u8) -> Self {
+        let policy_size = (17 * size as usize * size as usize) + 1;
         AtaxxStdMapper {
             size,
-            policy_shape: [17, size as usize, size as usize],
+            policy_shape: [policy_size],
         }
     }
 
@@ -45,13 +46,13 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
         &self.policy_shape
     }
 
-    fn move_to_index(&self, board: &AtaxxBoard, mv: Move) -> Option<usize> {
-        let size = board.size();
-        assert_eq!(size, self.size);
+    fn move_to_index(&self, board: &AtaxxBoard, mv: Move) -> usize {
+        assert_eq!(board.size(), self.size);
+        let size = self.size as usize;
 
         let index = match mv {
-            Move::Pass => None,
-            Move::Copy { to } => Some((to.y() * size + to.x()) as usize),
+            Move::Pass => (17 * size * size),
+            Move::Copy { to } => (to.y() as usize * size + to.x() as usize),
             Move::Jump { from, to } => {
                 let dx = from.x() as i8 - to.x() as i8;
                 let dy = from.y() as i8 - to.y() as i8;
@@ -59,29 +60,29 @@ impl PolicyMapper<AtaxxBoard> for AtaxxStdMapper {
                     .iter()
                     .position(|&(fdx, fdy)| fdx == dx && fdy == dy)
                     .unwrap();
-                let to_index = (to.y() * size + to.x()) as usize;
+                let to_index = to.y() as usize * size + to.x() as usize;
 
-                Some((1 + from_index) * (size * size) as usize + to_index)
+                (1 + from_index) * (size * size) + to_index
             }
         };
 
-        if let Some(index) = index {
-            assert!(index < self.policy_len())
-        }
+        assert!(index < self.policy_len());
 
         index
     }
 
     fn index_to_move(&self, board: &AtaxxBoard, index: usize) -> Option<Move> {
-        let size = board.size();
-        assert_eq!(size, self.size);
+        assert_eq!(self.size, board.size());
         assert!(index < self.policy_len());
 
-        let area = (size * size) as usize;
+        let size = self.size as usize;
+        let area = size * size;
         let to_index = (index % area) as u8;
-        let to = Coord8::from_xy(to_index % size, to_index / size);
+        let to = Coord8::from_xy(to_index % size as u8, to_index / size as u8);
 
-        if index < area {
+        if index == self.policy_len() - 1 {
+            Some(Move::Pass)
+        } else if index < area {
             Some(Move::Copy { to })
         } else {
             let from_index = index / area - 1;

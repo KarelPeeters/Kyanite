@@ -21,13 +21,13 @@ fn queen_distance_white() {
     test_pairs(
         &board,
         &[
-            (Some(0 * 64), Some(ChessMove::new(Square::A1, Square::A2, None))),
-            (Some(1 * 64), Some(ChessMove::new(Square::A1, Square::A3, None))),
-            (Some(2 * 64), Some(ChessMove::new(Square::A1, Square::A4, None))),
-            (Some(3 * 64), Some(ChessMove::new(Square::A1, Square::A5, None))),
-            (Some(4 * 64), Some(ChessMove::new(Square::A1, Square::A6, None))),
-            (Some(5 * 64), Some(ChessMove::new(Square::A1, Square::A7, None))),
-            (Some(6 * 64), Some(ChessMove::new(Square::A1, Square::A8, None))),
+            (0 * 64, Some(ChessMove::new(Square::A1, Square::A2, None))),
+            (1 * 64, Some(ChessMove::new(Square::A1, Square::A3, None))),
+            (2 * 64, Some(ChessMove::new(Square::A1, Square::A4, None))),
+            (3 * 64, Some(ChessMove::new(Square::A1, Square::A5, None))),
+            (4 * 64, Some(ChessMove::new(Square::A1, Square::A6, None))),
+            (5 * 64, Some(ChessMove::new(Square::A1, Square::A7, None))),
+            (6 * 64, Some(ChessMove::new(Square::A1, Square::A8, None))),
         ],
     );
 }
@@ -40,13 +40,13 @@ fn queen_distance_black() {
     test_pairs(
         &board,
         &[
-            (Some(0 * 64), Some(ChessMove::new(Square::A8, Square::A7, None))),
-            (Some(1 * 64), Some(ChessMove::new(Square::A8, Square::A6, None))),
-            (Some(2 * 64), Some(ChessMove::new(Square::A8, Square::A5, None))),
-            (Some(3 * 64), Some(ChessMove::new(Square::A8, Square::A4, None))),
-            (Some(4 * 64), Some(ChessMove::new(Square::A8, Square::A3, None))),
-            (Some(5 * 64), Some(ChessMove::new(Square::A8, Square::A2, None))),
-            (Some(6 * 64), Some(ChessMove::new(Square::A8, Square::A1, None))),
+            (0 * 64, Some(ChessMove::new(Square::A8, Square::A7, None))),
+            (1 * 64, Some(ChessMove::new(Square::A8, Square::A6, None))),
+            (2 * 64, Some(ChessMove::new(Square::A8, Square::A5, None))),
+            (3 * 64, Some(ChessMove::new(Square::A8, Square::A4, None))),
+            (4 * 64, Some(ChessMove::new(Square::A8, Square::A3, None))),
+            (5 * 64, Some(ChessMove::new(Square::A8, Square::A2, None))),
+            (6 * 64, Some(ChessMove::new(Square::A8, Square::A1, None))),
         ],
     );
 }
@@ -60,38 +60,14 @@ fn queen_direction_white() {
     test_pairs(
         &board,
         &[
-            (
-                Some(0 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::D5, None)),
-            ),
-            (
-                Some(1 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::E5, None)),
-            ),
-            (
-                Some(2 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::E4, None)),
-            ),
-            (
-                Some(3 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::E3, None)),
-            ),
-            (
-                Some(4 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::D3, None)),
-            ),
-            (
-                Some(5 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::C3, None)),
-            ),
-            (
-                Some(6 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::C4, None)),
-            ),
-            (
-                Some(7 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D4, Square::C5, None)),
-            ),
+            ((0 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::D5, None))),
+            ((1 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E5, None))),
+            ((2 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E4, None))),
+            ((3 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E3, None))),
+            ((4 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::D3, None))),
+            ((5 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::C3, None))),
+            ((6 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::C4, None))),
+            ((7 * 7 * 64 + d4), Some(ChessMove::new(Square::D4, Square::C5, None))),
         ],
     )
 }
@@ -105,38 +81,14 @@ fn queen_direction_black() {
     test_pairs(
         &board,
         &[
-            (
-                Some(0 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::D4, None)),
-            ),
-            (
-                Some(1 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::E4, None)),
-            ),
-            (
-                Some(2 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::E5, None)),
-            ),
-            (
-                Some(3 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::E6, None)),
-            ),
-            (
-                Some(4 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::D6, None)),
-            ),
-            (
-                Some(5 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::C6, None)),
-            ),
-            (
-                Some(6 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::C5, None)),
-            ),
-            (
-                Some(7 * 7 * 64 + d4),
-                Some(ChessMove::new(Square::D5, Square::C4, None)),
-            ),
+            ((0 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::D4, None))),
+            ((1 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E4, None))),
+            ((2 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E5, None))),
+            ((3 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E6, None))),
+            ((4 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::D6, None))),
+            ((5 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::C6, None))),
+            ((6 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::C5, None))),
+            ((7 * 7 * 64 + d4), Some(ChessMove::new(Square::D5, Square::C4, None))),
         ],
     )
 }
@@ -150,14 +102,14 @@ fn knight_direction_white() {
     test_pairs(
         &board,
         &[
-            (Some(56 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E6, None))),
-            (Some(57 * 64 + d4), Some(ChessMove::new(Square::D4, Square::F5, None))),
-            (Some(58 * 64 + d4), Some(ChessMove::new(Square::D4, Square::F3, None))),
-            (Some(59 * 64 + d4), Some(ChessMove::new(Square::D4, Square::E2, None))),
-            (Some(60 * 64 + d4), Some(ChessMove::new(Square::D4, Square::C2, None))),
-            (Some(61 * 64 + d4), Some(ChessMove::new(Square::D4, Square::B3, None))),
-            (Some(62 * 64 + d4), Some(ChessMove::new(Square::D4, Square::B5, None))),
-            (Some(63 * 64 + d4), Some(ChessMove::new(Square::D4, Square::C6, None))),
+            (56 * 64 + d4, Some(ChessMove::new(Square::D4, Square::E6, None))),
+            (57 * 64 + d4, Some(ChessMove::new(Square::D4, Square::F5, None))),
+            (58 * 64 + d4, Some(ChessMove::new(Square::D4, Square::F3, None))),
+            (59 * 64 + d4, Some(ChessMove::new(Square::D4, Square::E2, None))),
+            (60 * 64 + d4, Some(ChessMove::new(Square::D4, Square::C2, None))),
+            (61 * 64 + d4, Some(ChessMove::new(Square::D4, Square::B3, None))),
+            (62 * 64 + d4, Some(ChessMove::new(Square::D4, Square::B5, None))),
+            (63 * 64 + d4, Some(ChessMove::new(Square::D4, Square::C6, None))),
         ],
     )
 }
@@ -171,14 +123,14 @@ fn knight_direction_black() {
     test_pairs(
         &board,
         &[
-            (Some(56 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E3, None))),
-            (Some(57 * 64 + d4), Some(ChessMove::new(Square::D5, Square::F4, None))),
-            (Some(58 * 64 + d4), Some(ChessMove::new(Square::D5, Square::F6, None))),
-            (Some(59 * 64 + d4), Some(ChessMove::new(Square::D5, Square::E7, None))),
-            (Some(60 * 64 + d4), Some(ChessMove::new(Square::D5, Square::C7, None))),
-            (Some(61 * 64 + d4), Some(ChessMove::new(Square::D5, Square::B6, None))),
-            (Some(62 * 64 + d4), Some(ChessMove::new(Square::D5, Square::B4, None))),
-            (Some(63 * 64 + d4), Some(ChessMove::new(Square::D5, Square::C3, None))),
+            (56 * 64 + d4, Some(ChessMove::new(Square::D5, Square::E3, None))),
+            (57 * 64 + d4, Some(ChessMove::new(Square::D5, Square::F4, None))),
+            (58 * 64 + d4, Some(ChessMove::new(Square::D5, Square::F6, None))),
+            (59 * 64 + d4, Some(ChessMove::new(Square::D5, Square::E7, None))),
+            (60 * 64 + d4, Some(ChessMove::new(Square::D5, Square::C7, None))),
+            (61 * 64 + d4, Some(ChessMove::new(Square::D5, Square::B6, None))),
+            (62 * 64 + d4, Some(ChessMove::new(Square::D5, Square::B4, None))),
+            (63 * 64 + d4, Some(ChessMove::new(Square::D5, Square::C3, None))),
         ],
     )
 }
@@ -193,70 +145,70 @@ fn white_potential_promotions() {
         &[
             // rook, no promotion
             (
-                Some((0 * 7 + 1) * 64 + Square::F6.to_index()),
+                ((0 * 7 + 1) * 64 + Square::F6.to_index()),
                 Some(ChessMove::new(Square::F6, Square::F8, None)),
             ),
             (
-                Some((0 * 7 + 0) * 64 + Square::G7.to_index()),
+                ((0 * 7 + 0) * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G7, Square::G8, None)),
             ),
             // knight, no promotion
             (
-                Some(63 * 64 + Square::G6.to_index()),
+                (63 * 64 + Square::G6.to_index()),
                 Some(ChessMove::new(Square::G6, Square::F8, None)),
             ),
             (
-                Some(56 * 64 + Square::G6.to_index()),
+                (56 * 64 + Square::G6.to_index()),
                 Some(ChessMove::new(Square::G6, Square::H8, None)),
             ),
             // promotion to queen
             (
-                Some((7 * 7 + 0) * 64 + Square::B7.to_index()),
+                ((7 * 7 + 0) * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::A8, Some(Piece::Queen))),
             ),
             (
-                Some((0 * 7 + 0) * 64 + Square::B7.to_index()),
+                ((0 * 7 + 0) * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::B8, Some(Piece::Queen))),
             ),
             (
-                Some((1 * 7 + 0) * 64 + Square::B7.to_index()),
+                ((1 * 7 + 0) * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::C8, Some(Piece::Queen))),
             ),
             // underpromotion
             (
-                Some(64 * 64 + Square::B7.to_index()),
+                (64 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::A8, Some(Piece::Rook))),
             ),
             (
-                Some(67 * 64 + Square::B7.to_index()),
+                (67 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::B8, Some(Piece::Rook))),
             ),
             (
-                Some(70 * 64 + Square::B7.to_index()),
+                (70 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::C8, Some(Piece::Rook))),
             ),
             (
-                Some(65 * 64 + Square::B7.to_index()),
+                (65 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::A8, Some(Piece::Bishop))),
             ),
             (
-                Some(68 * 64 + Square::B7.to_index()),
+                (68 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::B8, Some(Piece::Bishop))),
             ),
             (
-                Some(71 * 64 + Square::B7.to_index()),
+                (71 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::C8, Some(Piece::Bishop))),
             ),
             (
-                Some(66 * 64 + Square::B7.to_index()),
+                (66 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::A8, Some(Piece::Knight))),
             ),
             (
-                Some(69 * 64 + Square::B7.to_index()),
+                (69 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::B8, Some(Piece::Knight))),
             ),
             (
-                Some(72 * 64 + Square::B7.to_index()),
+                (72 * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B7, Square::C8, Some(Piece::Knight))),
             ),
         ],
@@ -274,70 +226,70 @@ fn black_potential_promotions() {
         &[
             // rook, no promotion
             (
-                Some((0 * 7 + 1) * 64 + Square::C6.to_index()),
+                ((0 * 7 + 1) * 64 + Square::C6.to_index()),
                 Some(ChessMove::new(Square::C3, Square::C1, None)),
             ),
             (
-                Some((0 * 7 + 0) * 64 + Square::B7.to_index()),
+                ((0 * 7 + 0) * 64 + Square::B7.to_index()),
                 Some(ChessMove::new(Square::B2, Square::B1, None)),
             ),
             // knight, no promotion
             (
-                Some(56 * 64 + Square::B6.to_index()),
+                (56 * 64 + Square::B6.to_index()),
                 Some(ChessMove::new(Square::B3, Square::C1, None)),
             ),
             (
-                Some(63 * 64 + Square::B6.to_index()),
+                (63 * 64 + Square::B6.to_index()),
                 Some(ChessMove::new(Square::B3, Square::A1, None)),
             ),
             // promotion to queen
             (
-                Some((7 * 7 + 0) * 64 + Square::G7.to_index()),
+                ((7 * 7 + 0) * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::F1, Some(Piece::Queen))),
             ),
             (
-                Some((0 * 7 + 0) * 64 + Square::G7.to_index()),
+                ((0 * 7 + 0) * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::G1, Some(Piece::Queen))),
             ),
             (
-                Some((1 * 7 + 0) * 64 + Square::G7.to_index()),
+                ((1 * 7 + 0) * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::H1, Some(Piece::Queen))),
             ),
             // underpromotion
             (
-                Some(67 * 64 + Square::G7.to_index()),
+                (67 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::G1, Some(Piece::Rook))),
             ),
             (
-                Some(70 * 64 + Square::G7.to_index()),
+                (70 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::H1, Some(Piece::Rook))),
             ),
             (
-                Some(64 * 64 + Square::G7.to_index()),
+                (64 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::F1, Some(Piece::Rook))),
             ),
             (
-                Some(68 * 64 + Square::G7.to_index()),
+                (68 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::G1, Some(Piece::Bishop))),
             ),
             (
-                Some(71 * 64 + Square::G7.to_index()),
+                (71 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::H1, Some(Piece::Bishop))),
             ),
             (
-                Some(65 * 64 + Square::G7.to_index()),
+                (65 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::F1, Some(Piece::Bishop))),
             ),
             (
-                Some(69 * 64 + Square::G7.to_index()),
+                (69 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::G1, Some(Piece::Knight))),
             ),
             (
-                Some(72 * 64 + Square::G7.to_index()),
+                (72 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::H1, Some(Piece::Knight))),
             ),
             (
-                Some(66 * 64 + Square::G7.to_index()),
+                (66 * 64 + Square::G7.to_index()),
                 Some(ChessMove::new(Square::G2, Square::F1, Some(Piece::Knight))),
             ),
         ],
@@ -352,7 +304,7 @@ fn en_passant() {
     test_pairs(
         &white_board,
         &[(
-            Some((7 * 7 + 0) * 64 + Square::C5.to_index()),
+            ((7 * 7 + 0) * 64 + Square::C5.to_index()),
             Some(ChessMove::new(Square::C5, Square::B6, None)),
         )],
     );
@@ -361,7 +313,7 @@ fn en_passant() {
     test_pairs(
         &black_board,
         &[(
-            Some((1 * 7 + 0) * 64 + Square::B5.to_index()),
+            ((1 * 7 + 0) * 64 + Square::B5.to_index()),
             Some(ChessMove::new(Square::B4, Square::C3, None)),
         )],
     );
@@ -377,11 +329,11 @@ fn castles() {
         &white_board,
         &[
             (
-                Some((2 * 7 + 1) * 64 + Square::E1.to_index()),
+                ((2 * 7 + 1) * 64 + Square::E1.to_index()),
                 Some(ChessMove::new(Square::E1, Square::G1, None)),
             ),
             (
-                Some((6 * 7 + 1) * 64 + Square::E1.to_index()),
+                ((6 * 7 + 1) * 64 + Square::E1.to_index()),
                 Some(ChessMove::new(Square::E1, Square::C1, None)),
             ),
         ],
@@ -392,11 +344,11 @@ fn castles() {
         &black_board,
         &[
             (
-                Some((2 * 7 + 1) * 64 + Square::E1.to_index()),
+                ((2 * 7 + 1) * 64 + Square::E1.to_index()),
                 Some(ChessMove::new(Square::E8, Square::G8, None)),
             ),
             (
-                Some((6 * 7 + 1) * 64 + Square::E1.to_index()),
+                ((6 * 7 + 1) * 64 + Square::E1.to_index()),
                 Some(ChessMove::new(Square::E8, Square::C8, None)),
             ),
         ],
@@ -407,7 +359,7 @@ fn board(fen: &str) -> ChessBoard {
     ChessBoard::new_without_history_fen(fen, Rules::default())
 }
 
-fn test_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) {
+fn test_pairs(board: &ChessBoard, pairs: &[(usize, Option<ChessMove>)]) {
     // test other mapper with a variety of chess boards
     test_valid_mapping(ChessStdMapper, board);
     test_valid_policy_mapping(ChessLegacyConvPolicyMapper, board);
@@ -434,23 +386,21 @@ fn test_pairs(board: &ChessBoard, pairs: &[(Option<usize>, Option<ChessMove>)]) 
             assert_eq!(index, mapper.move_to_index(board, mv), "Wrong index for move {}", mv);
         }
 
-        if let Some(index) = index {
-            println!("    index -> mv");
+        println!("    index -> mv");
 
-            let channel = index / 64;
-            let classified = ClassifiedPovMove::from_channel(channel);
-            println!("    {} -> {:?}", channel, classified);
+        let channel = index / 64;
+        let classified = ClassifiedPovMove::from_channel(channel);
+        println!("    {} -> {:?}", channel, classified);
 
-            let returned_move = mapper.index_to_move(board, index);
-            assert_eq!(
-                mv,
-                returned_move,
-                "Expected move {}, got {} for index {}",
-                display_option(mv),
-                display_option(returned_move),
-                index,
-            );
-        }
+        let returned_move = mapper.index_to_move(board, index);
+        assert_eq!(
+            mv,
+            returned_move,
+            "Expected move {}, got {} for index {}",
+            display_option(mv),
+            display_option(returned_move),
+            index,
+        );
 
         println!();
     }

@@ -78,9 +78,8 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
             let mut policy: Vec<f32> = board
                 .available_moves()
                 .map(|mv| {
-                    policy_mapper
-                        .move_to_index(board, mv)
-                        .map_or(1.0, |index| batch_policy_logit[(bi, index)])
+                    let index = policy_mapper.move_to_index(board, mv);
+                    batch_policy_logit[(bi, index)]
                 })
                 .collect();
             softmax_in_place(&mut policy);

@@ -86,7 +86,7 @@ struct Scalars {
 }
 
 impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
-    pub fn new(path: impl AsRef<Path>, game: &str, mapper: M) -> std::io::Result<Self> {
+    pub fn new(path: impl AsRef<Path>, game: &str, mapper: M) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         assert!(
             path.extension().is_none(),
@@ -156,19 +156,14 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 ref net_evaluation,
             } = position;
 
-            let (available_mv_count, forced_pass, policy_indices) = collect_policy_indices(board, self.mapper);
+            let (available_mv_count, policy_indices) = collect_policy_indices(board, self.mapper);
             assert_eq!(available_mv_count, zero_evaluation.policy.len());
             assert_eq!(available_mv_count, net_evaluation.policy.len());
-            let used_policy_values: &[f32] = if forced_pass {
-                assert_eq!(available_mv_count, 1);
-                &[]
-            } else {
-                &zero_evaluation.policy
-            };
 
             let played_mv_index = self.mapper.move_to_index(board, played_mv);
             let kdl_policy = kdl_divergence(&zero_evaluation.policy, &net_evaluation.policy);
             let moves_left = game_length + 1 - pos_index;
+            let stored_policy = &zero_evaluation.policy;
 
             let scalars = Scalars {
                 game_id,
@@ -179,15 +174,15 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
                 is_final_position: false,
                 is_terminal: false,
                 hit_move_limit: false,
-                available_mv_count: used_policy_values.len(),
-                played_mv: played_mv_index.map_or(-1, |mv| mv as isize),
+                available_mv_count: stored_policy.len(),
+                played_mv: played_mv_index as isize,
                 kdl_policy,
                 final_values: ZeroValuesPov::from_outcome(outcome.pov(board.next_player()), moves_left as f32),
                 zero_values: zero_evaluation.values,
                 net_values: net_evaluation.values,
             };
 
-            self.append_position(board, &scalars, &policy_indices, used_policy_values)?;
+            self.append_position(board, &scalars, &policy_indices, stored_policy)?;
         }
 
         let scalars = Scalars {
@@ -302,24 +297,17 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
     }
 }
 
-fn collect_policy_indices<B: Board, M: BoardMapper<B>>(board: &B, mapper: M) -> (usize, bool, Vec<u32>) {
-    //TODO get rid of this "forced pass" concept and just map it to a separate move index
-    let mut forced_pass = false;
+fn collect_policy_indices<B: Board, M: BoardMapper<B>>(board: &B, mapper: M) -> (usize, Vec<u32>) {
     let mut policy_indices = vec![];
     let mut available_mv_count = 0;
 
     board.available_moves().for_each(|mv: B::Move| {
         available_mv_count += 1;
-        match mapper.move_to_index(board, mv) {
-            Some(index) => {
-                assert!(!forced_pass);
-                policy_indices.push(index as u32);
-            }
-            None => forced_pass = true,
-        }
+        let index = mapper.move_to_index(board, mv);
+        policy_indices.push(index as u32);
     });
 
-    (available_mv_count, forced_pass, policy_indices)
+    (available_mv_count, policy_indices)
 }
 
 fn assert_normalized_or_nan(x: f32) {

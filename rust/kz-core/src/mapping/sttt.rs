@@ -28,8 +28,8 @@ impl PolicyMapper<STTTBoard> for STTTStdMapper {
         &[1, 9, 9]
     }
 
-    fn move_to_index(&self, _: &STTTBoard, mv: Coord) -> Option<usize> {
-        Some(mv.o() as usize)
+    fn move_to_index(&self, _: &STTTBoard, mv: Coord) -> usize {
+        mv.o() as usize
     }
 
     fn index_to_move(&self, _: &STTTBoard, index: usize) -> Option<Coord> {
