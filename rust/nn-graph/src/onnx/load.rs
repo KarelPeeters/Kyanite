@@ -342,6 +342,37 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let tensor = attrs.take_tensor("value");
                 define_tensor_data(&mut graph, tensor)
             }
+            "ConstantOfShape" => {
+                assert!(inputs.len() <= 1);
+
+                let shape = match inputs.len() {
+                    0 => Shape::SCALAR,
+                    1 => Shape::new(
+                        inputs[0]
+                            .as_shape(&graph)
+                            .unwrap()
+                            .iter()
+                            .map(|s| s.as_size().unwrap())
+                            .collect_vec(),
+                    ),
+                    _ => unreachable!(),
+                };
+
+                let value = match attrs.maybe_take_tensor("value") {
+                    None => TypedValue::FloatTensor(graph.constant(Shape::SCALAR, vec![0.0])),
+                    Some(tensor) => define_tensor_data(&mut graph, tensor),
+                };
+
+                assert_eq!(
+                    value.shape(&graph).size(),
+                    Size::ONE,
+                    "value must be a one-element tensor"
+                );
+
+                let scalar = graph.view(value.unwrap_tensor(), Shape::SCALAR);
+                let result = graph.broadcast(scalar, shape);
+                TypedValue::with_same_type(result, &value)
+            }
             "Cast" => {
                 assert_eq!(1, inputs.len());
 
