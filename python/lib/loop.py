@@ -174,7 +174,12 @@ class LoopSettings:
         print("Saving current settings")
         os.makedirs(start_gen.train_path, exist_ok=True)
         with open(start_gen.settings_path, "w") as settings_f:
-            json.dump(self, settings_f, default=lambda o: o.__dict__, indent=2)
+            def map(o):
+                if isinstance(o, range):
+                    return str(o)
+                return o.__dict__
+
+            json.dump(self, settings_f, default=map, indent=2)
 
         print("Main network parameters:")
         print_param_count(network)

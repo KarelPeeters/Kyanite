@@ -74,6 +74,30 @@ class ConvPolicyHead(nn.Module):
             return flat_policy
 
 
+class AtaxxConvPolicyHead(nn.Module):
+    def __init__(self, game: Game, channels: int):
+        super().__init__()
+
+        assert game.name.startswith("ataxx-"), "AtaxxConvPolicyHead only works for ataxx"
+
+        self.seq = nn.Sequential(
+            conv2d(channels, channels, 1),
+            nn.ReLU(),
+            conv2d(channels, game.policy_conv_channels, 1),
+        )
+
+    def forward(self, common):
+        policy_part = self.seq(common)
+
+        batch_size, _, _, _ = policy_part.shape
+        policy = torch.concat([
+            policy_part.flatten(1),
+            torch.zeros(batch_size, 1, device=common.device)
+        ], dim=1)
+
+        return policy
+
+
 class AttentionPolicyHead(nn.Module):
     def __init__(self, game: Game, channels: int, query_channels: int):
         super().__init__()

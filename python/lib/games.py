@@ -79,14 +79,14 @@ def _ataxx_game(size: int):
         name=f"ataxx-{size}",
         board_size=size,
         input_bool_channels=3,
-        input_scalar_channels=0,
+        input_scalar_channels=1,
         input_mv_channels=None,
-        policy_shape=(17, size, size),
+        policy_shape=(17 * size * size + 1,),
         policy_conv_channels=17,
         # estimated from fully random games
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
         encode_mv=None,
-        possible_mvs=range(17 * size * size)
+        possible_mvs=range(17 * size * size + 1)
     )
 
 
