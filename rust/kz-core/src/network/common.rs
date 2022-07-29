@@ -134,9 +134,12 @@ pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph)
     let inputs = graph.inputs();
     assert_eq!(1, inputs.len(), "Wrong number of inputs");
 
-    let input_shape = &graph[inputs[0]].shape;
-    let expected_input_shape = shape![Size::BATCH].concat(&Shape::fixed(&mapper.input_full_shape()));
-    assert_eq!(input_shape, &expected_input_shape, "Wrong input shape");
+    let graph_input_shape = &graph[inputs[0]].shape;
+    let mapper_input_shape = shape![Size::BATCH].concat(&Shape::fixed(&mapper.input_full_shape()));
+    assert_eq!(
+        graph_input_shape, &mapper_input_shape,
+        "Input shape mismatch between graph and mapper"
+    );
 
     // outputs
     let outputs = graph.outputs();
