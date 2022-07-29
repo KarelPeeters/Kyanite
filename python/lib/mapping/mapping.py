@@ -1,4 +1,5 @@
 import os
+from io import StringIO
 
 import numpy as np
 import torch
@@ -45,3 +46,21 @@ assert CHESS_FLAT_TO_MOVE_INPUT.shape == (1880, 8), CHESS_FLAT_TO_MOVE_INPUT.sha
 ATAXX_VALID_MOVES = load_file_lines_as_nested("ataxx_valid.txt")
 assert len(ATAXX_VALID_MOVES) == 7
 assert [len(x) for x in ATAXX_VALID_MOVES] == [5, 42, 113, 218, 357, 530, 737]
+
+
+def load_ataxx_index_to_move_input(name: str):
+    blocks = []
+
+    with open(rel_path(name)) as f:
+        s = f.read()
+        for block in s.split("="):
+            block = block.strip()
+            if not block:
+                break
+
+            blocks.append(np.loadtxt(StringIO(block)))
+
+    return blocks
+
+
+ATAXX_INDEX_TO_MOVE_INPUT = load_ataxx_index_to_move_input("ataxx_index_to_move_input.txt")

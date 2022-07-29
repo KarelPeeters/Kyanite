@@ -28,11 +28,11 @@ impl Display for FullMove {
 }
 
 fn main() -> std::io::Result<()> {
-    std::fs::create_dir_all("ignored/chess_mapping")?;
+    std::fs::create_dir_all("ignored/mapping")?;
 
     let moves = generate_all_flat_moves_pov();
 
-    let output = &mut File::create("ignored/chess_mapping/list.csv")?;
+    let output = &mut File::create("ignored/mapping/chess_list.csv")?;
     writeln!(output, "str, flat_i, conv_i, att_from, att_to, att_i")?;
 
     let mut flat_to_conv = vec![];
@@ -87,17 +87,17 @@ fn main() -> std::io::Result<()> {
         ]);
     }
 
-    let mut writer = File::create("ignored/chess_mapping/flat_to_conv.txt")?;
+    let mut writer = File::create("ignored/mapping/chess_flat_to_conv.txt")?;
     for &v in &flat_to_conv {
         writeln!(writer, "{}", v)?;
     }
 
-    let mut writer = File::create("ignored/chess_mapping/flat_to_att.txt")?;
+    let mut writer = File::create("ignored/mapping/chess_flat_to_att.txt")?;
     for &v in &flat_to_att {
         writeln!(writer, "{}", v)?;
     }
 
-    let mut writer = File::create("ignored/chess_mapping/flat_to_move_input.txt")?;
+    let mut writer = File::create("ignored/mapping/chess_flat_to_move_input.txt")?;
     for row in &flat_to_move_input {
         for &v in row {
             write!(writer, "{},", v)?;

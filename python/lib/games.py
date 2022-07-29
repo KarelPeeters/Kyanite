@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Callable, Sequence
 
 import numpy as np
 
-from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES
+from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES, ATAXX_INDEX_TO_MOVE_INPUT
 from lib.util import prod
 
 
@@ -85,7 +85,7 @@ def _ataxx_game(size: int):
         policy_conv_channels=17,
         # estimated from fully random games
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
-        encode_mv=None,
+        encode_mv=lambda mv: encode_ataxx_mv(size, mv),
         possible_mvs=ATAXX_VALID_MOVES[size - 2],
     )
 
@@ -117,6 +117,21 @@ def encode_chess_move(mv: int) -> np.array:
 
     # other boolean planes
     result[2:, :, :] = encoded[2:, None, None]
+    return result
+
+
+def encode_ataxx_mv(size: int, mv: int):
+    (is_pass, copy_to, jump_from, jump_to) = ATAXX_INDEX_TO_MOVE_INPUT[mv, :]
+    result = np.zeros((4, size, size))
+
+    result[0, :, :] = is_pass
+    if copy_to != -1:
+        result[1, :, :].flatten()[copy_to] = 1
+    if jump_from != -1:
+        result[2, :, :].flatten()[jump_from] = 1
+    if jump_to != -1:
+        result[3, :, :].flatten()[jump_to] = 1
+
     return result
 
 
