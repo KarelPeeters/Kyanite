@@ -3,8 +3,8 @@ from typing import Optional
 import torch
 from torch import nn
 
-from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_ATT, CHESS_FLAT_TO_CONV
 from lib.games import Game
+from lib.mapping.mapping import CHESS_FLAT_TO_ATT, CHESS_FLAT_TO_CONV
 
 
 class ScalarHead(nn.Module):

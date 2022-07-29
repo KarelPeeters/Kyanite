@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Callable, Sequence
 
 import numpy as np
 
-from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_MOVE_INPUT
+from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES
 from lib.util import prod
 
 
@@ -86,7 +86,7 @@ def _ataxx_game(size: int):
         # estimated from fully random games
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
         encode_mv=None,
-        possible_mvs=range(17 * size * size + 1)
+        possible_mvs=ATAXX_VALID_MOVES[size - 2],
     )
 
 
