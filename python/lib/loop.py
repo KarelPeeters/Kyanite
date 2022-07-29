@@ -61,6 +61,7 @@ class LoopSettings:
     gui: bool
     root_path: str
     port: int
+    wait_for_new_network: bool
 
     dummy_network: Optional[Callable[[], nn.Module]]
     initial_network: Callable[[], nn.Module]
@@ -236,7 +237,8 @@ class LoopSettings:
             if buffer.position_count < self.min_buffer_size:
                 print(f"Not training new network yet, only {buffer.position_count}/{self.min_buffer_size} positions")
             else:
-                client.send_wait_for_new_network()
+                if self.wait_for_new_network:
+                    client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
                 train_sampler = buffer.sampler(
