@@ -1,4 +1,4 @@
-use board_game::games::ataxx::{AtaxxBoard, Move};
+use board_game::games::ataxx::{AtaxxBoard, Move, MAX_MOVES_SINCE_LAST_COPY};
 use board_game::util::coord::Coord8;
 
 use crate::mapping::bit_buffer::BitBuffer;
@@ -30,10 +30,12 @@ impl InputMapper<AtaxxBoard> for AtaxxStdMapper {
     }
 
     fn input_scalar_count(&self) -> usize {
-        0
+        1
     }
 
-    fn encode_input(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &AtaxxBoard) {
+    fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &AtaxxBoard) {
+        scalars.push(board.moves_since_last_copy() as f32 / MAX_MOVES_SINCE_LAST_COPY as f32);
+
         let (next_tiles, other_tiles) = board.tiles_pov();
         bools.extend(board.full_mask().into_iter().map(|c| next_tiles.has(c)));
         bools.extend(board.full_mask().into_iter().map(|c| other_tiles.has(c)));
