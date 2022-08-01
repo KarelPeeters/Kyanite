@@ -145,7 +145,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
             };
 
             // encode move
-            let mv_index = mapper.move_to_index(&board, mv).unwrap();
+            let mv_index = mapper.move_to_index(&board, mv);
             println!("Dynamics with move {} {}", mv_index, mv);
 
             let mut move_encoded = vec![];
@@ -202,7 +202,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
             match moves.next().copied() {
                 None => break,
                 Some(mv) => {
-                    let mv_index = mapper.move_to_index(&curr_board, mv).unwrap();
+                    let mv_index = mapper.move_to_index(&curr_board, mv);
                     curr_board.play(mv);
 
                     let expand_args = ExpandArgs {
@@ -249,7 +249,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
                     let child_node = inner
                         .children
                         .iter()
-                        .find(|&n| tree[n].last_move_index == mv_index)
+                        .find(|&n| tree[n].last_move_index == Some(mv_index))
                         .unwrap();
                     curr_board.play(mv);
                     curr_node = child_node;

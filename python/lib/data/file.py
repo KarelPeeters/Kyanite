@@ -1,6 +1,5 @@
 import json
 import os
-from functools import cached_property
 from pathlib import Path
 from threading import RLock
 from typing import BinaryIO, Sequence, overload, Union
@@ -56,6 +55,8 @@ class DataFile:
         self.lock = RLock()
         self.bin_handle = bin_handle
         self.off_handle = off_handle
+
+        self._cached_simulation_start_indices = None
 
     @staticmethod
     def open(game: Game, path: str) -> 'DataFile':
@@ -142,7 +143,7 @@ class DataFile:
                     start_pi = int.from_bytes(index_bytes[:OFFSET_SIZE_IN_BYTES], "little")
                     end_pi = int.from_bytes(index_bytes[OFFSET_SIZE_IN_BYTES:], "little") - 1
             else:
-                start_indices = self._simulation_start_indices
+                start_indices = self._simulation_start_indices()
 
                 start_pi = start_indices[si]
 
@@ -158,12 +159,14 @@ class DataFile:
             includes_final=self.info.includes_final_positions,
         )
 
-    @cached_property
     def _simulation_start_indices(self):
         """
         The start position index for each simulation, calculated based on the positions themselves.
         Useful for backwards compatibility for files without includes_game_start_indices.
         """
+
+        if self._cached_simulation_start_indices is not None:
+            return self._cached_simulation_start_indices
 
         starts = np.empty(self.info.simulation_count, dtype=int)
         pi = 0
@@ -175,6 +178,7 @@ class DataFile:
             assert position.move_index == 0
             pi += position.simulation.position_count
 
+        self._cached_simulation_start_indices = starts
         return starts
 
     def close(self):
@@ -187,6 +191,8 @@ class FileSimulationsView(Sequence[Simulation]):
         self.file = file
         self.si_range = si_range
 
+        self._positions = None
+
     def __len__(self):
         return len(self.si_range)
 
@@ -198,8 +204,11 @@ class FileSimulationsView(Sequence[Simulation]):
     def __getitem__(self, si_slice: slice) -> 'FileSimulationsView':
         pass
 
-    @cached_property
+    @property
     def positions(self) -> 'FilePositionsView':
+        if self._positions is not None:
+            return self._positions
+
         assert self.si_range.step == 1, "Cannot get positions for simulation slice with step, since it would be non-affine"
 
         if len(self) == 0:
@@ -207,7 +216,10 @@ class FileSimulationsView(Sequence[Simulation]):
 
         start_pi = self[0].start_file_pi
         end_pi = self[-1].end_file_pi
-        return FilePositionsView(self.file, range(start_pi, end_pi))
+
+        positions = FilePositionsView(self.file, range(start_pi, end_pi))
+        self._positions = positions
+        return positions
 
     def __getitem__(self, item: Union[int, slice]) -> Union[Simulation, 'FileSimulationsView']:
         if isinstance(item, slice):

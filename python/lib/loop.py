@@ -61,6 +61,7 @@ class LoopSettings:
     gui: bool
     root_path: str
     port: int
+    wait_for_new_network: bool
 
     dummy_network: Optional[Callable[[], nn.Module]]
     initial_network: Callable[[], nn.Module]
@@ -174,7 +175,12 @@ class LoopSettings:
         print("Saving current settings")
         os.makedirs(start_gen.train_path, exist_ok=True)
         with open(start_gen.settings_path, "w") as settings_f:
-            json.dump(self, settings_f, default=lambda o: o.__dict__, indent=2)
+            def map(o):
+                if isinstance(o, range):
+                    return str(o)
+                return o.__dict__
+
+            json.dump(self, settings_f, default=map, indent=2)
 
         print("Main network parameters:")
         print_param_count(network)
@@ -231,7 +237,8 @@ class LoopSettings:
             if buffer.position_count < self.min_buffer_size:
                 print(f"Not training new network yet, only {buffer.position_count}/{self.min_buffer_size} positions")
             else:
-                client.send_wait_for_new_network()
+                if self.wait_for_new_network:
+                    client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
                 train_sampler = buffer.sampler(

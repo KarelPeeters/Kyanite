@@ -28,8 +28,8 @@ impl PolicyMapper<TTTBoard> for TTTStdMapper {
         &[1, 3, 3]
     }
 
-    fn move_to_index(&self, _: &TTTBoard, mv: Coord3) -> Option<usize> {
-        Some(mv.index() as usize)
+    fn move_to_index(&self, _: &TTTBoard, mv: Coord3) -> usize {
+        mv.index() as usize
     }
 
     fn index_to_move(&self, _: &TTTBoard, index: usize) -> Option<Coord3> {

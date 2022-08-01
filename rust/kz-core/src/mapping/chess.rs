@@ -1,8 +1,8 @@
-use board_game::chess;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use board_game::chess;
 use board_game::chess::{BitBoard, ChessMove, Color, File, Piece, Rank, Square};
 use board_game::games::chess::ChessBoard;
 use lazy_static::lazy_static;
@@ -99,7 +99,7 @@ impl PolicyMapper<ChessBoard> for ChessHistoryMapper {
         ChessStdMapper.policy_shape()
     }
 
-    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> Option<usize> {
+    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> usize {
         ChessStdMapper.move_to_index(board, mv)
     }
 
@@ -199,13 +199,14 @@ impl PolicyMapper<ChessBoard> for ChessStdMapper {
         &[FLAT_MOVE_COUNT]
     }
 
-    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> Option<usize> {
+    fn move_to_index(&self, board: &ChessBoard, mv: ChessMove) -> usize {
         let mv_pov = move_pov(board.inner().side_to_move(), mv);
         let index = *FLAT_MOVES_POV
             .mv_to_index
             .get(&mv_pov)
             .unwrap_or_else(|| panic!("mv {:?}, pov_mv {:?} not found in flat moves", mv, mv_pov));
-        Some(index)
+        assert!(index < self.policy_len());
+        index
     }
 
     fn index_to_move(&self, board: &ChessBoard, index: usize) -> Option<ChessMove> {
@@ -220,7 +221,7 @@ impl PolicyMapper<ChessBoard> for ChessLegacyConvPolicyMapper {
         &[CONV_POLICY_CHANNELS, 8, 8]
     }
 
-    fn move_to_index(&self, board: &ChessBoard, mv_abs: ChessMove) -> Option<usize> {
+    fn move_to_index(&self, board: &ChessBoard, mv_abs: ChessMove) -> usize {
         let mv = move_pov(board.inner().side_to_move(), mv_abs);
 
         let classified = ClassifiedPovMove::from_move(mv);
@@ -231,7 +232,7 @@ impl PolicyMapper<ChessBoard> for ChessLegacyConvPolicyMapper {
         let index = channel * 8 * 8 + from_index;
         assert!(index < self.policy_len());
 
-        Some(index)
+        index
     }
 
     fn index_to_move(&self, board: &ChessBoard, index: usize) -> Option<ChessMove> {

@@ -557,7 +557,7 @@ fn repeated_conv() {
     let weight0 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-1.0, 1.0, 4 * 4 * 3 * 3).to_vec());
     let weight1 = graph.constant(shape![4, 4, 3, 3], Array1::linspace(-2.0, 2.0, 4 * 4 * 3 * 3).to_vec());
 
-    let input = graph.input(shape!(Size::BATCH, 4, 8, 8));
+    let input = graph.input(shape![Size::BATCH, 4, 8, 8]);
 
     let x1 = graph.conv(input, weight0, 1, 1);
     let x2 = graph.conv(x1, weight0, 1, 1);

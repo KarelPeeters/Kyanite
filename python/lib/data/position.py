@@ -63,11 +63,16 @@ class Position:
         self.zero_visits = int(scalars.pop("zero_visits"))
         self.available_mv_count = int(scalars.pop("available_mv_count"))
 
-        self.played_mv = map_none(scalars.pop("played_mv", None), int)
+        played_mv = map_none(scalars.pop("played_mv", None), int)
+        if not (played_mv is None or played_mv == -1 or played_mv in game.possible_mvs):
+            print(f"Warning: got played_mv '{played_mv}' that is not possible in game '{game.name}'")
+        self.played_mv = played_mv
+
         self.is_full_search = map_none_or(scalars.pop("is_full_search", None), bool, True)
-        self.is_final_position = map_none_or(scalars.pop("is_final_position", None), bool, False)
+        self.is_final = map_none_or(scalars.pop("is_final_position", None), bool, False)
         self.is_terminal = map_none_or(scalars.pop("is_terminal", None), bool, False)
         self.hit_move_limit = map_none(scalars.pop("hit_move_limit", None), bool)
+        self.is_post_final = False
 
         self.kdl_policy = float(scalars.pop("kdl_policy"))
 
@@ -102,6 +107,7 @@ class PostFinalPosition:
     def __init__(self, final_position: Position):
         game = final_position.game
         self.game = game
+        self.final_position = final_position
 
         self.available_mv_count = 0
 
@@ -113,17 +119,15 @@ class PostFinalPosition:
 
         self.move_index = -1
         self.file_pi = -1
+
+        # TODO we could set the correct simulation
         self.simulation = Simulation(
             index=-1,
             start_file_pi=-1,
             move_count=-1,
             includes_final=False,
         )
-        self.final_position = final_position
-
-        # pick a random move to teach that any more stays in the terminal state
-        mv_size = prod(game.input_mv_shape)
-        self.played_mv = random.randrange(mv_size)
+        self.played_mv = -1
 
         # TODO is this right? we "extremify" the values here
         #  doesn't really matter since usually we train on terminal values
@@ -136,7 +140,13 @@ class PostFinalPosition:
         self.final_moves_left = 0.0
         self.zero_moves_left = 0.0
         self.net_moves_left = 0.0
-        self.is_terminal = True
+
+        # TODO what about these values?
+        self.is_full_search = False
+        self.is_final = final_position.is_final
+        self.is_terminal = final_position.is_terminal
+        self.hit_move_limit = final_position.hit_move_limit
+        self.is_post_final = True
 
 
 class PositionBatch:
@@ -160,7 +170,10 @@ class PositionBatch:
         sim_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         move_index = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
         file_pi = torch.empty(len(positions), dtype=torch.int64, pin_memory=pin_memory)
+
         is_terminal = torch.empty(len(positions), dtype=torch.bool, pin_memory=pin_memory)
+        is_final = torch.empty((len(positions)), dtype=torch.bool, pin_memory=pin_memory)
+        is_post_final = torch.empty((len(positions)), dtype=torch.bool, pin_memory=pin_memory)
 
         if game.input_mv_channels is not None:
             played_mv_full = torch.zeros(len(positions), *game.input_mv_shape, pin_memory=pin_memory)
@@ -193,9 +206,18 @@ class PositionBatch:
             file_pi[i] = p.file_pi
             sim_index[i] = p.simulation.index
 
+            # TODO this is a strange place to encode a random move
             if game.input_mv_channels is not None:
-                played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(p.played_mv))
+                if p.played_mv == -1:
+                    used_mv = random.choice(game.possible_mvs)
+                else:
+                    used_mv = p.played_mv
+
+                played_mv_full[i, :, :, :] = torch.from_numpy(game.encode_mv(used_mv))
+
             is_terminal[i] = p.is_terminal
+            is_final[i] = p.is_final
+            is_post_final[i] = p.is_post_final
 
         self.input_full = input_full.to(DEVICE)
         self.final_input_full = final_input_full.to(DEVICE) if include_final_for_each else None
@@ -208,7 +230,10 @@ class PositionBatch:
         self.file_pi = file_pi.to(DEVICE)
         self.sim_index = sim_index.to(DEVICE)
         self.played_mv_full = played_mv_full.to(DEVICE) if played_mv_full is not None else None
+
         self.is_terminal = is_terminal.to(DEVICE)
+        self.is_final = is_final.to(DEVICE)
+        self.is_post_final = is_post_final.to(DEVICE)
 
         self.all_wdls = all_wdls.to(DEVICE)
         self.all_values = all_values.to(DEVICE)

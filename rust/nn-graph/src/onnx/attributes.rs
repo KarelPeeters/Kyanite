@@ -50,6 +50,11 @@ impl<'a> Attributes<'a> {
         self.take(key, AttributeType::Float).f
     }
 
+    pub fn maybe_take_tensor(&mut self, key: &str) -> Option<&TensorProto> {
+        self.maybe_take(key, AttributeType::Tensor)
+            .map(|a| a.t.as_ref().unwrap())
+    }
+
     pub fn take_tensor(&mut self, key: &str) -> &TensorProto {
         self.take(key, AttributeType::Tensor).t.as_ref().unwrap()
     }

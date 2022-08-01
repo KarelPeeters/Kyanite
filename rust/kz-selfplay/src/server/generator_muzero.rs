@@ -243,7 +243,6 @@ fn add_dirichlet_noise<B: AltBoard, M: BoardMapper<B>>(
     mapper: M,
     rng: &mut impl Rng,
 ) {
-    // TODO this function doesn't work with the pass move
     // TODO consider using KataGo's shaped dirichlet noise, it's even more relevant for muzero
     //   is that true? we're still just adding noise to the available moves!
 
@@ -256,17 +255,12 @@ fn add_dirichlet_noise<B: AltBoard, M: BoardMapper<B>>(
 
     let mv_count = board.available_moves().count();
     if mv_count > 1 {
-        let indices = || {
-            board
-                .available_moves()
-                .map(|mv| mapper.move_to_index(board, mv).unwrap())
-        };
-
         let distr = Dirichlet::new_with_size(alpha, mv_count).unwrap();
         let noise = rng.sample(distr);
 
-        indices().enumerate().for_each(|(i, pi)| {
-            policy[pi] = policy[pi] * (1.0 - eps) + noise[i] * eps;
+        board.available_moves().enumerate().for_each(|(i, mv)| {
+            let mi = mapper.move_to_index(board, mv);
+            policy[mi] = policy[mi] * (1.0 - eps) + noise[i] * eps;
         });
     }
 
@@ -282,7 +276,10 @@ fn extract_zero_eval<B: AltBoard, M: BoardMapper<B>>(
 
     let mut policy: Vec<f32> = board
         .available_moves()
-        .map(|mv| mapper.move_to_index(board, mv).map_or(0.0, |i| eval.policy_logits[i]))
+        .map(|mv| {
+            let index = mapper.move_to_index(board, mv);
+            eval.policy_logits[index]
+        })
         .collect();
 
     softmax_in_place(&mut policy);

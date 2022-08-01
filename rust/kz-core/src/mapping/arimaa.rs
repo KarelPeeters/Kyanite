@@ -92,8 +92,8 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
         &[1 + 6 + 4 * 8 * 8]
     }
 
-    fn move_to_index(&self, board: &ArimaaBoard, mv: Action) -> Option<usize> {
-        let index = match mv {
+    fn move_to_index(&self, board: &ArimaaBoard, mv: Action) -> usize {
+        match mv {
             Action::Pass => 0,
             Action::Place(piece) => {
                 let piece_index = Piece::ALL.iter().index_of(&piece).unwrap();
@@ -108,9 +108,7 @@ impl PolicyMapper<ArimaaBoard> for ArimaaSplitMapper {
                 let tensor_index = direction_index * 64 + square_pov.index();
                 1 + Piece::ALL.len() + tensor_index
             }
-        };
-
-        Some(index)
+        }
     }
 
     fn index_to_move(&self, board: &ArimaaBoard, index: usize) -> Option<Action> {

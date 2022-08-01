@@ -1,10 +1,10 @@
 import re
 from dataclasses import dataclass, field
-from typing import Tuple, Optional, Callable
+from typing import Tuple, Optional, Callable, Sequence
 
 import numpy as np
 
-from lib.chess_mapping.chess_mapping import CHESS_FLAT_TO_MOVE_INPUT
+from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES, ATAXX_INDEX_TO_MOVE_INPUT
 from lib.util import prod
 
 
@@ -31,6 +31,7 @@ class Game:
     full_input_shape: Tuple[int, int, int] = field(init=False)
 
     encode_mv: Optional[Callable[[int], np.array]]
+    possible_mvs: Sequence[int]
 
     def __post_init__(self):
         self.input_bool_shape = (self.input_bool_channels, self.board_size, self.board_size)
@@ -78,13 +79,14 @@ def _ataxx_game(size: int):
         name=f"ataxx-{size}",
         board_size=size,
         input_bool_channels=3,
-        input_scalar_channels=0,
+        input_scalar_channels=1,
         input_mv_channels=None,
-        policy_shape=(17, size, size),
+        policy_shape=(17 * size * size + 1,),
         policy_conv_channels=17,
         # estimated from fully random games
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
-        encode_mv=None,
+        encode_mv=lambda mv: encode_ataxx_mv(size, mv),
+        possible_mvs=ATAXX_VALID_MOVES[size - 2],
     )
 
 
@@ -101,6 +103,7 @@ def _chess_hist_game(length: int):
         policy_conv_channels=chess.policy_conv_channels,
         estimate_moves_per_game=chess.estimate_moves_per_game,
         encode_mv=chess.encode_mv,
+        possible_mvs=chess.possible_mvs,
     )
 
 
@@ -114,6 +117,21 @@ def encode_chess_move(mv: int) -> np.array:
 
     # other boolean planes
     result[2:, :, :] = encoded[2:, None, None]
+    return result
+
+
+def encode_ataxx_mv(size: int, mv: int):
+    (is_pass, copy_to, jump_from, jump_to) = ATAXX_INDEX_TO_MOVE_INPUT[mv, :]
+    result = np.zeros((4, size, size))
+
+    result[0, :, :] = is_pass
+    if copy_to != -1:
+        result[1, :, :].flatten()[copy_to] = 1
+    if jump_from != -1:
+        result[2, :, :].flatten()[jump_from] = 1
+    if jump_to != -1:
+        result[3, :, :].flatten()[jump_to] = 1
+
     return result
 
 
@@ -134,6 +152,7 @@ GAMES = {
         policy_conv_channels=73,
         estimate_moves_per_game=150,
         encode_mv=encode_chess_move,
+        possible_mvs=range(1880),
     ),
     "sttt": Game(
         name="sttt",
@@ -145,6 +164,7 @@ GAMES = {
         policy_conv_channels=1,
         estimate_moves_per_game=40,
         encode_mv=None,
+        possible_mvs=range(9 * 9),
     ),
     "ttt": Game(
         name="ttt",
@@ -156,6 +176,7 @@ GAMES = {
         policy_conv_channels=1,
         estimate_moves_per_game=5,
         encode_mv=encode_ttt_move,
+        possible_mvs=range(3 * 3),
     ),
     "arimaa-split": Game(
         name="arimaa-split",
@@ -167,5 +188,6 @@ GAMES = {
         policy_conv_channels=None,
         estimate_moves_per_game=300,
         encode_mv=None,
+        possible_mvs=range(1 + 6 + 256),
     )
 }

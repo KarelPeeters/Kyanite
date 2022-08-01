@@ -49,6 +49,7 @@ class TrainSettings:
     moves_left_weight: float
     moves_left_delta: float
     policy_weight: float
+    sim_weight: float
 
     train_in_eval_mode: bool
     clip_norm: float
@@ -96,17 +97,32 @@ class TrainSettings:
         loss = self.evaluate_batch_predictions(log_prefix, logger, False, batch, scalars, policy_logits)
         return loss
 
-    def evaluate_batch_unrolled(self, networks: MuZeroNetworks, batch: UnrolledPositionBatch, log_prefix: str,
-                                logger: Logger):
+    def evaluate_batch_unrolled(
+            self,
+            networks: MuZeroNetworks, batch: UnrolledPositionBatch,
+            log_prefix: str, logger: Logger
+    ):
         total_loss = torch.zeros((), device=DEVICE)
         curr_state = None
 
         for k, step in enumerate(batch.positions):
+            step_prefix = f"{log_prefix}/f{k}"
+
             if k == 0:
                 curr_state = networks.representation(step.input_full)
             else:
                 prev_position = batch.positions[k - 1]
                 curr_state = networks.dynamics(curr_state, prev_position.played_mv_full)
+
+                if self.sim_weight != 0.0:
+                    # TODO it's kind of annoying that we don't have the same batch size here each time,
+                    #   but otherwise we mess up eg. batch-norm with nan or dummy inputs
+                    with torch.no_grad():
+                        curr_state_repr = networks.representation(step.input_full[~step.is_post_final])
+                    total_loss += self.eval_similarity(
+                        curr_state, curr_state_repr, step.is_post_final,
+                        logger, step_prefix
+                    )
 
             scalars_k, policy_logits_k = networks.prediction(curr_state)
 
@@ -118,7 +134,7 @@ class TrainSettings:
                 curr_state = fake_quantize_scale(curr_state, 1.0, networks.state_quant_bits)
 
             total_loss += self.evaluate_batch_predictions(
-                f"{log_prefix}/f{k}", logger, True,
+                step_prefix, logger, True,
                 batch.positions[k], scalars_k, policy_logits_k
             )
 
@@ -133,6 +149,21 @@ class TrainSettings:
 
         norm_loss = total_loss / len(batch.positions)
         return norm_loss
+
+    def eval_similarity(self, curr_state, curr_state_repr_filtered, is_post_final, logger: Logger, log_prefix: str):
+        batch_size = len(is_post_final)
+        non_post_final_count = len(curr_state_repr_filtered)
+
+        sim_loss_raw = nnf.mse_loss(curr_state[~is_post_final], curr_state_repr_filtered)
+
+        sim_loss_norm = (non_post_final_count / batch_size) * sim_loss_raw
+        sim_loss_weighed = self.sim_weight * sim_loss_norm
+
+        logger.log("loss-sim", f"{log_prefix} sim raw", sim_loss_raw)
+        logger.log("loss-sim", f"{log_prefix} sim norm", sim_loss_norm)
+        logger.log("loss-part", f"{log_prefix} sim", sim_loss_weighed)
+
+        return sim_loss_weighed
 
     def evaluate_batch_predictions(
             self,

@@ -70,11 +70,11 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
     }
 
     /// Get the index in the policy tensor corresponding to the given move.
-    /// A return of `None` means that this move is structurally forced and does not get a place in the policy tensor.
-    fn move_to_index(&self, board: &B, mv: B::Move) -> Option<usize>;
+    /// _May_ panic if the given move is not available on this board.
+    fn move_to_index(&self, board: &B, mv: B::Move) -> usize;
 
     /// Get the move corresponding to the given index in the policy tensor.
-    /// A return of `None` means that this index does not correspond to any move.
+    /// A return of `None` means that this index does not correspond to any move (on this board or otherwise).
     fn index_to_move(&self, board: &B, index: usize) -> Option<B::Move>;
 }
 
@@ -141,7 +141,7 @@ impl<B: Board, I: InputMapper<B>, P: PolicyMapper<B>> PolicyMapper<B> for Compos
         self.policy_mapper.policy_shape()
     }
 
-    fn move_to_index(&self, board: &B, mv: B::Move) -> Option<usize> {
+    fn move_to_index(&self, board: &B, mv: B::Move) -> usize {
         self.policy_mapper.move_to_index(board, mv)
     }
 

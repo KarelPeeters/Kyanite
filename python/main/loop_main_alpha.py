@@ -77,6 +77,7 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop/{game.name}/profile-batch/",
         port=63105,
+        wait_for_new_network=True,
 
         dummy_network=None,
         initial_network=initial_network,
