@@ -7,6 +7,7 @@ pub struct PrintThroughput {
     delta_count: u64,
     update_count: u64,
     last_print: Instant,
+    silent_drop: bool,
 }
 
 impl PrintThroughput {
@@ -17,6 +18,7 @@ impl PrintThroughput {
             delta_count: 0,
             update_count: 0,
             last_print: Instant::now(),
+            silent_drop: true,
         }
     }
 
@@ -56,10 +58,16 @@ impl PrintThroughput {
         self.delta_count = 0;
         self.update_count = 0;
     }
+
+    pub fn set_silent_drop(&mut self, b: bool) {
+        self.silent_drop = b;
+    }
 }
 
 impl Drop for PrintThroughput {
     fn drop(&mut self) {
-        self.print_tp(Instant::now());
+        if !self.silent_drop {
+            self.print_tp(Instant::now());
+        }
     }
 }
