@@ -29,8 +29,8 @@ pub fn batched_executor_loop<G, N, X, Y>(
     run_condition: RunCondition,
     graph_receiver: Receiver<Option<G>>,
     server: JobServer<X, Y>,
-    load_network: impl Fn(G) -> N,
-    evaluate_batch: impl Fn(&mut N, &[X]) -> Vec<Y>,
+    mut load_network: impl FnMut(G) -> N,
+    mut evaluate_batch: impl FnMut(&mut N, &[X]) -> Vec<Y>,
 ) {
     let thread_name = std::thread::current().name().unwrap_or("unnamed").to_owned();
     assert_ne!(max_batch_size, 0, "Got batch size 0 for {}", thread_name);
@@ -66,7 +66,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
 
         let _: Never = match message {
             Message::Graph(Ok(graph)) => {
-                handle_new_graph(&mut network, graph, &load_network, &thread_name);
+                handle_new_graph(&mut network, graph, &mut load_network, &thread_name);
                 continue;
             }
             Message::Job(job) => {
@@ -93,7 +93,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
 
                         // optionally evaluate some batches
                         if state.should_eval(run_condition, max_batch_size) {
-                            run_eval(&mut state, network, &evaluate_batch, max_batch_size);
+                            run_eval(&mut state, network, &mut evaluate_batch, max_batch_size);
                         }
 
                         continue;
@@ -104,7 +104,7 @@ pub fn batched_executor_loop<G, N, X, Y>(
                         // evaluate all remaining jobs if any
                         assert!(state.items_to_eval() < max_batch_size);
                         if state.items_to_eval() > 0 {
-                            run_eval(&mut state, network, &evaluate_batch, max_batch_size);
+                            run_eval(&mut state, network, &mut evaluate_batch, max_batch_size);
                         }
                         assert!(state.items_to_eval() == 0 && state.items_to_send() == 0);
 
@@ -304,7 +304,7 @@ impl<X, Y> State<X, Y> {
 fn run_eval<X, Y, N>(
     state: &mut State<X, Y>,
     network: &mut N,
-    evaluate_batch: &impl Fn(&mut N, &[X]) -> Vec<Y>,
+    mut evaluate_batch: impl FnMut(&mut N, &[X]) -> Vec<Y>,
     max_batch_size: usize,
 ) {
     begin_event_with_color("run", CL_GREEN);
@@ -317,7 +317,12 @@ fn run_eval<X, Y, N>(
     end_event();
 }
 
-fn handle_new_graph<N, G>(network: &mut Option<N>, graph: Option<G>, load_network: impl Fn(G) -> N, thread_name: &str) {
+fn handle_new_graph<N, G>(
+    network: &mut Option<N>,
+    graph: Option<G>,
+    mut load_network: impl FnMut(G) -> N,
+    thread_name: &str,
+) {
     // drop previous network if any to save GPU memory
     if let Some(network) = network.take() {
         begin_event_with_color("drop", CL_BLUE);
