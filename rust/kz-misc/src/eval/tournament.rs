@@ -31,7 +31,7 @@ pub struct Round<B: Board> {
     pub id: RoundId,
     pub start: B,
     pub moves: Vec<B::Move>,
-    outcome: Outcome,
+    pub outcome: Outcome,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -54,18 +54,19 @@ pub fn box_bot<B: Board, T: AsyncBot<B> + Send + 'static>(
     Box::new(move || Box::new(f()))
 }
 
-pub fn run_tournament<S: Display, B: Board, F: Fn() + Send + 'static>(
+pub fn run_tournament<S: Display, B: Board, F: FnMut() + Send + 'static>(
     bots: Vec<(S, BoxBotFn<B>)>,
     start_positions: Vec<B>,
     limit_threads: Option<usize>,
     self_games: bool,
+    flip_games: bool,
     on_print: F,
 ) -> Tournament<B> {
     let bot_count = bots.len();
     let pos_count = start_positions.len();
 
     let (bot_names, bots) = bots.into_iter().map(|(s, b)| (s.to_string(), b)).unzip();
-    let rounds = run_rounds(bots, &start_positions, limit_threads, self_games, on_print);
+    let rounds = run_rounds(bots, &start_positions, limit_threads, self_games, flip_games, on_print);
 
     let mut total_wdl = vec![WDL::<usize>::default(); bot_count];
     let mut grid_wdl = vec![vec![WDL::<usize>::default(); bot_count]; bot_count];
@@ -95,7 +96,8 @@ fn run_rounds<B: Board>(
     start_positions: &Vec<B>,
     limit_threads: Option<usize>,
     self_games: bool,
-    on_print: impl Fn() + Send + 'static,
+    flip_games: bool,
+    mut on_print: impl FnMut() + Send + 'static,
 ) -> Vec<Round<B>> {
     let mut builder = ThreadPoolBuilder::new();
     builder.name_prefix("tournament");
@@ -107,10 +109,10 @@ fn run_rounds<B: Board>(
     let mut handles = vec![];
     let (sender, receiver) = flume::bounded(8);
 
-    // this nested loop automatically includes flipped bots
     let mut started_games = 0;
     for i in 0..bots.len() {
-        for j in 0..bots.len() {
+        let j_start = if flip_games { 0 } else { i + 1 };
+        for j in j_start..bots.len() {
             for (s, start) in start_positions.iter().enumerate() {
                 if (i == j) ^ self_games {
                     break;
@@ -133,6 +135,7 @@ fn run_rounds<B: Board>(
     }
 
     let started_games = started_games;
+    drop(bots);
     drop(sender);
 
     pool.spawn_ok(async move {
@@ -170,9 +173,9 @@ fn run_rounds<B: Board>(
                 let moves_avg = moves.sum::<usize>() as f32 / running_games as f32;
 
                 println!("Throughput: {} moves/s", move_tp);
-                println!("Finished {}/{} games", finished_games, started_games);
+                println!("  finished {}/{} games", finished_games, started_games);
                 println!(
-                    "Done moves per game: min {} avg {} max {}",
+                    "  running moves per game: min {} avg {} max {}",
                     moves_min, moves_avg, moves_max
                 );
                 on_print();
