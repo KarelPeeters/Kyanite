@@ -8,11 +8,13 @@ use crate::zero::values::ZeroValuesPov;
 
 pub mod common;
 pub mod dummy;
-pub mod symmetry;
 pub mod muzero;
+pub mod symmetry;
 
 pub mod cpu;
 pub mod cudnn;
+
+pub mod multibatch;
 
 pub mod job_channel;
 
