@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-PIN_MEMORY = DEVICE == "cuda"
+PIN_MEMORY = False
 
 
 def prod(values):
