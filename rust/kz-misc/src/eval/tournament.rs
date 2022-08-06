@@ -20,6 +20,8 @@ pub type BoxBot<B> = Box<dyn AsyncBot<B> + Send>;
 pub struct Tournament<B: Board> {
     pub bot_names: Vec<String>,
     pub pos_count: usize,
+    pub flip_games: bool,
+
     pub rounds: Vec<Round<B>>,
 
     pub total_wdl: Vec<WDL<usize>>,
@@ -85,6 +87,7 @@ pub fn run_tournament<S: Display, B: Board, F: FnMut() + Send + 'static>(
     Tournament {
         bot_names,
         pos_count,
+        flip_games,
         rounds,
         total_wdl,
         grid_wdl,
@@ -292,8 +295,9 @@ impl<B: Board> Display for Tournament<B> {
         writeln!(f, "Tournament {{")?;
         writeln!(f, "  pos_count: {}", self.pos_count)?;
         writeln!(f, "  total_games: {}", self.rounds.len())?;
+        writeln!(f, "  flip_games: {}", self.flip_games)?;
         writeln!(f, "  results:")?;
-        writeln!(f, "{}", table)?;
+        write!(f, "{}", table)?;
         writeln!(f, "}}")?;
 
         Ok(())
