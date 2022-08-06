@@ -24,15 +24,23 @@ pub struct ZeroSettings {
     pub weights: UctWeights,
     pub use_value: bool,
     pub fpu_mode: FpuMode,
+    pub policy_temperature: f32,
 }
 
 impl ZeroSettings {
-    pub fn new(batch_size: usize, weights: UctWeights, use_value: bool, fpu_mode: FpuMode) -> Self {
+    pub fn new(
+        batch_size: usize,
+        weights: UctWeights,
+        use_value: bool,
+        fpu_mode: FpuMode,
+        policy_temperature: f32,
+    ) -> Self {
         ZeroSettings {
             batch_size,
             weights,
             use_value,
             fpu_mode,
+            policy_temperature,
         }
     }
 }
@@ -128,7 +136,7 @@ impl ZeroSettings {
 
             // add all evaluations back to the tree
             for (req, eval) in zip_eq_exact(requests, evals) {
-                zero_step_apply(tree, req.respond(eval));
+                zero_step_apply(tree, self.policy_temperature, req.respond(eval));
             }
         }
     }

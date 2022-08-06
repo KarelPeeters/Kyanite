@@ -188,7 +188,7 @@ async fn build_tree<B: Board>(
                             }
 
                             // add to tree
-                            zero_step_apply(&mut tree, request.respond(eval));
+                            zero_step_apply(&mut tree, settings.search_policy_temperature, request.respond(eval));
                         }
                         None => {
                             requests.push(request);
@@ -217,7 +217,7 @@ async fn build_tree<B: Board>(
             }
 
             // add to tree
-            zero_step_apply(&mut tree, req.respond(eval));
+            zero_step_apply(&mut tree, settings.search_policy_temperature, req.respond(eval));
         }
     }
 

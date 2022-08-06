@@ -91,6 +91,7 @@ pub struct Settings {
 
     pub dirichlet_alpha: f32,
     pub dirichlet_eps: f32,
+    pub search_policy_temperature: f32,
 
     pub full_search_prob: f64,
     pub full_iterations: u64,

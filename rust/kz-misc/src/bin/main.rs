@@ -2,7 +2,7 @@ use std::cmp::{max, min, Reverse};
 use std::collections::HashSet;
 
 use board_game::board::{Board, Outcome, Player};
-use board_game::games::chess::ChessBoard;
+use board_game::games::ataxx::AtaxxBoard;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
 };
@@ -20,7 +20,7 @@ use tui::widgets::Widget;
 use tui::Terminal;
 
 use cuda_nn_eval::Device;
-use kz_core::mapping::chess::ChessStdMapper;
+use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::dummy::DummyNetwork;
 use kz_core::zero::node::{Uct, UctWeights};
@@ -29,6 +29,7 @@ use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_util::display::display_option_empty;
+use kz_util::throughput::PrintThroughput;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
@@ -349,23 +350,25 @@ impl<B: Board> Widget for &State<B> {
     }
 }
 
-fn build_tree(real: bool) -> Tree<ChessBoard> {
-    let settings = ZeroSettings::new(256, UctWeights::default(), false, FpuMode::Parent);
-    let visits = 20_000;
+fn build_tree(real: bool) -> Tree<AtaxxBoard> {
+    let batch_size = 1024;
+    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let visits = 1_000_000;
 
-    let board = ChessBoard::new_without_history_fen(
-        "2r3rk/1b3p1p/pp2pPn1/2qp2RQ/8/2N3P1/PPP3BP/1K2R3 b - - 0 1",
-        Default::default(),
-    );
-    let path = "C:/Documents/Programming/STTT/AlphaZero/data/networks/chess_16x128_gen3634.onnx";
-    let mapper = ChessStdMapper;
+    let board = AtaxxBoard::default();
+    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\tmp\network_3874.onnx"#;
+    let mapper = AtaxxStdMapper::new(board.size());
 
     // let board = AtaxxBoard::default();
     // let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/ataxx-7/16x128/training/gen_661/network.onnx";
     // let mapper = AtaxxStdMapper::new(board.size());
 
     let mut rng = StdRng::from_entropy();
-    let stop = |tree: &Tree<_>| tree.root_visits() >= visits;
+    let mut tp = PrintThroughput::new("nodes");
+    let stop = |tree: &Tree<_>| {
+        tp.update_total(tree.root_visits());
+        tree.root_visits() >= visits
+    };
 
     if real {
         let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());

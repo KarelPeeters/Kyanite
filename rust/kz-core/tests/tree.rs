@@ -17,7 +17,7 @@ use kz_core::zero::wrapper::ZeroSettings;
 fn tree_smaller_than_batch() {
     let board = DummyGame::from_str("(AA(AB))").unwrap();
 
-    let settings = ZeroSettings::new(16, UctWeights::default(), false, FpuMode::Parent);
+    let settings = ZeroSettings::new(16, UctWeights::default(), false, FpuMode::Parent, 1.0);
 
     // we're testing that this does not get stuck once the tree runs out
     // it should also stop early enough without visiting the rest of the tree a crazy amount of times,
@@ -40,7 +40,7 @@ fn empty_tree_display() {
 #[test]
 fn keep_tree() {
     let board = STTTBoard::default();
-    let settings = ZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent);
+    let settings = ZeroSettings::new(1, UctWeights::default(), false, FpuMode::Parent, 1.0);
     let visits = 100;
     let mut rng = StdRng::seed_from_u64(0);
 
