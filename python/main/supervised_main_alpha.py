@@ -55,6 +55,7 @@ def main(plotter: LogPlotter):
         value_weight=0.1,
         wdl_weight=1.0,
         policy_weight=1.0,
+        sim_weight=0.0,
         moves_left_delta=20,
         moves_left_weight=0.0001,
         clip_norm=5.0,
@@ -80,8 +81,8 @@ def main(plotter: LogPlotter):
 
     train_group = DataGroup.from_files(game, files, 0, 1 - test_fraction)
     test_group = DataGroup.from_files(game, files, 1 - test_fraction, 1)
-    train_sampler = PositionSampler(train_group, batch_size, None, include_final, threads=1)
-    test_sampler = PositionSampler(test_group, batch_size, None, include_final, threads=1)
+    train_sampler = PositionSampler(train_group, batch_size, None, include_final, False, threads=1)
+    test_sampler = PositionSampler(test_group, batch_size, None, include_final, False, threads=1)
 
     print(f"File count: {len(files)}")
     print(f"  Train simulation count: {len(train_group.simulations)}")

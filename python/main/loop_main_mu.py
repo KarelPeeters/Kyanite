@@ -41,6 +41,7 @@ def main():
         max_game_length=400,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,
+        search_policy_temperature=1.0,
         full_search_prob=1.0,
         full_iterations=200,
         part_iterations=20,
@@ -55,6 +56,7 @@ def main():
         value_weight=0.1,
         wdl_weight=1.0,
         policy_weight=1.0,
+        sim_weight=0.0,
         moves_left_delta=20,
         moves_left_weight=0.0001,
         clip_norm=5.0,
@@ -103,6 +105,7 @@ def main():
         gui=sys.platform == "win32",
         root_path=f"data/loop_mu/{game.name}/profile/",
         port=63105,
+        wait_for_new_network=True,
 
         dummy_network=None,
         initial_network=initial_network,
