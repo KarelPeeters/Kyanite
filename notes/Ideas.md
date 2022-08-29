@@ -44,6 +44,7 @@ This file contains a bunch of ideas that might be interesting to try in the futu
   * it still feels like a BN issue because switching to eval mode during training has a large effect
   * maybe BN is being abused to pass global info?
 * experiment more with global pooling vs flattening
+* predict both game outcome and search value (from KataGo discord, search ataxx) 
 
 ### Policy head
 
