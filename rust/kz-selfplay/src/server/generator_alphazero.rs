@@ -7,8 +7,9 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
 
+use kz_core::network::common::policy_softmax_temperature_in_place;
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
@@ -177,18 +178,11 @@ async fn build_tree<B: Board>(
                     let board = request.board.inner();
 
                     match cache.get(board) {
+                        // TODO immediately applying the eval on cache hits could bias the search, is that a problem?
+                        //   (for selfplay we usually use small batches sizes so it's not that bad)
                         Some(eval) => {
                             cached_evals += 1;
-                            let mut eval = eval.clone();
-
-                            // root eval recording and noise
-                            if request.node == 0 {
-                                root_net_eval = Some(eval.clone());
-                                add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
-                            }
-
-                            // add to tree
-                            zero_step_apply(&mut tree, settings.search_policy_temperature, request.respond(eval));
+                            apply_eval(&mut tree, request, eval.clone(), &mut root_net_eval, settings, rng);
                         }
                         None => {
                             requests.push(request);
@@ -206,23 +200,44 @@ async fn build_tree<B: Board>(
         let evals = eval_client.map_async(boards).await;
 
         // apply all of them
-        for (req, mut eval) in zip_eq_exact(requests, evals) {
-            // store in cache
-            cache.put(req.board.inner().clone(), eval.clone());
-
-            // root eval recording and noise
-            if req.node == 0 {
-                root_net_eval = Some(eval.clone());
-                add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
-            }
-
-            // add to tree
-            zero_step_apply(&mut tree, settings.search_policy_temperature, req.respond(eval));
+        for (request, eval) in zip_eq_exact(requests, evals) {
+            cache.put(request.board.inner().clone(), eval.clone());
+            apply_eval(&mut tree, request, eval, &mut root_net_eval, settings, rng);
         }
     }
 
     let net_evaluation = root_net_eval.unwrap();
     (tree, cached_evals, net_evaluation)
+}
+
+fn apply_eval<B: Board>(
+    tree: &mut Tree<B>,
+    request: ZeroRequest<B>,
+    mut eval: ZeroEvaluation<'static>,
+    root_net_eval: &mut Option<ZeroEvaluation>,
+    settings: &Settings,
+    rng: &mut impl Rng,
+) {
+    // record root eval
+    if request.node == 0 {
+        *root_net_eval = Some(eval.clone());
+    }
+
+    // policy softmax temperature
+    let temperature = if request.node == 0 {
+        settings.search_root_policy_temperature
+    } else {
+        settings.search_child_policy_temperature
+    };
+    policy_softmax_temperature_in_place(eval.policy.to_mut(), temperature);
+
+    // dirichlet noise
+    if request.node == 0 {
+        add_dirichlet_noise(eval.policy.to_mut(), settings, rng);
+    }
+
+    // add to tree
+    zero_step_apply(tree, request.respond(eval));
 }
 
 fn add_dirichlet_noise(policy: &mut [f32], settings: &Settings, rng: &mut impl Rng) {

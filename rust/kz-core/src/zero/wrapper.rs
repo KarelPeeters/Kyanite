@@ -12,6 +12,7 @@ use rand::Rng;
 use kz_util::sequence::zip_eq_exact;
 
 use crate::bot::AsyncBot;
+use crate::network::common::policy_softmax_temperature_in_place;
 use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
 use crate::zero::node::UctWeights;
@@ -135,8 +136,9 @@ impl ZeroSettings {
             let evals = eval_client.map_async(boards).await;
 
             // add all evaluations back to the tree
-            for (req, eval) in zip_eq_exact(requests, evals) {
-                zero_step_apply(tree, self.policy_temperature, req.respond(eval));
+            for (req, mut eval) in zip_eq_exact(requests, evals) {
+                policy_softmax_temperature_in_place(eval.policy.to_mut(), self.policy_temperature);
+                zero_step_apply(tree, req.respond(eval));
             }
         }
     }

@@ -129,6 +129,38 @@ pub fn normalize_in_place(slice: &mut [f32]) {
     slice.iter_mut().for_each(|f| *f /= total);
 }
 
+pub fn policy_softmax_temperature_in_place(slice: &mut [f32], temperature: f32) {
+    if temperature == 1.0 {
+        return;
+    }
+
+    assert!(
+        temperature > 0.0 && temperature.is_finite(),
+        "Temperature must be finite and positive, got {}",
+        temperature
+    );
+
+    let mut prev_sum = 0.0;
+    let mut sum = 0.0;
+
+    for v in slice.iter_mut() {
+        prev_sum += *v;
+        *v = v.powf(1.0 / temperature);
+        sum += *v;
+    }
+
+    assert!(
+        0.99 < prev_sum && prev_sum < 1.01,
+        "Expected sum 1.0, got {} from {:?}",
+        prev_sum,
+        slice
+    );
+
+    for v in slice {
+        *v /= sum;
+    }
+}
+
 pub fn check_graph_shapes<B: Board, M: BoardMapper<B>>(mapper: M, graph: &Graph) {
     // input
     let inputs = graph.inputs();

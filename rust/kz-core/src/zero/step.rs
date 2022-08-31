@@ -114,7 +114,7 @@ pub fn zero_step_gather<B: Board>(
             },
             rng,
         )
-        .expect("Board is not done, this node should have a child");
+            .expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
@@ -124,8 +124,8 @@ pub fn zero_step_gather<B: Board>(
 /// The second half of a step. Applies a network evaluation to the given node,
 /// by setting the child policies and propagating the wdl back to the root.
 /// Along the way `virtual_visits` is decremented and `visits` is incremented.
-pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, policy_temperature: f32, response: ZeroResponse<B>) {
-    // whether we are indeed expecting this node is checked based on (net_values) and (virtual visits in propagate_values)
+pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, response: ZeroResponse<B>) {
+    // whether we are indeed expecting this node is checked based on (net_values) and (virtual_visits in propagate_values)
     let ZeroResponse {
         node: curr_node,
         board: curr_board,
@@ -148,19 +148,8 @@ pub fn zero_step_apply<B: Board>(tree: &mut Tree<B>, policy_temperature: f32, re
         .children
         .expect("Applied node should have initialized children");
     assert_eq!(children.length as usize, eval.policy.len(), "Wrong children length");
-
-    //  set policies, apply temperature
-    let mut total_p_temp = 0.0;
     for (c, &p) in zip_eq_exact(children, eval.policy.as_ref()) {
-        let p_temp = p.powf(1.0 / policy_temperature);
-        total_p_temp += p_temp;
-        tree[c].net_policy = p_temp;
-    }
-
-    //  renormalize policy
-    assert!(total_p_temp > 0.0);
-    for c in children {
-        tree[c].net_policy /= total_p_temp;
+        tree[c].net_policy = p;
     }
 }
 
