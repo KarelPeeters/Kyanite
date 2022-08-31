@@ -56,7 +56,8 @@ class SelfplaySettings:
     zero_temp_move_count: int
     dirichlet_alpha: float
     dirichlet_eps: float
-    search_policy_temperature: float
+    search_child_policy_temperature: float
+    search_root_policy_temperature: float
     full_search_prob: float
     full_iterations: int
     part_iterations: int
