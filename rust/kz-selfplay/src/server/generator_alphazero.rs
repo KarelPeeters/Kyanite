@@ -169,7 +169,7 @@ async fn build_tree<B: Board>(
                 &mut tree,
                 settings.weights.to_uct(),
                 settings.use_value,
-                FpuMode::Parent,
+                FpuMode::Relative(0.0),
                 rng,
             );
 

@@ -1,5 +1,5 @@
-use board_game::board::{Board, Outcome};
-use board_game::pov::{NonPov, Pov};
+use board_game::board::Board;
+use board_game::pov::Pov;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
@@ -27,8 +27,8 @@ pub struct ZeroResponse<'a, B> {
 
 #[derive(Debug, Copy, Clone)]
 pub enum FpuMode {
-    Fixed(ZeroValuesPov),
-    Parent,
+    Fixed(f32),
+    Relative(f32),
 }
 
 /// The first half of a step, walks down the tree until either:
@@ -48,11 +48,6 @@ pub fn zero_step_gather<B: Board>(
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
-
-    //TODO what moves_left to pass here? does it matter?
-    //  it's probably better to just switch to q-only fpu
-    //  also this while propagating concept may just overcomplicating things
-    let mut last_parent_values = ZeroValuesAbs::from_outcome(Outcome::Draw, 0.0);
 
     loop {
         // count each node as visited
@@ -85,36 +80,22 @@ pub fn zero_step_gather<B: Board>(
             Some(children) => children,
         };
 
-        // update fpu if we have any information
-        // TODO consider using a bigger threshold here?
-        // TODO should we set fpu to zero again if we have no information? -> no (?)
-        if tree[curr_node].complete_visits > 0 {
-            last_parent_values = tree[curr_node].values();
-        }
-
         // go to pov to ensure fixed fpu value is meaningful, quickly convert back to avoid mistakes
         let curr_player = curr_board.next_player();
-        let used_fpu = fpu_mode.select(last_parent_values.pov(curr_player)).un_pov(curr_player);
 
         // continue selecting, pick the best child
-        let parent_total_visits = tree[curr_node].total_visits();
+        let uct_context = tree.uct_context(curr_node);
         let selected = choose_max_by_key(
             children,
             |&child| {
                 let uct = tree[child]
-                    .uct(
-                        parent_total_visits,
-                        last_parent_values.moves_left,
-                        used_fpu,
-                        use_value,
-                        curr_player,
-                    )
+                    .uct(uct_context, fpu_mode, use_value, curr_player)
                     .total(weights);
                 N32::from_inner(uct)
             },
             rng,
         )
-            .expect("Board is not done, this node should have a child");
+        .expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
@@ -175,11 +156,8 @@ fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: 
 }
 
 impl FpuMode {
-    pub fn select(&self, parent: ZeroValuesPov) -> ZeroValuesPov {
-        match self {
-            FpuMode::Fixed(values) => *values,
-            FpuMode::Parent => parent,
-        }
+    pub fn select(&self, _parent: ZeroValuesPov) -> ZeroValuesPov {
+        todo!("implement again for muzero")
     }
 }
 

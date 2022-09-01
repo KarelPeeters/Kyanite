@@ -275,7 +275,7 @@ impl<B: Board> State<B> {
                 net.wdl_abs.win_b,
                 net.moves_left,
                 node.net_policy,
-                uct.v,
+                uct.q,
                 uct.u,
                 uct.m,
             ];
@@ -306,7 +306,7 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Net", "B", true, Color::Red),
     ("Net", "M", true, Color::Yellow),
     ("Net", "P", true, Color::LightBlue),
-    ("Uct", "V", true, Color::Green),
+    ("Uct", "Q", true, Color::Green),
     ("Uct", "U", true, Color::LightBlue),
     ("Uct", "M", true, Color::Yellow),
 ];
@@ -352,7 +352,7 @@ impl<B: Board> Widget for &State<B> {
 
 fn build_tree(real: bool) -> Tree<AtaxxBoard> {
     let batch_size = 1024;
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
     let visits = 1_000_000;
 
     let board = AtaxxBoard::default();

@@ -140,7 +140,7 @@ async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
                 &mut tree,
                 settings.weights.to_uct(),
                 settings.use_value,
-                FpuMode::Parent,
+                FpuMode::Relative(0.0),
             );
 
             if let Some(request) = request {

@@ -36,7 +36,7 @@ fn main() -> std::io::Result<()> {
     // search settings
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/supervised/lichess_huge/network_5140.onnx";
     let batch_size = 100;
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
 
     let graph = load_graph_from_onnx_path(path);
     let mut network = CudaNetwork::new(ChessStdMapper, &graph, batch_size, Device::new(0));

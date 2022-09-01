@@ -25,7 +25,7 @@ fn main() {
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
 
-    let settings = ZeroSettings::new(100, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::new(100, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
     let visits = 10_000;
 
     let mapper = ChessStdMapper;

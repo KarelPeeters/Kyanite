@@ -57,7 +57,13 @@ fn main() {
         })
         .unwrap();
 
-    let settings = ZeroSettings::new(SEARCH_BATCH_SIZE, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::new(
+        SEARCH_BATCH_SIZE,
+        UctWeights::default(),
+        false,
+        FpuMode::Relative(0.0),
+        1.0,
+    );
     println!("Using {:?}", settings);
 
     let mut cache = Cache::default();
