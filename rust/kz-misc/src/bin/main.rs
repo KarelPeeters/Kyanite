@@ -1,8 +1,8 @@
 use std::cmp::{max, min, Reverse};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use board_game::board::{Board, Outcome, Player};
-use board_game::games::ataxx::AtaxxBoard;
+use board_game::games::chess::ChessBoard;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
 };
@@ -20,16 +20,15 @@ use tui::widgets::Widget;
 use tui::Terminal;
 
 use cuda_nn_eval::Device;
-use kz_core::mapping::ataxx::AtaxxStdMapper;
+use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
-use kz_core::network::dummy::DummyNetwork;
+use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_util::display::display_option_empty;
-use kz_util::throughput::PrintThroughput;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
@@ -52,15 +51,28 @@ struct RenderNode {
 }
 
 fn main() -> std::io::Result<()> {
+    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
+    let settings = ZeroSettings::new(1, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
+
+    let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
+    let mapper = ChessStdMapper;
+    let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
+
+    main_impl(&mut network, ChessBoard::default(), settings)
+}
+
+fn main_impl<B: Board>(network: &mut impl Network<B>, board: B, settings: ZeroSettings) -> std::io::Result<()> {
+    // state
+    let mut rng = StdRng::from_entropy();
+    let mut requests = VecDeque::new();
+
     let mut state = State {
         prev_nodes: vec![],
-        tree: build_tree(true),
-        expanded_nodes: HashSet::default(),
+        tree: Tree::new(board),
+        expanded_nodes: std::iter::once(0).collect(),
         selected_node: 0,
         view_offset: 0,
     };
-
-    state.expanded_nodes.insert(0);
 
     // setup terminal
     enable_raw_mode()?;
@@ -69,6 +81,7 @@ fn main() -> std::io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // event loop
     loop {
         let mut prev_area = None;
 
@@ -87,8 +100,38 @@ fn main() -> std::io::Result<()> {
         })?;
 
         let event = crossterm::event::read()?;
-        if event == Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty())) {
-            break;
+
+        if let Event::Key(KeyEvent {
+            code: KeyCode::Char(code),
+            modifiers: KeyModifiers::NONE,
+        }) = event
+        {
+            match code {
+                'q' => break,
+                'g' => {
+                    // gather a single node
+                    let request = zero_step_gather(
+                        &mut state.tree,
+                        settings.weights,
+                        settings.use_value,
+                        settings.fpu_mode,
+                        &mut rng,
+                    );
+                    if let Some(request) = request {
+                        requests.push_back(request)
+                    }
+                }
+                'a' => {
+                    // apply a single node
+                    if let Some(request) = requests.pop_front() {
+                        let eval = network.evaluate(&request.board);
+                        let response = request.respond(eval);
+                        zero_step_apply(&mut state.tree, response);
+                    }
+                }
+
+                _ => {}
+            }
         }
 
         state.handle_event(prev_area.unwrap(), event);
@@ -246,7 +289,7 @@ impl<B: Board> State<B> {
         if node.virtual_visits == 0 {
             result.push(format!("{}", node.complete_visits));
         } else {
-            result.push(format!("{} + {}", node.virtual_visits, node.complete_visits));
+            result.push(format!("{} +{}", node.complete_visits, node.virtual_visits));
         }
 
         {
@@ -295,7 +338,7 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Node", "", false, Color::Gray),
     ("Move", "", false, Color::Gray),
     ("T", "", false, Color::Gray),
-    ("Visits", "", true, Color::Gray),
+    ("Visits", "", false, Color::Gray),
     ("Zero", "A", true, Color::Green),
     ("Zero", "D", true, Color::DarkGray),
     ("Zero", "B", true, Color::Red),
@@ -347,34 +390,5 @@ impl<B: Board> Widget for &State<B> {
                 }
             }
         }
-    }
-}
-
-fn build_tree(real: bool) -> Tree<AtaxxBoard> {
-    let batch_size = 1024;
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
-    let visits = 1_000_000;
-
-    let board = AtaxxBoard::default();
-    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\tmp\network_3874.onnx"#;
-    let mapper = AtaxxStdMapper::new(board.size());
-
-    // let board = AtaxxBoard::default();
-    // let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/ataxx-7/16x128/training/gen_661/network.onnx";
-    // let mapper = AtaxxStdMapper::new(board.size());
-
-    let mut rng = StdRng::from_entropy();
-    let mut tp = PrintThroughput::new("nodes");
-    let stop = |tree: &Tree<_>| {
-        tp.update_total(tree.root_visits());
-        tree.root_visits() >= visits
-    };
-
-    if real {
-        let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
-        let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-        settings.build_tree(&board, &mut network, &mut rng, stop)
-    } else {
-        settings.build_tree(&board, &mut DummyNetwork, &mut rng, stop)
     }
 }
