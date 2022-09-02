@@ -3,6 +3,7 @@ use board_game::pov::Pov;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
+use std::cmp::Reverse;
 
 use kz_util::sequence::{choose_max_by_key, zip_eq_exact};
 
@@ -62,9 +63,12 @@ pub fn zero_step_gather<B: Board>(
         let children = match tree[curr_node].children {
             None => {
                 // initialize the children with uniform policy
+                let mv_count = curr_board.available_moves().count();
+                let p = 1.0 / mv_count as f32;
+
                 let start = tree.len();
                 curr_board.available_moves().for_each(|mv| {
-                    tree.nodes.push(Node::new(Some(curr_node), Some(mv), 1.0));
+                    tree.nodes.push(Node::new(Some(curr_node), Some(mv), p));
                 });
                 let end = tree.len();
 
@@ -83,19 +87,25 @@ pub fn zero_step_gather<B: Board>(
         // go to pov to ensure fixed fpu value is meaningful, quickly convert back to avoid mistakes
         let curr_player = curr_board.next_player();
 
-        // continue selecting, pick the best child
-        let uct_context = tree.uct_context(curr_node);
-        let selected = choose_max_by_key(
-            children,
-            |&child| {
-                let uct = tree[child]
-                    .uct(uct_context, fpu_mode, use_value, curr_player)
-                    .total(weights);
-                N32::from_inner(uct)
-            },
-            rng,
-        )
-        .expect("Board is not done, this node should have a child");
+        // continue selecting
+        let selected = if tree[curr_node].complete_visits == 0 {
+            // pick a random least-visited child
+            choose_max_by_key(children, |&child| Reverse(tree[child].total_visits()), rng)
+        } else {
+            // pick the best child
+            let uct_context = tree.uct_context(curr_node);
+            choose_max_by_key(
+                children,
+                |&child| {
+                    let uct = tree[child]
+                        .uct(uct_context, fpu_mode, use_value, curr_player)
+                        .total(weights);
+                    N32::from_inner(uct)
+                },
+                rng,
+            )
+        };
+        let selected = selected.expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
