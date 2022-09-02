@@ -363,7 +363,7 @@ impl<B: Board> State<B> {
                     self.settings.use_value,
                     parent_board.next_player(),
                 );
-                let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0);
+                let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0).max(0.0);
 
                 (uct, zero_policy)
             } else {

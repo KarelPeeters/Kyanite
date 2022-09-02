@@ -135,7 +135,7 @@ impl<B: Board> Tree<B> {
             .children
             .unwrap()
             .iter()
-            .map(move |c| (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32))
+            .map(move |c| (self[c].complete_visits as f32) / (self[0].complete_visits as f32 - 1.0).max(0.0))
     }
 
     pub fn eval(&self) -> ZeroEvaluation<'static> {
