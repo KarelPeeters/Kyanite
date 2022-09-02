@@ -188,7 +188,7 @@ impl<N> Node<N> {
             0.0
         } else {
             // this node has been visited, so we know parent_moves_left is also a useful value
-            self.values().moves_left - parent.values.moves_left - 1.0
+            self.values().moves_left - (parent.values.moves_left - 1.0)
         };
 
         Uct { q, u, m }
