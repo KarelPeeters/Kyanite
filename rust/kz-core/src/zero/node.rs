@@ -35,11 +35,12 @@ pub struct Node<M> {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Uct {
-    // value, range -1..1
+    /// value, range -1..1
     pub q: f32,
-    // exploration term, range 0..inf
+    /// exploration, range 0..inf
     pub u: f32,
-    // moves left term, range -inf..inf
+    /// moves left delta, range -inf..inf
+    ///   positive means this node has more moves left than its siblings
     pub m: f32,
 }
 
@@ -89,8 +90,6 @@ impl Uct {
         let m_unit = if weights.moves_left_weight == 0.0 {
             0.0
         } else {
-            assert!(m.is_finite(), "Invalid moves_left value {}", m);
-
             let m_clipped = m.clamp(-weights.moves_left_clip, weights.moves_left_clip);
             (weights.moves_left_sharpness * m_clipped * -q).clamp(-1.0, 1.0)
         };
@@ -149,7 +148,7 @@ impl<N> Node<N> {
         }
     }
 
-    pub fn uct_parent(&self, visited_policy_mass: f32) -> UctContext {
+    pub fn uct_context(&self, visited_policy_mass: f32) -> UctContext {
         UctContext {
             complete_visits: self.complete_visits,
             virtual_visits: self.virtual_visits,

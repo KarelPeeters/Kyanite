@@ -63,7 +63,7 @@ impl<B: Board> Tree<B> {
                 .sum()
         });
 
-        node.uct_parent(visited_policy_mass)
+        node.uct_context(visited_policy_mass)
     }
 
     pub fn best_child(&self, node: usize) -> Option<usize> {

@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::cmp::{max, min, Reverse};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use board_game::board::{Board, Outcome, Player};
-use board_game::games::chess::ChessBoard;
+use board_game::games::chess::{ChessBoard, Rules};
+use clap::Parser;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
 };
@@ -24,7 +26,7 @@ use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
@@ -32,10 +34,20 @@ use kz_util::display::display_option_empty;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
+#[derive(clap::Parser)]
+struct Args {
+    #[clap(long)]
+    fen: Option<String>,
+}
+
 #[derive(Debug)]
 struct State<B: Board> {
+    settings: ZeroSettings,
+    rng: StdRng,
+
     tree: Tree<B>,
 
+    board_cache: RefCell<HashMap<usize, B>>,
     prev_nodes: Vec<RenderNode>,
 
     expanded_nodes: HashSet<usize>,
@@ -46,11 +58,18 @@ struct State<B: Board> {
 
 #[derive(Debug, Copy, Clone)]
 struct RenderNode {
-    depth: u32,
     node: usize,
+    depth: u32,
 }
 
 fn main() -> std::io::Result<()> {
+    let args: Args = Args::parse();
+
+    let board = match &args.fen {
+        Some(fen) => ChessBoard::new_without_history_fen(fen, Rules::default()),
+        None => ChessBoard::default(),
+    };
+
     let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
     let settings = ZeroSettings::new(1, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
 
@@ -58,21 +77,23 @@ fn main() -> std::io::Result<()> {
     let mapper = ChessStdMapper;
     let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
 
-    main_impl(&mut network, ChessBoard::default(), settings)
+    main_impl(&mut network, board, settings)
 }
 
 fn main_impl<B: Board>(network: &mut impl Network<B>, board: B, settings: ZeroSettings) -> std::io::Result<()> {
     // state
-    let mut rng = StdRng::from_entropy();
     let mut requests = VecDeque::new();
-
     let mut state = State {
-        prev_nodes: vec![],
         tree: Tree::new(board),
-        expanded_nodes: std::iter::once(0).collect(),
+        settings,
+        prev_nodes: Default::default(),
+        board_cache: Default::default(),
+        expanded_nodes: Default::default(),
         selected_node: 0,
         view_offset: 0,
+        rng: StdRng::from_entropy(),
     };
+    state.expanded_nodes.insert(0);
 
     // setup terminal
     enable_raw_mode()?;
@@ -109,24 +130,22 @@ fn main_impl<B: Board>(network: &mut impl Network<B>, board: B, settings: ZeroSe
             match code {
                 'q' => break,
                 'g' => {
-                    // gather a single node
-                    let request = zero_step_gather(
-                        &mut state.tree,
-                        settings.weights,
-                        settings.use_value,
-                        settings.fpu_mode,
-                        &mut rng,
-                    );
-                    if let Some(request) = request {
-                        requests.push_back(request)
-                    }
+                    state.gather_step(&mut requests);
                 }
                 'a' => {
-                    // apply a single node
+                    // apply a single request
                     if let Some(request) = requests.pop_front() {
                         let eval = network.evaluate(&request.board);
-                        let response = request.respond(eval);
-                        zero_step_apply(&mut state.tree, response);
+                        zero_step_apply(&mut state.tree, request.respond(eval));
+                    }
+                }
+                's' => {
+                    state.gather_step(&mut requests);
+
+                    // apply all requests
+                    while let Some(request) = requests.pop_front() {
+                        let eval = network.evaluate(&request.board);
+                        zero_step_apply(&mut state.tree, request.respond(eval));
                     }
                 }
 
@@ -150,6 +169,38 @@ const OFFSET_MARGIN: usize = 3;
 const COL_SPACING: u16 = 2;
 
 impl<B: Board> State<B> {
+    fn node_board(&self, node: usize) -> B {
+        if let Some(board) = self.board_cache.borrow().get(&node) {
+            return board.clone();
+        }
+
+        let board = if let Some(parent) = self.tree[node].parent {
+            let mut board = self.node_board(parent);
+            board.play(self.tree[node].last_move.unwrap());
+            board
+        } else {
+            self.tree.root_board().clone()
+        };
+
+        let prev = self.board_cache.borrow_mut().insert(node, board.clone());
+        assert!(prev.is_none());
+        board
+    }
+
+    fn gather_step(&mut self, requests: &mut VecDeque<ZeroRequest<B>>) {
+        // gather a single node
+        let request = zero_step_gather(
+            &mut self.tree,
+            self.settings.weights,
+            self.settings.use_value,
+            self.settings.fpu_mode,
+            &mut self.rng,
+        );
+        if let Some(request) = request {
+            requests.push_back(request)
+        }
+    }
+
     fn append_nodes(&self, curr: usize, depth: u32, result: &mut Vec<RenderNode>) {
         result.push(RenderNode { depth, node: curr });
 
@@ -261,9 +312,9 @@ impl<B: Board> State<B> {
         (col_sizes, col_starts)
     }
 
-    fn column_values(&self, node: usize, depth: u32) -> Vec<String> {
-        let node_index = node;
-        let node = &self.tree[node];
+    fn column_values(&self, node_index: usize, depth: u32) -> Vec<String> {
+        let board = self.node_board(node_index);
+        let node = &self.tree[node_index];
 
         let arrow = if self.expanded_nodes.contains(&node_index) {
             "v"
@@ -271,7 +322,11 @@ impl<B: Board> State<B> {
             ">"
         };
 
-        //TODO convert to pov W D L again?
+        let player = match board.next_player() {
+            Player::A => "A",
+            Player::B => "B",
+        };
+
         let terminal = match node.outcome() {
             Err(_) => '?',
             Ok(None) => '.',
@@ -283,6 +338,7 @@ impl<B: Board> State<B> {
         let mut result = vec![];
 
         result.push(format!("{:>2$} {}", arrow, node_index, (depth * 2) as usize));
+        result.push(format!("{}", player));
         result.push(format!("{}", display_option_empty(node.last_move)));
         result.push(format!("{}", terminal));
 
@@ -293,15 +349,22 @@ impl<B: Board> State<B> {
         }
 
         {
-            // TODO convert to pov again?
-            // TODO fix uct again
             let zero = node.values();
             let net = node.net_values.unwrap_or(ZeroValuesAbs::nan());
+
             let (uct, zero_policy) = if let Some(parent) = node.parent {
+                let uct_context = self.tree.uct_context(parent);
+                let parent_board = self.node_board(parent);
                 let parent = &self.tree[parent];
-                // let uct = node.uct(parent.total_visits(), parent.values(), false);
-                let uct = Uct::nan();
+
+                let uct = node.uct(
+                    uct_context,
+                    self.settings.fpu_mode,
+                    self.settings.use_value,
+                    parent_board.next_player(),
+                );
                 let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0);
+
                 (uct, zero_policy)
             } else {
                 (Uct::nan(), f32::NAN)
@@ -321,6 +384,7 @@ impl<B: Board> State<B> {
                 uct.q,
                 uct.u,
                 uct.m,
+                uct.total(self.settings.weights),
             ];
             result.extend(
                 values
@@ -336,6 +400,7 @@ impl<B: Board> State<B> {
 
 const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Node", "", false, Color::Gray),
+    ("Player", "", false, Color::Gray),
     ("Move", "", false, Color::Gray),
     ("T", "", false, Color::Gray),
     ("Visits", "", false, Color::Gray),
@@ -352,6 +417,7 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Uct", "Q", true, Color::Green),
     ("Uct", "U", true, Color::LightBlue),
     ("Uct", "M", true, Color::Yellow),
+    ("Uct", "Total", true, Color::DarkGray),
 ];
 
 impl<B: Board> Widget for &State<B> {
