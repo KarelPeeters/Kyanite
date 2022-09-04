@@ -158,7 +158,14 @@ impl<N> Node<N> {
         }
     }
 
-    pub fn uct(&self, parent: UctContext, fpu_mode: FpuMode, use_value: bool, pov: Player) -> Uct {
+    pub fn uct(
+        &self,
+        parent: UctContext,
+        fpu_mode: FpuMode,
+        use_value: bool,
+        virtual_loss_weight: f32,
+        pov: Player,
+    ) -> Uct {
         if parent.total_visits == 0 {
             return Uct::nan();
         }
@@ -172,12 +179,14 @@ impl<N> Node<N> {
             FpuMode::Fixed(fpu) => fpu,
         };
 
-        let q = if total_visits == 0 {
+        assert!(virtual_loss_weight >= 0.0, "Virtual loss weight should not be negative");
+        let total_visits_virtual = self.complete_visits as f32 + virtual_loss_weight * self.virtual_visits as f32;
+        let q = if total_visits_virtual == 0.0 {
             fpu
         } else {
-            // TODO try virtual "no-change" (only visit) instead of virtual loss
             let total_value = select_value(self.sum_values, use_value).pov(pov).value;
-            let node_value = (total_value - self.virtual_visits as f32) / total_visits as f32;
+            let total_value_virtual = total_value - virtual_loss_weight * self.virtual_visits as f32;
+            let node_value = total_value_virtual / total_visits_virtual;
             node_value
         };
 

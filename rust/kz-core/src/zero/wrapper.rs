@@ -26,6 +26,7 @@ pub struct ZeroSettings {
     pub use_value: bool,
     pub fpu_root: FpuMode,
     pub fpu_child: FpuMode,
+    pub virtual_loss_weight: f32,
     pub policy_temperature: f32,
 }
 
@@ -38,6 +39,7 @@ impl ZeroSettings {
             fpu_root: fpu,
             fpu_child: fpu,
             policy_temperature: 1.0,
+            virtual_loss_weight: 1.0,
         }
     }
 
@@ -47,6 +49,7 @@ impl ZeroSettings {
         use_value: bool,
         fpu_root: FpuMode,
         fpu_child: FpuMode,
+        virtual_loss_weight: f32,
         policy_temperature: f32,
     ) -> Self {
         Self {
@@ -55,6 +58,7 @@ impl ZeroSettings {
             use_value,
             fpu_root,
             fpu_child,
+            virtual_loss_weight,
             policy_temperature,
         }
     }
@@ -143,7 +147,15 @@ impl ZeroSettings {
             let mut terminal_gathers = 0;
 
             while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
-                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_root, self.fpu_child, rng) {
+                match zero_step_gather(
+                    tree,
+                    self.weights,
+                    self.use_value,
+                    self.fpu_root,
+                    self.fpu_child,
+                    self.virtual_loss_weight,
+                    rng,
+                ) {
                     Some(request) => {
                         requests.push(request);
                     }

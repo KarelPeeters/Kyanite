@@ -39,6 +39,7 @@ def main():
         search_policy_temperature_child=1.0,
         search_fpu_root="fixed+1",
         search_fpu_child="relative+0",
+        search_virtual_loss_weight=1.0,
         full_search_prob=1.0,
         full_iterations=200,
         part_iterations=20,

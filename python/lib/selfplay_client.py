@@ -60,6 +60,7 @@ class SelfplaySettings:
     search_policy_temperature_child: float
     search_fpu_root: str
     search_fpu_child: str
+    search_virtual_loss_weight: float
     full_search_prob: float
     full_iterations: int
     part_iterations: int

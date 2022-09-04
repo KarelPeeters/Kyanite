@@ -50,6 +50,7 @@ pub fn zero_step_gather<B: Board>(
     use_value: bool,
     fpu_root: FpuMode,
     fpu_child: FpuMode,
+    virtual_loss: f32,
     rng: &mut impl Rng,
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
@@ -105,7 +106,7 @@ pub fn zero_step_gather<B: Board>(
                 children,
                 |&child| {
                     let uct = tree[child]
-                        .uct(uct_context, fpu_mode, use_value, curr_player)
+                        .uct(uct_context, fpu_mode, use_value, virtual_loss, curr_player)
                         .total(weights);
                     N32::from_inner(uct)
                 },

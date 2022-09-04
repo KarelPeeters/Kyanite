@@ -171,6 +171,7 @@ async fn build_tree<B: Board>(
                 settings.use_value,
                 settings.search_fpu_root.0,
                 settings.search_fpu_child.0,
+                settings.search_virtual_loss_weight,
                 rng,
             );
 

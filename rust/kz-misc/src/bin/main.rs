@@ -38,6 +38,8 @@ use nn_graph::optimizer::optimize_graph;
 struct Args {
     #[clap(long)]
     fen: Option<String>,
+    #[clap(long, default_value_t = 1.0)]
+    virtual_loss_weight: f32,
 }
 
 #[derive(Debug)]
@@ -77,6 +79,7 @@ fn main() -> std::io::Result<()> {
         false,
         FpuMode::Fixed(1.0),
         FpuMode::Relative(0.0),
+        args.virtual_loss_weight,
         1.0,
     );
 
@@ -202,6 +205,7 @@ impl<B: Board> State<B> {
             self.settings.use_value,
             self.settings.fpu_root,
             self.settings.fpu_child,
+            self.settings.virtual_loss_weight,
             &mut self.rng,
         );
         if let Some(request) = request {
@@ -369,6 +373,7 @@ impl<B: Board> State<B> {
                     uct_context,
                     self.settings.fpu_mode(parent_index == 0),
                     self.settings.use_value,
+                    self.settings.virtual_loss_weight,
                     parent_board.next_player(),
                 );
                 let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0).max(0.0);

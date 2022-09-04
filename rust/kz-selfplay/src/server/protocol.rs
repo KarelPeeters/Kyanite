@@ -99,6 +99,7 @@ pub struct Settings {
     pub search_policy_temperature_child: f32,
     pub search_fpu_root: FpuModeArg,
     pub search_fpu_child: FpuModeArg,
+    pub search_virtual_loss_weight: f32,
 
     pub full_search_prob: f64,
     pub full_iterations: u64,
