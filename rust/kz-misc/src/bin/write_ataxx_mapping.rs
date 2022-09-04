@@ -1,9 +1,8 @@
 use std::fs::File;
 use std::io::Write;
-use std::ops::ControlFlow;
 
 use board_game::board::BoardMoves;
-use board_game::games::ataxx::{AtaxxBoard, Move};
+use board_game::games::ataxx::AtaxxBoard;
 use board_game::util::coord::Coord8;
 use internal_iterator::InternalIterator;
 
