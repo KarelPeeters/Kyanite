@@ -24,24 +24,46 @@ pub struct ZeroSettings {
     pub batch_size: usize,
     pub weights: UctWeights,
     pub use_value: bool,
-    pub fpu_mode: FpuMode,
+    pub fpu_root: FpuMode,
+    pub fpu_child: FpuMode,
     pub policy_temperature: f32,
 }
 
 impl ZeroSettings {
+    pub fn simple(batch_size: usize, weights: UctWeights, fpu: FpuMode) -> ZeroSettings {
+        ZeroSettings {
+            batch_size,
+            weights,
+            use_value: false,
+            fpu_root: fpu,
+            fpu_child: fpu,
+            policy_temperature: 1.0,
+        }
+    }
+
     pub fn new(
         batch_size: usize,
         weights: UctWeights,
         use_value: bool,
-        fpu_mode: FpuMode,
+        fpu_root: FpuMode,
+        fpu_child: FpuMode,
         policy_temperature: f32,
     ) -> Self {
-        ZeroSettings {
+        Self {
             batch_size,
             weights,
             use_value,
-            fpu_mode,
+            fpu_root,
+            fpu_child,
             policy_temperature,
+        }
+    }
+
+    pub fn fpu_mode(&self, is_root: bool) -> FpuMode {
+        if is_root {
+            self.fpu_root
+        } else {
+            self.fpu_child
         }
     }
 }
@@ -121,7 +143,7 @@ impl ZeroSettings {
             let mut terminal_gathers = 0;
 
             while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
-                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_mode, rng) {
+                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_root, self.fpu_child, rng) {
                     Some(request) => {
                         requests.push(request);
                     }

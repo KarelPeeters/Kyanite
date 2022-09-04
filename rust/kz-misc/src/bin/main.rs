@@ -71,7 +71,14 @@ fn main() -> std::io::Result<()> {
     };
 
     let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
-    let settings = ZeroSettings::new(1, UctWeights::default(), false, FpuMode::Relative(0.0), 1.0);
+    let settings = ZeroSettings::new(
+        1,
+        UctWeights::default(),
+        false,
+        FpuMode::Fixed(1.0),
+        FpuMode::Relative(0.0),
+        1.0,
+    );
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
     let mapper = ChessStdMapper;
@@ -193,7 +200,8 @@ impl<B: Board> State<B> {
             &mut self.tree,
             self.settings.weights,
             self.settings.use_value,
-            self.settings.fpu_mode,
+            self.settings.fpu_root,
+            self.settings.fpu_child,
             &mut self.rng,
         );
         if let Some(request) = request {
@@ -352,14 +360,14 @@ impl<B: Board> State<B> {
             let zero = node.values();
             let net = node.net_values.unwrap_or(ZeroValuesAbs::nan());
 
-            let (uct, zero_policy) = if let Some(parent) = node.parent {
-                let uct_context = self.tree.uct_context(parent);
-                let parent_board = self.node_board(parent);
-                let parent = &self.tree[parent];
+            let (uct, zero_policy) = if let Some(parent_index) = node.parent {
+                let uct_context = self.tree.uct_context(parent_index);
+                let parent_board = self.node_board(parent_index);
+                let parent = &self.tree[parent_index];
 
                 let uct = node.uct(
                     uct_context,
-                    self.settings.fpu_mode,
+                    self.settings.fpu_mode(parent_index == 0),
                     self.settings.use_value,
                     parent_board.next_player(),
                 );

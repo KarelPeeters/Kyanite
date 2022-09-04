@@ -1,9 +1,12 @@
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 use board_game::board::Board;
-use serde::{Deserialize, Serialize};
+use serde::de::{Unexpected, Visitor};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use kz_core::zero::node::UctWeights;
+use kz_core::zero::step::FpuMode;
 
 use crate::simulation::Simulation;
 
@@ -91,8 +94,11 @@ pub struct Settings {
 
     pub dirichlet_alpha: f32,
     pub dirichlet_eps: f32,
+
     pub search_root_policy_temperature: f32,
     pub search_child_policy_temperature: f32,
+    pub search_fpu_root: FpuModeArg,
+    pub search_fpu_child: FpuModeArg,
 
     pub full_search_prob: f64,
     pub full_iterations: u64,
@@ -196,5 +202,45 @@ impl std::ops::Add for Evals {
 impl std::ops::AddAssign for Evals {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct FpuModeArg(pub FpuMode);
+
+impl Serialize for FpuModeArg {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for FpuModeArg {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(FpuModeArgVisitor)
+    }
+}
+
+struct FpuModeArgVisitor;
+
+impl<'de> Visitor<'de> for FpuModeArgVisitor {
+    type Value = FpuModeArg;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(formatter, "an fpu mode")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        FpuMode::from_str(v)
+            .map(FpuModeArg)
+            .map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
     }
 }

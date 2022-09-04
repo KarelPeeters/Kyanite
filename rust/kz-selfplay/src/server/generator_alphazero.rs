@@ -9,7 +9,7 @@ use rand_distr::Dirichlet;
 
 use kz_core::network::common::policy_softmax_temperature_in_place;
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
@@ -169,7 +169,8 @@ async fn build_tree<B: Board>(
                 &mut tree,
                 settings.weights.to_uct(),
                 settings.use_value,
-                FpuMode::Relative(0.0),
+                settings.search_fpu_root.0,
+                settings.search_fpu_child.0,
                 rng,
             );
 

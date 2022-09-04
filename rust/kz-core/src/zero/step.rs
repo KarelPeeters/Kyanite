@@ -1,9 +1,13 @@
+use std::cmp::Reverse;
+use std::fmt::{Display, Formatter};
+use std::num::ParseFloatError;
+use std::str::FromStr;
+
 use board_game::board::Board;
 use board_game::pov::Pov;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
-use std::cmp::Reverse;
 
 use kz_util::sequence::{choose_max_by_key, zip_eq_exact};
 
@@ -26,7 +30,7 @@ pub struct ZeroResponse<'a, B> {
     pub eval: ZeroEvaluation<'a>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FpuMode {
     Fixed(f32),
     Relative(f32),
@@ -44,7 +48,8 @@ pub fn zero_step_gather<B: Board>(
     tree: &mut Tree<B>,
     weights: UctWeights,
     use_value: bool,
-    fpu_mode: FpuMode,
+    fpu_root: FpuMode,
+    fpu_child: FpuMode,
     rng: &mut impl Rng,
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
@@ -93,6 +98,8 @@ pub fn zero_step_gather<B: Board>(
             choose_max_by_key(children, |&child| Reverse(tree[child].total_visits()), rng)
         } else {
             // pick the best child
+            let fpu_mode = if curr_node == 0 { fpu_root } else { fpu_child };
+
             let uct_context = tree.uct_context(curr_node);
             choose_max_by_key(
                 children,
@@ -171,6 +178,39 @@ impl FpuMode {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FpuModeParseError {
+    Prefix(String),
+    Float(ParseFloatError),
+}
+
+impl FromStr for FpuMode {
+    type Err = FpuModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(rest) = s.strip_prefix("fixed") {
+            let value = f32::from_str(rest).map_err(FpuModeParseError::Float)?;
+            return Ok(FpuMode::Fixed(value));
+        }
+
+        if let Some(rest) = s.strip_prefix("rel") {
+            let value = f32::from_str(rest).map_err(FpuModeParseError::Float)?;
+            return Ok(FpuMode::Relative(value));
+        }
+
+        Err(FpuModeParseError::Prefix(s.to_owned()))
+    }
+}
+
+impl Display for FpuMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            FpuMode::Fixed(value) => write!(f, "fixed{:+}", value),
+            FpuMode::Relative(value) => write!(f, "rel{:+}", value),
+        }
+    }
+}
+
 impl<B> ZeroRequest<B> {
     pub fn respond(self, eval: ZeroEvaluation) -> ZeroResponse<B> {
         ZeroResponse {
@@ -178,5 +218,19 @@ impl<B> ZeroRequest<B> {
             board: self.board,
             eval,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fpu_string() {
+        assert_eq!(FpuMode::from_str("fixed+0.3"), Ok(FpuMode::Fixed(0.3)));
+        assert_eq!(FpuMode::from_str("rel-0.5"), Ok(FpuMode::Relative(-0.5)));
+
+        assert_eq!(&FpuMode::Fixed(0.3).to_string(), "fixed+0.3");
+        assert_eq!(&FpuMode::Relative(-0.5).to_string(), "rel-0.5");
     }
 }
