@@ -62,6 +62,6 @@ impl MuNode {
         //TODO make sure to remove this -1 if we ever split ZeroValuesPov.flip() into child() and parent()
         let m = values.moves_left - (fpu.moves_left - 1.0);
 
-        Uct { v, u, m }
+        Uct { q: v, u, m }
     }
 }

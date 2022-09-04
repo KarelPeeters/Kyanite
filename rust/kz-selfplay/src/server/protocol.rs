@@ -4,7 +4,9 @@ use board_game::board::Board;
 use serde::{Deserialize, Serialize};
 
 use kz_core::zero::node::UctWeights;
+use kz_core::zero::step::{FpuMode, QMode};
 
+use crate::server::serde_helper::ToFromStringArg;
 use crate::simulation::Simulation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +84,7 @@ pub struct Settings {
     // self-play game affecting settings
     pub max_game_length: Option<u64>,
     pub weights: Weights,
-    pub use_value: bool,
+    pub q_mode: ToFromStringArg<QMode>,
 
     pub random_symmetries: bool,
 
@@ -91,8 +93,12 @@ pub struct Settings {
 
     pub dirichlet_alpha: f32,
     pub dirichlet_eps: f32,
-    pub search_root_policy_temperature: f32,
-    pub search_child_policy_temperature: f32,
+
+    pub search_policy_temperature_root: f32,
+    pub search_policy_temperature_child: f32,
+    pub search_fpu_root: ToFromStringArg<FpuMode>,
+    pub search_fpu_child: ToFromStringArg<FpuMode>,
+    pub search_virtual_loss_weight: f32,
 
     pub full_search_prob: f64,
     pub full_iterations: u64,
@@ -104,7 +110,7 @@ pub struct Settings {
     pub cache_size: usize,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Weights {
     pub exploration_weight: Option<f32>,
     pub moves_left_weight: Option<f32>,

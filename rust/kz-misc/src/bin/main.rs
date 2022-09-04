@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::cmp::{max, min, Reverse};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use board_game::board::{Board, Outcome, Player};
-use board_game::games::ataxx::AtaxxBoard;
+use board_game::games::chess::{ChessBoard, Rules};
+use clap::Parser;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
 };
@@ -20,23 +22,34 @@ use tui::widgets::Widget;
 use tui::Terminal;
 
 use cuda_nn_eval::Device;
-use kz_core::mapping::ataxx::AtaxxStdMapper;
+use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
-use kz_core::network::dummy::DummyNetwork;
+use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_util::display::display_option_empty;
-use kz_util::throughput::PrintThroughput;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
+#[derive(clap::Parser)]
+struct Args {
+    #[clap(long)]
+    fen: Option<String>,
+    #[clap(long, default_value_t = 1.0)]
+    virtual_loss_weight: f32,
+}
+
 #[derive(Debug)]
 struct State<B: Board> {
+    settings: ZeroSettings,
+    rng: StdRng,
+
     tree: Tree<B>,
 
+    board_cache: RefCell<HashMap<usize, B>>,
     prev_nodes: Vec<RenderNode>,
 
     expanded_nodes: HashSet<usize>,
@@ -47,19 +60,49 @@ struct State<B: Board> {
 
 #[derive(Debug, Copy, Clone)]
 struct RenderNode {
-    depth: u32,
     node: usize,
+    depth: u32,
 }
 
 fn main() -> std::io::Result<()> {
-    let mut state = State {
-        prev_nodes: vec![],
-        tree: build_tree(true),
-        expanded_nodes: HashSet::default(),
-        selected_node: 0,
-        view_offset: 0,
+    let args: Args = Args::parse();
+
+    let board = match &args.fen {
+        Some(fen) => ChessBoard::new_without_history_fen(fen, Rules::default()),
+        None => ChessBoard::default(),
     };
 
+    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
+    let settings = ZeroSettings::new(
+        1,
+        UctWeights::default(),
+        QMode::wdl(),
+        FpuMode::Fixed(1.0),
+        FpuMode::Relative(0.0),
+        args.virtual_loss_weight,
+        1.0,
+    );
+
+    let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
+    let mapper = ChessStdMapper;
+    let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
+
+    main_impl(&mut network, board, settings)
+}
+
+fn main_impl<B: Board>(network: &mut impl Network<B>, board: B, settings: ZeroSettings) -> std::io::Result<()> {
+    // state
+    let mut requests = VecDeque::new();
+    let mut state = State {
+        tree: Tree::new(board),
+        settings,
+        prev_nodes: Default::default(),
+        board_cache: Default::default(),
+        expanded_nodes: Default::default(),
+        selected_node: 0,
+        view_offset: 0,
+        rng: StdRng::from_entropy(),
+    };
     state.expanded_nodes.insert(0);
 
     // setup terminal
@@ -69,6 +112,7 @@ fn main() -> std::io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // event loop
     loop {
         let mut prev_area = None;
 
@@ -87,8 +131,36 @@ fn main() -> std::io::Result<()> {
         })?;
 
         let event = crossterm::event::read()?;
-        if event == Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty())) {
-            break;
+
+        if let Event::Key(KeyEvent {
+            code: KeyCode::Char(code),
+            modifiers: KeyModifiers::NONE,
+        }) = event
+        {
+            match code {
+                'q' => break,
+                'g' => {
+                    state.gather_step(&mut requests);
+                }
+                'a' => {
+                    // apply a single request
+                    if let Some(request) = requests.pop_front() {
+                        let eval = network.evaluate(&request.board);
+                        zero_step_apply(&mut state.tree, request.respond(eval));
+                    }
+                }
+                's' => {
+                    state.gather_step(&mut requests);
+
+                    // apply all requests
+                    while let Some(request) = requests.pop_front() {
+                        let eval = network.evaluate(&request.board);
+                        zero_step_apply(&mut state.tree, request.respond(eval));
+                    }
+                }
+
+                _ => {}
+            }
         }
 
         state.handle_event(prev_area.unwrap(), event);
@@ -107,6 +179,40 @@ const OFFSET_MARGIN: usize = 3;
 const COL_SPACING: u16 = 2;
 
 impl<B: Board> State<B> {
+    fn node_board(&self, node: usize) -> B {
+        if let Some(board) = self.board_cache.borrow().get(&node) {
+            return board.clone();
+        }
+
+        let board = if let Some(parent) = self.tree[node].parent {
+            let mut board = self.node_board(parent);
+            board.play(self.tree[node].last_move.unwrap());
+            board
+        } else {
+            self.tree.root_board().clone()
+        };
+
+        let prev = self.board_cache.borrow_mut().insert(node, board.clone());
+        assert!(prev.is_none());
+        board
+    }
+
+    fn gather_step(&mut self, requests: &mut VecDeque<ZeroRequest<B>>) {
+        // gather a single node
+        let request = zero_step_gather(
+            &mut self.tree,
+            self.settings.weights,
+            self.settings.q_mode,
+            self.settings.fpu_root,
+            self.settings.fpu_child,
+            self.settings.virtual_loss_weight,
+            &mut self.rng,
+        );
+        if let Some(request) = request {
+            requests.push_back(request)
+        }
+    }
+
     fn append_nodes(&self, curr: usize, depth: u32, result: &mut Vec<RenderNode>) {
         result.push(RenderNode { depth, node: curr });
 
@@ -218,9 +324,9 @@ impl<B: Board> State<B> {
         (col_sizes, col_starts)
     }
 
-    fn column_values(&self, node: usize, depth: u32) -> Vec<String> {
-        let node_index = node;
-        let node = &self.tree[node];
+    fn column_values(&self, node_index: usize, depth: u32) -> Vec<String> {
+        let board = self.node_board(node_index);
+        let node = &self.tree[node_index];
 
         let arrow = if self.expanded_nodes.contains(&node_index) {
             "v"
@@ -228,7 +334,11 @@ impl<B: Board> State<B> {
             ">"
         };
 
-        //TODO convert to pov W D L again?
+        let player = match board.next_player() {
+            Player::A => "A",
+            Player::B => "B",
+        };
+
         let terminal = match node.outcome() {
             Err(_) => '?',
             Ok(None) => '.',
@@ -240,25 +350,34 @@ impl<B: Board> State<B> {
         let mut result = vec![];
 
         result.push(format!("{:>2$} {}", arrow, node_index, (depth * 2) as usize));
+        result.push(format!("{}", player));
         result.push(format!("{}", display_option_empty(node.last_move)));
         result.push(format!("{}", terminal));
 
         if node.virtual_visits == 0 {
             result.push(format!("{}", node.complete_visits));
         } else {
-            result.push(format!("{} + {}", node.virtual_visits, node.complete_visits));
+            result.push(format!("{} +{}", node.complete_visits, node.virtual_visits));
         }
 
         {
-            // TODO convert to pov again?
-            // TODO fix uct again
             let zero = node.values();
             let net = node.net_values.unwrap_or(ZeroValuesAbs::nan());
-            let (uct, zero_policy) = if let Some(parent) = node.parent {
-                let parent = &self.tree[parent];
-                // let uct = node.uct(parent.total_visits(), parent.values(), false);
-                let uct = Uct::nan();
-                let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0);
+
+            let (uct, zero_policy) = if let Some(parent_index) = node.parent {
+                let uct_context = self.tree.uct_context(parent_index);
+                let parent_board = self.node_board(parent_index);
+                let parent = &self.tree[parent_index];
+
+                let uct = node.uct(
+                    uct_context,
+                    self.settings.fpu_mode(parent_index == 0),
+                    self.settings.q_mode,
+                    self.settings.virtual_loss_weight,
+                    parent_board.next_player(),
+                );
+                let zero_policy = node.complete_visits as f32 / (parent.complete_visits as f32 - 1.0).max(0.0);
+
                 (uct, zero_policy)
             } else {
                 (Uct::nan(), f32::NAN)
@@ -275,9 +394,10 @@ impl<B: Board> State<B> {
                 net.wdl_abs.win_b,
                 net.moves_left,
                 node.net_policy,
-                uct.v,
+                uct.q,
                 uct.u,
                 uct.m,
+                uct.total(self.settings.weights),
             ];
             result.extend(
                 values
@@ -293,9 +413,10 @@ impl<B: Board> State<B> {
 
 const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Node", "", false, Color::Gray),
+    ("Player", "", false, Color::Gray),
     ("Move", "", false, Color::Gray),
     ("T", "", false, Color::Gray),
-    ("Visits", "", true, Color::Gray),
+    ("Visits", "", false, Color::Gray),
     ("Zero", "A", true, Color::Green),
     ("Zero", "D", true, Color::DarkGray),
     ("Zero", "B", true, Color::Red),
@@ -306,9 +427,10 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Net", "B", true, Color::Red),
     ("Net", "M", true, Color::Yellow),
     ("Net", "P", true, Color::LightBlue),
-    ("Uct", "V", true, Color::Green),
+    ("Uct", "Q", true, Color::Green),
     ("Uct", "U", true, Color::LightBlue),
     ("Uct", "M", true, Color::Yellow),
+    ("Uct", "Total", true, Color::DarkGray),
 ];
 
 impl<B: Board> Widget for &State<B> {
@@ -347,34 +469,5 @@ impl<B: Board> Widget for &State<B> {
                 }
             }
         }
-    }
-}
-
-fn build_tree(real: bool) -> Tree<AtaxxBoard> {
-    let batch_size = 1024;
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent, 1.0);
-    let visits = 1_000_000;
-
-    let board = AtaxxBoard::default();
-    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\tmp\network_3874.onnx"#;
-    let mapper = AtaxxStdMapper::new(board.size());
-
-    // let board = AtaxxBoard::default();
-    // let path = "C:/Documents/Programming/STTT/AlphaZero/data/loop/ataxx-7/16x128/training/gen_661/network.onnx";
-    // let mapper = AtaxxStdMapper::new(board.size());
-
-    let mut rng = StdRng::from_entropy();
-    let mut tp = PrintThroughput::new("nodes");
-    let stop = |tree: &Tree<_>| {
-        tp.update_total(tree.root_visits());
-        tree.root_visits() >= visits
-    };
-
-    if real {
-        let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
-        let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-        settings.build_tree(&board, &mut network, &mut rng, stop)
-    } else {
-        settings.build_tree(&board, &mut DummyNetwork, &mut rng, stop)
     }
 }

@@ -14,7 +14,7 @@ use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::zero::node::UctWeights;
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{FpuMode, QMode};
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_misc::eval::lichess_puzzle::for_each_lichess_puzzle;
 use nn_graph::onnx::load_graph_from_onnx_path;
@@ -25,7 +25,7 @@ fn main() {
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
 
-    let settings = ZeroSettings::new(100, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::simple(100, UctWeights::default(), QMode::wdl(), FpuMode::Relative(0.0));
     let visits = 10_000;
 
     let mapper = ChessStdMapper;

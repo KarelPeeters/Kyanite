@@ -1,8 +1,9 @@
 use board_game::board::{Outcome, Player};
-use board_game::pov::{NonPov, ScalarAbs};
+use board_game::pov::{NonPov, ScalarPov};
 use serde::{Deserialize, Serialize};
 
 use crate::zero::range::IdxRange;
+use crate::zero::step::{FpuMode, QMode};
 use crate::zero::values::ZeroValuesAbs;
 
 // TODO look at the size of this struct and think about making it smaller
@@ -34,11 +35,12 @@ pub struct Node<M> {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Uct {
-    // value, range -1..1
-    pub v: f32,
-    // exploration term, range 0..inf
+    /// value, range -1..1
+    pub q: f32,
+    /// exploration, range 0..inf
     pub u: f32,
-    // moves left term, range -inf..inf
+    /// moves left delta, range -inf..inf
+    ///   positive means this node has more moves left than its siblings
     pub m: f32,
 }
 
@@ -49,6 +51,17 @@ pub struct UctWeights {
     pub moves_left_weight: f32,
     pub moves_left_clip: f32,
     pub moves_left_sharpness: f32,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct UctContext {
+    pub complete_visits: u64,
+    pub virtual_visits: u64,
+
+    pub total_visits: u64,
+    pub values: ZeroValuesAbs,
+
+    pub visited_policy_mass: f32,
 }
 
 impl Default for UctWeights {
@@ -65,25 +78,23 @@ impl Default for UctWeights {
 impl Uct {
     pub fn nan() -> Uct {
         Uct {
-            v: f32::NAN,
+            q: f32::NAN,
             u: f32::NAN,
             m: f32::NAN,
         }
     }
 
     pub fn total(self, weights: UctWeights) -> f32 {
-        let Uct { v, u, m } = self;
+        let Uct { q, u, m } = self;
 
         let m_unit = if weights.moves_left_weight == 0.0 {
             0.0
         } else {
-            assert!(m.is_finite(), "Invalid moves_left value {}", m);
-
             let m_clipped = m.clamp(-weights.moves_left_clip, weights.moves_left_clip);
-            (weights.moves_left_sharpness * m_clipped * -v).clamp(-1.0, 1.0)
+            (weights.moves_left_sharpness * m_clipped * -q).clamp(-1.0, 1.0)
         };
 
-        v + weights.exploration_weight * u + weights.moves_left_weight * m_unit
+        q + weights.exploration_weight * u + weights.moves_left_weight * m_unit
     }
 }
 
@@ -137,44 +148,68 @@ impl<N> Node<N> {
         }
     }
 
+    pub fn uct_context(&self, visited_policy_mass: f32) -> UctContext {
+        UctContext {
+            complete_visits: self.complete_visits,
+            virtual_visits: self.virtual_visits,
+            total_visits: self.complete_visits + self.virtual_visits,
+            values: self.values(),
+            visited_policy_mass,
+        }
+    }
+
     pub fn uct(
         &self,
-        parent_total_visits: u64,
-        parent_moves_left: f32,
-        fpu: ZeroValuesAbs,
-        use_value: bool,
+        parent: UctContext,
+        fpu_mode: FpuMode,
+        q_mode: QMode,
+        virtual_loss_weight: f32,
         pov: Player,
     ) -> Uct {
-        if parent_total_visits == 0 {
+        if parent.total_visits == 0 {
             return Uct::nan();
         }
         let total_visits = self.total_visits();
 
-        let fpu_value = select_value(fpu, use_value).pov(pov).value;
+        let fpu = match fpu_mode {
+            FpuMode::Relative(scalar) => {
+                let parent_value = select_value(parent.values, q_mode, pov).value;
+                parent_value - scalar * parent.visited_policy_mass.sqrt()
+            }
+            FpuMode::Fixed(fpu) => fpu,
+        };
 
-        let total_value = select_value(self.sum_values, use_value).pov(pov).value;
-        let node_value = (total_value - self.virtual_visits as f32) / total_visits as f32;
+        assert!(virtual_loss_weight >= 0.0, "Virtual loss weight should not be negative");
+        let total_visits_virtual = self.complete_visits as f32 + virtual_loss_weight * self.virtual_visits as f32;
+        let q = if total_visits_virtual == 0.0 {
+            fpu
+        } else {
+            let total_value = select_value(self.sum_values, q_mode, pov).value;
+            let total_value_virtual = total_value - virtual_loss_weight * self.virtual_visits as f32;
+            let node_value = total_value_virtual / total_visits_virtual;
+            node_value
+        };
 
-        let v = if total_visits == 0 { fpu_value } else { node_value };
-
-        let u = self.net_policy * ((parent_total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
+        let u = self.net_policy * ((parent.total_visits - 1) as f32).sqrt() / (1 + total_visits) as f32;
 
         let m = if self.complete_visits == 0 {
             // don't even bother with moves_left if we don't have any information
             0.0
         } else {
             // this node has been visited, so we know parent_moves_left is also a useful value
-            self.values().moves_left - parent_moves_left - 1.0
+            self.values().moves_left - (parent.values.moves_left - 1.0)
         };
 
-        Uct { v, u, m }
+        Uct { q, u, m }
     }
 }
 
-fn select_value(values: ZeroValuesAbs, use_value: bool) -> ScalarAbs<f32> {
-    if use_value {
-        values.value_abs
-    } else {
-        values.wdl_abs.value()
+fn select_value(values: ZeroValuesAbs, q_mode: QMode, pov: Player) -> ScalarPov<f32> {
+    match q_mode {
+        QMode::Value => values.value_abs.pov(pov),
+        QMode::WDL { draw_score } => {
+            let wdl = values.wdl_abs.pov(pov);
+            ScalarPov::new(wdl.win + draw_score * wdl.draw - wdl.loss)
+        }
     }
 }

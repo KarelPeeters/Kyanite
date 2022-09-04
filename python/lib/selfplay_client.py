@@ -50,14 +50,17 @@ class UctWeights:
 class SelfplaySettings:
     max_game_length: int
     weights: UctWeights
-    use_value: bool
+    q_mode: str
     random_symmetries: bool
     temperature: float
     zero_temp_move_count: int
     dirichlet_alpha: float
     dirichlet_eps: float
-    search_child_policy_temperature: float
-    search_root_policy_temperature: float
+    search_policy_temperature_root: float
+    search_policy_temperature_child: float
+    search_fpu_root: str
+    search_fpu_child: str
+    search_virtual_loss_weight: float
     full_search_prob: float
     full_iterations: int
     part_iterations: int

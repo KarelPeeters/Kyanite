@@ -13,7 +13,7 @@ use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::job_channel::job_pair;
 use kz_core::zero::node::UctWeights;
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{FpuMode, QMode};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::wrapper::ZeroSettings;
 use kz_selfplay::server::executor::{alphazero_batched_executor_loop, RunCondition};
@@ -57,7 +57,12 @@ fn main() {
         })
         .unwrap();
 
-    let settings = ZeroSettings::new(SEARCH_BATCH_SIZE, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::simple(
+        SEARCH_BATCH_SIZE,
+        UctWeights::default(),
+        QMode::wdl(),
+        FpuMode::Relative(0.0),
+    );
     println!("Using {:?}", settings);
 
     let mut cache = Cache::default();

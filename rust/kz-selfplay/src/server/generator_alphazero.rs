@@ -9,7 +9,7 @@ use rand_distr::Dirichlet;
 
 use kz_core::network::common::policy_softmax_temperature_in_place;
 use kz_core::network::{EvalClient, ZeroEvaluation};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
 
@@ -168,8 +168,10 @@ async fn build_tree<B: Board>(
             let request = zero_step_gather(
                 &mut tree,
                 settings.weights.to_uct(),
-                settings.use_value,
-                FpuMode::Parent,
+                settings.q_mode.0,
+                settings.search_fpu_root.0,
+                settings.search_fpu_child.0,
+                settings.search_virtual_loss_weight,
                 rng,
             );
 
@@ -225,9 +227,9 @@ fn apply_eval<B: Board>(
 
     // policy softmax temperature
     let temperature = if request.node == 0 {
-        settings.search_root_policy_temperature
+        settings.search_policy_temperature_root
     } else {
-        settings.search_child_policy_temperature
+        settings.search_policy_temperature_child
     };
     policy_softmax_temperature_in_place(eval.policy.to_mut(), temperature);
 

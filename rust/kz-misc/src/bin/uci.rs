@@ -18,7 +18,7 @@ use cuda_nn_eval::Device;
 use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::zero::node::UctWeights;
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{FpuMode, QMode};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::wrapper::ZeroSettings;
 use nn_graph::onnx::load_graph_from_onnx_path;
@@ -36,7 +36,7 @@ fn main() -> std::io::Result<()> {
     // search settings
     let path = "C:/Documents/Programming/STTT/AlphaZero/data/supervised/lichess_huge/network_5140.onnx";
     let batch_size = 100;
-    let settings = ZeroSettings::new(batch_size, UctWeights::default(), false, FpuMode::Parent, 1.0);
+    let settings = ZeroSettings::simple(batch_size, UctWeights::default(), QMode::wdl(), FpuMode::Relative(0.0));
 
     let graph = load_graph_from_onnx_path(path);
     let mut network = CudaNetwork::new(ChessStdMapper, &graph, batch_size, Device::new(0));

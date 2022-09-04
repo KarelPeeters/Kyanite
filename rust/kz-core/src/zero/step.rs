@@ -1,5 +1,10 @@
-use board_game::board::{Board, Outcome};
-use board_game::pov::{NonPov, Pov};
+use std::cmp::Reverse;
+use std::fmt::{Display, Formatter};
+use std::num::ParseFloatError;
+use std::str::FromStr;
+
+use board_game::board::Board;
+use board_game::pov::Pov;
 use decorum::N32;
 use internal_iterator::InternalIterator;
 use rand::Rng;
@@ -25,10 +30,16 @@ pub struct ZeroResponse<'a, B> {
     pub eval: ZeroEvaluation<'a>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FpuMode {
-    Fixed(ZeroValuesPov),
-    Parent,
+    Fixed(f32),
+    Relative(f32),
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum QMode {
+    Value,
+    WDL { draw_score: f32 },
 }
 
 /// The first half of a step, walks down the tree until either:
@@ -42,17 +53,14 @@ pub enum FpuMode {
 pub fn zero_step_gather<B: Board>(
     tree: &mut Tree<B>,
     weights: UctWeights,
-    use_value: bool,
-    fpu_mode: FpuMode,
+    q_mode: QMode,
+    fpu_root: FpuMode,
+    fpu_child: FpuMode,
+    virtual_loss: f32,
     rng: &mut impl Rng,
 ) -> Option<ZeroRequest<B>> {
     let mut curr_node = 0;
     let mut curr_board = tree.root_board().clone();
-
-    //TODO what moves_left to pass here? does it matter?
-    //  it's probably better to just switch to q-only fpu
-    //  also this while propagating concept may just overcomplicating things
-    let mut last_parent_values = ZeroValuesAbs::from_outcome(Outcome::Draw, 0.0);
 
     loop {
         // count each node as visited
@@ -67,9 +75,12 @@ pub fn zero_step_gather<B: Board>(
         let children = match tree[curr_node].children {
             None => {
                 // initialize the children with uniform policy
+                let mv_count = curr_board.available_moves().count();
+                let p = 1.0 / mv_count as f32;
+
                 let start = tree.len();
                 curr_board.available_moves().for_each(|mv| {
-                    tree.nodes.push(Node::new(Some(curr_node), Some(mv), 1.0));
+                    tree.nodes.push(Node::new(Some(curr_node), Some(mv), p));
                 });
                 let end = tree.len();
 
@@ -85,36 +96,30 @@ pub fn zero_step_gather<B: Board>(
             Some(children) => children,
         };
 
-        // update fpu if we have any information
-        // TODO consider using a bigger threshold here?
-        // TODO should we set fpu to zero again if we have no information? -> no (?)
-        if tree[curr_node].complete_visits > 0 {
-            last_parent_values = tree[curr_node].values();
-        }
-
         // go to pov to ensure fixed fpu value is meaningful, quickly convert back to avoid mistakes
         let curr_player = curr_board.next_player();
-        let used_fpu = fpu_mode.select(last_parent_values.pov(curr_player)).un_pov(curr_player);
 
-        // continue selecting, pick the best child
-        let parent_total_visits = tree[curr_node].total_visits();
-        let selected = choose_max_by_key(
-            children,
-            |&child| {
-                let uct = tree[child]
-                    .uct(
-                        parent_total_visits,
-                        last_parent_values.moves_left,
-                        used_fpu,
-                        use_value,
-                        curr_player,
-                    )
-                    .total(weights);
-                N32::from_inner(uct)
-            },
-            rng,
-        )
-            .expect("Board is not done, this node should have a child");
+        // continue selecting
+        let selected = if tree[curr_node].complete_visits == 0 {
+            // pick a random least-visited child
+            choose_max_by_key(children, |&child| Reverse(tree[child].total_visits()), rng)
+        } else {
+            // pick the best child
+            let fpu_mode = if curr_node == 0 { fpu_root } else { fpu_child };
+
+            let uct_context = tree.uct_context(curr_node);
+            choose_max_by_key(
+                children,
+                |&child| {
+                    let uct = tree[child]
+                        .uct(uct_context, fpu_mode, q_mode, virtual_loss, curr_player)
+                        .total(weights);
+                    N32::from_inner(uct)
+                },
+                rng,
+            )
+        };
+        let selected = selected.expect("Board is not done, this node should have a child");
 
         curr_node = selected;
         curr_board.play(tree[curr_node].last_move.unwrap());
@@ -175,11 +180,77 @@ fn tree_propagate_values<B: Board>(tree: &mut Tree<B>, node: usize, mut values: 
 }
 
 impl FpuMode {
-    pub fn select(&self, parent: ZeroValuesPov) -> ZeroValuesPov {
-        match self {
-            FpuMode::Fixed(values) => *values,
-            FpuMode::Parent => parent,
+    pub fn select(&self, _parent: ZeroValuesPov) -> ZeroValuesPov {
+        todo!("implement again for muzero")
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ModeParseError {
+    Prefix(String),
+    Float(ParseFloatError),
+}
+
+impl Display for FpuMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            FpuMode::Fixed(value) => write!(f, "fixed{:+}", value),
+            FpuMode::Relative(value) => write!(f, "relative{:+}", value),
         }
+    }
+}
+
+impl FromStr for FpuMode {
+    type Err = ModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(rest) = s.strip_prefix("fixed") {
+            let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+            return Ok(FpuMode::Fixed(value));
+        }
+
+        if let Some(rest) = s.strip_prefix("relative") {
+            let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+            return Ok(FpuMode::Relative(value));
+        }
+
+        Err(ModeParseError::Prefix(s.to_owned()))
+    }
+}
+
+impl QMode {
+    pub fn wdl() -> QMode {
+        QMode::WDL { draw_score: 0.0 }
+    }
+}
+
+impl Display for QMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            QMode::Value => write!(f, "value"),
+            QMode::WDL { draw_score } => write!(f, "wdl{:+}", draw_score),
+        }
+    }
+}
+
+impl FromStr for QMode {
+    type Err = ModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "value" {
+            return Ok(QMode::Value);
+        }
+
+        if let Some(rest) = s.strip_prefix("wdl") {
+            if rest.is_empty() {
+                return Ok(QMode::WDL { draw_score: 0.0 });
+            } else {
+                let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+                return Ok(QMode::WDL { draw_score: value });
+            }
+        }
+
+        Err(ModeParseError::Prefix(s.to_owned()))
     }
 }
 
@@ -190,5 +261,28 @@ impl<B> ZeroRequest<B> {
             board: self.board,
             eval,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fpu_string() {
+        assert_eq!(FpuMode::from_str("fixed+0.3"), Ok(FpuMode::Fixed(0.3)));
+        assert_eq!(FpuMode::from_str("relative-0.5"), Ok(FpuMode::Relative(-0.5)));
+
+        assert_eq!(&FpuMode::Fixed(0.3).to_string(), "fixed+0.3");
+        assert_eq!(&FpuMode::Relative(-0.5).to_string(), "relative-0.5");
+    }
+
+    #[test]
+    fn q_mode_string() {
+        assert_eq!(QMode::from_str("value"), Ok(QMode::Value));
+        assert_eq!(QMode::from_str("wdl-1.0"), Ok(QMode::WDL { draw_score: -1.0 }));
+
+        assert_eq!(&QMode::Value.to_string(), "value");
+        assert_eq!(&QMode::WDL { draw_score: -1.0 }.to_string(), "wdl-1.0");
     }
 }

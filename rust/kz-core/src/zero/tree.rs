@@ -10,7 +10,7 @@ use itertools::Itertools;
 use kz_util::display::display_option;
 
 use crate::network::ZeroEvaluation;
-use crate::zero::node::Node;
+use crate::zero::node::{Node, UctContext};
 use crate::zero::range::IdxRange;
 use crate::zero::values::{ZeroValuesAbs, ZeroValuesPov};
 
@@ -44,6 +44,26 @@ impl<B: Board> Tree<B> {
 
     pub fn root_board(&self) -> &B {
         &self.root_board
+    }
+
+    pub fn uct_context(&self, node: usize) -> UctContext {
+        let node = &self[node];
+
+        let visited_policy_mass = node.children.map_or(0.0, |children| {
+            children
+                .iter()
+                .map(|c| {
+                    let child = &self[c];
+                    if child.total_visits() > 0 {
+                        child.net_policy
+                    } else {
+                        0.0
+                    }
+                })
+                .sum()
+        });
+
+        node.uct_context(visited_policy_mass)
     }
 
     pub fn best_child(&self, node: usize) -> Option<usize> {
@@ -115,7 +135,7 @@ impl<B: Board> Tree<B> {
             .children
             .unwrap()
             .iter()
-            .map(move |c| (self[c].complete_visits as f32) / ((self[0].complete_visits - 1) as f32))
+            .map(move |c| (self[c].complete_visits as f32) / (self[0].complete_visits as f32 - 1.0).max(0.0))
     }
 
     pub fn eval(&self) -> ZeroEvaluation<'static> {
@@ -250,7 +270,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             )?;
             writeln!(
                 f,
-                "[move: terminal visits zero({}, p) net({}, p), uct(q, u)]",
+                "[player move: terminal visits zero({}, p) net({}, p)]",
                 ZeroValuesPov::FORMAT_SUMMARY,
                 ZeroValuesPov::FORMAT_SUMMARY
             )?;
@@ -281,8 +301,6 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
         let net_values = node.net_values.unwrap_or_else(ZeroValuesAbs::nan).pov(parent_player);
 
         let parent_complete_visits = parent.map_or(f32::NAN, |p| p.complete_visits as f32);
-        let parent_total_visits = parent.map_or(node.total_visits(), |p| p.total_visits());
-        let parent_values = parent.map_or(ZeroValuesAbs::nan(), |p| p.values());
 
         let zero_policy = if parent_complete_visits > 0.0 {
             (node.complete_visits as f32) / (parent_complete_visits - 1.0)
@@ -290,18 +308,9 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             f32::NAN
         };
 
-        // TODO use the settings actually used to build the tree here
-        let uct = node.uct(
-            parent_total_visits,
-            parent_values.moves_left,
-            parent_values,
-            false,
-            parent_player,
-        );
-
         writeln!(
             f,
-            "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4}) {:.4?}",
+            "{} {}: {} {}{} zero({}, {:.4}) net({}, {:.4})",
             curr_player.to_char(),
             display_option(node.last_move),
             terminal,
@@ -311,7 +320,6 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
             zero_policy,
             net_values,
             node.net_policy,
-            uct,
         )?;
 
         if self.curr_depth == self.max_depth {

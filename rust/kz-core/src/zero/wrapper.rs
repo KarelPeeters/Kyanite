@@ -16,32 +16,58 @@ use crate::network::common::policy_softmax_temperature_in_place;
 use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
 use crate::zero::node::UctWeights;
-use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
     pub batch_size: usize,
     pub weights: UctWeights,
-    pub use_value: bool,
-    pub fpu_mode: FpuMode,
+    pub q_mode: QMode,
+    pub fpu_root: FpuMode,
+    pub fpu_child: FpuMode,
+    pub virtual_loss_weight: f32,
     pub policy_temperature: f32,
 }
 
 impl ZeroSettings {
-    pub fn new(
-        batch_size: usize,
-        weights: UctWeights,
-        use_value: bool,
-        fpu_mode: FpuMode,
-        policy_temperature: f32,
-    ) -> Self {
+    pub fn simple(batch_size: usize, weights: UctWeights, q_mode: QMode, fpu: FpuMode) -> ZeroSettings {
         ZeroSettings {
             batch_size,
             weights,
-            use_value,
-            fpu_mode,
+            q_mode,
+            fpu_root: fpu,
+            fpu_child: fpu,
+            policy_temperature: 1.0,
+            virtual_loss_weight: 1.0,
+        }
+    }
+
+    pub fn new(
+        batch_size: usize,
+        weights: UctWeights,
+        q_mode: QMode,
+        fpu_root: FpuMode,
+        fpu_child: FpuMode,
+        virtual_loss_weight: f32,
+        policy_temperature: f32,
+    ) -> Self {
+        Self {
+            batch_size,
+            weights,
+            q_mode,
+            fpu_root,
+            fpu_child,
+            virtual_loss_weight,
             policy_temperature,
+        }
+    }
+
+    pub fn fpu_mode(&self, is_root: bool) -> FpuMode {
+        if is_root {
+            self.fpu_root
+        } else {
+            self.fpu_child
         }
     }
 }
@@ -121,7 +147,15 @@ impl ZeroSettings {
             let mut terminal_gathers = 0;
 
             while requests.len() < self.batch_size && terminal_gathers < self.batch_size {
-                match zero_step_gather(tree, self.weights, self.use_value, self.fpu_mode, rng) {
+                match zero_step_gather(
+                    tree,
+                    self.weights,
+                    self.q_mode,
+                    self.fpu_root,
+                    self.fpu_child,
+                    self.virtual_loss_weight,
+                    rng,
+                ) {
                     Some(request) => {
                         requests.push(request);
                     }
