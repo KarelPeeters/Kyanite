@@ -20,7 +20,7 @@ use kz_core::muzero::MuZeroEvaluation;
 use kz_core::network::common::{softmax_in_place, unsoftmax_in_place};
 use kz_core::network::muzero::{ExpandArgs, ExpandClient, RootArgs, RootClient};
 use kz_core::network::ZeroEvaluation;
-use kz_core::zero::step::FpuMode;
+use kz_core::zero::step::{FpuMode, QMode};
 
 use crate::move_selector::MoveSelector;
 use crate::server::protocol::{GeneratorUpdate, Settings};
@@ -108,6 +108,14 @@ async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
     let mut positions = vec![];
 
     let max_moves = settings.max_game_length.unwrap_or(u64::MAX) as u32;
+    let use_value = match settings.q_mode.0 {
+        QMode::Value => true,
+        QMode::WDL { draw_score } => {
+            assert_eq!(draw_score, 0.0, "MuZero does not yet support a nonzero draw score");
+            false
+        }
+    };
+
     let mut curr_board = start;
 
     while !curr_board.is_done() {
@@ -136,12 +144,7 @@ async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
         let mut root_net_eval = None;
 
         while tree.root_visits() < target_visits {
-            let request = muzero_step_gather(
-                &mut tree,
-                settings.weights.to_uct(),
-                settings.use_value,
-                FpuMode::Relative(0.0),
-            );
+            let request = muzero_step_gather(&mut tree, settings.weights.to_uct(), use_value, FpuMode::Relative(0.0));
 
             if let Some(request) = request {
                 let output_state = QuantizedStorage::new(pool.alloc(state_size), state_size);

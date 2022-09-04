@@ -50,7 +50,7 @@ class UctWeights:
 class SelfplaySettings:
     max_game_length: int
     weights: UctWeights
-    use_value: bool
+    q_mode: str
     random_symmetries: bool
     temperature: float
     zero_temp_move_count: int

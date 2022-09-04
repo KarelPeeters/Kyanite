@@ -1,9 +1,9 @@
 use board_game::board::{Outcome, Player};
-use board_game::pov::{NonPov, ScalarAbs};
+use board_game::pov::{NonPov, ScalarPov};
 use serde::{Deserialize, Serialize};
 
 use crate::zero::range::IdxRange;
-use crate::zero::step::FpuMode;
+use crate::zero::step::{FpuMode, QMode};
 use crate::zero::values::ZeroValuesAbs;
 
 // TODO look at the size of this struct and think about making it smaller
@@ -162,7 +162,7 @@ impl<N> Node<N> {
         &self,
         parent: UctContext,
         fpu_mode: FpuMode,
-        use_value: bool,
+        q_mode: QMode,
         virtual_loss_weight: f32,
         pov: Player,
     ) -> Uct {
@@ -173,7 +173,7 @@ impl<N> Node<N> {
 
         let fpu = match fpu_mode {
             FpuMode::Relative(scalar) => {
-                let parent_value = select_value(parent.values, use_value).pov(pov).value;
+                let parent_value = select_value(parent.values, q_mode, pov).value;
                 parent_value - scalar * parent.visited_policy_mass.sqrt()
             }
             FpuMode::Fixed(fpu) => fpu,
@@ -184,7 +184,7 @@ impl<N> Node<N> {
         let q = if total_visits_virtual == 0.0 {
             fpu
         } else {
-            let total_value = select_value(self.sum_values, use_value).pov(pov).value;
+            let total_value = select_value(self.sum_values, q_mode, pov).value;
             let total_value_virtual = total_value - virtual_loss_weight * self.virtual_visits as f32;
             let node_value = total_value_virtual / total_visits_virtual;
             node_value
@@ -204,10 +204,12 @@ impl<N> Node<N> {
     }
 }
 
-fn select_value(values: ZeroValuesAbs, use_value: bool) -> ScalarAbs<f32> {
-    if use_value {
-        values.value_abs
-    } else {
-        values.wdl_abs.value()
+fn select_value(values: ZeroValuesAbs, q_mode: QMode, pov: Player) -> ScalarPov<f32> {
+    match q_mode {
+        QMode::Value => values.value_abs.pov(pov),
+        QMode::WDL { draw_score } => {
+            let wdl = values.wdl_abs.pov(pov);
+            ScalarPov::new(wdl.win + draw_score * wdl.draw - wdl.loss)
+        }
     }
 }

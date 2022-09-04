@@ -26,7 +26,7 @@ use kz_core::mapping::chess::ChessStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
-use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, ZeroRequest};
+use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
@@ -76,7 +76,7 @@ fn main() -> std::io::Result<()> {
     let settings = ZeroSettings::new(
         1,
         UctWeights::default(),
-        false,
+        QMode::wdl(),
         FpuMode::Fixed(1.0),
         FpuMode::Relative(0.0),
         args.virtual_loss_weight,
@@ -202,7 +202,7 @@ impl<B: Board> State<B> {
         let request = zero_step_gather(
             &mut self.tree,
             self.settings.weights,
-            self.settings.use_value,
+            self.settings.q_mode,
             self.settings.fpu_root,
             self.settings.fpu_child,
             self.settings.virtual_loss_weight,
@@ -372,7 +372,7 @@ impl<B: Board> State<B> {
                 let uct = node.uct(
                     uct_context,
                     self.settings.fpu_mode(parent_index == 0),
-                    self.settings.use_value,
+                    self.settings.q_mode,
                     self.settings.virtual_loss_weight,
                     parent_board.next_player(),
                 );

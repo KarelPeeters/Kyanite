@@ -1,4 +1,5 @@
 pub mod protocol;
+mod serde_helper;
 
 pub mod server;
 mod server_alphazero;

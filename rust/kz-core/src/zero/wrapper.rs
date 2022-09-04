@@ -16,14 +16,14 @@ use crate::network::common::policy_softmax_temperature_in_place;
 use crate::network::job_channel::{job_pair, Job};
 use crate::network::{EvalClient, Network};
 use crate::zero::node::UctWeights;
-use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode};
+use crate::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode};
 use crate::zero::tree::Tree;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ZeroSettings {
     pub batch_size: usize,
     pub weights: UctWeights,
-    pub use_value: bool,
+    pub q_mode: QMode,
     pub fpu_root: FpuMode,
     pub fpu_child: FpuMode,
     pub virtual_loss_weight: f32,
@@ -31,11 +31,11 @@ pub struct ZeroSettings {
 }
 
 impl ZeroSettings {
-    pub fn simple(batch_size: usize, weights: UctWeights, fpu: FpuMode) -> ZeroSettings {
+    pub fn simple(batch_size: usize, weights: UctWeights, q_mode: QMode, fpu: FpuMode) -> ZeroSettings {
         ZeroSettings {
             batch_size,
             weights,
-            use_value: false,
+            q_mode,
             fpu_root: fpu,
             fpu_child: fpu,
             policy_temperature: 1.0,
@@ -46,7 +46,7 @@ impl ZeroSettings {
     pub fn new(
         batch_size: usize,
         weights: UctWeights,
-        use_value: bool,
+        q_mode: QMode,
         fpu_root: FpuMode,
         fpu_child: FpuMode,
         virtual_loss_weight: f32,
@@ -55,7 +55,7 @@ impl ZeroSettings {
         Self {
             batch_size,
             weights,
-            use_value,
+            q_mode,
             fpu_root,
             fpu_child,
             virtual_loss_weight,
@@ -150,7 +150,7 @@ impl ZeroSettings {
                 match zero_step_gather(
                     tree,
                     self.weights,
-                    self.use_value,
+                    self.q_mode,
                     self.fpu_root,
                     self.fpu_child,
                     self.virtual_loss_weight,

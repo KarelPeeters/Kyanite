@@ -36,6 +36,12 @@ pub enum FpuMode {
     Relative(f32),
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum QMode {
+    Value,
+    WDL { draw_score: f32 },
+}
+
 /// The first half of a step, walks down the tree until either:
 /// * a **terminal** node is reached.
 /// The resulting wdl value is immediately propagated back to the root, the `visit` counters are incremented
@@ -47,7 +53,7 @@ pub enum FpuMode {
 pub fn zero_step_gather<B: Board>(
     tree: &mut Tree<B>,
     weights: UctWeights,
-    use_value: bool,
+    q_mode: QMode,
     fpu_root: FpuMode,
     fpu_child: FpuMode,
     virtual_loss: f32,
@@ -106,7 +112,7 @@ pub fn zero_step_gather<B: Board>(
                 children,
                 |&child| {
                     let uct = tree[child]
-                        .uct(uct_context, fpu_mode, use_value, virtual_loss, curr_player)
+                        .uct(uct_context, fpu_mode, q_mode, virtual_loss, curr_player)
                         .total(weights);
                     N32::from_inner(uct)
                 },
@@ -180,27 +186,9 @@ impl FpuMode {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum FpuModeParseError {
+pub enum ModeParseError {
     Prefix(String),
     Float(ParseFloatError),
-}
-
-impl FromStr for FpuMode {
-    type Err = FpuModeParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(rest) = s.strip_prefix("fixed") {
-            let value = f32::from_str(rest).map_err(FpuModeParseError::Float)?;
-            return Ok(FpuMode::Fixed(value));
-        }
-
-        if let Some(rest) = s.strip_prefix("relative") {
-            let value = f32::from_str(rest).map_err(FpuModeParseError::Float)?;
-            return Ok(FpuMode::Relative(value));
-        }
-
-        Err(FpuModeParseError::Prefix(s.to_owned()))
-    }
 }
 
 impl Display for FpuMode {
@@ -209,6 +197,60 @@ impl Display for FpuMode {
             FpuMode::Fixed(value) => write!(f, "fixed{:+}", value),
             FpuMode::Relative(value) => write!(f, "relative{:+}", value),
         }
+    }
+}
+
+impl FromStr for FpuMode {
+    type Err = ModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(rest) = s.strip_prefix("fixed") {
+            let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+            return Ok(FpuMode::Fixed(value));
+        }
+
+        if let Some(rest) = s.strip_prefix("relative") {
+            let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+            return Ok(FpuMode::Relative(value));
+        }
+
+        Err(ModeParseError::Prefix(s.to_owned()))
+    }
+}
+
+impl QMode {
+    pub fn wdl() -> QMode {
+        QMode::WDL { draw_score: 0.0 }
+    }
+}
+
+impl Display for QMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            QMode::Value => write!(f, "value"),
+            QMode::WDL { draw_score } => write!(f, "wdl{:+}", draw_score),
+        }
+    }
+}
+
+impl FromStr for QMode {
+    type Err = ModeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "value" {
+            return Ok(QMode::Value);
+        }
+
+        if let Some(rest) = s.strip_prefix("wdl") {
+            if rest.is_empty() {
+                return Ok(QMode::WDL { draw_score: 0.0 });
+            } else {
+                let value = f32::from_str(rest).map_err(ModeParseError::Float)?;
+                return Ok(QMode::WDL { draw_score: value });
+            }
+        }
+
+        Err(ModeParseError::Prefix(s.to_owned()))
     }
 }
 
@@ -233,5 +275,14 @@ mod tests {
 
         assert_eq!(&FpuMode::Fixed(0.3).to_string(), "fixed+0.3");
         assert_eq!(&FpuMode::Relative(-0.5).to_string(), "relative-0.5");
+    }
+
+    #[test]
+    fn q_mode_string() {
+        assert_eq!(QMode::from_str("value"), Ok(QMode::Value));
+        assert_eq!(QMode::from_str("wdl-1.0"), Ok(QMode::WDL { draw_score: -1.0 }));
+
+        assert_eq!(&QMode::Value.to_string(), "value");
+        assert_eq!(&QMode::WDL { draw_score: -1.0 }.to_string(), "wdl-1.0");
     }
 }

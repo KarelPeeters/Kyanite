@@ -31,7 +31,7 @@ def main():
     selfplay_settings = SelfplaySettings(
         temperature=1.0,
         zero_temp_move_count=30,
-        use_value=False,
+        q_mode="wdl+0.0",
         max_game_length=400,
         dirichlet_alpha=0.2,
         dirichlet_eps=0.25,

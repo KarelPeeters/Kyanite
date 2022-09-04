@@ -168,7 +168,7 @@ async fn build_tree<B: Board>(
             let request = zero_step_gather(
                 &mut tree,
                 settings.weights.to_uct(),
-                settings.use_value,
+                settings.q_mode.0,
                 settings.search_fpu_root.0,
                 settings.search_fpu_child.0,
                 settings.search_virtual_loss_weight,
