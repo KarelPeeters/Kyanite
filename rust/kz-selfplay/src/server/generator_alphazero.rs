@@ -226,9 +226,9 @@ fn apply_eval<B: Board>(
 
     // policy softmax temperature
     let temperature = if request.node == 0 {
-        settings.search_root_policy_temperature
+        settings.search_policy_temperature_root
     } else {
-        settings.search_child_policy_temperature
+        settings.search_policy_temperature_child
     };
     policy_softmax_temperature_in_place(eval.policy.to_mut(), temperature);
 

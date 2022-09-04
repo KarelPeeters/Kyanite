@@ -193,7 +193,7 @@ impl FromStr for FpuMode {
             return Ok(FpuMode::Fixed(value));
         }
 
-        if let Some(rest) = s.strip_prefix("rel") {
+        if let Some(rest) = s.strip_prefix("relative") {
             let value = f32::from_str(rest).map_err(FpuModeParseError::Float)?;
             return Ok(FpuMode::Relative(value));
         }
@@ -206,7 +206,7 @@ impl Display for FpuMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
             FpuMode::Fixed(value) => write!(f, "fixed{:+}", value),
-            FpuMode::Relative(value) => write!(f, "rel{:+}", value),
+            FpuMode::Relative(value) => write!(f, "relative{:+}", value),
         }
     }
 }
@@ -228,9 +228,9 @@ mod tests {
     #[test]
     fn fpu_string() {
         assert_eq!(FpuMode::from_str("fixed+0.3"), Ok(FpuMode::Fixed(0.3)));
-        assert_eq!(FpuMode::from_str("rel-0.5"), Ok(FpuMode::Relative(-0.5)));
+        assert_eq!(FpuMode::from_str("relative-0.5"), Ok(FpuMode::Relative(-0.5)));
 
         assert_eq!(&FpuMode::Fixed(0.3).to_string(), "fixed+0.3");
-        assert_eq!(&FpuMode::Relative(-0.5).to_string(), "rel-0.5");
+        assert_eq!(&FpuMode::Relative(-0.5).to_string(), "relative-0.5");
     }
 }
