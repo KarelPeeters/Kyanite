@@ -294,7 +294,6 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 //TODO also try without merging anything here to see how much of a difference it makes
 
                 assert_eq!(5, inputs.len());
-
                 let input = inputs[0].unwrap_float();
 
                 // assume everything is constant for now, so we can immediately fuse stuff
@@ -334,6 +333,36 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let scaled = graph.mul(input, total_scale);
                 let result = graph.add(scaled, total_bias);
+                TypedValue::FloatTensor(result)
+            }
+            "InstanceNormalization" => {
+                assert_eq!(3, inputs.len());
+                let input = inputs[0].unwrap_float();
+                let scale = inputs[1].unwrap_float();
+                let bias = inputs[2].unwrap_float();
+                let epsilon = attrs.take_float("epsilon");
+
+                let shape = graph[input].shape.clone();
+                assert!(
+                    shape.rank() >= 2,
+                    "Input rank must be >= 2, for the the batch and channel axes, got {}",
+                    shape
+                );
+
+                let rest_size = shape.dims[2..].iter().copied().product::<Size>();
+                let flat_shape = shape![shape[0], shape[1], rest_size];
+                let broadcast_shape = Shape::ones(shape.rank()).replace(1, Some(shape[1]));
+
+                let flat = graph.view(input, flat_shape);
+                let norm_flat = graph.layernorm(flat, 2, epsilon);
+                let norm = graph.view(norm_flat, shape);
+
+                let scale_broadcast = graph.view(scale, broadcast_shape.clone());
+                let bias_broadcast = graph.view(bias, broadcast_shape);
+
+                let scaled = graph.mul(norm, scale_broadcast);
+                let result = graph.add(scaled, bias_broadcast);
+
                 TypedValue::FloatTensor(result)
             }
             "Constant" => {
