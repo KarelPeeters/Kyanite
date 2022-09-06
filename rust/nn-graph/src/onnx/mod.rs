@@ -8,7 +8,7 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/onnx.rs"));
 }
 
-mod attributes;
+mod inputs;
 mod load;
 mod store;
 mod typed_value;

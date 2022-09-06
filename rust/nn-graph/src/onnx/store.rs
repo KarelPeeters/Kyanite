@@ -16,8 +16,8 @@ impl<'a, T> Store<'a, T> {
         assert!(prev.is_none(), "Key {} already has a value", key);
     }
 
-    pub fn get(&'a self, key: &'a str) -> Option<&'a T> {
-        self.inner.get(&key)
+    pub fn get(&'a self, key: &str) -> Option<&'a T> {
+        self.inner.get(key)
     }
 }
 

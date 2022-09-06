@@ -5,7 +5,7 @@ use prost::Message;
 
 pub use crate::graph::Graph;
 use crate::graph::{BinaryOp, ReduceOp, SliceRange, UnaryOp};
-use crate::onnx::attributes::Attributes;
+use crate::onnx::inputs::{Attributes, Inputs};
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
@@ -47,26 +47,16 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
         let output_name = &node.output[0];
 
         let mut attrs = Attributes::from(&node.attribute);
-        let inputs: Vec<&TypedValue> = node
-            .input
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                nodes
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input {} {} of node {} not found", i, name, node.name))
-            })
-            .collect_vec();
+        let mut inputs = Inputs::from(node.name.clone(), &node.input, &nodes);
 
         // TODO put this huge match expression in a separate function
         // TODO in general panic a lot less and return a proper result type instead
         let op_type = &*node.op_type;
         let value: TypedValue = match op_type {
             "Conv" => {
-                assert!(inputs.len() <= 3);
-                let input = inputs[0].unwrap_float();
-                let filter = inputs[1].unwrap_float();
-                let bias_raw = inputs.get(2).map(|v| v.unwrap_float());
+                let input = inputs.required(0).unwrap_float();
+                let filter = inputs.required(1).unwrap_float();
+                let bias_raw = inputs.optional(2).map(|v| v.unwrap_float());
 
                 let groups = attrs.take_int("group");
                 let kernel_shape = attrs.take_ints("kernel_shape");
@@ -137,20 +127,21 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "Relu" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
                 let result = graph.relu(input);
                 TypedValue::FloatTensor(result)
             }
             "Clip" => {
-                assert!(!inputs.is_empty());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
+                // these are optional since the older version of the operator used attributes instead
+                let input_min = inputs.optional(1);
+                let input_max = inputs.optional(2);
 
-                let (min, max) = match inputs.len() {
-                    1 => (attrs.take_float("min"), attrs.take_float("max")),
-                    3 => {
-                        let min = graph.as_const(inputs[1].unwrap_float()).unwrap();
-                        let max = graph.as_const(inputs[1].unwrap_float()).unwrap();
+                let (min, max) = match (input_min, input_max) {
+                    (None, None) => (attrs.take_float("min"), attrs.take_float("max")),
+                    (Some(min), Some(max)) => {
+                        let min = graph.as_const(min.unwrap_float()).unwrap();
+                        let max = graph.as_const(max.unwrap_float()).unwrap();
 
                         assert!(
                             min.len() == 1 && max.len() == 1,
@@ -161,7 +152,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                         (min[0], max[0])
                     }
-                    len => panic!("Expected either 1 or 3 inputs for Clip, got {}", len),
+                    _ => panic!("Clip must have either 1 or 3 inputs, got 2",),
                 };
 
                 let result = graph.clamp(input, min, max);
@@ -175,8 +166,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     _ => unreachable!(),
                 };
 
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
                 let result = graph.unary(op, input);
                 TypedValue::FloatTensor(result)
             }
@@ -192,9 +182,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     _ => unreachable!(),
                 };
 
-                assert_eq!(2, inputs.len());
-                let left = inputs[0];
-                let right = inputs[1];
+                let left = inputs.required(0);
+                let right = inputs.required(1);
 
                 if let (Some(left), Some(right)) = (left.as_shape(&graph), right.as_shape(&graph)) {
                     // if they're both shapes keep it that way
@@ -235,8 +224,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Flatten" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
 
                 let rel_axis = attrs.take_int("axis");
                 let axis = abs_axis(rel_axis, graph[input].shape.rank());
@@ -245,11 +233,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "Gemm" => {
-                assert_eq!(3, inputs.len());
-
-                let input = inputs[0].unwrap_float();
-                let weight = inputs[1].unwrap_float();
-                let bias = inputs.get(2).map(|v| v.unwrap_float());
+                let input = inputs.required(0).unwrap_float();
+                let weight = inputs.required(1).unwrap_float();
+                let bias = inputs.optional(2).map(|v| v.unwrap_float());
 
                 let alpha = attrs.take_float("alpha");
                 let beta = attrs.take_float("beta");
@@ -274,10 +260,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "MatMul" => {
-                assert_eq!(2, inputs.len());
-
-                let left = inputs[0].unwrap_float();
-                let right = inputs[1].unwrap_float();
+                let left = inputs.required(0).unwrap_float();
+                let right = inputs.required(1).unwrap_float();
 
                 // TODO we're still missing support for 1D operand broadcasting, but that should be pretty rare
                 let result = graph.mat_mul(left, right);
@@ -286,14 +270,13 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "BatchNormalization" => {
                 //TODO also try without merging anything here to see how much of a difference it makes
 
-                assert_eq!(5, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
 
                 // assume everything is constant for now, so we can immediately fuse stuff
-                let scale = graph.as_const(inputs[1].unwrap_float()).unwrap();
-                let bias = graph.as_const(inputs[2].unwrap_float()).unwrap();
-                let mean = graph.as_const(inputs[3].unwrap_float()).unwrap();
-                let variance = graph.as_const(inputs[4].unwrap_float()).unwrap();
+                let scale = graph.as_const(inputs.required(1).unwrap_float()).unwrap();
+                let bias = graph.as_const(inputs.required(2).unwrap_float()).unwrap();
+                let mean = graph.as_const(inputs.required(3).unwrap_float()).unwrap();
+                let variance = graph.as_const(inputs.required(4).unwrap_float()).unwrap();
 
                 let epsilon = attrs.take_float("epsilon");
                 let _ = attrs.take_float("momentum");
@@ -329,10 +312,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "InstanceNormalization" => {
-                assert_eq!(3, inputs.len());
-                let input = inputs[0].unwrap_float();
-                let scale = inputs[1].unwrap_float();
-                let bias = inputs[2].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
+                let scale = inputs.required(1).unwrap_float();
+                let bias = inputs.required(2).unwrap_float();
                 let epsilon = attrs.take_float("epsilon");
 
                 let shape = graph[input].shape.clone();
@@ -359,25 +341,22 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::FloatTensor(result)
             }
             "Constant" => {
-                assert!(inputs.is_empty());
-
                 let tensor = attrs.take_tensor("value");
                 define_tensor_data(&mut graph, tensor)
             }
             "ConstantOfShape" => {
-                assert!(inputs.len() <= 1);
+                let shape = inputs.optional(0);
 
-                let shape = match inputs.len() {
-                    0 => Shape::SCALAR,
-                    1 => Shape::new(
-                        inputs[0]
+                let shape = match shape {
+                    None => Shape::SCALAR,
+                    Some(shape) => Shape::new(
+                        shape
                             .as_shape(&graph)
                             .unwrap()
                             .iter()
                             .map(|s| s.as_size().unwrap())
                             .collect_vec(),
                     ),
-                    _ => unreachable!(),
                 };
 
                 let value = match attrs.maybe_take_tensor("value") {
@@ -396,9 +375,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::with_same_type(result, &value)
             }
             "Cast" => {
-                assert_eq!(1, inputs.len());
-
-                let input = inputs[0];
+                let input = inputs.required(0);
                 let to_type = DataType::from_i32(attrs.take_int("to") as i32).expect("Invalid data type");
 
                 match input {
@@ -415,10 +392,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Reshape" => {
-                assert_eq!(2, inputs.len());
-
-                let input = inputs[0];
-                let new_shape = inputs[1].as_shape(&graph).unwrap();
+                let input = inputs.required(0);
+                let new_shape = inputs.required(1).as_shape(&graph).unwrap();
 
                 let allow_zero = attrs.maybe_take_int("allowzero").unwrap_or(0);
                 assert!(
@@ -436,9 +411,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::with_same_type(result, input)
             }
             "Unsqueeze" => {
-                assert_eq!(1, inputs.len());
-
-                let input = inputs[0];
+                let input = inputs.required(0);
                 let rel_axes = attrs.take_ints("axes");
 
                 match input {
@@ -479,8 +452,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Transpose" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0];
+                let input = inputs.required(0);
 
                 let permutation = attrs.take_ints("perm");
                 let permutation = permutation.iter().map(|&x| x as usize).collect_vec();
@@ -489,10 +461,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::with_same_type(result, input)
             }
             "Gather" => {
-                assert_eq!(2, inputs.len());
-
-                let input = inputs[0];
-                let indices = inputs[1].unwrap_int();
+                let input = inputs.required(0);
+                let indices = inputs.required(1).unwrap_int();
 
                 let rel_axis = attrs.maybe_take_int("axis").unwrap_or(0);
                 assert!(rel_axis >= 0, "Negative gather axis not supported yet");
@@ -521,41 +491,29 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Slice" => {
-                let (input, starts, ends, axes, steps) = match inputs.len() {
-                    1 => {
-                        let input = inputs[0];
-
-                        let starts = attrs.take_ints("starts").to_vec();
-                        let ends = attrs.take_ints("ends").to_vec();
-                        let axes = attrs.maybe_take_ints("axes").map(|v| v.to_vec());
-                        let steps = attrs.maybe_take_ints("steps").map(|v| v.to_vec());
-
-                        (input, starts, ends, axes, steps)
+                let get = |inputs: &mut Inputs, attrs: &mut Attributes, index: usize, name: &str| match inputs
+                    .optional(index)
+                {
+                    Some(value) => {
+                        let value = graph
+                            .as_const(value.unwrap_int())
+                            .unwrap()
+                            .iter()
+                            .map(|&f| f as i64)
+                            .collect_vec();
+                        Some(value)
                     }
-                    3 | 4 | 5 => {
-                        let unwrap = |v: &&TypedValue| {
-                            graph
-                                .as_const(v.unwrap_int())
-                                .unwrap()
-                                .iter()
-                                .map(|&f| f as i64)
-                                .collect_vec()
-                        };
-
-                        let input = inputs[0];
-                        let starts = unwrap(&inputs[1]);
-                        let ends = unwrap(&inputs[2]);
-                        let axes = inputs.get(3).map(unwrap);
-                        let steps = inputs.get(4).map(unwrap);
-
-                        (input, starts, ends, axes, steps)
-                    }
-                    len => panic!("Unexpected number of arguments to Slice operator: {}", len),
+                    None => attrs.maybe_take_ints(name).map(|v| v.to_vec()),
                 };
 
+                let input = inputs.required(0);
+                let starts = get(&mut inputs, &mut attrs, 1, "starts").expect("Missing starts input and attribute");
+                let ends = get(&mut inputs, &mut attrs, 2, "ends").expect("Missing ends input and attribute");
+
                 let slice_rank = starts.len();
-                let axes = axes.unwrap_or_else(|| (0..slice_rank as i64).collect_vec());
-                let steps = steps.unwrap_or_else(|| vec![1; slice_rank]);
+                let axes =
+                    get(&mut inputs, &mut attrs, 3, "axes").unwrap_or_else(|| (0..slice_rank as i64).collect_vec());
+                let steps = get(&mut inputs, &mut attrs, 4, "steps").unwrap_or_else(|| vec![1; slice_rank]);
 
                 assert!(
                     slice_rank == ends.len() && slice_rank == axes.len() && slice_rank == steps.len(),
@@ -607,7 +565,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Concat" => {
+                let inputs = inputs.take_all_varadic();
                 assert!(!inputs.is_empty(), "Must concatenate at least one value");
+
                 let rank = inputs[0].shape(&graph).rank();
 
                 let rel_axis = attrs.take_int("axis");
@@ -648,20 +608,17 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Shape" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_tensor();
+                let input = inputs.required(0).unwrap_tensor();
                 let shape = graph[input].shape.clone();
                 let dims = shape.dims.iter().copied().map(SizeOrInt::Size).collect_vec();
                 TypedValue::Shape(dims)
             }
             "Identity" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0];
+                let input = inputs.required(0);
                 input.clone()
             }
             "Softmax" => {
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
 
                 let shape = graph[input].shape.clone();
                 let axis = attrs.maybe_take_int("axis").unwrap_or(-1);
@@ -679,8 +636,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     _ => unreachable!(),
                 };
 
-                assert_eq!(1, inputs.len());
-                let input = inputs[0].unwrap_float();
+                let input = inputs.required(0).unwrap_float();
                 let input_shape = graph[input].shape.clone();
 
                 let axes = attrs.maybe_take_ints("axes").map_or_else(
@@ -706,12 +662,25 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
         };
 
+        // set debug id for all newly created nodes to the current node name
         for value in graph.take_new_values() {
             graph.set_debug_id(value, node.name.clone())
         }
 
+        // check that we used all attributes and inputs
+        assert!(
+            attrs.is_done(),
+            "Node {} has leftover attributes: {:?}",
+            node.name,
+            attrs
+        );
+        let leftover_inputs = inputs.leftover_inputs();
+        if leftover_inputs.len() > 0 {
+            panic!("Node {} has leftover inputs: {:?}", node.name, leftover_inputs);
+        }
+
+        // actually define the current node
         nodes.define(output_name, value);
-        assert!(attrs.is_done(), "Leftover attributes: {:?}", attrs);
     }
 
     for output in &model_graph.output {
