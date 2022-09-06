@@ -331,12 +331,19 @@ impl Display for Profile {
         }
         write!(f, "  ]\n\n")?;
 
-        let total = self.conv + self.mat_mul + self.scalar_op + self.softmax_op + self.gather;
+        let total = self.conv
+            + self.mat_mul
+            + self.scalar_op
+            + self.reduce_op
+            + self.softmax_op
+            + self.layernorm_op
+            + self.gather;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
         line("Conv:      ", self.conv)?;
         line("Matmul:    ", self.mat_mul)?;
         line("Scalar:    ", self.scalar_op)?;
+        line("Reduce:    ", self.reduce_op)?;
         line("Softmax:   ", self.softmax_op)?;
         line("Layernorm: ", self.layernorm_op)?;
         line("Gather:    ", self.gather)?;
