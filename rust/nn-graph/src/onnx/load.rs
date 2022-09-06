@@ -398,9 +398,17 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let input = inputs[0];
                 let new_shape = inputs[1].as_shape(&graph).unwrap();
 
+                let allow_zero = attrs.maybe_take_int("allowzero").unwrap_or(0);
+                assert!(
+                    allow_zero == 0 || allow_zero == 1,
+                    "allowzero must be either 0 or 1, got {}",
+                    allow_zero
+                );
+                let allow_zero = allow_zero != 0;
+
                 let input_tensor = input.unwrap_tensor();
-                let input_size = graph[input_tensor].shape.size();
-                let output_shape = calculate_reshape_output_shape(input_size, &new_shape);
+                let old_shape = &graph[input_tensor].shape;
+                let output_shape = calculate_reshape_output_shape(old_shape, &new_shape, allow_zero);
 
                 let result = graph.view(input_tensor, output_shape);
                 TypedValue::with_same_type(result, input)
@@ -821,13 +829,29 @@ fn unwrap_4(slice: &[i64]) -> [usize; 4] {
     ]
 }
 
-fn calculate_reshape_output_shape(old_size: Size, new_shape_raw: &[SizeOrInt]) -> Shape {
+fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SizeOrInt], allow_zero: bool) -> Shape {
+    let old_size = old_shape.size();
+
     let mut new_shape = vec![];
     let mut leftover_index = None;
     let mut leftover_size = old_size;
 
     for (i, &size_or_int) in new_shape_raw.iter().enumerate() {
         let size = match size_or_int {
+            SizeOrInt::Int(0) => {
+                if allow_zero {
+                    Size::ZERO
+                } else {
+                    assert!(
+                        i < old_shape.rank(),
+                        "Cannot copy dim {} of output shape {:?}, not present in input {}",
+                        i,
+                        new_shape,
+                        old_shape,
+                    );
+                    old_shape[i]
+                }
+            }
             SizeOrInt::Int(-1) => {
                 assert!(
                     leftover_index.is_none(),
