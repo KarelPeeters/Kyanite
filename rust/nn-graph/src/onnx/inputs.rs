@@ -101,6 +101,7 @@ pub struct Attributes<'a> {
     inner: HashMap<&'a str, &'a AttributeProto>,
 }
 
+#[allow(dead_code)]
 impl<'a> Attributes<'a> {
     pub fn from(attrs: &'a [AttributeProto]) -> Self {
         let inner: HashMap<&str, &AttributeProto> = attrs.iter().map(|a| (&*a.name, a)).collect();
@@ -121,6 +122,15 @@ impl<'a> Attributes<'a> {
         })
     }
 
+    pub fn maybe_take_string(&mut self, key: &str) -> Option<&str> {
+        self.maybe_take(key, AttributeType::String)
+            .map(|s| std::str::from_utf8(&s.s).unwrap())
+    }
+
+    pub fn take_string(&mut self, key: &str) -> &str {
+        std::str::from_utf8(&self.take(key, AttributeType::String).s).unwrap()
+    }
+
     pub fn maybe_take_int(&mut self, key: &str) -> Option<i64> {
         self.maybe_take(key, AttributeType::Int).map(|a| a.i)
     }
@@ -129,12 +139,24 @@ impl<'a> Attributes<'a> {
         self.take(key, AttributeType::Int).i
     }
 
+    pub fn maybe_take_bool(&mut self, key: &str) -> Option<bool> {
+        self.maybe_take(key, AttributeType::Int).map(|a| map_bool(key, a.i))
+    }
+
+    pub fn take_bool(&mut self, key: &str) -> bool {
+        map_bool(key, self.take(key, AttributeType::Int).i)
+    }
+
     pub fn maybe_take_ints(&mut self, key: &str) -> Option<&'a [i64]> {
         self.maybe_take(key, AttributeType::Ints).map(|a| &*a.ints)
     }
 
     pub fn take_ints(&mut self, key: &str) -> &'a [i64] {
         &self.take(key, AttributeType::Ints).ints
+    }
+
+    pub fn maybe_take_float(&mut self, key: &str) -> Option<f32> {
+        self.maybe_take(key, AttributeType::Float).map(|a| a.f)
     }
 
     pub fn take_float(&mut self, key: &str) -> f32 {
@@ -153,4 +175,14 @@ impl<'a> Attributes<'a> {
     pub fn is_done(&self) -> bool {
         self.inner.is_empty()
     }
+}
+
+fn map_bool(key: &str, i: i64) -> bool {
+    assert!(
+        i == 0 || i == 1,
+        "Attribute {} is a bool and should be 0 or 1, got {}",
+        key,
+        i
+    );
+    i != 0
 }

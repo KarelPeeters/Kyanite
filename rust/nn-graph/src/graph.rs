@@ -621,6 +621,7 @@ impl Graph {
     pub fn repeat(&mut self, input: Value, axis: usize, count: usize) -> Value {
         //TODO introduce separate (optimized) operation for this?
         //TODO special-case length-0 axis to some kind of restride operation
+        //       this was meant to be length-1, right?
         let base_shape = self[input].shape.replace(axis, Some(Size::ZERO));
         self.concat(vec![input; count], axis, Some(base_shape))
     }
@@ -641,6 +642,13 @@ impl Graph {
     /// `base_shape` can be provided to allow the result shape to be inferred in case `inputs` is empty.
     #[must_use]
     pub fn concat(&mut self, inputs: Vec<Value>, axis: usize, base_shape: Option<Shape>) -> Value {
+        // skip operation if there is only a single input
+        if inputs.len() == 1 {
+            let shape = &self[inputs[0]].shape;
+            assert!(axis < shape.rank(), "Axis out of bounds for shape {}", shape);
+            return inputs[0];
+        }
+
         let base_shape = base_shape.unwrap_or_else(|| {
             assert!(
                 !inputs.is_empty(),

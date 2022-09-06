@@ -394,14 +394,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Reshape" => {
                 let input = inputs.required(0);
                 let new_shape = inputs.required(1).as_shape(&graph).unwrap();
-
-                let allow_zero = attrs.maybe_take_int("allowzero").unwrap_or(0);
-                assert!(
-                    allow_zero == 0 || allow_zero == 1,
-                    "allowzero must be either 0 or 1, got {}",
-                    allow_zero
-                );
-                let allow_zero = allow_zero != 0;
+                let allow_zero = attrs.maybe_take_bool("allowzero").unwrap_or(false);
 
                 let input_tensor = input.unwrap_tensor();
                 let old_shape = &graph[input_tensor].shape;
@@ -655,6 +648,64 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result_shaped = graph.view(result, result_shape);
 
                 TypedValue::FloatTensor(result_shaped)
+            }
+            "Resize" => {
+                // operands
+                let input = inputs.required(0);
+                let roi = inputs.optional(1);
+                let scales = inputs.optional(2).map(|v| v.unwrap_float());
+                let sizes = inputs.optional(3).map(|v| v.unwrap_int());
+
+                let _antialias = attrs.maybe_take_bool("antialias").unwrap_or(false);
+                let axes = attrs.maybe_take_ints("axes");
+                let _coordinate_transformation_mode = attrs
+                    .maybe_take_string("coordinate_transformation_mode")
+                    .unwrap_or("half_pixel");
+                let _cubic_coeff_a = attrs.take_float("cubic_coeff_a");
+                let _exclude_outside = attrs.maybe_take_int("exclude_outside").unwrap_or(0);
+                let _extrapolation_value = attrs.maybe_take_float("extrapolation_value").unwrap_or(0.0);
+                let keep_aspect_ratio_policy = attrs
+                    .maybe_take_string("keep_aspect_ratio_policy")
+                    .unwrap_or("stretch")
+                    .to_owned();
+                let mode = attrs.maybe_take_string("mode").unwrap_or("nearest").to_owned();
+                let nearest_mode = attrs
+                    .maybe_take_string("nearest_mode")
+                    .unwrap_or("round_prefer_floor")
+                    .to_owned();
+
+                // require exactly matching operands for most
+                assert!(
+                    mode == "nearest"
+                        && nearest_mode == "floor"
+                        && roi.is_none()
+                        && sizes.is_none()
+                        && axes.is_none()
+                        && keep_aspect_ratio_policy == "stretch",
+                    "The given resize operation is not supported"
+                );
+
+                let scales = graph
+                    .as_const(scales.expect("Resize requires scales for now"))
+                    .expect("Resize only supported with constant scales");
+
+                let input_tensor = input.unwrap_tensor();
+                let input_shape = &graph[input_tensor].shape;
+                let rank = input_shape.rank();
+
+                assert_eq!(
+                    scales.shape(),
+                    &[rank],
+                    "Scales must be a vector with length the input rank"
+                );
+
+                let result = scales.iter().enumerate().fold(input_tensor, |acc, (i, &scale_f)| {
+                    let scale = scale_f as usize;
+                    assert_eq!(scale as f32, scale_f, "Only integer scales supported, got {:?}", scales);
+                    graph.repeat(acc, i, scale)
+                });
+
+                TypedValue::with_same_type(result, input)
             }
             _ => {
                 eprintln!("Already parsed graph:\n{:?}", graph);
