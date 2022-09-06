@@ -167,15 +167,16 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
-            "Sqrt" => {
+            "Sqrt" | "Exp" | "Sigmoid" => {
                 let op = match op_type {
                     "Sqrt" => UnaryOp::Sqrt,
+                    "Exp" => UnaryOp::Exp,
+                    "Sigmoid" => UnaryOp::Sigmoid,
                     _ => unreachable!(),
                 };
 
                 assert_eq!(1, inputs.len());
                 let input = inputs[0].unwrap_float();
-
                 let result = graph.unary(op, input);
                 TypedValue::FloatTensor(result)
             }

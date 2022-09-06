@@ -109,6 +109,7 @@ pub struct SliceRange {
 pub enum UnaryOp {
     Sqrt,
     Exp,
+    Sigmoid,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -821,6 +822,18 @@ impl Graph {
         self.push(new_shape, Operation::Reduce { input, axes, op })
     }
 
+    /// Elementwise sigmoid.
+    #[must_use]
+    pub fn sigmoid(&mut self, input: Value) -> Value {
+        self.push(
+            self[input].shape.clone(),
+            Operation::Unary {
+                input,
+                op: UnaryOp::Sigmoid,
+            },
+        )
+    }
+
     /// Elementwise relu.
     #[must_use]
     pub fn relu(&mut self, input: Value) -> Value {
@@ -1088,12 +1101,13 @@ impl SliceRange {
 }
 
 impl UnaryOp {
-    pub const ALL: &'static [Self] = &[UnaryOp::Sqrt];
+    pub const ALL: &'static [Self] = &[UnaryOp::Sqrt, UnaryOp::Exp, UnaryOp::Sigmoid];
 
     pub fn map(self, x: f32) -> f32 {
         match self {
             UnaryOp::Sqrt => x.sqrt(),
             UnaryOp::Exp => x.exp(),
+            UnaryOp::Sigmoid => 1.0 / (1.0 + (-x).exp()),
         }
     }
 }

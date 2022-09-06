@@ -360,6 +360,7 @@ impl<'a> Planner<'a> {
                 let operation = match op {
                     UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
                     UnaryOp::Exp => "*x0 = exp(*x1);",
+                    UnaryOp::Sigmoid => "*x0 = 1.0 / (1.0 + exp(-*x1));",
                 };
 
                 let input = self.visit(input)?;
