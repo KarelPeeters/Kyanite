@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
@@ -486,27 +487,15 @@ impl Graph {
             new_shape
         );
 
-        // insert dummy axes until ranks match
-        let mut view_shape = input_shape.clone();
-        while view_shape.rank() < new_shape.rank() {
-            view_shape = view_shape.insert(0, Size::ONE);
-        }
-        assert_eq!(view_shape.rank(), new_shape.rank());
-
+        // pad with 1 axes
+        let view_shape = Shape::ones(new_shape.rank() - input_shape.rank()).concat(&input_shape);
         let curr = self.view(input, view_shape.clone());
         if view_shape == new_shape {
             return curr;
         }
 
         // check that broadcasting is valid
-        for (&old_axis, &new_axis) in zip_eq(&view_shape.dims, &new_shape.dims) {
-            assert!(
-                old_axis == new_axis || old_axis == Size::ONE,
-                "Cannot broadcast from {:?} to {:?}",
-                view_shape,
-                new_shape
-            );
-        }
+        let _ = broadcast_shape(&view_shape, &new_shape);
 
         // do the actual broadcast
         self.push(new_shape, Operation::Broadcast { input: curr })
@@ -902,7 +891,8 @@ impl Graph {
             return left;
         }
 
-        let result_shape = self[left].shape.clone();
+        let result_shape = broadcast_shape(&self[left].shape, &self[right].shape);
+        let left = self.broadcast(left, result_shape.clone());
         let right = self.broadcast(right, result_shape.clone());
 
         self.push(result_shape, Operation::Binary { left, right, op })
@@ -955,6 +945,25 @@ impl Graph {
             self.output(value)
         }
     }
+}
+
+pub fn broadcast_shape(left: &Shape, right: &Shape) -> Shape {
+    let rank = max(left.rank(), right.rank());
+
+    // pad with leading 1 axes
+    let left = Shape::ones(rank - left.rank()).concat(&left);
+    let right = Shape::ones(rank - right.rank()).concat(&right);
+
+    // decide the matching axes for both
+    let result = zip_eq(&left.dims, &right.dims)
+        .map(|(&l, &r)| match (l, r) {
+            (Size::ONE, other) | (other, Size::ONE) => other,
+            (any, other) if any == other => any,
+            _ => panic!("Cannot broadcast {} and {} in shapes {} and {}", l, r, left, right),
+        })
+        .collect_vec();
+
+    Shape::new(result)
 }
 
 impl Debug for Graph {

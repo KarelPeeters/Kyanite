@@ -301,15 +301,19 @@ fn add_broadcast() {
 
     let left = graph.constant(shape![2, 2, 2], vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     let right = graph.constant(shape![1, 2, 2], vec![0.0, 1.0, 2.0, 3.0]);
-    let output = graph.add(left, right);
-    graph.output(output);
+    let scalar = graph.constant(shape![], vec![10.0]);
 
-    test_all(
-        &graph,
-        0,
-        &[],
-        Some(&[manual_tensor((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0])]),
-    )
+    let output0 = graph.add(left, right);
+    let output1 = graph.add(right, left);
+    let output2 = graph.add(right, scalar);
+
+    graph.output_all(&[output0, output1, output2]);
+
+    let expected_output_01 = manual_tensor((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0]);
+    let expected_output2 = manual_tensor((1, 2, 2), vec![10.0, 11.0, 12.0, 13.0]);
+    let expected_outputs = [expected_output_01.clone(), expected_output_01, expected_output2];
+
+    test_all(&graph, 0, &[], Some(&expected_outputs))
 }
 
 #[test]
