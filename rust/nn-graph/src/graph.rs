@@ -1030,8 +1030,12 @@ impl Display for Graph {
         } = self;
 
         writeln!(f, "Graph {{")?;
-
         writeln!(f, "  check: {},", self.check)?;
+
+        let input_shapes = self.inputs().iter().map(|&v| &self[v].shape).collect_vec();
+        let output_shapes = self.outputs().iter().map(|&v| &self[v].shape).collect_vec();
+        writeln!(f, "  input_shapes: {:?},", input_shapes)?;
+        writeln!(f, "  output_shapes: {:?},", output_shapes)?;
         writeln!(f, "  inputs: {:?},", inputs)?;
         writeln!(f, "  outputs: {:?},", outputs)?;
 
