@@ -725,17 +725,53 @@ impl Graph {
         self.mat_mul(input, weight_transposed)
     }
 
-    /// Single matrix multiply.
+    /// General matrix multiply, with broadcasting.
+    ///
+    /// * The last two axes should have shapes `[n, p]` and `[p, m]` and will result in an output shape `[n, m]`
+    /// * The preceding axes are broadcast together and reappear in the output as-is.
     #[must_use]
     pub fn mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let left_batched = self.view(left, self[left].shape.insert(0, Size::ONE));
-        let right_batched = self.view(right, self[right].shape.insert(0, Size::ONE));
-        let result_batched = self.batched_mat_mul(left_batched, right_batched);
-        let result = self.view(result_batched, self[result_batched].shape.replace(0, None));
+        let left_shape = &self[left].shape;
+        let right_shape = &self[right].shape;
+
+        assert!(
+            left_shape.rank() >= 2 && right_shape.rank() >= 2,
+            "Matmul operands must have rank >= 2, got shapes {} and {}",
+            left_shape,
+            right_shape
+        );
+
+        let (left_head, left_tail) = left_shape.split(left_shape.rank() - 2);
+        let (right_head, right_tail) = right_shape.split(right_shape.rank() - 2);
+
+        // check tails match
+        let [m, n0] = left_tail.unwrap_2();
+        let [n1, p] = right_tail.unwrap_2();
+        assert_eq!(
+            n0, n1,
+            "Inner matmul dimension must, got shapes {} and {}",
+            left_shape, right_shape
+        );
+        let result_tail = shape![m, p];
+
+        // broadcast heads
+        let result_head = broadcast_shape(&left_head, &right_head);
+        let batch_size = result_head.size();
+        let left_broadcast = self.broadcast(left, result_head.clone().concat(&left_tail));
+        let right_broadcast = self.broadcast(right, result_head.clone().concat(&right_tail));
+
+        // flatten for bmm
+        let left_flat = self.view(left_broadcast, left_tail.insert(0, batch_size));
+        let right_flat = self.view(right_broadcast, right_tail.insert(0, batch_size));
+        let result_flat = self.batched_mat_mul(left_flat, right_flat);
+
+        // unflatten into final shape
+        let result = self.view(result_flat, result_head.concat(&result_tail));
         result
     }
 
-    /// Batched matrix multiply. Inputs must have shapes `[b, p, q]`, `[b, q, r]` and the result has shape `[N, p, r]`.
+    /// Batched matrix multiply, without any automatic broadcasting.
+    /// Inputs must have shapes `[b, m, n]`, `[b, n, p]` and the result has shape `[b, m, p]`.
     #[must_use]
     pub fn batched_mat_mul(&mut self, left: Value, right: Value) -> Value {
         let [b0, p, q0] = self[left].shape.unwrap_3();
@@ -743,7 +779,7 @@ impl Graph {
 
         assert!(
             b0 == b1 && q0 == q1,
-            "MatMul dimension mismatch: {:?} and {:?}",
+            "Inner matmul dimension mismatch, got shapes {} and {}",
             self[left].shape,
             self[right].shape
         );

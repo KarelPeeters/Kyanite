@@ -1,7 +1,14 @@
 use itertools::Itertools;
+use rand::Rng;
 
 use nn_graph::cpu::Tensor;
 use nn_graph::ndarray::{ArcArray, Array1, Dimension, IntoDimension};
+
+pub fn rng_tensor<I: IntoDimension + Copy>(shape: I, rng: &mut impl Rng) -> Tensor {
+    let size = shape.into_dimension().size();
+    let data = rng_vec(size, rng);
+    manual_tensor(shape, data)
+}
 
 pub fn manual_tensor<I: IntoDimension>(shape: I, data: Vec<f32>) -> Tensor {
     ArcArray::from_shape_vec(shape, data)
@@ -12,6 +19,10 @@ pub fn manual_tensor<I: IntoDimension>(shape: I, data: Vec<f32>) -> Tensor {
 pub fn linspace_tensor<I: IntoDimension + Copy>(shape: I) -> ArcArray<f32, I::Dim> {
     let size = shape.into_dimension().size();
     ArcArray::linspace(-1.0, 1.0, size).reshape(shape)
+}
+
+pub fn rng_vec(len: usize, rng: &mut impl Rng) -> Vec<f32> {
+    (0..len).map(|_| rng.gen()).collect_vec()
 }
 
 pub fn range_vec(len: usize) -> Vec<f32> {

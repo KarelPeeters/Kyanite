@@ -177,6 +177,15 @@ impl Shape {
         dims.insert(axis, size);
         Shape::new(dims)
     }
+
+    pub fn split(&self, rank: usize) -> (Shape, Shape) {
+        assert!(rank <= self.rank(), "Rank {} out of bounds for {:?}", rank, self);
+
+        let body = self.dims[..rank].to_vec();
+        let tail = self.dims[rank..].to_vec();
+
+        (Shape::new(body), Shape::new(tail))
+    }
 }
 
 impl From<usize> for Size {

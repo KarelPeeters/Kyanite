@@ -276,19 +276,11 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "MatMul" => {
                 assert_eq!(2, inputs.len());
 
-                let input_a = inputs[0].unwrap_float();
-                let input_b = inputs[1].unwrap_float();
+                let left = inputs[0].unwrap_float();
+                let right = inputs[1].unwrap_float();
 
-                let a_shape = &graph[input_a].shape;
-                let b_shape = &graph[input_b].shape;
-
-                // TODO MatMul should do broadcasting, but we don't support that yet
-                let result = match (a_shape.rank(), b_shape.rank()) {
-                    (2, 2) => graph.mat_mul(input_a, input_b),
-                    (3, 3) => graph.batched_mat_mul(input_a, input_b),
-                    _ => panic!("MatMul input shapes not yet supported: {:?} and {:?}", a_shape, b_shape),
-                };
-
+                // TODO we're still missing support for 1D operand broadcasting, but that should be pretty rare
+                let result = graph.mat_mul(left, right);
                 TypedValue::FloatTensor(result)
             }
             "BatchNormalization" => {

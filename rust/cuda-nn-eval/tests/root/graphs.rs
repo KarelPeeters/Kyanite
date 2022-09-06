@@ -1,4 +1,6 @@
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
@@ -8,7 +10,7 @@ use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
 use crate::root::runner::{test_all, test_all_graph};
-use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec};
+use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor};
 
 #[test]
 fn empty() {
@@ -179,7 +181,39 @@ fn linear_sliced() {
 }
 
 #[test]
-fn mat_mul() {
+fn mat_mul_broadcast() {
+    let shapes = vec![
+        (shape![4, 2], shape![2, 3], shape![4, 3]),
+        (shape![8, 4, 2], shape![2, 3], shape![8, 4, 3]),
+        (shape![4, 2], shape![8, 2, 3], shape![8, 4, 3]),
+        (shape![8, 4, 2], shape![8, 2, 3], shape![8, 4, 3]),
+        (shape![1, 1, 1, 4, 2], shape![8, 1, 2, 3], shape![1, 8, 1, 4, 3]),
+    ];
+
+    let mut rng = StdRng::seed_from_u64(0);
+    let mut graph = Graph::new();
+
+    let mut inputs = vec![];
+
+    for (left_shape, right_shape, result_shape) in shapes {
+        println!("Testing {} @ {} => {}", left_shape, right_shape, result_shape);
+
+        inputs.push(rng_tensor(left_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
+        inputs.push(rng_tensor(right_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
+
+        let left = graph.input(left_shape.clone());
+        let right = graph.input(right_shape.clone());
+        let result = graph.mat_mul(left, right);
+
+        assert_eq!(graph[result].shape, result_shape);
+        graph.output(result);
+    }
+
+    test_all(&graph, 0, &inputs, None);
+}
+
+#[test]
+fn mat_mul_transpose() {
     // run the "transposed" cases first since they're simpler for cublas
     for transpose_a in [true, false] {
         for transpose_b in [true, false] {
