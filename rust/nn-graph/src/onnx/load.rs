@@ -11,7 +11,7 @@ use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::{SizeOrInt, TypedValue};
+use crate::onnx::typed_value::{float_to_i64_exact, SizeOrInt, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -600,6 +600,72 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     }
                 }
             }
+            "Pad" => {
+                // operands
+                let input = inputs.required(0).unwrap_float();
+                let pads = inputs.required(1).unwrap_int();
+                let constant_value = inputs.optional(2);
+                let axes = inputs.optional(3);
+                let mode = attrs.maybe_take_string("mode").unwrap_or("constant");
+
+                // map operands
+                let input_shape = &graph[input].shape;
+
+                let constant_value = constant_value
+                    .map(|v| graph.as_single_const(v.unwrap_float()).unwrap())
+                    .unwrap_or(0.0);
+
+                let axes = match axes {
+                    Some(axes) => {
+                        let axes = axes.unwrap_int();
+                        let axes_shape = &graph[axes].shape;
+
+                        assert_eq!(axes_shape.rank(), 1, "Axes must be 1D tensor, got shape {}", axes_shape);
+
+                        graph
+                            .as_const(axes)
+                            .unwrap()
+                            .iter()
+                            .map(|&f| abs_axis(float_to_i64_exact(f), input_shape.rank()))
+                            .collect_vec()
+                    }
+                    None => (0..input_shape.rank()).collect_vec(),
+                };
+
+                assert_eq!(
+                    graph[pads].shape,
+                    Shape::fixed(&[axes.len() * 2]),
+                    "Pads shape mismatch"
+                );
+                let pads = graph
+                    .as_const(pads)
+                    .unwrap()
+                    .iter()
+                    .map(|&f| float_to_i64_exact(f))
+                    .collect_vec();
+
+                assert_eq!(mode, "constant", "Only 'constant' pad mode supported");
+
+                let constant = graph.constant(Shape::SCALAR, vec![constant_value]);
+
+                // TODO consider adding a real pad operation instead of this concat workaround
+                let output = axes.iter().fold(input, |acc, &axis| {
+                    let acc_shape = graph[acc].shape.clone();
+
+                    let pad_left = pads[2 * axis];
+                    let pad_right = pads[2 * axis + 1];
+                    assert!(pad_left >= 0 && pad_right >= 0, "Pad values cannot be negative");
+
+                    let blocks = vec![
+                        graph.broadcast(constant, acc_shape.replace(axis, Some(Size::fixed(pad_left as usize)))),
+                        acc,
+                        graph.broadcast(constant, acc_shape.replace(axis, Some(Size::fixed(pad_right as usize)))),
+                    ];
+                    graph.concat(blocks, axis, None)
+                });
+
+                TypedValue::FloatTensor(output)
+            }
             "Shape" => {
                 let input = inputs.required(0).unwrap_tensor();
                 let shape = graph[input].shape.clone();
@@ -708,7 +774,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 TypedValue::with_same_type(result, input)
             }
             _ => {
-                eprintln!("Already parsed graph:\n{:?}", graph);
+                eprintln!("Already parsed graph:\n{}", graph);
                 panic!("Unsupported op_type '{}' in node {}", op_type, node.name);
             }
         };

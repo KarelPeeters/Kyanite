@@ -643,6 +643,9 @@ impl Graph {
     #[must_use]
     pub fn concat(&mut self, inputs: Vec<Value>, axis: usize, base_shape: Option<Shape>) -> Value {
         // skip operation if there is only a single input
+        // TODO also remove empty inputs from the list of operands
+        // TODO skip concat entirely if there is only a single nonempty input
+        // TODO skip entire operation if the output is empty (generalize this to all operations?)
         if inputs.len() == 1 {
             let shape = &self[inputs[0]].shape;
             assert!(axis < shape.rank(), "Axis out of bounds for shape {}", shape);
