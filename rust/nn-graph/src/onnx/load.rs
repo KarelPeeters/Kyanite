@@ -558,7 +558,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Concat" => {
-                let inputs = inputs.take_all_varadic();
+                let inputs = inputs.take_all_variadic();
                 assert!(!inputs.is_empty(), "Must concatenate at least one value");
 
                 let rank = inputs[0].shape(&graph).rank();

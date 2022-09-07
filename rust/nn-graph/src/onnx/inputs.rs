@@ -63,15 +63,15 @@ impl<'a> Inputs<'a> {
         }
     }
 
-    pub fn take_all_varadic(&mut self) -> Vec<&'a TypedValue> {
+    pub fn take_all_variadic(&mut self) -> Vec<&'a TypedValue> {
         (0..self.inner.len())
             .map(|i| match self.take(i) {
                 Storage::Present(value) => value,
                 Storage::Used => panic!(
-                    "Cannot get varadic input, input {} of node {} has already been used",
+                    "Cannot get variadic input, input {} of node {} has already been used",
                     i, self.node_name
                 ),
-                Storage::Missing => panic!("Missing input {} not allowed in varadic on node {}", i, self.node_name),
+                Storage::Missing => panic!("Missing input {} not allowed in variadic on node {}", i, self.node_name),
             })
             .collect()
     }
