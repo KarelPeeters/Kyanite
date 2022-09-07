@@ -46,10 +46,7 @@ impl Optimizer<'_> {
                     let filter: ArcArray4<f32> = filter.into_dimensionality().unwrap();
 
                     if builder.conv.is_none() && details.keeps_spatial_shape() {
-                        builder.set_conv(ConvOperation {
-                            details,
-                            filter: filter,
-                        });
+                        builder.set_conv(ConvOperation { details, filter });
                         Some(input)
                     } else {
                         None
@@ -68,31 +65,30 @@ impl Optimizer<'_> {
                         self.old_graph[right_inner].shape.dims.as_slice()
                     {
                         let channels = builder.current_channels();
-                        assert_eq!(
-                            actual_channels,
-                            Size::fixed(channels),
-                            "Invalid channel count for right in binary operation"
-                        );
+                        // TODO it could also just be a broadcasted scalar, maybe fuse this as well
+                        if actual_channels == Size::fixed(channels) {
+                            if let Some(data) = self.old_graph.as_const(right_inner) {
+                                let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
+                                assert_eq!(data.shape(), &[1, channels, 1, 1]);
+                                let data: ArcArray1<f32> = data.reshape(channels);
 
-                        if let Some(data) = self.old_graph.as_const(right_inner) {
-                            let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
-                            assert_eq!(data.shape(), &[1, channels, 1, 1]);
-                            let data: ArcArray1<f32> = data.reshape(channels);
+                                let affine_op = match op {
+                                    BinaryOp::Add => AffineOperation::AddChannel { data },
+                                    BinaryOp::Sub => AffineOperation::AddChannel {
+                                        data: data.map(|&x| -x).into_shared(),
+                                    },
+                                    BinaryOp::Mul => AffineOperation::ScaleChannel { data },
+                                    BinaryOp::Div => AffineOperation::ScaleChannel {
+                                        data: data.map(|&x| 1.0 / x).into_shared(),
+                                    },
+                                    _ => unreachable!(),
+                                };
 
-                            let affine_op = match op {
-                                BinaryOp::Add => AffineOperation::AddChannel { data },
-                                BinaryOp::Sub => AffineOperation::AddChannel {
-                                    data: data.map(|&x| -x).into_shared(),
-                                },
-                                BinaryOp::Mul => AffineOperation::ScaleChannel { data },
-                                BinaryOp::Div => AffineOperation::ScaleChannel {
-                                    data: data.map(|&x| 1.0 / x).into_shared(),
-                                },
-                                _ => unreachable!(),
-                            };
-
-                            builder.push_affine(affine_op);
-                            Some(left)
+                                builder.push_affine(affine_op);
+                                Some(left)
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
