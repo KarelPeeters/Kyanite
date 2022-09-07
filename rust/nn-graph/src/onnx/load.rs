@@ -767,10 +767,19 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     "Scales must be a vector with length the input rank"
                 );
 
-                let result = scales.iter().enumerate().fold(input_tensor, |acc, (i, &scale_f)| {
+                let result = scales.iter().enumerate().fold(input_tensor, |acc, (axis, &scale_f)| {
                     let scale = scale_f as usize;
                     assert_eq!(scale as f32, scale_f, "Only integer scales supported, got {:?}", scales);
-                    graph.repeat(acc, i, scale)
+
+                    let acc_shape = graph[acc].shape.clone();
+                    let replace_size = acc_shape[axis] * Size::fixed(scale);
+
+                    // insert dummy axis, repeat, then flatten again
+                    let inserted = graph.view(acc, acc_shape.insert(axis + 1, Size::ONE));
+                    let repeated = graph.repeat(inserted, axis + 1, scale);
+                    let flat = graph.view(repeated, acc_shape.replace(axis, Some(replace_size)));
+
+                    flat
                 });
 
                 TypedValue::with_same_type(result, input)
