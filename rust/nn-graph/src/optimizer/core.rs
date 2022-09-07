@@ -232,6 +232,8 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_convert_div_to_mul(&mut self, old_start: Value) -> Option<Value> {
+        // TODO this optimization can materialize large broadcasted constants, wasting memory & bandwidth
+        //    we need to look through the broadcast operation and only map the inner value
         if let &Operation::Binary {
             left,
             right,
