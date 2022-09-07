@@ -96,7 +96,7 @@ fn flip_conv() {
     let flipped = graph.flip(input, 3);
 
     let weight = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
-    let result = graph.conv(flipped, weight, 1, 1);
+    let result = graph.conv(flipped, weight, 1, 1, 1, 1);
 
     graph.output(result);
     test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
@@ -260,7 +260,7 @@ fn horizontal_1x1_conv() {
     let input = graph.constant(shape![2, 4, 1, 8], linspace_vec(2 * 4 * 8));
     let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
 
-    let output = graph.conv(input, filter, 0, 0);
+    let output = graph.conv(input, filter, 1, 1, 0, 0);
     graph.output(output);
 
     assert_eq!(graph[output].shape, shape![2, 3, 1, 8]);
@@ -274,7 +274,7 @@ fn vertical_1x1_conv() {
     let input = graph.constant(shape![2, 4, 8, 1], linspace_vec(2 * 4 * 8));
     let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
 
-    let output = graph.conv(input, filter, 0, 0);
+    let output = graph.conv(input, filter, 1, 1, 0, 0);
     graph.output(output);
 
     assert_eq!(graph[output].shape, shape![2, 3, 8, 1]);
@@ -367,7 +367,7 @@ fn affine_single_element() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0, 0);
+    let curr = graph.conv(curr, filter, 1, 1, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
@@ -428,7 +428,7 @@ fn affine_multiple_channels() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0, 0);
+    let curr = graph.conv(curr, filter, 1, 1, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
@@ -449,7 +449,7 @@ fn affine_padding() {
 
     let mut curr = graph.input(Shape::fixed(&input_data.shape()));
     curr = graph.add(curr, bias_0);
-    curr = graph.conv(curr, filter, 1, 1);
+    curr = graph.conv(curr, filter, 1, 1, 1, 1);
     curr = graph.add(curr, bias_1);
     graph.output(curr);
 
@@ -467,17 +467,17 @@ fn pre_act_resnet() {
     let filter_tower = graph.constant(shape![5, 5, 3, 3], linspace_vec(5 * 5 * 3 * 3));
     let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
-    let mut tower = graph.conv(input, filter_initial, 1, 1);
+    let mut tower = graph.conv(input, filter_initial, 1, 1, 1, 1);
     for _ in 0..2 {
         let mut curr = channel_batchnorm(&mut graph, tower);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1, 1, 1);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1, 1, 1);
         tower = graph.add(curr, tower);
     }
 
-    let policy = graph.conv(tower, filter_policy, 0, 0);
+    let policy = graph.conv(tower, filter_policy, 1, 1, 0, 0);
 
     graph.output(tower);
     graph.output(policy);
@@ -513,7 +513,7 @@ fn fuse_res() {
     let filter = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
 
     let mut curr = input;
-    curr = graph.conv(curr, filter, 1, 1);
+    curr = graph.conv(curr, filter, 1, 1, 1, 1);
     curr = graph.add(curr, other);
     curr = graph.clamp(curr, 0.0, f32::INFINITY);
     graph.output(curr);
@@ -597,15 +597,15 @@ fn repeated_conv() {
 
     let input = graph.input(shape![Size::BATCH, 4, 8, 8]);
 
-    let x1 = graph.conv(input, weight0, 1, 1);
-    let x2 = graph.conv(x1, weight0, 1, 1);
-    let x3 = graph.conv(x2, weight0, 1, 1);
-    let x4 = graph.conv(x3, weight0, 1, 1);
+    let x1 = graph.conv(input, weight0, 1, 1, 1, 1);
+    let x2 = graph.conv(x1, weight0, 1, 1, 1, 1);
+    let x3 = graph.conv(x2, weight0, 1, 1, 1, 1);
+    let x4 = graph.conv(x3, weight0, 1, 1, 1, 1);
 
-    let y1 = graph.conv(input, weight1, 1, 1);
-    let y2 = graph.conv(y1, weight1, 1, 1);
-    let y3 = graph.conv(y2, weight1, 1, 1);
-    let y4 = graph.conv(y3, weight1, 1, 1);
+    let y1 = graph.conv(input, weight1, 1, 1, 1, 1);
+    let y2 = graph.conv(y1, weight1, 1, 1, 1, 1);
+    let y3 = graph.conv(y2, weight1, 1, 1, 1, 1);
+    let y4 = graph.conv(y3, weight1, 1, 1, 1, 1);
 
     graph.output_all(&[x4, y4]);
 

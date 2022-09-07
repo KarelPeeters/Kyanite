@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use ndarray::{ArcArray, IxDyn};
 use unwrap_match::unwrap_match;
 
 use crate::graph::{Graph, Value};
@@ -64,6 +65,14 @@ impl TypedValue {
             TypedValue::Shape(_) => panic!("Expected tensor, got {:?}", self),
             &TypedValue::FloatTensor(inner) | &TypedValue::IntTensor(inner) => inner,
         }
+    }
+
+    pub fn unwrap_const_int(&self, graph: &Graph) -> ArcArray<i64, IxDyn> {
+        graph
+            .as_const(self.unwrap_int())
+            .unwrap()
+            .mapv(|f| float_to_i64_exact(f))
+            .to_shared()
     }
 
     pub fn with_same_type(result: Value, other: &TypedValue) -> TypedValue {

@@ -708,9 +708,24 @@ impl<'a> Planner<'a> {
             let filter_desc = filter.shape().filter_descriptor();
             let output_desc = output.shape().descriptor();
 
-            let conv_desc = ConvolutionDescriptor::new(details.padding_y as i32, details.padding_x as i32, 1, 1, 1, 1);
+            let conv_desc = ConvolutionDescriptor::new(
+                details.padding_y as i32,
+                details.padding_x as i32,
+                details.stride_y as i32,
+                details.stride_x as i32,
+                1,
+                1,
+            );
             let act_desc = ActivationDescriptor::new(act_mode, 0.0);
             let algo = STANDARD_CONV_ALGO;
+
+            assert_eq!(
+                &conv_desc.output_shape(&input_desc, &filter_desc).map(|i| i as usize),
+                output.shape().shape(),
+                "Output shape mismatch between cudnn and graph for value {:?} with operation {:?}",
+                curr,
+                graph[curr].operation,
+            );
 
             let work_size_bytes =
                 conv_desc.workspace_size(&self.handles.cudnn, algo, &input_desc, &filter_desc, &output_desc);

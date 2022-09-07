@@ -32,7 +32,7 @@ impl<'a> Inputs<'a> {
                 } else {
                     let value = nodes
                         .get(name)
-                        .unwrap_or_else(|| panic!("Input {} {} of node {} not found", i, name, node_name));
+                        .unwrap_or_else(|| panic!("Input {} '{}' of node '{}' not found", i, name, node_name));
                     Storage::Present(value)
                 }
             })
@@ -45,7 +45,7 @@ impl<'a> Inputs<'a> {
         match self.optional(index) {
             Some(input) => input,
             None => panic!(
-                "Missing input {} of node {}, {} inputs were provided",
+                "Missing input {} of node '{}', {} inputs were provided",
                 index,
                 self.node_name,
                 self.inner.len()
@@ -58,7 +58,7 @@ impl<'a> Inputs<'a> {
             Storage::Present(value) => Some(value),
             Storage::Missing => None,
             Storage::Used => {
-                panic!("Already used input {} of node {}", index, self.node_name)
+                panic!("Already used input {} of node '{}'", index, self.node_name)
             }
         }
     }
@@ -68,10 +68,13 @@ impl<'a> Inputs<'a> {
             .map(|i| match self.take(i) {
                 Storage::Present(value) => value,
                 Storage::Used => panic!(
-                    "Cannot get variadic input, input {} of node {} has already been used",
+                    "Cannot get variadic input, input {} of node '{}' has already been used",
                     i, self.node_name
                 ),
-                Storage::Missing => panic!("Missing input {} not allowed in variadic on node {}", i, self.node_name),
+                Storage::Missing => panic!(
+                    "Missing input {} not allowed in variadic on node '{}'",
+                    i, self.node_name
+                ),
             })
             .collect()
     }
@@ -98,19 +101,27 @@ impl<'a> Inputs<'a> {
 
 #[derive(Debug)]
 pub struct Attributes<'a> {
+    node_name: String,
     inner: HashMap<&'a str, &'a AttributeProto>,
 }
 
 #[allow(dead_code)]
 impl<'a> Attributes<'a> {
-    pub fn from(attrs: &'a [AttributeProto]) -> Self {
+    pub fn from(node_name: String, attrs: &'a [AttributeProto]) -> Self {
         let inner: HashMap<&str, &AttributeProto> = attrs.iter().map(|a| (&*a.name, a)).collect();
-        Attributes { inner }
+        Attributes { node_name, inner }
     }
 
     pub fn maybe_take(&mut self, key: &str, ty: AttributeType) -> Option<&'a AttributeProto> {
         self.inner.remove(key).map(|attribute| {
-            assert_eq!(ty, attribute.r#type(), "Expected type {:?}", ty);
+            assert_eq!(
+                ty,
+                attribute.r#type(),
+                "Expected type {:?} for attribute '{}' of node '{}'",
+                ty,
+                key,
+                self.node_name
+            );
             attribute
         })
     }
@@ -118,7 +129,10 @@ impl<'a> Attributes<'a> {
     pub fn take(&mut self, key: &str, ty: AttributeType) -> &'a AttributeProto {
         self.maybe_take(key, ty).unwrap_or_else(|| {
             let available = self.inner.keys().collect_vec();
-            panic!("Missing attribute {}, available: {:?}", key, available)
+            panic!(
+                "Missing attribute '{}' in node '{}', available: {:?}",
+                key, self.node_name, available
+            )
         })
     }
 
@@ -140,11 +154,13 @@ impl<'a> Attributes<'a> {
     }
 
     pub fn maybe_take_bool(&mut self, key: &str) -> Option<bool> {
-        self.maybe_take(key, AttributeType::Int).map(|a| map_bool(key, a.i))
+        self.maybe_take(key, AttributeType::Int)
+            .map(|a| map_bool(&self.node_name, key, a.i))
     }
 
     pub fn take_bool(&mut self, key: &str) -> bool {
-        map_bool(key, self.take(key, AttributeType::Int).i)
+        let i = self.take(key, AttributeType::Int).i;
+        map_bool(&self.node_name, key, i)
     }
 
     pub fn maybe_take_ints(&mut self, key: &str) -> Option<&'a [i64]> {
@@ -177,11 +193,12 @@ impl<'a> Attributes<'a> {
     }
 }
 
-fn map_bool(key: &str, i: i64) -> bool {
+fn map_bool(node_name: &str, key: &str, i: i64) -> bool {
     assert!(
         i == 0 || i == 1,
-        "Attribute {} is a bool and should be 0 or 1, got {}",
+        "Attribute '{}' in node '{}' is a bool and should be 0 or 1, got {}",
         key,
+        node_name,
         i
     );
     i != 0

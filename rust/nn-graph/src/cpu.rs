@@ -216,8 +216,9 @@ fn try_run_cpu_operation(
 
 pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
     assert!(
-        details.keeps_spatial_shape(),
-        "Different in/out shape not supported yet"
+        details.keeps_spatial_shape() && !details.has_stride(),
+        "Different in/out shape and stride not supported yet, got {:?}",
+        details,
     );
 
     let batch_size = input.shape()[0];

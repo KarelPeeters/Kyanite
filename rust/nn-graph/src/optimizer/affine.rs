@@ -45,7 +45,7 @@ impl Optimizer<'_> {
                 if let Some(filter) = self.old_graph.as_const(filter) {
                     let filter: ArcArray4<f32> = filter.into_dimensionality().unwrap();
 
-                    if builder.conv.is_none() && details.keeps_spatial_shape() {
+                    if builder.conv.is_none() && details.keeps_spatial_shape() && !details.has_stride() {
                         builder.set_conv(ConvOperation { details, filter });
                         Some(input)
                     } else {
@@ -194,6 +194,7 @@ fn apply_fused_conv(
     after: ScaleBias,
 ) -> Value {
     let details = conv.details;
+    assert!(!details.has_stride());
 
     let mut total_filter = conv.filter.to_owned();
 
@@ -225,7 +226,7 @@ fn apply_fused_conv(
             let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
 
             let mut curr = input;
-            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
+            curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
             curr = graph.binary(BinaryOp::Add, curr, value_bias);
             curr
         }
@@ -243,7 +244,7 @@ fn apply_fused_conv(
 
             let mut curr = input;
             curr = before.apply(graph, curr);
-            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
+            curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
             curr = graph.binary(BinaryOp::Add, curr, value_bias_after);
             curr
         }
@@ -256,6 +257,8 @@ fn pull_bias_through_conv(
     before: Array1<f32>,
     filter: &Array4<f32>,
 ) -> Result<Array4<f32>, Array1<f32>> {
+    assert!(!details.has_stride());
+
     if is_entirely(&before, 0.0) {
         // we don't need to expand the shape even if there is padding, so immediately return 0 here
         Ok(Array4::zeros((1, details.output_channels, 1, 1)))

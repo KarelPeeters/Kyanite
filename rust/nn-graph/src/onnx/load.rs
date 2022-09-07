@@ -11,7 +11,7 @@ use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::{float_to_i64_exact, SizeOrInt, TypedValue};
+use crate::onnx::typed_value::{SizeOrInt, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -46,7 +46,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
         assert_eq!(1, node.output.len(), "nodes with multiple outputs not yet supported");
         let output_name = &node.output[0];
 
-        let mut attrs = Attributes::from(&node.attribute);
+        let mut attrs = Attributes::from(node.name.clone(), &node.attribute);
         let mut inputs = Inputs::from(node.name.clone(), &node.input, &nodes);
 
         // TODO put this huge match expression in a separate function
@@ -95,7 +95,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         let input_extra = graph.view(input, graph[input].shape.clone().concat(&shape![1]));
                         let filter_extra = graph.view(filter, graph[filter].shape.clone().concat(&shape![1]));
 
-                        let result_conv = graph.conv(input_extra, filter_extra, padding_0, 0);
+                        let result_conv = graph.conv(input_extra, filter_extra, 1, 1, padding_0, 0);
                         let result_biased = bias.map_or(result_conv, |bias| graph.add(result_conv, bias));
 
                         let result_shape = graph[result_biased].shape.replace(3, None);
@@ -113,10 +113,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                         assert!(padding_y0 == padding_y1 && padding_x0 == padding_x1 && padding_y0 == padding_x0);
                         assert!(dilation_y == 1 && dilation_x == 1);
-                        assert!(stride_y == 1 && stride_x == 1);
                         assert!(kernel_h1 == kernel_h0 && kernel_w1 == kernel_w0);
 
-                        let result_conv = graph.conv(input, filter, padding_y0, padding_x0);
+                        let result_conv = graph.conv(input, filter, stride_y, stride_x, padding_y0, padding_x0);
                         let result_biased = bias.map_or(result_conv, |bias| graph.add(result_conv, bias));
 
                         result_biased
@@ -405,7 +404,20 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
             "Unsqueeze" => {
                 let input = inputs.required(0);
-                let rel_axes = attrs.take_ints("axes");
+
+                let rel_axes = match inputs.optional(1) {
+                    Some(rel_axes) => {
+                        let axes = rel_axes.unwrap_const_int(&graph);
+                        assert_eq!(
+                            axes.shape().len(),
+                            1,
+                            "Unsqueeze axes must be 1D tensor, got shape {:?}",
+                            axes.shape(),
+                        );
+                        axes.iter().copied().collect_vec()
+                    }
+                    None => attrs.take_ints("axes").to_vec(),
+                };
 
                 match input {
                     // shapes are shapeless, so just return the same value
@@ -488,13 +500,15 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     .optional(index)
                 {
                     Some(value) => {
-                        let value = graph
-                            .as_const(value.unwrap_int())
-                            .unwrap()
-                            .iter()
-                            .map(|&f| f as i64)
-                            .collect_vec();
-                        Some(value)
+                        let value = value.unwrap_const_int(&graph);
+                        assert_eq!(
+                            value.shape().len(),
+                            1,
+                            "Slice operand {} must be 1D const, got shape {:?}",
+                            name,
+                            value.shape()
+                        );
+                        Some(value.iter().copied().collect_vec())
                     }
                     None => attrs.maybe_take_ints(name).map(|v| v.to_vec()),
                 };
@@ -603,7 +617,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Pad" => {
                 // operands
                 let input = inputs.required(0).unwrap_float();
-                let pads = inputs.required(1).unwrap_int();
+                let pads = inputs.required(1).unwrap_const_int(&graph);
                 let constant_value = inputs.optional(2);
                 let axes = inputs.optional(3);
                 let mode = attrs.maybe_take_string("mode").unwrap_or("constant");
@@ -617,32 +631,20 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let axes = match axes {
                     Some(axes) => {
-                        let axes = axes.unwrap_int();
-                        let axes_shape = &graph[axes].shape;
-
-                        assert_eq!(axes_shape.rank(), 1, "Axes must be 1D tensor, got shape {}", axes_shape);
-
-                        graph
-                            .as_const(axes)
-                            .unwrap()
-                            .iter()
-                            .map(|&f| abs_axis(float_to_i64_exact(f), input_shape.rank()))
-                            .collect_vec()
+                        let axes = axes.unwrap_const_int(&graph);
+                        assert_eq!(
+                            axes.shape().len(),
+                            1,
+                            "Axes must be 1D tensor, got shape {:?}",
+                            axes.shape()
+                        );
+                        axes.iter().map(|&i| abs_axis(i, input_shape.rank())).collect_vec()
                     }
                     None => (0..input_shape.rank()).collect_vec(),
                 };
 
-                assert_eq!(
-                    graph[pads].shape,
-                    Shape::fixed(&[axes.len() * 2]),
-                    "Pads shape mismatch"
-                );
-                let pads = graph
-                    .as_const(pads)
-                    .unwrap()
-                    .iter()
-                    .map(|&f| float_to_i64_exact(f))
-                    .collect_vec();
+                assert_eq!(pads.shape(), &[axes.len() * 2], "Pads and axes shape mismatch");
+                let pads = pads.iter().copied().collect_vec();
 
                 assert_eq!(mode, "constant", "Only 'constant' pad mode supported");
 
@@ -652,8 +654,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let output = axes.iter().fold(input, |acc, &axis| {
                     let acc_shape = graph[acc].shape.clone();
 
-                    let pad_left = pads[2 * axis];
-                    let pad_right = pads[2 * axis + 1];
+                    let pad_left = pads[axis];
+                    let pad_right = pads[axes.len() + axis];
                     assert!(pad_left >= 0 && pad_right >= 0, "Pad values cannot be negative");
 
                     let blocks = vec![

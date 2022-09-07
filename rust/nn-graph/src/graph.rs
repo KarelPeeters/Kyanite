@@ -237,6 +237,8 @@ pub struct ConvDetails {
     pub input_w: usize,
     pub kernel_h: usize,
     pub kernel_w: usize,
+    pub stride_y: usize,
+    pub stride_x: usize,
     pub padding_y: usize,
     pub padding_x: usize,
     pub output_h: usize,
@@ -254,6 +256,10 @@ impl ConvDetails {
 
     pub fn keeps_spatial_shape(&self) -> bool {
         (self.input_h == self.output_h) && (self.input_w == self.output_w)
+    }
+
+    pub fn has_stride(&self) -> bool {
+        self.stride_y != 1 || self.stride_x != 1
     }
 
     pub fn kernel_shape(&self) -> [usize; 4] {
@@ -680,7 +686,15 @@ impl Graph {
 
     /// Apply 2D convolution.
     #[must_use]
-    pub fn conv(&mut self, input: Value, filter: Value, padding_y: usize, padding_x: usize) -> Value {
+    pub fn conv(
+        &mut self,
+        input: Value,
+        filter: Value,
+        stride_y: usize,
+        stride_x: usize,
+        padding_y: usize,
+        padding_x: usize,
+    ) -> Value {
         let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input]
             .shape
             .dims
@@ -708,8 +722,8 @@ impl Graph {
 
         assert_eq!(input_channels, in_c_check, "Input channel mismatch");
 
-        let output_h = input_h - kernel_h + 1 + 2 * padding_y;
-        let output_w = input_w - kernel_w + 1 + 2 * padding_x;
+        let output_h = (input_h - (kernel_h - 1) + 2 * padding_y - 1) / stride_y + 1;
+        let output_w = (input_w - (kernel_w - 1) + 2 * padding_x - 1) / stride_x + 1;
         let output_shape = shape![batch_size, output_channels, output_h, output_w];
 
         let details = ConvDetails {
@@ -720,6 +734,8 @@ impl Graph {
             input_w,
             kernel_h,
             kernel_w,
+            stride_y,
+            stride_x,
             padding_y,
             padding_x,
             output_h,
