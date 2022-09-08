@@ -37,9 +37,16 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             continue;
         }
 
-        let shape = resolve_float_tensor_shape(input.r#type.as_ref().unwrap());
+        let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap());
         let value = graph.input(shape);
-        nodes.define(&input.name, TypedValue::FloatTensor(value));
+
+        let typed_value = if is_int {
+            TypedValue::IntTensor(value)
+        } else {
+            TypedValue::FloatTensor(value)
+        };
+
+        nodes.define(&input.name, typed_value);
     }
 
     for node in &model_graph.node {
@@ -879,15 +886,17 @@ fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto) -> TypedValue {
     }
 }
 
-fn resolve_float_tensor_shape(ty: &TypeProto) -> Shape {
+fn resolve_tensor_type(ty: &TypeProto) -> (Shape, bool) {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
     match value {
         ProtoTypeValue::TensorType(tensor) => {
-            assert_eq!(
-                tensor.elem_type,
-                DataType::Float as i32,
-                "only floats supported for now"
-            );
+            let data_type = DataType::from_i32(tensor.elem_type).expect("Invalid data type");
+
+            let is_int = match data_type {
+                DataType::Float | DataType::Double => false,
+                DataType::Int32 | DataType::Int64 => true,
+                data_type => panic!("Unsupported input type {:?}", data_type),
+            };
 
             let dims = tensor
                 .shape
@@ -897,7 +906,8 @@ fn resolve_float_tensor_shape(ty: &TypeProto) -> Shape {
                 .iter()
                 .map(resolve_tensor_dim)
                 .collect_vec();
-            Shape::new(dims)
+
+            (Shape::new(dims), is_int)
         }
         _ => panic!("Unsupported value kind {:?}", value),
     }
