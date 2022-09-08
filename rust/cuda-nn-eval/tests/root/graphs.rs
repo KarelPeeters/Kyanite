@@ -9,7 +9,7 @@ use nn_graph::ndarray::Array1;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
-use crate::root::runner::{test_all, test_all_graph};
+use crate::root::runner::test_all;
 use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor, rng_vec};
 
 #[test]
@@ -406,7 +406,7 @@ fn affine_single_div() {
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
-    test_all_graph(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
+    test_all(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn strided_conv() {
 
     let batch_size = 4;
     let input = rng_tensor(graph[input].shape.eval(batch_size).dims.as_slice(), &mut rng);
-    test_all_graph(&graph, batch_size, &[input], None);
+    test_all(&graph, batch_size, &[input], None);
 }
 
 #[test]

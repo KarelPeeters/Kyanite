@@ -14,17 +14,18 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
     println!("Running unoptimized CPU");
 
     println!("Testing unoptimized");
-    let cpu_outputs = test_all_graph(&graph, batch_size, inputs, expected_outputs);
+    let cpu_outputs = test_all_exact_graph(&graph, batch_size, inputs, expected_outputs);
     let expected_outputs = expected_outputs.unwrap_or(&cpu_outputs);
 
     println!("Optimizing graph");
     let optimized = optimize_graph(&graph, OptimizerSettings::default());
 
     println!("Testing optimized");
-    test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
+    test_all_exact_graph(&optimized, batch_size, inputs, Some(expected_outputs));
 }
 
-pub fn test_all_graph(
+// TODO remove references to this
+pub fn test_all_exact_graph(
     graph: &Graph,
     batch_size: usize,
     inputs: &[Tensor],
