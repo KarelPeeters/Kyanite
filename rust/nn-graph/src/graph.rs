@@ -722,8 +722,16 @@ impl Graph {
 
         assert_eq!(input_channels, in_c_check, "Input channel mismatch");
 
-        let output_h = (input_h - (kernel_h - 1) + 2 * padding_y - 1) / stride_y + 1;
-        let output_w = (input_w - (kernel_w - 1) + 2 * padding_x - 1) / stride_x + 1;
+        let padded_input_h = input_h + 2 * padding_y;
+        let padded_input_w = input_w + 2 * padding_x;
+        assert!(
+            padded_input_h >= kernel_h && padded_input_w >= kernel_w,
+            "Kernel must fit inside of padded input"
+        );
+
+        // operations are ordered to avoid underflow
+        let output_h = (padded_input_h - (kernel_h - 1) - 1) / stride_y + 1;
+        let output_w = (padded_input_w - (kernel_w - 1) - 1) / stride_x + 1;
         let output_shape = shape![batch_size, output_channels, output_h, output_w];
 
         let details = ConvDetails {

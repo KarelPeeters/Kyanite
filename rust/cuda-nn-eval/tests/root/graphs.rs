@@ -10,7 +10,7 @@ use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
 use crate::root::runner::{test_all, test_all_graph};
-use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor};
+use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor, rng_vec};
 
 #[test]
 fn empty() {
@@ -437,6 +437,33 @@ fn affine_multiple_channels() {
 }
 
 #[test]
+fn conv_padding() {
+    let mut graph = Graph::new();
+
+    let input0 = graph.input(shape![1, 1, 1, 1]);
+    let input1 = graph.input(shape![1, 1, 8, 8]);
+
+    let filter = graph.constant(shape![1, 1, 3, 3], range_vec(3 * 3));
+
+    let output00 = graph.conv(input0, filter, 1, 1, 1, 1);
+    let output01 = graph.conv(input0, filter, 1, 1, 4, 4);
+    let output10 = graph.conv(input1, filter, 1, 1, 1, 1);
+    let output11 = graph.conv(input1, filter, 1, 1, 4, 1);
+
+    graph.output_all(&[output00, output01, output10, output11]);
+
+    test_all(
+        &graph,
+        0,
+        &[
+            manual_tensor((1, 1, 1, 1), vec![1.0]),
+            linspace_tensor((1, 1, 8, 8)).into_dyn(),
+        ],
+        None,
+    );
+}
+
+#[test]
 fn affine_padding() {
     let input_data = linspace_tensor((8, 3, 8, 8)).into_dyn();
     let filter_data = linspace_tensor((5, 3, 3, 3));
@@ -610,6 +637,21 @@ fn repeated_conv() {
     graph.output_all(&[x4, y4]);
 
     test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
+fn strided_conv() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+
+    let input = graph.input(shape![Size::BATCH, 3, 8, 8]);
+    let filter = graph.constant(shape![16, 3, 3, 3], rng_vec(16 * 3 * 3 * 3, &mut rng));
+    let output = graph.conv(input, filter, 2, 4, 1, 1);
+    assert_eq!(graph[output].shape, shape![Size::BATCH, 16, 4, 2]);
+
+    let batch_size = 4;
+    let input = rng_tensor(graph[input].shape.eval(batch_size).dims.as_slice(), &mut rng);
+    test_all_graph(&graph, batch_size, &[input], None);
 }
 
 #[test]

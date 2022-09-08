@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 
-use convolutions_rs::convolutions::*;
-use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
@@ -214,21 +212,74 @@ fn try_run_cpu_operation(
     Ok(result)
 }
 
-pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
+pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayView4<f32>) -> Array4<f32> {
+    let ConvDetails {
+        batch_size: _,
+        input_channels,
+        output_channels,
+        input_h,
+        input_w,
+        kernel_h,
+        kernel_w,
+        stride_y,
+        stride_x,
+        padding_y,
+        padding_x,
+        output_h,
+        output_w,
+    } = details;
+
     assert!(
-        details.keeps_spatial_shape() && !details.has_stride(),
-        "Different in/out shape and stride not supported yet, got {:?}",
-        details,
+        kernel_h % 2 == 1 && kernel_w % 2 == 1,
+        "Only odd kernels supported for now"
     );
-
     let batch_size = input.shape()[0];
-    let output_shape = (batch_size, details.output_channels, details.output_h, details.output_w);
 
-    let mut result = Array4::zeros(output_shape);
-    for b in 0..batch_size {
-        let result_b = conv2d(&filter, None, input.index_axis(Axis(0), b), Padding::Same, 1);
-        result.index_axis_mut(Axis(0), b).assign(&result_b);
-    }
+    // We compute the convolution via im2col
+    //   * create the input matrix by repeating input values around F^2 times with some padding
+    //   * permute and reshape the kernel weights into a flat matrix
+    //   * compute the dot product
+    //   * permute and reshape the output back into a tensor
+    let input_matrix = {
+        let mut input_matrix = Array::zeros((batch_size, output_h, output_w, input_channels, kernel_h, kernel_w));
+
+        // copy over entire (batch_size, input_channels) slices at once
+        //   this mostly helps with non-optimized build performance, which is nice to have
+        for oy in 0..output_h {
+            for ox in 0..output_w {
+                for fy in 0..kernel_h {
+                    for fx in 0..kernel_w {
+                        let iy = (oy * stride_y) as isize + fy as isize - padding_y as isize;
+                        let ix = (ox * stride_x) as isize + fx as isize - padding_x as isize;
+
+                        if (0..input_h as isize).contains(&iy) && (0..input_w as isize).contains(&ix) {
+                            input_matrix
+                                .slice_mut(s![.., oy, ox, .., fy, fx])
+                                .assign(&input.slice(s![.., .., iy as usize, ix as isize]));
+                        }
+                        // leave the padding values at zero
+                    }
+                }
+            }
+        }
+
+        input_matrix
+            .into_shape((batch_size * output_h * output_w, input_channels * kernel_h * kernel_w))
+            .unwrap()
+    };
+
+    let kernel_permuted = kernel.permuted_axes([1, 2, 3, 0]);
+    let kernel_matrix = kernel_permuted
+        .as_standard_layout()
+        .into_shape((input_channels * kernel_h * kernel_w, output_channels))
+        .unwrap();
+
+    let result_matrix = input_matrix.dot(&kernel_matrix);
+
+    let result = result_matrix
+        .into_shape((batch_size, output_h, output_w, output_channels))
+        .unwrap()
+        .permuted_axes([0, 3, 1, 2]);
 
     result
 }
