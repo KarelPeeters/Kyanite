@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::ControlFlow;
 
 use itertools::Itertools;
 
@@ -114,12 +115,13 @@ impl Shape {
         shape![Size::BATCH].concat(self)
     }
 
-    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
-    pub fn replace(&self, axis: usize, replacement: Option<Size>) -> Shape {
+    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept as-is.
+    pub fn replace(&self, axis: usize, replacement: Shape) -> Shape {
         self.replace_all(&[axis], replacement)
     }
 
-    pub fn replace_all(&self, axes: &[usize], replacement: Option<Size>) -> Shape {
+    pub fn replace_all(&self, axes: &[usize], replacement: Shape) -> Shape {
+        // validate axes
         assert_eq!(
             axes.iter().unique().count(),
             axes.len(),
@@ -127,17 +129,19 @@ impl Shape {
             axes
         );
 
-        // check that the axes are in bounds
         for &axis in axes {
             assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
         }
 
-        let dims = self
-            .dims
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &d)| if axes.contains(&i) { replacement } else { Some(d) })
-            .collect_vec();
+        // construct new shape
+        let mut dims = vec![];
+        for i in 0..self.rank() {
+            if axes.contains(&i) {
+                dims.extend_from_slice(&replacement.dims);
+            } else {
+                dims.push(self[i])
+            }
+        }
 
         Shape::new(dims)
     }
@@ -209,9 +213,13 @@ impl Size {
     };
 
     pub fn new(batch_exp: u32, fixed_factor: usize) -> Size {
-        Size {
-            batch_exp,
-            fixed_factor,
+        if fixed_factor == 0 {
+            Size::ZERO
+        } else {
+            Size {
+                batch_exp,
+                fixed_factor,
+            }
         }
     }
 
@@ -273,14 +281,29 @@ impl ConcreteShape {
     }
 }
 
+impl std::ops::Add for Size {
+    type Output = Option<Size>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        if self == Size::ZERO {
+            return Some(rhs);
+        }
+        if rhs == Size::ZERO {
+            return Some(self);
+        }
+        if self.batch_exp != rhs.batch_exp {
+            return None;
+        }
+
+        Some(Size::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor))
+    }
+}
+
 impl std::ops::Mul for Size {
     type Output = Size;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Size {
-            batch_exp: self.batch_exp + rhs.batch_exp,
-            fixed_factor: self.fixed_factor * rhs.fixed_factor,
-        }
+        Size::new(self.batch_exp + rhs.batch_exp, self.fixed_factor * rhs.fixed_factor)
     }
 }
 
@@ -291,10 +314,24 @@ impl std::ops::Div for Size {
         if self.batch_exp < rhs.batch_exp || self.fixed_factor % rhs.fixed_factor != 0 {
             None
         } else {
-            Some(Size {
-                batch_exp: self.batch_exp - rhs.batch_exp,
-                fixed_factor: self.fixed_factor / rhs.fixed_factor,
-            })
+            Some(Size::new(
+                self.batch_exp - rhs.batch_exp,
+                self.fixed_factor / rhs.fixed_factor,
+            ))
+        }
+    }
+}
+
+impl std::iter::Sum<Size> for Option<Size> {
+    fn sum<I: Iterator<Item = Size>>(mut iter: I) -> Self {
+        let result = iter.try_fold(Size::ZERO, |a, s| match a + s {
+            Some(v) => ControlFlow::Continue(v),
+            None => ControlFlow::Break(()),
+        });
+
+        match result {
+            ControlFlow::Continue(v) => Some(v),
+            ControlFlow::Break(()) => None,
         }
     }
 }
@@ -310,12 +347,6 @@ impl std::ops::Index<usize> for Shape {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.dims[index]
-    }
-}
-
-impl std::ops::IndexMut<usize> for Shape {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.dims[index]
     }
 }
 

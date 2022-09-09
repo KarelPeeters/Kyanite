@@ -65,7 +65,8 @@ pub enum Operation {
     /// Flip the given axis.
     Flip { input: Value, axis: usize },
 
-    /// Gather values from `input` at the indices in `index` on the given axis.
+    /// Gather values from `input` at the indices in `index` on the given `axis`.
+    /// `indices` is a rank-1 tensor.
     Gather { input: Value, axis: usize, indices: Value },
 
     /// Concatenate values along an axis.
@@ -574,7 +575,7 @@ impl Graph {
         )
     }
 
-    /// Slice a value along an axis. See [slice_range] for a more general version.
+    /// Slice a value along an axis.
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
         let old_shape = &self[input].shape;
@@ -594,7 +595,7 @@ impl Graph {
             return input;
         }
 
-        let new_shape = old_shape.replace(axis, Some(Size::fixed(new_size)));
+        let new_shape = old_shape.replace(axis, shape![new_size]);
         self.push(new_shape, Operation::Slice { input, axis, range })
     }
 
@@ -602,11 +603,8 @@ impl Graph {
     /// Similar to slice with a 1-sized interval except that the the resulting value doesn't have the extra axis.
     #[must_use]
     pub fn index(&mut self, input: Value, axis: usize, index: usize) -> Value {
+        let new_shape = self[input].shape.replace(axis, shape![]);
         let sliced = self.slice(input, axis, SliceRange::single(index));
-
-        let mut new_shape = self[input].shape.clone();
-        new_shape.dims.remove(axis);
-
         self.view(sliced, new_shape)
     }
 
@@ -623,20 +621,41 @@ impl Graph {
         //TODO introduce separate (optimized) operation for this?
         //TODO special-case length-0 axis to some kind of restride operation
         //       this was meant to be length-1, right?
-        let base_shape = self[input].shape.replace(axis, Some(Size::ZERO));
+        let base_shape = self[input].shape.replace(axis, shape![0]);
         self.concat(vec![input; count], axis, Some(base_shape))
     }
 
-    /// Index along the given `axis` with indices given by `index`.
+    /// Index `input` along the given `axis` with indices given by `indices`.
+    ///
+    /// The `output` shape is the `input` shape with `axis` replaced by the shape of `indices`.
     #[must_use]
     pub fn gather(&mut self, input: Value, axis: usize, indices: Value) -> Value {
         let input_shape = &self[input].shape;
-        let index_size = self[indices].shape.unwrap_1();
+        let indices_shape = &self[indices].shape;
 
-        let mut result_shape = input_shape.clone();
-        result_shape.dims[axis] = index_size;
+        assert!(
+            axis < input_shape.rank(),
+            "Gather axis {} is not in bounds for input {:?}",
+            axis,
+            input_shape
+        );
 
-        self.push(result_shape, Operation::Gather { input, axis, indices })
+        let result_shape = input_shape.replace(axis, indices_shape.clone());
+        let result_shape_flat = input_shape.replace(axis, shape![indices_shape.size()]);
+
+        // we support arbitrary rank indices here, but the actual operation does not
+        let flat_indices = self.flatten(indices, 0);
+        let result_flat = self.push(
+            result_shape_flat,
+            Operation::Gather {
+                input,
+                axis,
+                indices: flat_indices,
+            },
+        );
+        let result = self.view(result_flat, result_shape);
+
+        result
     }
 
     /// Concatenate `inputs` along `axis`.
@@ -658,24 +677,26 @@ impl Graph {
                 !inputs.is_empty(),
                 "Cannot infer concatenation shape without any values"
             );
-            self[inputs[0]].shape.replace(axis, Some(Size::ZERO))
+            self[inputs[0]].shape.replace(axis, shape![0])
         });
 
         let size_along_axis = inputs
             .iter()
             .map(|&v| {
                 assert_eq!(
-                    self[v].shape.replace(axis, Some(Size::ZERO)),
+                    self[v].shape.replace(axis, shape![0]),
                     base_shape,
                     "All concatenated values must match base shape on non-concatenated axes"
                 );
-                self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
+                self[v].shape.dims[axis]
             })
-            .sum::<usize>();
+            .sum::<Option<Size>>()
+            .unwrap_or_else(|| {
+                let input_shapes = inputs.iter().map(|&v| &self[v].shape).collect_vec();
+                panic!("Could not add all concatenation sizes: {:?}", input_shapes);
+            });
 
-        let mut result_shape = base_shape;
-        result_shape[axis] = Size::fixed(size_along_axis);
-
+        let result_shape = base_shape.replace(axis, shape![size_along_axis]);
         self.push(result_shape, Operation::Concat { inputs, axis })
     }
 
@@ -873,7 +894,7 @@ impl Graph {
             );
         }
 
-        let new_shape = input_shape.replace_all(&axes, None);
+        let new_shape = input_shape.replace_all(&axes, shape![]);
         self.push(new_shape, Operation::Reduce { input, axes, op })
     }
 

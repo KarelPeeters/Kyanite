@@ -11,7 +11,7 @@ use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::{SizeOrInt, TypedValue};
+use crate::onnx::typed_value::{float_to_i64_exact, SizeOrInt, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -105,7 +105,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                         let result_conv = graph.conv(input_extra, filter_extra, 1, 1, padding_0, 0);
                         let result_biased = bias.map_or(result_conv, |bias| graph.add(result_conv, bias));
 
-                        let result_shape = graph[result_biased].shape.replace(3, None);
+                        let result_shape = graph[result_biased].shape.replace(3, shape![]);
                         let result = graph.view(result_biased, result_shape);
 
                         result
@@ -342,7 +342,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let rest_size = shape.dims[2..].iter().copied().product::<Size>();
                 let flat_shape = shape![shape[0], shape[1], rest_size];
-                let broadcast_shape = Shape::ones(shape.rank()).replace(1, Some(shape[1]));
+                let broadcast_shape = shape.keep(1, Size::ONE);
 
                 let flat = graph.view(input, flat_shape);
                 let norm_flat = graph.layernorm(flat, 2, epsilon);
@@ -485,30 +485,38 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Gather" => {
                 let input = inputs.required(0);
                 let indices = inputs.required(1).unwrap_int();
-
                 let rel_axis = attrs.maybe_take_int("axis").unwrap_or(0);
-                assert!(rel_axis >= 0, "Negative gather axis not supported yet");
-                let axis = rel_axis as usize;
 
-                match graph[indices].shape.rank() {
-                    0 => {
-                        if let Some(index) = graph.as_const(indices) {
-                            assert_eq!(index.len(), 1);
-                            let index = *index.iter().next().unwrap() as usize;
+                let input_shape = input.shape(&graph);
+                let indices_shape = &graph[indices].shape;
 
-                            match input {
-                                TypedValue::Shape(dims) => TypedValue::Shape(vec![dims[index]]),
-                                TypedValue::FloatTensor(input_tensor) | TypedValue::IntTensor(input_tensor) => {
-                                    TypedValue::with_same_type(graph.index(*input_tensor, axis, index), input)
-                                }
-                            }
-                        } else {
-                            panic!("Rank-0 gather only supported with constant index");
-                        }
+                let axis = abs_axis(rel_axis, input_shape.rank());
+
+                match input {
+                    TypedValue::Shape(shape) => {
+                        assert_eq!(
+                            indices_shape.rank(),
+                            0,
+                            "Shape gather only supported for scalar index, got {:?}",
+                            indices_shape
+                        );
+
+                        let index_rel = float_to_i64_exact(
+                            graph
+                                .as_single_const(indices)
+                                .expect("Shape gather only supported for const index"),
+                        );
+
+                        assert_eq!(axis, 0);
+                        assert_eq!(input_shape.rank(), 1);
+
+                        let index = abs_axis(index_rel, shape.len());
+                        TypedValue::Shape(vec![shape[index]])
                     }
-                    1 => TypedValue::with_same_type(graph.gather(input.unwrap_tensor(), axis, indices), input),
-                    rank => {
-                        panic!("Gather only supported for index rank <2, got {}", rank)
+                    &TypedValue::FloatTensor(input_value) | &TypedValue::IntTensor(input_value) => {
+                        // TODO properly support negative indices
+                        let result = graph.gather(input_value, axis, indices);
+                        TypedValue::with_same_type(result, &input)
                     }
                 }
             }
@@ -676,9 +684,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     assert!(pad_left >= 0 && pad_right >= 0, "Pad values cannot be negative");
 
                     let blocks = vec![
-                        graph.broadcast(constant, acc_shape.replace(axis, Some(Size::fixed(pad_left as usize)))),
+                        graph.broadcast(constant, acc_shape.replace(axis, shape![pad_left as usize])),
                         acc,
-                        graph.broadcast(constant, acc_shape.replace(axis, Some(Size::fixed(pad_right as usize)))),
+                        graph.broadcast(constant, acc_shape.replace(axis, shape![pad_right as usize])),
                     ];
                     graph.concat(blocks, axis, None)
                 });
@@ -724,7 +732,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let keep_dims = attrs.maybe_take_int("keepdims").unwrap_or(1) != 0;
 
                 let result_shape = if keep_dims {
-                    input_shape.replace_all(&axes, Some(Size::ONE))
+                    input_shape.replace_all(&axes, shape![1])
                 } else {
                     input_shape.clone()
                 };
@@ -794,7 +802,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     // insert dummy axis, repeat, then flatten again
                     let inserted = graph.view(acc, acc_shape.insert(axis + 1, Size::ONE));
                     let repeated = graph.repeat(inserted, axis + 1, scale);
-                    let flat = graph.view(repeated, acc_shape.replace(axis, Some(replace_size)));
+                    let flat = graph.view(repeated, acc_shape.replace(axis, shape![replace_size]));
 
                     flat
                 });
