@@ -230,13 +230,23 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Flatten" => {
-                let input = inputs.required(0).unwrap_float();
+                let input_typed = inputs.required(0);
+                let input = input_typed.unwrap_tensor();
 
-                let rel_axis = attrs.take_int("axis");
+                let rel_axis = attrs.maybe_take_int("axis").unwrap_or(1);
                 let axis = abs_axis(rel_axis, graph[input].shape.rank());
 
                 let result = graph.flatten(input, axis);
-                TypedValue::FloatTensor(result)
+
+                let result = if axis == 0 {
+                    // strange special case in onnx spec, insert additional 1 axis
+                    let result_shape = &graph[result].shape;
+                    graph.view(result, result_shape.insert(0, Size::ONE))
+                } else {
+                    result
+                };
+
+                TypedValue::with_same_type(result, input_typed)
             }
             "Gemm" => {
                 let input = inputs.required(0).unwrap_float();

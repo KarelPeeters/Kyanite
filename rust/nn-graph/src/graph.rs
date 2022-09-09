@@ -519,14 +519,9 @@ impl Graph {
             start_axis
         );
 
-        let new_shape = if start_axis == 0 {
-            shape![1, old_shape.size()]
-        } else {
-            let kept_dims = &old_shape.dims[..start_axis];
-            let flat_size = old_shape.dims[start_axis..].iter().copied().product();
-
-            Shape::new([kept_dims, &[flat_size]].concat())
-        };
+        let kept_dims = &old_shape.dims[..start_axis];
+        let flat_size = old_shape.dims[start_axis..].iter().copied().product();
+        let new_shape = Shape::new([kept_dims, &[flat_size]].concat());
 
         self.view(input, new_shape)
     }
