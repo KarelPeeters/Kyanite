@@ -126,12 +126,7 @@ impl Shape {
 
     pub fn replace_all(&self, axes: &[usize], replacement: Shape) -> Shape {
         // validate axes
-        assert_eq!(
-            axes.iter().unique().count(),
-            axes.len(),
-            "Axes must be unique, got {:?}",
-            axes
-        );
+        assert!(axes.iter().all_unique(), "Axes must be unique, got {:?}", axes);
 
         for &axis in axes {
             self.assert_has_axis(axis);

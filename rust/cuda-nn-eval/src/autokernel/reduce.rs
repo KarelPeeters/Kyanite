@@ -40,9 +40,8 @@ impl ReduceKernel {
         reduced_axes: &[usize],
     ) -> Self {
         // check that axes are unique and in-bounds
-        assert_eq!(
-            reduced_axes.iter().unique().count(),
-            reduced_axes.len(),
+        assert!(
+            reduced_axes.iter().all_unique(),
             "Reduced axes must be unique, got {:?}",
             reduced_axes
         );
