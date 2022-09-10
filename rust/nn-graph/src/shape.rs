@@ -375,16 +375,7 @@ impl Debug for Size {
 
 impl Display for Shape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for i in 0..self.rank() {
-            if i != 0 {
-                write!(f, " x ")?;
-            }
-
-            write!(f, "{}", self.dims[i])?;
-        }
-        write!(f, ")")?;
-        Ok(())
+        fmt_shape_impl(f, &self.dims)
     }
 }
 
@@ -402,15 +393,19 @@ impl Display for Size {
 
 impl Display for ConcreteShape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for i in 0..self.rank() {
-            if i != 0 {
-                write!(f, " x ")?;
-            }
-
-            write!(f, "{}", self.dims[i])?;
-        }
-        write!(f, ")")?;
-        Ok(())
+        fmt_shape_impl(f, &self.dims)
     }
+}
+
+fn fmt_shape_impl(f: &mut Formatter, dims: &[impl Display]) -> Result<(), std::fmt::Error> {
+    write!(f, "(")?;
+    for i in 0..dims.len() {
+        if i != 0 {
+            write!(f, " x ")?;
+        }
+
+        write!(f, "{}", dims[i])?;
+    }
+    write!(f, ")")?;
+    Ok(())
 }
