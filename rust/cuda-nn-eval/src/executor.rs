@@ -7,14 +7,12 @@ use itertools::{enumerate, multizip, zip_eq, Itertools};
 use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::mem::pinned::PinnedMem;
-use cuda_sys::wrapper::status::Status;
 use nn_graph::cpu::Tensor;
 use nn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
-use crate::kernels;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -51,7 +49,7 @@ pub struct Profile {
     pub reduce_op: f32,
     pub softmax_op: f32,
     pub layernorm_op: f32,
-    pub gather: f32,
+    pub gather_op: f32,
 
     pub total_cpu: f32,
     pub total_gpu: f32,
@@ -204,7 +202,7 @@ impl CudaExecutor {
                     Step::ReduceOp { .. } => &mut profile.reduce_op,
                     Step::SoftmaxOp { .. } => &mut profile.softmax_op,
                     Step::LayernormOp { .. } => &mut profile.layernorm_op,
-                    Step::Gather { .. } => &mut profile.gather,
+                    Step::GatherOp { .. } => &mut profile.gather_op,
                 } += time;
 
                 profile
@@ -261,36 +259,12 @@ impl Step<DevicePtr> {
                 input1,
                 output,
             }) => kernel.run(handles.cudnn.stream(), input0, input1.as_ref(), output),
-            Step::Gather(GatherArgs {
+            Step::GatherOp(GatherOpArgs {
+                kernel,
                 input,
-                axis,
                 indices,
                 output,
-            }) => {
-                assert!(
-                    *axis == 1 && input.shape().rank() == 2,
-                    "Gather only supported for rank 2 input and axis 1, got shape {:?} and axis {}",
-                    input.shape(),
-                    axis
-                );
-                assert!(
-                    indices.shape().rank() == 1 && indices.shape().has_simple_strides(),
-                    "Gather indices must be rank-1 tensor with simple strides",
-                );
-
-                kernels::gather2dAxis1FloatFloat(
-                    handles.cudnn.stream().inner(),
-                    input.shape().shape()[0] as i32,
-                    input.shape().shape()[1] as i32,
-                    input.shape().strides()[0] as i32,
-                    input.shape().strides()[1] as i32,
-                    indices.shape().size() as i32,
-                    input.ptr().ptr() as *const f32,
-                    indices.ptr().ptr() as *const f32,
-                    output.ptr().ptr() as *mut f32,
-                )
-                .unwrap();
-            }
+            }) => kernel.run(handles.cudnn.stream(), input, indices, output),
         }
     }
 }
@@ -337,7 +311,7 @@ impl Display for Profile {
             + self.reduce_op
             + self.softmax_op
             + self.layernorm_op
-            + self.gather;
+            + self.gather_op;
         let mut line = |name, time| writeln!(f, "  {} {:>10.4} ms  {:>4.2}", name, time * 1e3, time / total);
 
         line("Conv:      ", self.conv)?;
@@ -346,7 +320,7 @@ impl Display for Profile {
         line("Reduce:    ", self.reduce_op)?;
         line("Softmax:   ", self.softmax_op)?;
         line("Layernorm: ", self.layernorm_op)?;
-        line("Gather:    ", self.gather)?;
+        line("Gather:    ", self.gather_op)?;
 
         writeln!(f, "  ==============================")?;
         writeln!(f, "  Total GPU:  {:>10.4} ms", self.total_gpu * 1e3)?;

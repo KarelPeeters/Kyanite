@@ -33,7 +33,7 @@ pub fn test_all_exact_graph(
 ) -> Vec<Tensor> {
     println!("Testing:\n{}", graph);
 
-    println!("Testing with CPU");
+    println!("Testing CPU");
 
     let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
 
@@ -45,7 +45,7 @@ pub fn test_all_exact_graph(
     };
     println!();
 
-    println!("Testing Cudnn without graph");
+    println!("Testing GPU");
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
     assert_tensors_match(expected_outputs, &gpu_outputs, true);
     println!();

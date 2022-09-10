@@ -124,45 +124,76 @@ fn repeat() {
 }
 
 #[test]
-fn gather_flat_index() {
+fn gather_simple_axis_0() {
     let mut graph = Graph::new();
 
-    let input = graph.constant(shape![2, 3], range_vec(2 * 3 * 1));
-    let index = graph.constant(shape![4], vec![0.0, 2.0, 1.0, 0.0]);
-    let result = graph.gather(input, 1, index);
-    graph.output(result);
+    let input = graph.constant(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
+    let index = graph.constant(shape![4], vec![0.0, 1.0, 1.0, 0.0]);
+    let output = graph.gather(input, 0, index);
+    let output_tensor = manual_tensor((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
+    graph.output(output);
 
-    let expected_result = manual_tensor((2, 4), vec![0.0, 2.0, 1.0, 0.0, 3.0, 5.0, 4.0, 3.0]);
-
-    test_all(&graph, 0, &[], Some(&[expected_result]))
+    test_all(&graph, 0, &[], Some(&[output_tensor]))
 }
 
 #[test]
-fn gather_complex() {
-    // test cases from the onnx gather operator
-
+fn gather_simple_axis_1() {
     let mut graph = Graph::new();
 
-    let input0 = graph.input(shape![3, 2]);
-    let input0_tensor = manual_tensor((3, 2), vec![1.0, 1.2, 2.3, 3.4, 4.5, 5.7]);
-    let indices0 = graph.constant(shape![2, 2], vec![0.0, 1.0, 1.0, 2.0]);
-    let result0 = graph.gather(input0, 0, indices0);
-    let output0_tensor = manual_tensor((2, 2, 2), vec![1.0, 1.2, 2.3, 3.4, 2.3, 3.4, 4.5, 5.7]);
-    graph.output(result0);
+    let input = graph.constant(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
+    let index = graph.constant(shape![4], vec![0.0, 2.0, 1.0, 0.0]);
+    let output = graph.gather(input, 1, index);
+    let output_tensor = manual_tensor((2, 4), vec![7.0, 7.2, 7.1, 7.0, 7.3, 7.5, 7.4, 7.3]);
+    graph.output(output);
 
-    let input1 = graph.input(shape![3, 3]);
-    let input1_tensor = manual_tensor((3, 3), vec![1.0, 1.2, 1.9, 2.3, 3.4, 3.9, 4.5, 5.7, 5.9]);
-    let indices1 = graph.constant(shape![1, 2], vec![0.0, 2.0]);
-    let result1 = graph.gather(input1, 1, indices1);
-    let output1_tensor = manual_tensor((3, 1, 2), vec![1.0, 1.9, 2.3, 3.9, 4.5, 5.9]);
-    graph.output(result1);
+    test_all(&graph, 0, &[], Some(&[output_tensor]))
+}
 
-    test_all(
-        &graph,
-        0,
-        &[input0_tensor, input1_tensor],
-        Some(&[output0_tensor, output1_tensor]),
-    );
+#[test]
+fn gather_complex_axis_0() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 2]);
+    let input_tensor = manual_tensor((3, 2), vec![1.0, 1.2, 2.3, 3.4, 4.5, 5.7]);
+    let indices = graph.constant(shape![2, 2], vec![0.0, 1.0, 1.0, 2.0]);
+    let output = graph.gather(input, 0, indices);
+    let output_tensor = manual_tensor((2, 2, 2), vec![1.0, 1.2, 2.3, 3.4, 2.3, 3.4, 4.5, 5.7]);
+    graph.output(output);
+
+    test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
+}
+
+#[test]
+fn gather_complex_axis_1() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 3]);
+    let input_tensor = manual_tensor((3, 3), vec![1.0, 1.2, 1.9, 2.3, 3.4, 3.9, 4.5, 5.7, 5.9]);
+    let indices = graph.constant(shape![1, 2], vec![0.0, 2.0]);
+    let output = graph.gather(input, 1, indices);
+    let output_tensor = manual_tensor((3, 1, 2), vec![1.0, 1.9, 2.3, 3.9, 4.5, 5.9]);
+    graph.output(output);
+
+    test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
+}
+
+#[test]
+fn gather_size_0() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![8, 4]);
+    let input_tensor = linspace_tensor((8, 4)).into_dyn();
+
+    let indices = graph.constant(shape![0], vec![]);
+    let output0 = graph.gather(input, 0, indices);
+    let output1 = graph.gather(input, 1, indices);
+    graph.output(output0);
+    graph.output(output1);
+
+    assert_eq!(graph[output0].shape, shape![0, 4]);
+    assert_eq!(graph[output1].shape, shape![8, 0]);
+
+    test_all(&graph, 0, &[input_tensor], None);
 }
 
 #[test]

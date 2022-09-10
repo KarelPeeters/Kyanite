@@ -4,7 +4,7 @@ use std::time::Instant;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
-    concatenate, s, ArcArray, Array3, Array4, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
+    s, ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
 };
 
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
@@ -136,17 +136,13 @@ fn try_run_cpu_operation(
                 })
                 .collect_vec();
 
-            concatenate(Axis(axis), &slices).unwrap().into_shared()
+            concatenate(output_shape_dyn.clone(), axis, &slices)
         }
         &Operation::Concat { ref inputs, axis } => {
             let inputs: Vec<_> = inputs.iter().map(|&x| Ok(map(x)?)).try_collect()?;
             let inputs_viewed = inputs.iter().map(|x| x.view()).collect_vec();
 
-            if inputs.is_empty() {
-                Tensor::zeros(output_shape_dyn)
-            } else {
-                ndarray::concatenate(Axis(axis), &inputs_viewed).unwrap().into_shared()
-            }
+            concatenate(output_shape_dyn.clone(), axis, &inputs_viewed)
         }
         &Operation::Conv {
             input,
@@ -210,6 +206,17 @@ fn try_run_cpu_operation(
 
     assert_eq!(result.shape(), &output_shape.dims, "Wrong output shape");
     Ok(result)
+}
+
+/// Wrapper around [ndarray::concatenate] that can handle an empty input list.
+fn concatenate(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<f32, IxDyn>]) -> Tensor {
+    if inputs.is_empty() {
+        Tensor::zeros(output_shape)
+    } else {
+        let result = ndarray::concatenate(Axis(axis), &inputs).unwrap().into_shared();
+        assert_eq!(result.dim(), output_shape);
+        result
+    }
 }
 
 pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayView4<f32>) -> Array4<f32> {

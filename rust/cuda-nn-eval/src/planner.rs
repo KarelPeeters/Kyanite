@@ -14,6 +14,7 @@ use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use nn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
 use crate::autokernel::scalar::ScalarKernel;
@@ -22,7 +23,7 @@ use crate::device_tensor::DeviceTensor;
 use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
 #[derive(Debug, Clone)]
 enum PlanBuffer {
@@ -322,15 +323,16 @@ impl<'a> Planner<'a> {
                 let indices = self.visit(indices)?;
                 let output = self.alloc_tensor_shared(result_shape);
 
-                let args = GatherArgs {
+                let kernel = GatherKernel::new(self.device(), input.shape(), indices.shape(), output.shape(), axis);
+
+                let args = GatherOpArgs {
+                    kernel,
                     input,
-                    axis,
                     indices,
                     output: output.clone(),
                 };
 
-                self.push(PlanStep::Gather(args), &result_info.debug_id);
-
+                self.push(PlanStep::GatherOp(args), &result_info.debug_id);
                 output
             }
             &Operation::Concat { ref inputs, axis } => {
