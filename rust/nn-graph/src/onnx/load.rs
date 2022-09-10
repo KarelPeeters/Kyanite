@@ -11,7 +11,7 @@ use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::{float_to_i64_exact, SizeOrInt, TypedValue};
+use crate::onnx::typed_value::{float_to_i64_exact, SignedSize, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -195,17 +195,14 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     // if they're both shapes keep it that way
                     assert_eq!(left.len(), right.len());
 
-                    let run_op = match op {
-                        BinaryOp::Mul => |a: Size, b: Size| a * b,
-                        BinaryOp::Div => {
-                            |a: Size, b: Size| (a / b).unwrap_or_else(|| panic!("Failed to divide {:?} by {:?}", a, b))
-                        }
-                        _ => panic!("Unsupported shape operation {:?}", op),
-                    };
-
-                    let result = zip_eq(left, right)
-                        .map(|(l, r)| SizeOrInt::Size(run_op(l.as_size().unwrap(), r.as_size().unwrap())))
+                    let result = zip_eq(&left, &right)
+                        .map(|(&l, &r)| {
+                            eval_binary_op(op, l, r).unwrap_or_else(|| {
+                                panic!("Operation {:?} failed between {:?} and {:?}", op, left, right)
+                            })
+                        })
                         .collect_vec();
+
                     TypedValue::Shape(result)
                 } else if let (TypedValue::FloatTensor(left), TypedValue::FloatTensor(right)) = (left, right) {
                     // if they're both float tensors just add a graph operation
@@ -400,7 +397,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     _ => {
                         let input = input.unwrap_tensor();
                         match to_type {
-                            DataType::Float => TypedValue::FloatTensor(input),
+                            DataType::Float | DataType::Double => TypedValue::FloatTensor(input),
                             DataType::Int64 => TypedValue::IntTensor(input),
                             _ => panic!("Casting to type {:?} not supported yet", to_type),
                         }
@@ -696,7 +693,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Shape" => {
                 let input = inputs.required(0).unwrap_tensor();
                 let shape = graph[input].shape.clone();
-                let dims = shape.dims.iter().copied().map(SizeOrInt::Size).collect_vec();
+                let dims = shape.dims.iter().copied().map(SignedSize::from_size).collect_vec();
                 TypedValue::Shape(dims)
             }
             "Identity" => {
@@ -976,16 +973,16 @@ fn unwrap_4(slice: &[i64]) -> [usize; 4] {
     ]
 }
 
-fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SizeOrInt], allow_zero: bool) -> Shape {
+fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SignedSize], allow_zero: bool) -> Shape {
     let old_size = old_shape.size();
 
     let mut new_shape = vec![];
     let mut leftover_index = None;
     let mut leftover_size = old_size;
 
-    for (i, &size_or_int) in new_shape_raw.iter().enumerate() {
-        let size = match size_or_int {
-            SizeOrInt::Int(0) => {
+    for (i, &signed_size) in new_shape_raw.iter().enumerate() {
+        let size = match signed_size {
+            SignedSize::ZERO => {
                 if allow_zero {
                     Size::ZERO
                 } else {
@@ -999,7 +996,7 @@ fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SizeOrInt]
                     old_shape[i]
                 }
             }
-            SizeOrInt::Int(-1) => {
+            SignedSize::NEG_ONE => {
                 assert!(
                     leftover_index.is_none(),
                     "Reshape shape can only contain a single -1 value"
@@ -1008,11 +1005,9 @@ fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SizeOrInt]
                 new_shape.push(Size::ZERO);
                 continue;
             }
-            SizeOrInt::Int(int) => {
-                assert!(int >= 0, "Size must be positive or -1");
-                Size::fixed(int as usize)
-            }
-            SizeOrInt::Size(size) => size,
+            signed_size => signed_size
+                .as_size()
+                .unwrap_or_else(|| panic!("Reshape size must be positive, 0 or -1, got {:?}", signed_size)),
         };
 
         leftover_size = (leftover_size / size).unwrap_or_else(|| {
@@ -1029,4 +1024,14 @@ fn calculate_reshape_output_shape(old_shape: &Shape, new_shape_raw: &[SizeOrInt]
     assert_eq!(old_size, shape.size(), "Output and input sizes differ");
 
     shape
+}
+
+fn eval_binary_op(op: BinaryOp, a: SignedSize, b: SignedSize) -> Option<SignedSize> {
+    match op {
+        BinaryOp::Add => a + b,
+        BinaryOp::Sub => a - b,
+        BinaryOp::Mul => Some(a * b),
+        BinaryOp::Div => a / b,
+        _ => None,
+    }
 }

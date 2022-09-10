@@ -209,22 +209,16 @@ impl From<usize> for Size {
 }
 
 impl Size {
-    pub const ZERO: Size = Size {
-        batch_exp: 0,
-        fixed_factor: 0,
-    };
-    pub const ONE: Size = Size {
-        batch_exp: 0,
-        fixed_factor: 1,
-    };
-    pub const BATCH: Size = Size {
-        batch_exp: 1,
-        fixed_factor: 1,
-    };
+    pub const ZERO: Size = Size::new(0, 0);
+    pub const ONE: Size = Size::new(0, 1);
+    pub const BATCH: Size = Size::new(1, 1);
 
-    pub fn new(batch_exp: u32, fixed_factor: usize) -> Size {
+    pub const fn new(batch_exp: u32, fixed_factor: usize) -> Size {
         if fixed_factor == 0 {
-            Size::ZERO
+            Size {
+                batch_exp: 0,
+                fixed_factor: 0,
+            }
         } else {
             Size {
                 batch_exp,
@@ -233,11 +227,21 @@ impl Size {
         }
     }
 
-    pub fn fixed(size: usize) -> Size {
+    pub const fn fixed(size: usize) -> Size {
         Size {
             batch_exp: 0,
             fixed_factor: size,
         }
+    }
+
+    pub const fn is_zero(&self) -> bool {
+        matches!(
+            self,
+            Size {
+                batch_exp: 0,
+                fixed_factor: 0
+            }
+        )
     }
 
     pub fn eval(self, batch_size: usize) -> usize {
@@ -306,6 +310,22 @@ impl std::ops::Add for Size {
         }
 
         Some(Size::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor))
+    }
+}
+
+impl std::ops::Sub for Size {
+    type Output = Option<Size>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        if rhs == Size::ZERO {
+            return Some(self);
+        }
+
+        if self.batch_exp != rhs.batch_exp || self.fixed_factor < rhs.fixed_factor {
+            return None;
+        }
+
+        Some(Size::new(self.batch_exp, self.fixed_factor - rhs.fixed_factor))
     }
 }
 
