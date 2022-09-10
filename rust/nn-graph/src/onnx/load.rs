@@ -226,6 +226,45 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     )
                 }
             }
+            "Equal" => {
+                let error = "Equal operator only supports shapes for now";
+                let left = inputs.required(0).as_shape(&graph).expect(error);
+                let right = inputs.required(1).as_shape(&graph).expect(error);
+
+                // TODO implement broadcasting
+                // TODO is shape the best way to store bools?
+                assert_eq!(left.len(), right.len(), "Equal operand shapes must have the same shape");
+                let result = zip_eq(left, right)
+                    .map(|(l, r)| SignedSize::from_int((l == r) as i64))
+                    .collect_vec();
+                TypedValue::Shape(result)
+            }
+            "Where" => {
+                let error = "Where operator only supports shapes for now";
+
+                let condition = inputs.required(0).as_shape(&graph).expect(error);
+                let x = inputs.required(1).as_shape(&graph).expect(error);
+                let y = inputs.required(2).as_shape(&graph).expect(error);
+
+                // TODO implement broadcasting
+                assert!(
+                    condition.len() == x.len() && x.len() == y.len(),
+                    "Shapes must match, got {} {} {}",
+                    condition.len(),
+                    x.len(),
+                    y.len()
+                );
+
+                let result = zip_eq(condition, zip_eq(x, y))
+                    .map(|(c, (x, y))| match c {
+                        SignedSize::ZERO => x,
+                        SignedSize::ONE => y,
+                        _ => panic!("Condition must be boolean (so 0 or 1), but got {:?}", c),
+                    })
+                    .collect_vec();
+
+                TypedValue::Shape(result)
+            }
             "Flatten" => {
                 let input_typed = inputs.required(0);
                 let input = input_typed.unwrap_tensor();
