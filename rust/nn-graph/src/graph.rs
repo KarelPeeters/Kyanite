@@ -485,7 +485,7 @@ impl Graph {
     /// Additional unit axes are are inserted at the front and unit axes are repeated as necessary.
     #[must_use]
     pub fn broadcast(&mut self, input: Value, new_shape: Shape) -> Value {
-        let input_shape = self[input].shape.clone();
+        let input_shape = &self[input].shape.clone();
 
         assert!(
             input_shape.rank() <= new_shape.rank(),
@@ -497,12 +497,23 @@ impl Graph {
         // pad with 1 axes
         let view_shape = Shape::ones(new_shape.rank() - input_shape.rank()).concat(&input_shape);
         let curr = self.view(input, view_shape.clone());
+
+        // check that broadcasting is valid)
+        for (&v, &n) in zip_eq(&view_shape.dims, &new_shape.dims) {
+            assert!(
+                v == n || v == Size::ONE,
+                "Cannot broadcast from {:?} to {:?} because of axis ({}, {})",
+                input_shape,
+                new_shape,
+                v,
+                n
+            );
+        }
+
+        // don't need to actually broadcast
         if view_shape == new_shape {
             return curr;
         }
-
-        // check that broadcasting is valid
-        let _ = broadcast_shape(&view_shape, &new_shape);
 
         // do the actual broadcast
         self.push(new_shape, Operation::Broadcast { input: curr })
@@ -514,10 +525,10 @@ impl Graph {
     pub fn flatten(&mut self, input: Value, start_axis: usize) -> Value {
         let old_shape = &self[input].shape;
         assert!(
-            old_shape.rank() >= start_axis,
-            "Input rank {} to low for start axis {}",
-            old_shape.rank(),
-            start_axis
+            start_axis <= old_shape.rank(),
+            "Flatten start axis {} out of bounds for {}",
+            start_axis,
+            old_shape,
         );
 
         let kept_dims = &old_shape.dims[..start_axis];
@@ -579,12 +590,7 @@ impl Graph {
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
         let old_shape = &self[input].shape;
-        assert!(
-            axis < old_shape.rank(),
-            "Slice axis {} out of bounds for {:?}",
-            axis,
-            old_shape,
-        );
+        old_shape.assert_has_axis(axis);
 
         let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
         range.assert_in_bounds(old_size);
@@ -611,16 +617,24 @@ impl Graph {
     /// Flip the given `axis`.
     pub fn flip(&mut self, input: Value, axis: usize) -> Value {
         let shape = self[input].shape.clone();
-        assert!(axis <= shape.rank(), "Axis {} out of bounds for {:?}", axis, shape);
+        shape.assert_has_axis(axis);
 
         self.push(shape, Operation::Flip { input, axis })
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
-    pub fn repeat(&mut self, input: Value, axis: usize, count: usize) -> Value {
-        //TODO introduce separate (optimized) operation for this?
-        //TODO special-case length-0 axis to some kind of restride operation
-        //       this was meant to be length-1, right?
+    pub fn repeat(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        let input_shape = &self[input].shape;
+        input_shape.assert_has_axis(axis);
+
+        // do cheaper broadcast operation instead
+        if input_shape[axis] == Size::ONE {
+            return self.broadcast(input, input_shape.repeat_unary(axis, count));
+        }
+
+        //TODO introduce separate (optimized) operation for repeat?
+        //TODO or switch to view + broadcast + view composition similar to tile instead?
+        let count = count.unwrap_fixed("repeat count for non-unary axis");
         let base_shape = self[input].shape.replace(axis, shape![0]);
         self.concat(vec![input; count], axis, Some(base_shape))
     }
@@ -633,28 +647,38 @@ impl Graph {
         let input_shape = &self[input].shape;
         let indices_shape = &self[indices].shape;
 
-        assert!(
-            axis < input_shape.rank(),
-            "Gather axis {} is not in bounds for input {:?}",
-            axis,
-            input_shape
-        );
+        input_shape.assert_has_axis(axis);
 
         let result_shape = input_shape.replace(axis, indices_shape.clone());
         let result_shape_flat = input_shape.replace(axis, shape![indices_shape.size()]);
 
         // we support arbitrary rank indices here, but the actual operation does not
         let flat_indices = self.flatten(indices, 0);
-        let result_flat = self.push(
-            result_shape_flat,
-            Operation::Gather {
-                input,
-                axis,
-                indices: flat_indices,
-            },
-        );
-        let result = self.view(result_flat, result_shape);
+        let flat_size = self[flat_indices].shape.unwrap_1();
 
+        let result_flat = if let Some(index_f) = self.as_single_const(indices) {
+            // replace gather with simpler slice (+ repeat) operator
+            let index = index_f as usize;
+            assert_eq!(index as f32, index_f, "Index must be an integer, got {}", index_f);
+
+            let result_flat_single = self.slice(input, axis, SliceRange::single(index));
+            let result_flat = self.repeat(result_flat_single, axis, flat_size);
+
+            assert_eq!(self[result_flat].shape, result_shape_flat);
+            result_flat
+        } else {
+            // do a full gather operation
+            self.push(
+                result_shape_flat,
+                Operation::Gather {
+                    input,
+                    axis,
+                    indices: flat_indices,
+                },
+            )
+        };
+
+        let result = self.view(result_flat, result_shape);
         result
     }
 
@@ -668,7 +692,7 @@ impl Graph {
         // TODO skip entire operation if the output is empty (generalize this to all operations?)
         if inputs.len() == 1 {
             let shape = &self[inputs[0]].shape;
-            assert!(axis < shape.rank(), "Axis out of bounds for shape {}", shape);
+            shape.assert_has_axis(axis);
             return inputs[0];
         }
 
@@ -806,7 +830,7 @@ impl Graph {
         let result_tail = shape![m, p];
 
         // broadcast heads
-        let result_head = broadcast_shape(&left_head, &right_head);
+        let result_head = broadcast_both(&left_head, &right_head);
         let batch_size = result_head.size();
         let left_broadcast = self.broadcast(left, result_head.clone().concat(&left_tail));
         let right_broadcast = self.broadcast(right, result_head.clone().concat(&right_tail));
@@ -842,12 +866,7 @@ impl Graph {
     #[must_use]
     pub fn softmax(&mut self, input: Value, axis: usize) -> Value {
         let input_shape = &self[input].shape;
-        assert!(
-            axis < input_shape.dims.len(),
-            "Softmax axis {} out of range for shape {:?}",
-            axis,
-            input_shape
-        );
+        input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
         self.push(new_shape, Operation::Softmax { input, axis })
@@ -856,12 +875,7 @@ impl Graph {
     #[must_use]
     pub fn layernorm(&mut self, input: Value, axis: usize, eps: f32) -> Value {
         let input_shape = &self[input].shape;
-        assert!(
-            axis < input_shape.dims.len(),
-            "Layernorm axis {} out of range for shape {:?}",
-            axis,
-            input_shape
-        );
+        input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
         self.push(
@@ -886,12 +900,7 @@ impl Graph {
 
         // check that the axes are in bounds
         for &axis in &axes {
-            assert!(
-                axis < input_shape.dims.len(),
-                "Reduce axis {} out of range for shape {:?}",
-                axis,
-                input_shape
-            );
+            input_shape.assert_has_axis(axis);
         }
 
         let new_shape = input_shape.replace_all(&axes, shape![]);
@@ -978,7 +987,7 @@ impl Graph {
             return left;
         }
 
-        let result_shape = broadcast_shape(&self[left].shape, &self[right].shape);
+        let result_shape = broadcast_both(&self[left].shape, &self[right].shape);
         let left = self.broadcast(left, result_shape.clone());
         let right = self.broadcast(right, result_shape.clone());
 
@@ -1034,7 +1043,7 @@ impl Graph {
     }
 }
 
-pub fn broadcast_shape(left: &Shape, right: &Shape) -> Shape {
+pub fn broadcast_both(left: &Shape, right: &Shape) -> Shape {
     let rank = max(left.rank(), right.rank());
 
     // pad with leading 1 axes

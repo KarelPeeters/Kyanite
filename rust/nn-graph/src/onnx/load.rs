@@ -801,7 +801,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                     // insert dummy axis, repeat, then flatten again
                     let inserted = graph.view(acc, acc_shape.insert(axis + 1, Size::ONE));
-                    let repeated = graph.repeat(inserted, axis + 1, scale);
+                    let repeated = graph.repeat(inserted, axis + 1, Size::fixed(scale));
                     let flat = graph.view(repeated, acc_shape.replace(axis, shape![replace_size]));
 
                     flat

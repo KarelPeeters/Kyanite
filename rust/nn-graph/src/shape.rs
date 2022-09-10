@@ -57,6 +57,10 @@ impl Shape {
         self.dims.len()
     }
 
+    pub fn assert_has_axis(&self, axis: usize) {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+    }
+
     pub fn as_fixed(&self) -> Option<ConcreteShape> {
         self.dims
             .iter()
@@ -130,7 +134,7 @@ impl Shape {
         );
 
         for &axis in axes {
-            assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+            self.assert_has_axis(axis);
         }
 
         // construct new shape
@@ -148,7 +152,7 @@ impl Shape {
 
     /// Build a new shape with the shape at `axis` kept and all other axes replaced by `rest`.
     pub fn keep(&self, axis: usize, rest: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        self.assert_has_axis(axis);
 
         let mut dims = self.dims.clone();
         for i in 0..self.rank() {
@@ -160,7 +164,8 @@ impl Shape {
     }
 
     pub fn repeat_unary(&self, axis: usize, new_size: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        self.assert_has_axis(axis);
+
         assert_eq!(
             self.dims[axis],
             Size::ONE,
@@ -175,18 +180,23 @@ impl Shape {
     }
 
     pub fn insert(&self, axis: usize, size: Size) -> Shape {
-        assert!(axis <= self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        self.assert_has_axis(axis);
 
         let mut dims = self.dims.clone();
         dims.insert(axis, size);
         Shape::new(dims)
     }
 
-    pub fn split(&self, rank: usize) -> (Shape, Shape) {
-        assert!(rank <= self.rank(), "Rank {} out of bounds for {:?}", rank, self);
+    pub fn split(&self, index: usize) -> (Shape, Shape) {
+        assert!(
+            index <= self.rank(),
+            "Split index {} out of bounds for {:?}",
+            index,
+            self
+        );
 
-        let body = self.dims[..rank].to_vec();
-        let tail = self.dims[rank..].to_vec();
+        let body = self.dims[..index].to_vec();
+        let tail = self.dims[index..].to_vec();
 
         (Shape::new(body), Shape::new(tail))
     }
@@ -345,8 +355,9 @@ impl std::iter::Product for Size {
 impl std::ops::Index<usize> for Shape {
     type Output = Size;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.dims[index]
+    fn index(&self, axis: usize) -> &Self::Output {
+        self.assert_has_axis(axis);
+        &self.dims[axis]
     }
 }
 

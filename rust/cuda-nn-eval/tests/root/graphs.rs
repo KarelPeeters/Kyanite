@@ -4,7 +4,7 @@ use rand::SeedableRng;
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_sys::wrapper::handle::Device;
-use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, UnaryOp, Value};
+use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -112,10 +112,10 @@ fn repeat() {
     let x = graph.constant(shape![2, 3], linspace_vec(6));
 
     let outputs = [
-        graph.repeat(x, 0, 0),
-        graph.repeat(x, 0, 2),
-        graph.repeat(x, 1, 0),
-        graph.repeat(x, 1, 2),
+        graph.repeat(x, 0, Size::fixed(0)),
+        graph.repeat(x, 0, Size::fixed(2)),
+        graph.repeat(x, 1, Size::fixed(0)),
+        graph.repeat(x, 1, Size::fixed(2)),
     ];
 
     graph.output_all(&outputs);
@@ -163,6 +163,33 @@ fn gather_complex() {
         &[input0_tensor, input1_tensor],
         Some(&[output0_tensor, output1_tensor]),
     );
+}
+
+#[test]
+fn gather_as_index() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+
+    let input = graph.input(shape![16, 8, 4]);
+    let index = graph.constant(Shape::SCALAR, vec![4.0]);
+    let indices = graph.view(index, shape![1]);
+    let indices_repeat = graph.broadcast(indices, shape![3]);
+
+    let result = graph.gather(input, 1, indices);
+    let result_repeat = graph.gather(input, 1, indices_repeat);
+
+    graph.output_all(&[result, result_repeat]);
+
+    // test that this gather is actually implemented as a simple index operation
+    println!("{}", graph);
+    for v in graph.values() {
+        assert!(
+            !matches!(graph[v].operation, Operation::Gather { .. }),
+            "Graph contains a gather operation, it should have been replaced by an index operation"
+        );
+    }
+
+    test_all(&graph, 0, &[rng_tensor((16, 8, 4), &mut rng)], None);
 }
 
 #[test]
