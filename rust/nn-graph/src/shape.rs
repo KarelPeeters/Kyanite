@@ -257,10 +257,15 @@ impl Size {
         self.fixed_factor
     }
 
-    #[track_caller]
-    pub fn unwrap_fixed_mut(&mut self, what: &str) -> &mut usize {
-        assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
-        &mut self.fixed_factor
+    pub fn floor_div(self, rhs: Self) -> Option<Self> {
+        if self.batch_exp < rhs.batch_exp {
+            None
+        } else {
+            Some(Size::new(
+                self.batch_exp - rhs.batch_exp,
+                self.fixed_factor / rhs.fixed_factor,
+            ))
+        }
     }
 }
 

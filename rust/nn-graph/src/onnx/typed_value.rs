@@ -144,6 +144,13 @@ impl SignedSize {
             Some(self.size)
         }
     }
+
+    pub fn floor_div(self, rhs: Self) -> Option<Self> {
+        Some(SignedSize::new(
+            self.negative ^ rhs.negative,
+            self.size.floor_div(rhs.size)?,
+        ))
+    }
 }
 
 impl Display for SignedSize {

@@ -1112,7 +1112,7 @@ fn eval_binary_op(op: BinaryOp, a: SignedSize, b: SignedSize) -> Option<SignedSi
         BinaryOp::Add => a + b,
         BinaryOp::Sub => a - b,
         BinaryOp::Mul => Some(a * b),
-        BinaryOp::Div => a / b,
+        BinaryOp::Div => a.floor_div(b),
         _ => None,
     }
 }
