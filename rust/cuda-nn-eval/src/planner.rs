@@ -360,9 +360,15 @@ impl<'a> Planner<'a> {
             &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true)?,
             &Operation::Unary { input, op } => {
                 let operation = match op {
-                    UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
+                    UnaryOp::Abs => "*x0 = fabs(*x1);",
+                    UnaryOp::Neg => "*x0 = -(*x1);",
+                    UnaryOp::Sin => "*x0 = sin(*x1);",
+                    UnaryOp::Cos => "*x0 = cos(*x1);",
                     UnaryOp::Exp => "*x0 = exp(*x1);",
-                    UnaryOp::Sigmoid => "*x0 = 1.0 / (1.0 + exp(-*x1));",
+                    UnaryOp::Log => "*x0 = log(*x1);",
+                    UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
+                    UnaryOp::Sigmoid => "*x0 = 1.0 / (1.0 + exp(-(*x1)));",
+                    UnaryOp::Tanh => "*x0 = tanh(*x1);",
                 };
 
                 let input = self.visit(input)?;

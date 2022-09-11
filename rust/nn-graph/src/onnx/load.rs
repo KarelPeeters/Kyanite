@@ -132,11 +132,6 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 TypedValue::FloatTensor(result)
             }
-            "Relu" => {
-                let input = inputs.required(0).unwrap_float();
-                let result = graph.relu(input);
-                TypedValue::FloatTensor(result)
-            }
             "Clip" => {
                 let input = inputs.required(0).unwrap_float();
                 // these are optional since the older version of the operator used attributes instead
@@ -164,16 +159,23 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
-            "Sqrt" | "Exp" | "Sigmoid" => {
-                let op = match op_type {
-                    "Sqrt" => UnaryOp::Sqrt,
-                    "Exp" => UnaryOp::Exp,
-                    "Sigmoid" => UnaryOp::Sigmoid,
+            "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" => {
+                let input = inputs.required(0).unwrap_float();
+
+                let result = match op_type {
+                    "Abs" => graph.unary(UnaryOp::Abs, input),
+                    "Neg" => graph.unary(UnaryOp::Neg, input),
+                    "Sin" => graph.unary(UnaryOp::Sin, input),
+                    "Cos" => graph.unary(UnaryOp::Cos, input),
+                    "Exp" => graph.unary(UnaryOp::Exp, input),
+                    "Log" => graph.unary(UnaryOp::Log, input),
+                    "Sqrt" => graph.unary(UnaryOp::Sqrt, input),
+                    "Sigmoid" => graph.unary(UnaryOp::Sigmoid, input),
+                    "Relu" => graph.relu(input),
+                    "Tanh" => graph.unary(UnaryOp::Sigmoid, input),
                     _ => unreachable!(),
                 };
 
-                let input = inputs.required(0).unwrap_float();
-                let result = graph.unary(op, input);
                 TypedValue::FloatTensor(result)
             }
             "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" | "Pow" => {

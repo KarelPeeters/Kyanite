@@ -109,9 +109,15 @@ pub struct SliceRange {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOp {
-    Sqrt,
+    Abs,
+    Neg,
+    Sin,
+    Cos,
     Exp,
+    Log,
+    Sqrt,
     Sigmoid,
+    Tanh,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -1210,13 +1216,29 @@ impl SliceRange {
 }
 
 impl UnaryOp {
-    pub const ALL: &'static [Self] = &[UnaryOp::Sqrt, UnaryOp::Exp, UnaryOp::Sigmoid];
+    pub const ALL: &'static [Self] = &[
+        UnaryOp::Abs,
+        UnaryOp::Neg,
+        UnaryOp::Sin,
+        UnaryOp::Cos,
+        UnaryOp::Exp,
+        UnaryOp::Log,
+        UnaryOp::Sqrt,
+        UnaryOp::Sigmoid,
+        UnaryOp::Tanh,
+    ];
 
     pub fn map(self, x: f32) -> f32 {
         match self {
-            UnaryOp::Sqrt => x.sqrt(),
+            UnaryOp::Abs => x.abs(),
+            UnaryOp::Neg => -x,
+            UnaryOp::Sin => x.sin(),
+            UnaryOp::Cos => x.cos(),
             UnaryOp::Exp => x.exp(),
+            UnaryOp::Log => x.ln(),
+            UnaryOp::Sqrt => x.sqrt(),
             UnaryOp::Sigmoid => 1.0 / (1.0 + (-x).exp()),
+            UnaryOp::Tanh => x.tanh(),
         }
     }
 }
