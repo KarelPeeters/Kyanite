@@ -321,6 +321,37 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.mat_mul(left, right);
                 TypedValue::FloatTensor(result)
             }
+            "Einsum" => {
+                let inputs = inputs.take_all_variadic();
+                let equation = attrs.take_string("equation");
+
+                let equation_compact = equation.replace(' ', "");
+
+                // TODO for now we hardcode some typical einsum operations, replace this with a general implementation
+                match equation_compact.as_ref() {
+                    "bid,bjd->bij" => {
+                        assert_eq!(inputs.len(), 2);
+                        let left = inputs[0].unwrap_float();
+                        let right = inputs[1].unwrap_float();
+
+                        let right_transpose = graph.permute(right, vec![0, 2, 1]);
+                        let result = graph.batched_mat_mul(left, right_transpose);
+                        TypedValue::FloatTensor(result)
+                    }
+                    "bij,bjd->bid" => {
+                        assert_eq!(inputs.len(), 2);
+                        let left = inputs[0].unwrap_float();
+                        let right = inputs[1].unwrap_float();
+
+                        let result = graph.batched_mat_mul(left, right);
+                        TypedValue::FloatTensor(result)
+                    }
+                    _ => panic!(
+                        "Einsum with inputs equation {:?} and inputs {:?} not yet supported",
+                        equation, inputs
+                    ),
+                }
+            }
             "BatchNormalization" => {
                 //TODO also try without merging anything here to see how much of a difference it makes
 

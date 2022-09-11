@@ -855,17 +855,17 @@ impl Graph {
     /// Inputs must have shapes `[b, m, n]`, `[b, n, p]` and the result has shape `[b, m, p]`.
     #[must_use]
     pub fn batched_mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let [b0, p, q0] = self[left].shape.unwrap_3();
-        let [b1, q1, r] = self[right].shape.unwrap_3();
+        let [b0, m, n0] = self[left].shape.unwrap_3();
+        let [b1, n1, p] = self[right].shape.unwrap_3();
 
         assert!(
-            b0 == b1 && q0 == q1,
-            "Inner matmul dimension mismatch, got shapes {} and {}",
+            b0 == b1 && n0 == n1,
+            "Batched matmul dimension mismatch, got shapes {} and {}",
             self[left].shape,
             self[right].shape
         );
 
-        let result_shape = shape![b0, p, r];
+        let result_shape = shape![b0, m, p];
         self.push(result_shape, Operation::MatMul { left, right })
     }
 
