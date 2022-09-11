@@ -571,24 +571,25 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 match input {
                     TypedValue::Shape(shape) => {
-                        assert_eq!(
-                            indices_shape.rank(),
-                            0,
-                            "Shape gather only supported for scalar index, got {:?}",
+                        assert!(
+                            indices_shape.rank() <= 1,
+                            "Shape gather only supported for scalar or 1D index, got {:?}",
                             indices_shape
-                        );
-
-                        let index_rel = float_to_i64_exact(
-                            graph
-                                .as_single_const(indices)
-                                .expect("Shape gather only supported for const index"),
                         );
 
                         assert_eq!(axis, 0);
                         assert_eq!(input_shape.rank(), 1);
 
-                        let index = abs_axis(index_rel, shape.len());
-                        TypedValue::Shape(vec![shape[index]])
+                        let indices = graph
+                            .as_const(indices)
+                            .expect("Shape gather only supported for const index")
+                            .mapv(float_to_i64_exact);
+
+                        let result = indices
+                            .iter()
+                            .map(|&index_rel| shape[abs_axis(index_rel, shape.len())])
+                            .collect_vec();
+                        TypedValue::Shape(result)
                     }
                     &TypedValue::FloatTensor(input_value) | &TypedValue::IntTensor(input_value) => {
                         // TODO properly support negative indices
