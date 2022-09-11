@@ -4,7 +4,7 @@ use num_traits::cast;
 use prost::Message;
 
 pub use crate::graph::Graph;
-use crate::graph::{BinaryOp, ReduceOp, SliceRange, UnaryOp};
+use crate::graph::{broadcast_shape_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp};
 use crate::onnx::inputs::{Attributes, Inputs};
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
@@ -191,7 +191,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let left = inputs.required(0);
                 let right = inputs.required(1);
 
-                if let (Some(left), Some(right)) = (left.as_shape(&graph), right.as_shape(&graph)) {
+                if let (Some(left), Some(right)) = (left.as_partial_shape(&graph), right.as_partial_shape(&graph)) {
                     // if they're both shapes keep it that way
                     assert_eq!(left.len(), right.len());
 
@@ -228,8 +228,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
             "Equal" => {
                 let error = "Equal operator only supports shapes for now";
-                let left = inputs.required(0).as_shape(&graph).expect(error);
-                let right = inputs.required(1).as_shape(&graph).expect(error);
+                let left = inputs.required(0).as_partial_shape(&graph).expect(error);
+                let right = inputs.required(1).as_partial_shape(&graph).expect(error);
 
                 // TODO implement broadcasting
                 // TODO is shape the best way to store bools?
@@ -242,9 +242,9 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Where" => {
                 let error = "Where operator only supports shapes for now";
 
-                let condition = inputs.required(0).as_shape(&graph).expect(error);
-                let x = inputs.required(1).as_shape(&graph).expect(error);
-                let y = inputs.required(2).as_shape(&graph).expect(error);
+                let condition = inputs.required(0).as_partial_shape(&graph).expect(error);
+                let x = inputs.required(1).as_partial_shape(&graph).expect(error);
+                let y = inputs.required(2).as_partial_shape(&graph).expect(error);
 
                 // TODO implement broadcasting
                 assert!(
@@ -401,14 +401,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let shape = match shape {
                     None => Shape::SCALAR,
-                    Some(shape) => Shape::new(
-                        shape
-                            .as_shape(&graph)
-                            .unwrap()
-                            .iter()
-                            .map(|s| s.as_size().unwrap())
-                            .collect_vec(),
-                    ),
+                    Some(shape) => shape.as_shape(&graph).expect("ConstantOfShape needs shape input"),
                 };
 
                 let value = match attrs.maybe_take_tensor("value") {
@@ -445,7 +438,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
             "Reshape" => {
                 let input = inputs.required(0);
-                let new_shape = inputs.required(1).as_shape(&graph).unwrap();
+                let new_shape = inputs.required(1).as_partial_shape(&graph).unwrap();
                 let allow_zero = attrs.maybe_take_bool("allowzero").unwrap_or(false);
 
                 let input_tensor = input.unwrap_tensor();
@@ -454,6 +447,21 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let result = graph.view(input_tensor, output_shape);
                 TypedValue::with_same_type(result, input)
+            }
+            "Expand" => {
+                let input = inputs.required(0);
+                let shape = inputs
+                    .required(1)
+                    .as_shape(&graph)
+                    .expect("Expand shape must be a shape");
+
+                let input_value = input.unwrap_tensor();
+
+                // "Expand" is a symmetric broadcast, not just a directional one
+                let result_shape = broadcast_shape_symmetric(&graph[input_value].shape, &shape);
+                let result_value = graph.broadcast(input_value, result_shape);
+
+                TypedValue::with_same_type(result_value, input)
             }
             "Unsqueeze" => {
                 let input = inputs.required(0);
@@ -650,7 +658,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                     let shape = inputs
                         .iter()
-                        .flat_map(|x| x.as_shape(&graph).unwrap().into_iter())
+                        .flat_map(|x| x.as_partial_shape(&graph).unwrap().into_iter())
                         .collect_vec();
 
                     TypedValue::Shape(shape)

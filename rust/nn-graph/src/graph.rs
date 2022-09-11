@@ -830,7 +830,7 @@ impl Graph {
         let result_tail = shape![m, p];
 
         // broadcast heads
-        let result_head = broadcast_both(&left_head, &right_head);
+        let result_head = broadcast_shape_symmetric(&left_head, &right_head);
         let batch_size = result_head.size();
         let left_broadcast = self.broadcast(left, result_head.clone().concat(&left_tail));
         let right_broadcast = self.broadcast(right, result_head.clone().concat(&right_tail));
@@ -987,7 +987,7 @@ impl Graph {
             return left;
         }
 
-        let result_shape = broadcast_both(&self[left].shape, &self[right].shape);
+        let result_shape = broadcast_shape_symmetric(&self[left].shape, &self[right].shape);
         let left = self.broadcast(left, result_shape.clone());
         let right = self.broadcast(right, result_shape.clone());
 
@@ -1043,7 +1043,7 @@ impl Graph {
     }
 }
 
-pub fn broadcast_both(left: &Shape, right: &Shape) -> Shape {
+pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
     let rank = max(left.rank(), right.rank());
 
     // pad with leading 1 axes

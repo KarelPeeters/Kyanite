@@ -27,7 +27,7 @@ pub struct SignedSize {
 }
 
 impl TypedValue {
-    pub fn as_shape(&self, graph: &Graph) -> Option<Vec<SignedSize>> {
+    pub fn as_partial_shape(&self, graph: &Graph) -> Option<Vec<SignedSize>> {
         match self {
             TypedValue::Shape(shape) => Some(shape.clone()),
             &TypedValue::IntTensor(inner) => {
@@ -52,6 +52,20 @@ impl TypedValue {
             }
             TypedValue::FloatTensor(_) => None,
         }
+    }
+
+    pub fn as_shape(&self, graph: &Graph) -> Option<Shape> {
+        let partial = self.as_partial_shape(&graph)?;
+
+        let dims = partial
+            .iter()
+            .map(|s| {
+                s.as_size()
+                    .unwrap_or_else(|| panic!("Cannot convert {:?} to real shape", partial))
+            })
+            .collect_vec();
+
+        Some(Shape::new(dims))
     }
 
     pub fn unwrap_float(&self) -> Value {
