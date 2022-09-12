@@ -175,7 +175,12 @@ impl Shape {
     }
 
     pub fn insert(&self, axis: usize, size: Size) -> Shape {
-        self.assert_has_axis(axis);
+        assert!(
+            axis <= self.rank(),
+            "Axis {} out of bounds for inserting into {:?}",
+            axis,
+            self
+        );
 
         let mut dims = self.dims.clone();
         dims.insert(axis, size);
