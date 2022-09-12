@@ -501,7 +501,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let rel_axes = match inputs.optional(1) {
                     Some(rel_axes) => {
-                        let axes = rel_axes.unwrap_const_int(&graph);
+                        let axes = rel_axes.unwrap_const_int(&mut graph);
                         assert_eq!(
                             axes.shape().len(),
                             1,
@@ -561,7 +561,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             }
             "Gather" => {
                 let input = inputs.required(0);
-                let indices = inputs.required(1).unwrap_int();
+                let indices = inputs.required(1).unwrap_int(&mut graph);
                 let rel_axis = attrs.maybe_take_int("axis").unwrap_or(0);
 
                 let input_shape = input.shape(&graph);
@@ -599,11 +599,11 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 }
             }
             "Slice" => {
-                let get = |inputs: &mut Inputs, attrs: &mut Attributes, index: usize, name: &str| match inputs
+                let mut get = |inputs: &mut Inputs, attrs: &mut Attributes, index: usize, name: &str| match inputs
                     .optional(index)
                 {
                     Some(value) => {
-                        let value = value.unwrap_const_int(&graph);
+                        let value = value.unwrap_const_int(&mut graph);
                         assert_eq!(
                             value.shape().len(),
                             1,
@@ -720,13 +720,13 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
             "Pad" => {
                 // operands
                 let input = inputs.required(0).unwrap_float();
-                let pads = inputs.required(1).unwrap_const_int(&graph);
+                let pads = inputs.required(1).unwrap_const_int(&mut graph);
                 let constant_value = inputs.optional(2);
                 let axes = inputs.optional(3);
                 let mode = attrs.maybe_take_string("mode").unwrap_or("constant");
 
                 // map operands
-                let input_shape = &graph[input].shape;
+                let input_shape = &graph[input].shape.clone();
 
                 let constant_value = constant_value
                     .map(|v| graph.as_single_const(v.unwrap_float()).unwrap())
@@ -734,7 +734,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
 
                 let axes = match axes {
                     Some(axes) => {
-                        let axes = axes.unwrap_const_int(&graph);
+                        let axes = axes.unwrap_const_int(&mut graph);
                         assert_eq!(
                             axes.shape().len(),
                             1,
@@ -825,7 +825,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let input = inputs.required(0);
                 let roi = inputs.optional(1);
                 let scales = inputs.optional(2).map(|v| v.unwrap_float());
-                let sizes = inputs.optional(3).map(|v| v.unwrap_int());
+                let sizes = inputs.optional(3).map(|v| v.unwrap_int(&mut graph));
 
                 let _antialias = attrs.maybe_take_bool("antialias").unwrap_or(false);
                 let axes = attrs.maybe_take_ints("axes");

@@ -72,8 +72,23 @@ impl TypedValue {
         unwrap_match!(self, &TypedValue::FloatTensor(inner) => inner)
     }
 
-    pub fn unwrap_int(&self) -> Value {
-        unwrap_match!(self, &TypedValue::IntTensor(inner) => inner)
+    pub fn unwrap_int(&self, graph: &mut Graph) -> Value {
+        match self {
+            TypedValue::Shape(shape) => {
+                let data = shape
+                    .iter()
+                    .map(|s| {
+                        let sign = if s.negative { -1.0 } else { 1.0 };
+                        let size = s.size.unwrap_fixed("int tensor value") as f32;
+                        sign * size
+                    })
+                    .collect_vec();
+
+                graph.constant(shape![shape.len()], data)
+            }
+            TypedValue::FloatTensor(_) => panic!("Expected int tensor, got float"),
+            &TypedValue::IntTensor(value) => value,
+        }
     }
 
     pub fn unwrap_tensor(&self) -> Value {
@@ -83,9 +98,10 @@ impl TypedValue {
         }
     }
 
-    pub fn unwrap_const_int(&self, graph: &Graph) -> ArcArray<i64, IxDyn> {
+    pub fn unwrap_const_int(&self, graph: &mut Graph) -> ArcArray<i64, IxDyn> {
+        let value = self.unwrap_int(graph);
         graph
-            .as_const(self.unwrap_int())
+            .as_const(value)
             .unwrap()
             .mapv(|f| float_to_i64_exact(f))
             .to_shared()
