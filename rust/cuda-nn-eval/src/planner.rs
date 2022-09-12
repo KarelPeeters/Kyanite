@@ -12,6 +12,7 @@ use cuda_sys::wrapper::handle::Device;
 use cuda_sys::wrapper::mem::device::DevicePtr;
 use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
+use nn_graph::optimizer::recurse::heap_recurse;
 use nn_graph::shape::{ConcreteShape, Size};
 
 use crate::autokernel::gather::GatherKernel;
@@ -247,21 +248,7 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_completely(&mut self, value: Value) -> PlanTensor {
-        let mut stack = vec![value];
-
-        loop {
-            let curr = *stack.last().unwrap();
-
-            match self.visit_single(curr) {
-                Ok(tensor) => {
-                    stack.pop().unwrap();
-                    if stack.is_empty() {
-                        return tensor;
-                    }
-                }
-                Err(other_value) => stack.push(other_value),
-            }
-        }
+        heap_recurse(value, |value| self.visit_single_cached(value))
     }
 
     fn visit_completely_ensure_simple_strides(&mut self, value: Value, id: &str) -> PlanTensor {
@@ -276,13 +263,19 @@ impl<'a> Planner<'a> {
         return Err(value);
     }
 
-    fn visit_single(&mut self, value: Value) -> VisitResult<PlanTensor> {
+    fn visit_single_cached(&mut self, value: Value) -> VisitResult<PlanTensor> {
         if let Some(result) = self.map.get(&value) {
             return Ok(result.clone());
         }
 
+        let result = self.visit_single_new(value)?;
+        self.insert_mapping(value, result.clone());
+
+        Ok(result)
+    }
+
+    fn visit_single_new(&mut self, value: Value) -> VisitResult<PlanTensor> {
         if let Some(result) = self.visit_fused_conv(value)? {
-            self.insert_mapping(value, result.clone());
             return Ok(result);
         }
 
@@ -469,7 +462,6 @@ impl<'a> Planner<'a> {
             }
         };
 
-        self.insert_mapping(value, result.clone());
         Ok(result)
     }
 

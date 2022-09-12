@@ -5,6 +5,7 @@ use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
 use crate::cpu::convolution;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
+use crate::optimizer::core::VisitResult;
 use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -12,11 +13,14 @@ use crate::shape::{Shape, Size};
 type ArcArray4<A> = ArcArray<A, Ix4>;
 
 impl Optimizer<'_> {
-    pub fn try_build_affine_group(&self, old_start: Value) -> Option<AffineGroup> {
+    pub fn try_build_affine_group(&self, old_start: Value) -> VisitResult<Option<AffineGroup>> {
         let output_shape = &self.old_graph[old_start].shape;
 
         if let &[batch, after_channels, width, height] = output_shape.dims.as_slice() {
-            let after_channels = after_channels.try_unwrap_fixed()?;
+            let after_channels = match after_channels.try_unwrap_fixed() {
+                None => return Ok(None),
+                Some(after_channels) => after_channels,
+            };
 
             let initial_shape = AffineShape {
                 batch,
@@ -29,17 +33,17 @@ impl Optimizer<'_> {
 
             let old_input = self.follow_if(old_start, |_, _, operation| {
                 self.grow_affine_group(&mut builder, operation)
-            });
+            })?;
 
             if let Some(old_input) = old_input {
-                return Some(builder.finish(old_input));
+                return Ok(Some(builder.finish(old_input)));
             }
         }
 
-        None
+        Ok(None)
     }
 
-    fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> Option<Value> {
+    fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> VisitResult<Option<Value>> {
         match *operation {
             Operation::Conv { input, filter, details } => {
                 if let Some(filter) = self.old_graph.as_const(filter) {
@@ -47,12 +51,12 @@ impl Optimizer<'_> {
 
                     if builder.conv.is_none() && details.keeps_spatial_shape() && !details.has_stride() {
                         builder.set_conv(ConvOperation { details, filter });
-                        Some(input)
+                        Ok(Some(input))
                     } else {
-                        None
+                        Ok(None)
                     }
                 } else {
-                    None
+                    Ok(None)
                 }
             }
             Operation::Binary {
@@ -85,21 +89,21 @@ impl Optimizer<'_> {
                                 };
 
                                 builder.push_affine(affine_op);
-                                Some(left)
+                                Ok(Some(left))
                             } else {
-                                None
+                                Ok(None)
                             }
                         } else {
-                            None
+                            Ok(None)
                         }
                     } else {
-                        None
+                        Ok(None)
                     }
                 } else {
-                    None
+                    Ok(None)
                 }
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 }
