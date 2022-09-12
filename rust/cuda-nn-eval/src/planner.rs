@@ -84,8 +84,14 @@ pub struct Plan {
 
 #[derive(Debug)]
 pub struct MemoryUsage {
+    /// Bytes allocated for dedicated tensors (weights)
     pub dedicated_bytes: usize,
+    /// Bytes allocated for shared tensors (inputs, outputs, hidden states)
     pub shared_bytes: usize,
+    /// Bytes that are theoretically necessary for the values that are live at the same time.
+    /// This is a lower bound for `shared_bytes`.
+    pub max_shared_bytes: usize,
+    /// Bytes allocated for fixed-zero tensors.
     pub zero_bytes: usize,
 }
 
@@ -110,7 +116,6 @@ impl<'a> Planner<'a> {
 
         let buffer_count = planner.shared_buffers_size_in_bytes.len();
         let step_count = planner.steps.len();
-        let mut shared_bytes = 0;
 
         // determine live ranges for shared tensors
         let live_ranges = {
@@ -151,17 +156,23 @@ impl<'a> Planner<'a> {
 
         let mut shared_allocations: Vec<Option<DevicePtr>> = vec![None; buffer_count];
 
+        let mut shared_bytes = 0;
+        let mut curr_shared_bytes = 0;
+        let mut max_shared_bytes = 0;
+
         for si in 0..step_count {
             for (ti, &(start, _)) in live_ranges.iter().enumerate() {
                 if start == si {
                     // allocate the given tensor
                     let size_bytes = planner.shared_buffers_size_in_bytes[ti];
+                    curr_shared_bytes += size_bytes;
+                    max_shared_bytes = max(max_shared_bytes, curr_shared_bytes);
+
                     let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
                     let ptr = vec.pop().unwrap_or_else(|| {
                         shared_bytes += size_bytes;
                         device.alloc(size_bytes)
                     });
-
                     assert!(shared_allocations[ti].is_none());
                     shared_allocations[ti] = Some(ptr);
                 }
@@ -171,9 +182,10 @@ impl<'a> Planner<'a> {
                 if start < si && end == si {
                     // free the given tensor
                     let size_bytes = planner.shared_buffers_size_in_bytes[ti];
-                    let vec = free_allocations.get_mut(&size_bytes).unwrap();
+                    curr_shared_bytes -= size_bytes;
 
                     let ptr = shared_allocations[ti].as_ref().unwrap().clone();
+                    let vec = free_allocations.get_mut(&size_bytes).unwrap();
                     vec.push(ptr);
                 }
             }
@@ -210,6 +222,7 @@ impl<'a> Planner<'a> {
         let mem_usage = MemoryUsage {
             dedicated_bytes: planner.dedicated_bytes,
             shared_bytes,
+            max_shared_bytes,
             zero_bytes,
         };
 
