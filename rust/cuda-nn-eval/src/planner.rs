@@ -369,6 +369,7 @@ impl<'a> Planner<'a> {
                     UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
                     UnaryOp::Sigmoid => "*x0 = 1.0 / (1.0 + exp(-(*x1)));",
                     UnaryOp::Tanh => "*x0 = tanh(*x1);",
+                    UnaryOp::Erf => "*x0 = erff(*x1);",
                 };
 
                 let input = self.visit(input)?;

@@ -118,6 +118,7 @@ pub enum UnaryOp {
     Sqrt,
     Sigmoid,
     Tanh,
+    Erf,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -1226,6 +1227,7 @@ impl UnaryOp {
         UnaryOp::Sqrt,
         UnaryOp::Sigmoid,
         UnaryOp::Tanh,
+        UnaryOp::Erf,
     ];
 
     pub fn map(self, x: f32) -> f32 {
@@ -1239,6 +1241,7 @@ impl UnaryOp {
             UnaryOp::Sqrt => x.sqrt(),
             UnaryOp::Sigmoid => 1.0 / (1.0 + (-x).exp()),
             UnaryOp::Tanh => x.tanh(),
+            UnaryOp::Erf => erf(x),
         }
     }
 }
@@ -1310,4 +1313,31 @@ impl ReduceOp {
             total
         }
     }
+}
+
+/// Formula and coefficients from https://en.wikipedia.org/wiki/Error_function#Numerical_approximations (Abramowitz and Stegun),
+/// Max error `3e-7`. We use f64 internally to ensure there are no additional errors introduced.
+pub fn erf(x: f32) -> f32 {
+    let sign = x.signum();
+    let x_abs = x.abs() as f64;
+
+    const A: &[f64] = &[
+        1.0,
+        0.0705230784,
+        0.0422820123,
+        0.0092705272,
+        0.0001520143,
+        0.0002765672,
+        0.0000430638,
+    ];
+
+    let d: f64 = A
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, a)| a * x_abs.powi(i as i32))
+        .sum();
+    let y_abs = 1.0 - 1.0 / d.powi(16);
+
+    return sign * y_abs as f32;
 }

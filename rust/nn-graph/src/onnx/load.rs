@@ -159,7 +159,7 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                 let result = graph.clamp(input, min, max);
                 TypedValue::FloatTensor(result)
             }
-            "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" => {
+            "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" | "Erf" => {
                 let input = inputs.required(0).unwrap_float();
 
                 let result = match op_type {
@@ -172,7 +172,8 @@ pub fn onnx_proto_to_graph(model: &ModelProto) -> Graph {
                     "Sqrt" => graph.unary(UnaryOp::Sqrt, input),
                     "Sigmoid" => graph.unary(UnaryOp::Sigmoid, input),
                     "Relu" => graph.relu(input),
-                    "Tanh" => graph.unary(UnaryOp::Sigmoid, input),
+                    "Tanh" => graph.unary(UnaryOp::Tanh, input),
+                    "Erf" => graph.unary(UnaryOp::Erf, input),
                     _ => unreachable!(),
                 };
 
