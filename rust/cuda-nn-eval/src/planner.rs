@@ -365,23 +365,12 @@ impl<'a> Planner<'a> {
             }
             &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true)?,
             &Operation::Unary { input, op } => {
-                let operation = match op {
-                    UnaryOp::Abs => "*x0 = fabs(*x1);",
-                    UnaryOp::Neg => "*x0 = -(*x1);",
-                    UnaryOp::Sin => "*x0 = sin(*x1);",
-                    UnaryOp::Cos => "*x0 = cos(*x1);",
-                    UnaryOp::Exp => "*x0 = exp(*x1);",
-                    UnaryOp::Log => "*x0 = log(*x1);",
-                    UnaryOp::Sqrt => "*x0 = sqrt(*x1);",
-                    UnaryOp::Sigmoid => "*x0 = 1.0 / (1.0 + exp(-(*x1)));",
-                    UnaryOp::Tanh => "*x0 = tanh(*x1);",
-                    UnaryOp::Erf => "*x0 = erff(*x1);",
-                };
+                let op_str = format!("*x0 = {};", unary_op_str(op, "*x1"));
 
                 let input = self.visit(input)?;
                 let output = self.alloc_tensor_shared(result_shape);
 
-                self.plan_scalar_op(operation, vec![output.clone(), input], &result_info.debug_id);
+                self.plan_scalar_op(&op_str, vec![output.clone(), input], &result_info.debug_id);
 
                 output
             }
@@ -883,5 +872,20 @@ fn binary_op_str(op: BinaryOp, a: &str, b: &str) -> String {
         BinaryOp::Min => format!("min({}, {})", a, b),
         BinaryOp::Max => format!("max({}, {})", a, b),
         BinaryOp::Pow => format!("powf({}, {})", a, b),
+    }
+}
+
+fn unary_op_str(op: UnaryOp, x: &str) -> String {
+    match op {
+        UnaryOp::Abs => format!("fabs({})", x),
+        UnaryOp::Neg => format!("-({})", x),
+        UnaryOp::Sin => format!("sin({})", x),
+        UnaryOp::Cos => format!("cos({})", x),
+        UnaryOp::Exp => format!("exp({})", x),
+        UnaryOp::Log => format!("log({})", x),
+        UnaryOp::Sqrt => format!("sqrt({})", x),
+        UnaryOp::Sigmoid => format!("1.0 / (1.0 + exp(-({})))", x),
+        UnaryOp::Tanh => format!("tanh({})", x),
+        UnaryOp::Erf => format!("erff({})", x),
     }
 }
