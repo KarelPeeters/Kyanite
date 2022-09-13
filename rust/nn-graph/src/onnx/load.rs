@@ -2,10 +2,12 @@ use byteorder::{ByteOrder, LittleEndian};
 use itertools::{zip_eq, Itertools};
 use num_traits::cast;
 use prost::Message;
+use rand::{thread_rng, Rng};
 
 pub use crate::graph::Graph;
 use crate::graph::{broadcast_shape_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp};
 use crate::onnx::inputs::{Attributes, Inputs};
+use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
@@ -930,6 +932,8 @@ fn load_initializers<'a>(graph: &mut Graph, store: &mut Store<'a, TypedValue>, i
 }
 
 fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto) -> TypedValue {
+    let data_location = DataLocation::from_i32(tensor.data_location).expect("Illegal data_location");
+
     // figure out the shape
     let dims = tensor.dims.iter().map(|&d| Size::fixed(d as usize)).collect_vec();
     let shape = Shape::new(dims);
@@ -937,6 +941,21 @@ fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto) -> TypedValue {
 
     // load the data
     let data_type = DataType::from_i32(tensor.data_type).expect("Illegal data type");
+
+    // TODO actually load external data
+    if data_location == DataLocation::External {
+        let mut rng = thread_rng();
+        let data = (0..size).map(|_| rng.gen()).collect_vec();
+        let value = graph.constant(shape, data);
+
+        let result = match data_type {
+            DataType::Float | DataType::Double => TypedValue::FloatTensor(value),
+            DataType::Int64 => TypedValue::IntTensor(value),
+            _ => panic!("Unexpected data type {:?} {}", data_type, tensor.data_type),
+        };
+
+        return result;
+    }
 
     let (is_int, data) = match data_type {
         DataType::Float => {
