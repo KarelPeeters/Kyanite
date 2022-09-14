@@ -778,7 +778,13 @@ impl<'a> Planner<'a> {
             }
             _ => {
                 assert!(!is_root);
-                let y = block.load_operand_y(self.visit(value)?);
+
+                let y = if let Some(f) = self.graph.as_single_const(value) {
+                    block.define_y(&format!("{}", f))
+                } else {
+                    block.load_operand_y(self.visit(value)?)
+                };
+
                 return Ok(y);
             }
         };
@@ -887,6 +893,12 @@ impl ScalarBlock {
             writeln!(&mut self.operation, "float y{} = *x{};", y, x).unwrap();
             y
         }
+    }
+
+    fn define_y(&mut self, value: &str) -> usize {
+        let y = self.alloc_y();
+        writeln!(&mut self.operation, "float y{} = {};", y, value).unwrap();
+        y
     }
 
     fn store_operand_y(&mut self, operand: PlanTensor, y: usize) {
