@@ -289,7 +289,7 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_single_new(&mut self, value: Value) -> VisitResult<PlanTensor> {
-        if let Some(result) = self.visit_fused_conv(value)? {
+        if let Some(result) = self.try_visit_fused_conv(value)? {
             return Ok(result);
         }
 
@@ -578,7 +578,7 @@ impl<'a> Planner<'a> {
         self.steps.push(step_info);
     }
 
-    fn visit_fused_conv(&mut self, value: Value) -> VisitResult<Option<PlanTensor>> {
+    fn try_visit_fused_conv(&mut self, value: Value) -> VisitResult<Option<PlanTensor>> {
         if self.graph[value].shape.rank() != 4 {
             return Ok(None);
         }
@@ -751,7 +751,7 @@ impl<'a> Planner<'a> {
 
         let mut block = ScalarBlock::default();
         let result_y = self.visit_fused_scalar_recurse(value, &mut block, true)?;
-        block.store_operand_y(result.clone(), result_y);
+        block.store_operand_y(&result, result_y);
 
         self.plan_scalar_op(&block.operation, block.operands, &self.graph[value].debug_id);
 
@@ -765,6 +765,20 @@ impl<'a> Planner<'a> {
         is_root: bool,
     ) -> VisitResult<usize> {
         // TODO this should really check whether all users can be fused into a scalar block
+
+        // try fusing conv (and looking in the cache for fused convs) first,
+        //   to avoid "stealing" the relu, add, or bias
+        // TODO this is pretty hacky, imrpove how all of this works
+        {
+            if let Some(result) = self.map.get(&value) {
+                return Ok(block.load_operand_y(result));
+            }
+            if let Some(result) = self.try_visit_fused_conv(value)? {
+                let y = block.load_operand_y(&result);
+                self.insert_mapping(value, result);
+                return Ok(y);
+            }
+        }
 
         let op_str = match &self.graph[value].operation {
             &Operation::Unary { op, input } => {
@@ -782,7 +796,7 @@ impl<'a> Planner<'a> {
                 let y = if let Some(f) = self.graph.as_single_const(value) {
                     block.define_y(&format!("{}", f))
                 } else {
-                    block.load_operand_y(self.visit(value)?)
+                    block.load_operand_y(&self.visit(value)?)
                 };
 
                 return Ok(y);
@@ -867,22 +881,22 @@ impl ScalarBlock {
         y
     }
 
-    fn push_operand_x(&mut self, operand: PlanTensor) -> usize {
+    fn push_operand_x(&mut self, operand: &PlanTensor) -> usize {
         if let Some(other) = self.operands.get(0) {
             assert_eq!(operand.shape().shape(), other.shape().shape());
         }
 
-        if let Some(x) = self.operands.iter().position(|o| o == &operand) {
+        if let Some(x) = self.operands.iter().position(|o| o == operand) {
             x
         } else {
             let x = self.operands.len();
-            self.operands.push(operand);
+            self.operands.push(operand.clone());
             self.loaded_operands.push(None);
             x
         }
     }
 
-    fn load_operand_y(&mut self, operand: PlanTensor) -> usize {
+    fn load_operand_y(&mut self, operand: &PlanTensor) -> usize {
         let x = self.push_operand_x(operand);
 
         if let Some(y) = self.loaded_operands[x] {
@@ -901,7 +915,7 @@ impl ScalarBlock {
         y
     }
 
-    fn store_operand_y(&mut self, operand: PlanTensor, y: usize) {
+    fn store_operand_y(&mut self, operand: &PlanTensor, y: usize) {
         let x = self.push_operand_x(operand);
         writeln!(&mut self.operation, "*x{} = y{};", x, y).unwrap();
     }
