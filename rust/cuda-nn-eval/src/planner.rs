@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
@@ -26,14 +27,14 @@ use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
 use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum PlanBuffer {
     Dedicated(DevicePtr),
     Shared { index: usize },
     Zero,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct PlanPtr {
     buffer: PlanBuffer,
     offset_bytes: isize,
@@ -361,30 +362,10 @@ impl<'a> Planner<'a> {
                 result
             }
             &Operation::Conv { .. } => {
-                unreachable!("conv should have been handled earlier by the fuser")
+                unreachable!("Conv should have been handled by conv fuser")
             }
             &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true)?,
-            &Operation::Unary { input, op } => {
-                let op_str = format!("*x0 = {};", unary_op_str(op, "*x1"));
-
-                let input = self.visit(input)?;
-                let output = self.alloc_tensor_shared(result_shape);
-
-                self.plan_scalar_op(&op_str, vec![output.clone(), input], &result_info.debug_id);
-
-                output
-            }
-            &Operation::Binary { left, right, op } => {
-                let op_str = format!("*x0 = {};", binary_op_str(op, "*x1", "*x2"));
-
-                let left = self.visit(left)?;
-                let right = self.visit(right)?;
-                let output = self.alloc_tensor_shared(result_shape);
-
-                self.plan_scalar_op(&op_str, vec![output.clone(), left, right], &result_info.debug_id);
-
-                output
-            }
+            &Operation::Unary { .. } | &Operation::Binary { .. } => self.visit_fused_scalar(value)?,
             &Operation::Softmax { input, axis } => {
                 let input = self.visit(input)?;
                 let output = self.alloc_tensor_shared(result_shape);
@@ -759,6 +740,54 @@ impl<'a> Planner<'a> {
         }
     }
 
+    fn visit_fused_scalar(&mut self, value: Value) -> VisitResult<PlanTensor> {
+        assert!(matches!(
+            self.graph[value].operation,
+            Operation::Unary { .. } | Operation::Binary { .. }
+        ));
+
+        let result_shape = self.graph[value].shape.eval(self.batch_size);
+        let result = self.alloc_tensor_shared(result_shape);
+
+        let mut block = ScalarBlock::default();
+        let result_y = self.visit_fused_scalar_recurse(value, &mut block, true)?;
+        block.store_operand_y(result.clone(), result_y);
+
+        self.plan_scalar_op(&block.operation, block.operands, &self.graph[value].debug_id);
+
+        Ok(result)
+    }
+
+    fn visit_fused_scalar_recurse(
+        &mut self,
+        value: Value,
+        block: &mut ScalarBlock,
+        is_root: bool,
+    ) -> VisitResult<usize> {
+        // TODO this should really check whether all users can be fused into a scalar block
+
+        let op_str = match &self.graph[value].operation {
+            &Operation::Unary { op, input } => {
+                let y_input = self.visit_fused_scalar_recurse(input, block, false)?;
+                unary_op_str(op, &format!("y{}", y_input))
+            }
+            &Operation::Binary { op, left, right } => {
+                let y_left = self.visit_fused_scalar_recurse(left, block, false)?;
+                let y_right = self.visit_fused_scalar_recurse(right, block, false)?;
+                binary_op_str(op, &format!("y{}", y_left), &format!("y{}", y_right))
+            }
+            _ => {
+                assert!(!is_root);
+                let y = block.load_operand_y(self.visit(value)?);
+                return Ok(y);
+            }
+        };
+
+        let y_output = block.alloc_y();
+        writeln!(&mut block.operation, "float y{} = {};", y_output, op_str).unwrap();
+        Ok(y_output)
+    }
+
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, id: &str) {
         assert_eq!(old.shape().shape(), new.shape().shape());
 
@@ -811,6 +840,58 @@ impl<'a> Planner<'a> {
 
     fn can_fuse(&self, value: Value) -> bool {
         self.graph.is_hidden_with_users(value, 1)
+    }
+}
+
+#[derive(Debug, Default)]
+struct ScalarBlock {
+    // map operand to x index
+    operands: Vec<PlanTensor>,
+    // map operand x to y index
+    loaded_operands: Vec<Option<usize>>,
+
+    operation: String,
+    next_y_index: usize,
+}
+
+impl ScalarBlock {
+    fn alloc_y(&mut self) -> usize {
+        let y = self.next_y_index;
+        self.next_y_index += 1;
+        y
+    }
+
+    fn push_operand_x(&mut self, operand: PlanTensor) -> usize {
+        if let Some(other) = self.operands.get(0) {
+            assert_eq!(operand.shape().shape(), other.shape().shape());
+        }
+
+        if let Some(x) = self.operands.iter().position(|o| o == &operand) {
+            x
+        } else {
+            let x = self.operands.len();
+            self.operands.push(operand);
+            self.loaded_operands.push(None);
+            x
+        }
+    }
+
+    fn load_operand_y(&mut self, operand: PlanTensor) -> usize {
+        let x = self.push_operand_x(operand);
+
+        if let Some(y) = self.loaded_operands[x] {
+            y
+        } else {
+            let y = self.alloc_y();
+            self.loaded_operands[x] = Some(y);
+            writeln!(&mut self.operation, "float y{} = *x{};", y, x).unwrap();
+            y
+        }
+    }
+
+    fn store_operand_y(&mut self, operand: PlanTensor, y: usize) {
+        let x = self.push_operand_x(operand);
+        writeln!(&mut self.operation, "*x{} = y{};", x, y).unwrap();
     }
 }
 
