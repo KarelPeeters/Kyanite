@@ -4,6 +4,7 @@ use internal_iterator::InternalIterator;
 
 use crate::autokernel::gather::GatherKernel;
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
+use nn_graph::graph::Value;
 
 use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::ReduceKernel;
@@ -13,6 +14,7 @@ use crate::offset_tensor::PtrTensor;
 
 #[derive(Debug)]
 pub struct StepInfo<P> {
+    pub debug_value: Value,
     pub debug_id: String,
     pub step: Step<P>,
 }
