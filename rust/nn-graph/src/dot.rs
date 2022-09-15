@@ -41,11 +41,16 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
                 input: _,
                 filter: _,
                 details,
-            } => (
-                "blue",
-                "Conv",
-                vec![("kernel", format!("{}x{}", details.kernel_h, details.kernel_w))],
-            ),
+            } => {
+                let mut attrs = vec![("kernel", format!("{}x{}", details.kernel_h, details.kernel_w))];
+                if details.has_stride() {
+                    attrs.push(("stride", format!("{}x{}", details.stride_y, details.stride_x)));
+                }
+                if !details.keeps_spatial_shape() {
+                    attrs.push(("padding", format!("{}x{}", details.padding_y, details.padding_x)));
+                }
+                ("blue", "Conv", attrs)
+            }
             Operation::MatMul { left: _, right: _ } => ("blue", "MatMul", vec![]),
             Operation::Unary { input: _, op } => ("green", "Unary", vec![("op", format!("{:?}", op))]),
             Operation::Binary { left: _, right: _, op } => ("green", "Binary", vec![("op", format!("{:?}", op))]),
@@ -61,6 +66,9 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
         };
 
         attrs.insert(0, ("shape", format!("{}", info.shape)));
+        if let Some(output_index) = graph.outputs().iter().position(|&v| v == value) {
+            attrs.insert(1, ("output", format!("{}", output_index)));
+        }
 
         let mut table = String::new();
         writeln!(&mut table, "<TABLE BORDER=\"0\">").unwrap();
