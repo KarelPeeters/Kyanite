@@ -187,7 +187,7 @@ impl<'a> Planner<'a> {
             }
 
             for (ti, &(start, end)) in live_ranges.iter().enumerate() {
-                if start < si && end == si {
+                if start <= si && end == si {
                     // free the given tensor
                     let size_bytes = planner.shared_buffers[ti].size_bytes;
                     curr_shared_bytes -= size_bytes;
