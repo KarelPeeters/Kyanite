@@ -340,6 +340,15 @@ impl Graph {
         self.is_hidden(value) && self[value].users == users
     }
 
+    pub fn is_const(&self, value: Value) -> bool {
+        let operation = &self[value].operation;
+        match *operation {
+            Operation::Input { .. } => false,
+            Operation::Constant { .. } => true,
+            _ => operation.inputs().into_iter().all(|input| self.is_const(input)),
+        }
+    }
+
     /// Try to evaluate `value` as a constant.
     pub fn as_const(&self, value: Value) -> Option<Tensor> {
         run_cpu_const_operation(&self[value], |x| self.as_const(x).ok_or(OperationError::MissingOperand)).ok()
@@ -1157,6 +1166,16 @@ impl Debug for Value {
             write!(f, "Value {{ index: {}, check: {} }}", index, check)
         } else {
             write!(f, "Value({})", index)
+        }
+    }
+}
+
+impl Display for SliceRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.step == 1 {
+            write!(f, "{}:{}", self.start, self.end)
+        } else {
+            write!(f, "{}:{}:{}", self.start, self.end, self.step)
         }
     }
 }
