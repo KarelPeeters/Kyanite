@@ -131,7 +131,7 @@ impl<'a> Planner<'a> {
 
             for (si, step_info) in planner.steps.iter().enumerate() {
                 step_info.step.ptr_operands().for_each(|op| {
-                    if let &PlanBuffer::Shared { index } = &op.buffer {
+                    if let &PlanBuffer::Shared { index } = &op.value.buffer {
                         let (lower, upper) = &mut live_ranges[index];
                         *lower = min(*lower, si);
                         *upper = max(*upper, si);
