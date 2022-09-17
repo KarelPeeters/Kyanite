@@ -16,7 +16,13 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
 
         let (color, op, mut attrs) = match info.operation {
             Operation::Input { index } => ("gray", "Input", vec![("index", format!("index = {}", index))]),
-            Operation::Constant { data: _ } => ("gray", "Constant", vec![]),
+            Operation::Constant { ref data } => {
+                let mut attrs = vec![];
+                if data.len() == 1 {
+                    attrs.push(("value", format!("{}", data[0])));
+                }
+                ("gray", "Constant", attrs)
+            }
             Operation::View { input: _ } => ("brown", "View", vec![]),
             Operation::Broadcast { input: _ } => ("brown", "Broadcast", vec![]),
             Operation::Permute {
