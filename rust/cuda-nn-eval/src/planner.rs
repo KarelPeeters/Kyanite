@@ -326,7 +326,7 @@ impl<'a> Planner<'a> {
                 // TODO if we want the output to be simple strided immediately we need separate input/output shapes
                 //    in the scalar kernel
                 input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
-                    let input_shape = ConcreteShape::new(input_tensor.shape().shape().to_vec());
+                    let input_shape = ConcreteShape::new(input_tensor.strided_shape().shape().to_vec());
                     let result = self.alloc_tensor_shared(input_shape, Some(value));
                     self.plan_copy_tensor(&input_tensor, &result, value);
                     result.view(result_shape.dims.clone()).unwrap()
@@ -344,7 +344,13 @@ impl<'a> Planner<'a> {
                 let indices = self.visit(indices)?;
                 let output = self.alloc_tensor_shared(result_shape, Some(value));
 
-                let kernel = GatherKernel::new(self.device(), input.shape(), indices.shape(), output.shape(), axis);
+                let kernel = GatherKernel::new(
+                    self.device(),
+                    input.strided_shape(),
+                    indices.strided_shape(),
+                    output.strided_shape(),
+                    axis,
+                );
 
                 let args = GatherOpArgs {
                     kernel,
@@ -364,7 +370,7 @@ impl<'a> Planner<'a> {
                 let mut curr_start = 0;
 
                 for input in inputs {
-                    let curr_size = input.shape().shape()[axis];
+                    let curr_size = input.strided_shape().shape()[axis];
                     let curr_range = SliceRange::simple(curr_start, curr_start + curr_size);
 
                     let curr_result = result.slice(axis, curr_range);
@@ -384,7 +390,7 @@ impl<'a> Planner<'a> {
                 let input = self.visit(input)?;
                 let output = self.alloc_tensor_shared(result_shape, Some(value));
 
-                let kernel = SoftmaxKernel::new(self.device(), input.shape(), output.shape(), axis);
+                let kernel = SoftmaxKernel::new(self.device(), input.strided_shape(), output.strided_shape(), axis);
 
                 let args = SoftmaxOpArgs {
                     kernel,
@@ -399,15 +405,15 @@ impl<'a> Planner<'a> {
                 let (alpha_0, input_0, alpha_1, input_1) = self.visit_scalable_added_pair(input)?;
 
                 if let Some(input_1) = &input_1 {
-                    assert_eq!(input_0.shape(), input_1.shape());
+                    assert_eq!(input_0.strided_shape(), input_1.strided_shape());
                 }
 
                 let output = self.alloc_tensor_shared(result_shape, Some(value));
 
                 let kernel = LayernormKernel::new(
                     self.device(),
-                    input_0.shape(),
-                    output.shape(),
+                    input_0.strided_shape(),
+                    output.strided_shape(),
                     axis,
                     eps.into_inner(),
                     alpha_0,
@@ -434,7 +440,7 @@ impl<'a> Planner<'a> {
                 let identity = op.identity();
                 let (operation, is_mean) = op.operation();
                 let scale = if is_mean {
-                    result_size as f32 / input.shape().size() as f32
+                    result_size as f32 / input.strided_shape().size() as f32
                 } else {
                     1.0
                 };
@@ -446,7 +452,8 @@ impl<'a> Planner<'a> {
                     post_process: format!("curr * {}", scale),
                 };
 
-                let kernel = ReduceKernel::new(self.device(), code, input.shape(), output.shape(), axes);
+                let kernel =
+                    ReduceKernel::new(self.device(), code, input.strided_shape(), output.strided_shape(), axes);
 
                 let args = ReduceOpArgs {
                     kernel,
@@ -472,7 +479,7 @@ impl<'a> Planner<'a> {
             let (alpha_0, input_0) = self.visit_scalable_value(left)?;
             let (alpha_1, input_1) = self.visit_scalable_value(right)?;
 
-            if input_0.shape() != input_1.shape() {
+            if input_0.strided_shape() != input_1.strided_shape() {
                 // fallback to scalar operation
                 let total = self.visit(input)?;
                 (1.0, total, 0.0, None)
@@ -505,10 +512,10 @@ impl<'a> Planner<'a> {
     fn visit_ensure_simple_strides(&mut self, value: Value) -> VisitResult<PlanTensor> {
         let inner = self.visit(value)?;
 
-        let result = if inner.shape().has_simple_strides() {
+        let result = if inner.strided_shape().has_simple_strides() {
             inner
         } else {
-            let shape = ConcreteShape::new(inner.shape().shape().to_vec());
+            let shape = ConcreteShape::new(inner.strided_shape().shape().to_vec());
             let new = self.alloc_tensor_shared(shape, Some(value));
             self.plan_copy_tensor(&inner, &new, value);
             new
@@ -539,11 +546,11 @@ impl<'a> Planner<'a> {
         let left = self.visit(left)?;
         let right = self.visit(right)?;
 
-        assert!(left.shape().rank() == 3 && right.shape().rank() == 3);
-        let batch_size = left.shape().shape()[0];
-        let m = left.shape().shape()[1];
-        let k = left.shape().shape()[2];
-        let n = right.shape().shape()[2];
+        assert!(left.strided_shape().rank() == 3 && right.strided_shape().rank() == 3);
+        let batch_size = left.strided_shape().shape()[0];
+        let m = left.strided_shape().shape()[1];
+        let k = left.strided_shape().shape()[2];
+        let n = right.strided_shape().shape()[2];
 
         // TODO this could be generalized to consider any possible output permutation
         //   and picking the transpose and storage formats that fit best
@@ -575,7 +582,7 @@ impl<'a> Planner<'a> {
 
     fn insert_mapping(&mut self, value: Value, result: PlanTensor) {
         assert_eq!(
-            result.shape().shape(),
+            result.strided_shape().shape(),
             self.graph[value].shape.eval(self.batch_size).dims,
             "Got wrong result shape"
         );
@@ -697,10 +704,10 @@ impl<'a> Planner<'a> {
             let output = self.alloc_tensor_shared(output_shape, Some(value));
 
             // build descriptors
-            let input_desc = input.shape().descriptor();
-            let bias_desc = bias.shape().descriptor();
-            let filter_desc = filter.shape().filter_descriptor();
-            let output_desc = output.shape().descriptor();
+            let input_desc = input.strided_shape().descriptor();
+            let bias_desc = bias.strided_shape().descriptor();
+            let filter_desc = filter.strided_shape().filter_descriptor();
+            let output_desc = output.strided_shape().descriptor();
 
             let conv_desc = ConvolutionDescriptor::new(
                 details.padding_y as i32,
@@ -715,7 +722,7 @@ impl<'a> Planner<'a> {
 
             assert_eq!(
                 &conv_desc.output_shape(&input_desc, &filter_desc).map(|i| i as usize),
-                output.shape().shape(),
+                output.strided_shape().shape(),
                 "Output shape mismatch between cudnn and graph for value {:?} with operation {:?}",
                 curr,
                 graph[curr].operation,
@@ -820,20 +827,23 @@ impl<'a> Planner<'a> {
 
     // TODO participate in scalar fusion
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, debug_value: Value) {
-        assert_eq!(old.shape().shape(), new.shape().shape());
+        assert_eq!(old.strided_shape().shape(), new.strided_shape().shape());
 
         self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()], debug_value);
     }
 
     fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, debug_value: Value) {
         // add extra axis since ironically the scalar kernel doesn't work for scalar operands
-        let operands = if operands[0].shape().rank() == 0 {
+        let operands = if operands[0].strided_shape().rank() == 0 {
             operands.into_iter().map(|op| op.view(vec![1]).unwrap()).collect_vec()
         } else {
             operands
         };
 
-        let shapes = operands.iter().map(|operand| operand.shape().clone()).collect_vec();
+        let shapes = operands
+            .iter()
+            .map(|operand| operand.strided_shape().clone())
+            .collect_vec();
         let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes);
 
         let args = ScalarOpArgs { kernel, operands };
@@ -898,7 +908,7 @@ impl ScalarBlock {
 
     fn push_operand_x(&mut self, operand: &PlanTensor) -> usize {
         if let Some(other) = self.operands.get(0) {
-            assert_eq!(operand.shape().shape(), other.shape().shape());
+            assert_eq!(operand.strided_shape().shape(), other.strided_shape().shape());
         }
 
         if let Some(x) = self.operands.iter().position(|o| o == operand) {

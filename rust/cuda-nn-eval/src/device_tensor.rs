@@ -29,7 +29,7 @@ impl DeviceTensor {
     }
 
     pub fn deep_clone(&self) -> DeviceTensor {
-        let new = DeviceTensor::alloc_simple(self.device(), self.shape().shape().to_vec());
+        let new = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
         unsafe {
             new.copy_from(self);
         }
@@ -39,45 +39,45 @@ impl DeviceTensor {
     pub unsafe fn copy_simple_from_host(&self, buffer: &[f32]) {
         assert_eq!(
             buffer.len(),
-            self.shape().size(),
+            self.strided_shape().size(),
             "Wrong buffer size {} for {:?}",
             buffer.len(),
-            self.shape()
+            self.strided_shape()
         );
         assert!(
-            self.shape().has_simple_strides(),
+            self.strided_shape().has_simple_strides(),
             "Tensor must have simple strides for now, got {:?}",
-            self.shape()
+            self.strided_shape()
         );
         assert_eq!(
             buffer.len(),
-            self.shape().size(),
+            self.strided_shape().size(),
             "Wrong buffer size for {:?}",
-            self.shape()
+            self.strided_shape()
         );
         self.ptr().copy_linear_from_host(cast_slice(buffer));
     }
 
     pub unsafe fn copy_simple_to_host(&self, buffer: &mut [f32]) {
         assert_eq!(
-            self.shape().size(),
+            self.strided_shape().size(),
             buffer.len(),
             "Wrong buffer size {} for {:?}",
             buffer.len(),
-            self.shape()
+            self.strided_shape()
         );
         assert!(
-            self.shape().has_simple_strides(),
+            self.strided_shape().has_simple_strides(),
             "Tensor must have simple strides, got {:?}",
-            self.shape()
+            self.strided_shape()
         );
         self.ptr().copy_linear_to_host(cast_slice_mut(buffer));
     }
 
     pub fn copy_from_as_tensor_op(&self, other: &DeviceTensor) -> TensorOpArgs {
         assert_eq!(
-            self.shape().shape(),
-            other.shape().shape(),
+            self.strided_shape().shape(),
+            other.strided_shape().shape(),
             "Tensors must have the same shape: {:?} vs {:?}",
             self,
             other
@@ -92,30 +92,30 @@ impl DeviceTensor {
         TensorOpArgs {
             op_desc,
             alpha_1: 1.0,
-            input_1_desc: other.shape().descriptor(),
+            input_1_desc: other.strided_shape().descriptor(),
             input_1_ptr: other.ptr().clone(),
             alpha_2: 0.0,
             input_2_desc: rhs_desc,
             input_2_ptr: other.ptr().clone(),
             beta: 0.0,
-            output_desc: self.shape().descriptor(),
+            output_desc: self.strided_shape().descriptor(),
             output_ptr: self.ptr().clone(),
         }
     }
 
     pub unsafe fn copy_from(&self, other: &DeviceTensor) {
         assert_eq!(
-            self.shape().shape(),
-            other.shape().shape(),
+            self.strided_shape().shape(),
+            other.strided_shape().shape(),
             "Tensors must have the same shape: {:?} vs {:?}",
             self,
             other
         );
 
-        if self.shape() == other.shape() && self.shape().has_dense_strides() {
+        if self.strided_shape() == other.strided_shape() && self.strided_shape().has_dense_strides() {
             // if strides are dense and match we can just do a simple memcpy
             self.ptr()
-                .copy_linear_from_device(&other.ptr(), self.shape().size() * 4)
+                .copy_linear_from_device(&other.ptr(), self.strided_shape().size() * 4)
         } else {
             // otherwise use the TensorOp restride trick
             let handle = CudnnHandle::new(self.device());
@@ -128,16 +128,16 @@ impl DeviceTensor {
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_from_host_staged(&self, buffer: &[f32]) {
         assert_eq!(
-            self.shape().size(),
+            self.strided_shape().size(),
             buffer.len(),
             "Wrong buffer size for {:?}",
-            self.shape()
+            self.strided_shape()
         );
 
-        if self.shape().has_simple_strides() {
+        if self.strided_shape().has_simple_strides() {
             self.copy_simple_from_host(buffer);
         } else {
-            let stage = DeviceTensor::alloc_simple(self.device(), self.shape().shape().to_vec());
+            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
             stage.copy_simple_from_host(buffer);
             self.copy_from(&stage);
         }
@@ -147,16 +147,16 @@ impl DeviceTensor {
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_to_host_staged(&self, buffer: &mut [f32]) {
         assert_eq!(
-            self.shape().size(),
+            self.strided_shape().size(),
             buffer.len(),
             "Wrong buffer size for {:?}",
-            self.shape()
+            self.strided_shape()
         );
 
-        if self.shape().has_simple_strides() {
+        if self.strided_shape().has_simple_strides() {
             self.copy_simple_to_host(buffer);
         } else {
-            let stage = DeviceTensor::alloc_simple(self.device(), self.shape().shape().to_vec());
+            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
             stage.copy_from(self);
             stage.copy_simple_to_host(buffer);
         }

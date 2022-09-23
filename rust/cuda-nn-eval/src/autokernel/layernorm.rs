@@ -101,11 +101,11 @@ impl LayernormKernel {
         input1: Option<&DeviceTensor>,
         output: &DeviceTensor,
     ) {
-        assert_eq!(input0.shape(), &self.input_shape);
+        assert_eq!(input0.strided_shape(), &self.input_shape);
         if let Some(input1) = input1 {
-            assert_eq!(input1.shape(), &self.input_shape);
+            assert_eq!(input1.strided_shape(), &self.input_shape);
         }
-        assert_eq!(output.shape(), &self.output_shape);
+        assert_eq!(output.strided_shape(), &self.output_shape);
 
         if self._alpha1 != 0.0 {
             assert_eq!(input1.is_some(), true);

@@ -44,12 +44,12 @@ impl BatchQuantizer {
         tensor: &DeviceTensor,
         quantized: impl Iterator<Item = &'a QuantizedStorage>,
     ) -> (usize, usize) {
-        assert!(tensor.shape().has_simple_strides());
-        assert!(tensor.shape().rank() >= 2, "Tensor must have at least rank 2");
+        assert!(tensor.strided_shape().has_simple_strides());
+        assert!(tensor.strided_shape().rank() >= 2, "Tensor must have at least rank 2");
         assert_eq!(tensor.device(), self.device());
 
-        let batch_size = tensor.shape().shape()[0];
-        let size = tensor.shape().shape()[1..].iter().product::<usize>();
+        let batch_size = tensor.strided_shape().shape()[0];
+        let size = tensor.strided_shape().shape()[1..].iter().product::<usize>();
 
         // collect pointers
         let mut q_batch_size = 0;
@@ -62,7 +62,7 @@ impl BatchQuantizer {
                 "Size mismatch: got size {}, but expected {} for tensor shape {:?}",
                 q.size,
                 size,
-                tensor.shape()
+                tensor.strided_shape()
             );
             assert_eq!(q.device(), self.device());
 
@@ -76,7 +76,7 @@ impl BatchQuantizer {
             batch_size,
             q_batch_size,
             "Batch size mismatch, tensor {:?} but got {} quantized storages",
-            tensor.shape().shape(),
+            tensor.strided_shape().shape(),
             q_batch_size
         );
 

@@ -30,7 +30,7 @@ impl<P> PtrTensor<P> {
         &self.ptr
     }
 
-    pub fn shape(&self) -> &StridedShape {
+    pub fn strided_shape(&self) -> &StridedShape {
         &self.shape
     }
 
@@ -105,7 +105,7 @@ impl<P: OffsetPtr> PtrTensor<P> {
 impl<P: Clone> PtrTensor<P> {
     //TODO move this somewhere else, this is pretty random
     pub fn to_mat_mul_arg(&self) -> MatMulOperand<P> {
-        assert_eq!(self.shape().rank(), 3);
+        assert_eq!(self.strided_shape().rank(), 3);
 
         // prefer col-major in case of a tie, since cublas likes that more
         let (trans, lead_axis) = if self.shape.strides()[1] == 1 {
@@ -123,7 +123,7 @@ impl<P: Clone> PtrTensor<P> {
             ptr: self.ptr().clone(),
             trans,
             ld: self.shape.strides()[lead_axis] as i32,
-            stride: self.shape().strides()[0] as i64,
+            stride: self.strided_shape().strides()[0] as i64,
         }
     }
 }

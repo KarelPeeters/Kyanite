@@ -72,11 +72,11 @@ impl CudaExecutor {
 
         let input_buffers = inputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.shape().size() * 4, false))
+            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
             .collect();
         let output_buffers = outputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.shape().size() * 4, false))
+            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
             .collect();
 
         CudaExecutor {
@@ -101,7 +101,7 @@ impl CudaExecutor {
         // map the inputs to slices
         let inputs = enumerate(inputs)
             .map(|(i, x)| {
-                assert_eq!(x.shape(), self.inputs[i].shape().shape());
+                assert_eq!(x.shape(), self.inputs[i].strided_shape().shape());
                 x.as_slice().expect("Only sliceable inputs supported")
             })
             .collect_vec();
@@ -113,7 +113,7 @@ impl CudaExecutor {
         let outputs = (0..self.outputs.len())
             .map(|i| unsafe {
                 Tensor::from_shape_vec(
-                    self.outputs[i].shape().shape(),
+                    self.outputs[i].strided_shape().shape(),
                     cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned(),
                 )
                 .unwrap()
@@ -133,7 +133,7 @@ impl CudaExecutor {
             // copy inputs to buffers and then to device
             for (slice, buffer, tensor) in multizip((inputs, &self.input_buffers, &self.inputs)) {
                 buffer.as_slice().copy_from_slice(cast_slice::<f32, u8>(slice));
-                assert!(tensor.shape().has_simple_strides());
+                assert!(tensor.strided_shape().has_simple_strides());
                 tensor.ptr().copy_linear_from_host_async(buffer, self.stream());
             }
 

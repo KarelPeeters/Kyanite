@@ -87,9 +87,9 @@ impl GatherKernel {
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, indices: &DeviceTensor, output: &DeviceTensor) {
-        assert_eq!(input.shape(), &self.input_shape);
-        assert_eq!(indices.shape(), &self.indices_shape);
-        assert_eq!(output.shape(), &self.output_shape);
+        assert_eq!(input.strided_shape(), &self.input_shape);
+        assert_eq!(indices.strided_shape(), &self.indices_shape);
+        assert_eq!(output.strided_shape(), &self.output_shape);
 
         let mut args = KernelArgs::new();
         args.push(input.ptr().ptr());
