@@ -4,7 +4,7 @@ use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use std::ptr::null_mut;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, DisplayCFloat, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -62,10 +62,10 @@ impl LayernormKernel {
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$STATIC_SIZE$", format!("{}", static_size)),
             ("$NORM_SIZE$", format!("{}", norm_size)),
-            ("$EPS$", format!("{}", eps)),
-            ("$ALPHA_0$", format!("{}", alpha_0)),
-            ("$ALPHA_1$", format!("{}", alpha_1)),
-            ("$BETA$", format!("{}", beta)),
+            ("$EPS$", format!("{}", DisplayCFloat(eps))),
+            ("$ALPHA_0$", format!("{}", DisplayCFloat(alpha_0))),
+            ("$ALPHA_1$", format!("{}", DisplayCFloat(alpha_1))),
+            ("$BETA$", format!("{}", DisplayCFloat(beta))),
             ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
             ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
             ("$NORM_STRIDES$", c_array_string(&norm_strides)),

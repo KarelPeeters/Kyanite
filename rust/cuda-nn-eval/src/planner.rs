@@ -6,6 +6,7 @@ use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
+use crate::autokernel::common::DisplayCFloat;
 use cuda_sys::bindings::cudnnActivationMode_t;
 use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
@@ -447,9 +448,9 @@ impl<'a> Planner<'a> {
 
                 let code = ReduceCode {
                     ty: "float".to_owned(),
-                    identity: format!("{}", identity).replace("inf", "(1.0/0.0)"),
+                    identity: format!("{}", DisplayCFloat(identity)),
                     operation: binary_op_str(operation, "curr", "x"),
-                    post_process: format!("curr * {}", scale),
+                    post_process: format!("curr * {}", DisplayCFloat(scale)),
                 };
 
                 let kernel =
@@ -811,7 +812,7 @@ impl<'a> Planner<'a> {
                 assert!(!is_root);
 
                 let y = if let Some(f) = self.graph.as_single_const(value) {
-                    block.define_y(&format!("{}", f))
+                    block.define_y(&format!("{}", DisplayCFloat(f)))
                 } else {
                     block.load_operand_y(&self.visit(value)?)
                 };
