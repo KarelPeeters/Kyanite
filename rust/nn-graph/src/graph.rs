@@ -52,7 +52,7 @@ pub enum Operation {
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
     View { input: Value },
-    /// Repeat along axes with size 1 that don't match the output shape.
+    /// Repeat along all axes with size 1 that don't match the output shape.
     Broadcast { input: Value },
     /// Change the order of axis in the shape.
     Permute { input: Value, permutation: Vec<usize> },
@@ -535,6 +535,25 @@ impl Graph {
         self.push(new_shape, Operation::Broadcast { input: curr })
     }
 
+    pub fn repeat_unary(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        let input_shape = &self[input].shape;
+        assert_eq!(
+            input_shape[axis],
+            Size::ONE,
+            "Input shape {} does not have dim 1 for axis {}",
+            input_shape,
+            axis
+        );
+
+        // TODO fuse consecutive broadcast operations, maybe even view/broadcast/view if the axes are independent
+        // skip broadcast operation
+        if count == Size::ONE {
+            return input;
+        }
+
+        self.push(input_shape.replace(axis, shape![count]), Operation::Broadcast { input })
+    }
+
     /// View a value with a flattened shape.
     /// All axis starting from `start_axis` inclusive are flattened into a single axis.
     #[must_use]
@@ -639,20 +658,37 @@ impl Graph {
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
+    /// This starts by emitting the entire tensor before repeating elements,
+    /// similar to `torch.repeat` or `numpy.tile`.
     pub fn repeat(&mut self, input: Value, axis: usize, count: Size) -> Value {
-        let input_shape = &self[input].shape;
+        self.repeat_impl(input, axis, count, false)
+    }
+
+    /// Repeat elements of `input` along a given `axis`, `count` times.
+    /// This starts by repeat each element before going to the next one,
+    /// similar to `torch.repeat_interleave` or `numpy.repeat`.
+    pub fn repeat_interleave(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        self.repeat_impl(input, axis, count, true)
+    }
+
+    fn repeat_impl(&mut self, input: Value, axis: usize, count: Size, inner: bool) -> Value {
+        let input_shape = self[input].shape.clone();
         input_shape.assert_has_axis(axis);
 
-        // do cheaper broadcast operation instead
+        // do simpler repeat operation instead
         if input_shape[axis] == Size::ONE {
-            return self.broadcast(input, input_shape.repeat_unary(axis, count));
+            return self.repeat_unary(input, axis, count);
         }
 
-        //TODO introduce separate (optimized) operation for repeat?
-        //TODO or switch to view + broadcast + view composition similar to tile instead?
-        let count = count.unwrap_fixed("repeat count for non-unary axis");
-        let base_shape = self[input].shape.replace(axis, shape![0]);
-        self.concat(vec![input; count], axis, Some(base_shape))
+        let new_size = input_shape[axis] * count;
+        let dummy_axis = if inner { axis + 1 } else { axis };
+
+        // insert dummy axis, repeat dummy axis, flatten into main axis
+        let extra = self.view(input, input_shape.insert(dummy_axis, Size::ONE));
+        let broad = self.repeat_unary(extra, dummy_axis, count);
+        let result = self.view(broad, input_shape.replace(axis, shape![new_size]));
+
+        result
     }
 
     /// Index `input` along the given `axis` with indices given by `indices`.

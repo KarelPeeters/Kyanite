@@ -2,8 +2,6 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_sys::wrapper::handle::Device;
 use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
 use nn_graph::shape;
@@ -104,23 +102,56 @@ fn flip_conv() {
 
 #[test]
 fn repeat() {
-    let tensor = DeviceTensor::alloc_simple(Device::new(0), vec![0]);
-    println!("{:?}", unsafe { tensor.ptr().ptr() });
-
     let mut graph = Graph::new();
-
-    let x = graph.constant(shape![2, 3], linspace_vec(6));
+    let mut rng = StdRng::seed_from_u64(0);
+    let input = graph.input(shape![2, 3]);
 
     let outputs = [
-        graph.repeat(x, 0, Size::fixed(0)),
-        graph.repeat(x, 0, Size::fixed(2)),
-        graph.repeat(x, 1, Size::fixed(0)),
-        graph.repeat(x, 1, Size::fixed(2)),
+        graph.repeat(input, 0, Size::fixed(0)),
+        graph.repeat(input, 0, Size::fixed(2)),
+        graph.repeat(input, 1, Size::fixed(0)),
+        graph.repeat(input, 1, Size::fixed(2)),
     ];
-
     graph.output_all(&outputs);
 
-    test_all(&graph, 0, &[], None);
+    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
+}
+
+#[test]
+fn repeat_interleave() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+    let input = graph.input(shape![2, 3]);
+
+    let outputs = [
+        graph.repeat_interleave(input, 0, Size::fixed(0)),
+        graph.repeat_interleave(input, 0, Size::fixed(2)),
+        graph.repeat_interleave(input, 1, Size::fixed(0)),
+        graph.repeat_interleave(input, 1, Size::fixed(2)),
+    ];
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
+}
+
+#[test]
+fn repeat_manual() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3]);
+    let outputs = [
+        graph.repeat(input, 0, Size::fixed(2)),
+        graph.repeat_interleave(input, 0, Size::fixed(2)),
+    ];
+    graph.output_all(&outputs);
+
+    let input_tensor = manual_tensor((3,), vec![1.0, 2.0, 3.0]);
+    let output_tensors = [
+        manual_tensor((6,), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
+        manual_tensor((6,), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
+    ];
+
+    test_all(&graph, 0, &[input_tensor], Some(&output_tensors))
 }
 
 #[test]
