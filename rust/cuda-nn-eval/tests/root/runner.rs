@@ -1,5 +1,5 @@
 use cuda_nn_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
-use nn_graph::cpu::{cpu_execute_graph, Tensor};
+use nn_graph::cpu::{cpu_eval_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
@@ -35,7 +35,7 @@ pub fn test_all_exact_graph(
 
     println!("Testing CPU");
 
-    let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
+    let cpu_outputs = cpu_eval_graph(graph, batch_size, inputs);
 
     let expected_outputs = if let Some(expected_outputs) = expected_outputs {
         assert_tensors_match(expected_outputs, &cpu_outputs, true);

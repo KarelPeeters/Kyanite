@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
 use indexmap::IndexMap;
@@ -9,11 +9,17 @@ use ndarray::{
 
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
+use crate::shape::ConcreteShape;
 
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
 
-pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> ExecutionInfo {
+pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Tensor> {
+    let exec = cpu_eval_graph_exec(&graph, batch_size, inputs, false);
+    exec.output_tensors()
+}
+
+pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], keep_all: bool) -> ExecutionInfo {
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
 
     let mut map: IndexMap<Value, CalculatedValue> = IndexMap::default();
@@ -25,12 +31,36 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
         let result = run_cpu_operation(info, &map, inputs, batch_size);
         let end_time = Instant::now();
 
-        let calc = CalculatedValue {
+        let tensor_shape = ConcreteShape::new(result.shape().to_vec());
+
+        let mut output_calc = CalculatedValue {
             value: output,
-            tensor: result,
+            tensor: Some(result),
+            tensor_shape,
+            uses_seen: 0,
             time_spent: (end_time - start_time).as_secs_f32(),
         };
-        let prev = map.insert(output, calc);
+
+        // free tensors that won't be used again
+        if !keep_all {
+            // immediately discard this output
+            if graph.is_hidden_with_uses(output, 0) {
+                output_calc.tensor = None
+            }
+
+            // discard inputs that just got used for the last time
+            for input in graph[output].operation.inputs() {
+                let input_calc: &mut CalculatedValue = map.get_mut(&input).unwrap();
+                input_calc.uses_seen += 1;
+
+                if graph.is_hidden_with_uses(input, input_calc.uses_seen) {
+                    input_calc.tensor = None;
+                }
+            }
+        }
+
+        // store output for later
+        let prev = map.insert(output, output_calc);
         assert!(prev.is_none());
     }
 
@@ -58,7 +88,7 @@ fn run_cpu_operation(
 ) -> Tensor {
     try_run_cpu_operation(
         info,
-        |value| Ok(map.get(&value).unwrap().tensor.clone()),
+        |value| Ok(map.get(&value).unwrap().tensor.as_ref().unwrap().clone()),
         |index| Ok(inputs[index].clone()),
         Some(batch_size),
     )
@@ -389,7 +419,9 @@ pub struct ExecutionInfo {
 
 pub struct CalculatedValue {
     pub value: Value,
-    pub tensor: Tensor,
+    pub tensor: Option<Tensor>,
+    pub tensor_shape: ConcreteShape,
+    pub uses_seen: usize,
     pub time_spent: f32,
 }
 
@@ -399,7 +431,14 @@ impl ExecutionInfo {
             .iter()
             .map(|v| {
                 // convert to standard layout so users get easily get &[f32] slices
-                self.values.get(v).unwrap().tensor.as_standard_layout().to_shared()
+                self.values
+                    .get(v)
+                    .unwrap()
+                    .tensor
+                    .as_ref()
+                    .unwrap()
+                    .as_standard_layout()
+                    .to_shared()
             })
             .collect_vec()
     }
@@ -409,8 +448,21 @@ impl Debug for CalculatedValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CalculatedTensor")
             .field("value", &self.value)
-            .field("shape", &self.tensor.dim())
+            .field("kept", &self.tensor.is_some())
+            .field("shape", &self.tensor_shape)
             .field("time_spent", &self.time_spent)
             .finish()
+    }
+}
+
+impl Display for ExecutionInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ExecutionInfo {{")?;
+        for (_, value) in &self.values {
+            writeln!(f, "  {:?}", value)?;
+        }
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 }

@@ -162,7 +162,7 @@ impl<'a> Optimizer<'a> {
                                                     // check that the intermediate values are not used elsewhere
                                                     if fused_values.iter().any(|(&fused_value, &count)| {
                                                         value != value
-                                                            && !self.old_graph.is_hidden_with_users(fused_value, count)
+                                                            && !self.old_graph.is_hidden_with_uses(fused_value, count)
                                                     }) {
                                                         return Ok(None);
                                                     }
@@ -296,7 +296,7 @@ impl<'a> Optimizer<'a> {
         let mut curr = start;
 
         loop {
-            if !self.old_graph.is_hidden_with_users(curr, 1) {
+            if !self.old_graph.is_hidden_with_uses(curr, 1) {
                 break;
             }
 

@@ -885,7 +885,7 @@ impl<'a> Planner<'a> {
     }
 
     fn can_fuse(&self, value: Value) -> bool {
-        self.graph.is_hidden_with_users(value, 1)
+        self.graph.is_hidden_with_uses(value, 1)
     }
 }
 

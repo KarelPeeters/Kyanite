@@ -7,7 +7,7 @@ use ndarray::IxDyn;
 
 use cuda_nn_eval::executor::CudaExecutor;
 use cuda_nn_eval::Device;
-use nn_graph::cpu::{cpu_execute_graph, Tensor};
+use nn_graph::cpu::{cpu_eval_graph, Tensor};
 use nn_graph::graph::Graph;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
@@ -167,13 +167,13 @@ fn profile_single_batch_size_cpu(graph: &Graph, batch_size: usize, n: usize) {
 
     println!("Warmup");
     for _ in 0..max(1, n / 10) {
-        cpu_execute_graph(graph, batch_size, &inputs);
+        cpu_eval_graph(graph, batch_size, &inputs);
     }
 
     println!("Throughput test");
     let start = Instant::now();
     for _ in 0..n {
-        cpu_execute_graph(graph, batch_size, &inputs);
+        cpu_eval_graph(graph, batch_size, &inputs);
     }
     let delta = (Instant::now() - start).as_secs_f32();
     let throughput = (batch_size * n) as f32 / delta;

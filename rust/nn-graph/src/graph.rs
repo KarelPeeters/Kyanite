@@ -32,8 +32,8 @@ pub struct Value {
 pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
-    pub users: usize,
     pub debug_id: String,
+    non_output_uses: usize,
 }
 
 /// Wrapper type that prevents the Debug output from getting too large.
@@ -336,8 +336,8 @@ impl Graph {
         !self.inputs.contains(&value) && !self.outputs.contains(&value)
     }
 
-    pub fn is_hidden_with_users(&self, value: Value, users: usize) -> bool {
-        self.is_hidden(value) && self[value].users == users
+    pub fn is_hidden_with_uses(&self, value: Value, users: usize) -> bool {
+        self.is_hidden(value) && self[value].non_output_uses == users
     }
 
     pub fn is_const(&self, value: Value) -> bool {
@@ -405,7 +405,7 @@ impl Graph {
         let info = ValueInfo {
             shape,
             operation,
-            users: 0,
+            non_output_uses: 0,
             debug_id: String::new(),
         };
 
@@ -420,7 +420,7 @@ impl Graph {
                 // no duplicate found, create new value
                 for input in info.operation.inputs() {
                     self.check_contains(input);
-                    self.values[input.index].users += 1;
+                    self.values[input.index].non_output_uses += 1;
                 }
 
                 let index = self.values.len();
