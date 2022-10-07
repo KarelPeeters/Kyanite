@@ -991,7 +991,7 @@ impl Graph {
             curr = self.binary(BinaryOp::Min, curr, max_value);
         }
 
-        if min != f32::INFINITY {
+        if min != f32::NEG_INFINITY {
             let min_value = self.constant(right_shape, vec![min]);
             curr = self.binary(BinaryOp::Max, curr, min_value);
         }
