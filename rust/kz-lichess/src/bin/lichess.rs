@@ -37,7 +37,7 @@ type EvalClient = kz_core::network::EvalClient<ChessBoard>;
 fn main() {
     println!("Loading graph");
     let path = std::fs::read_to_string("ignored/network_path.txt").unwrap();
-    let graph = optimize_graph(&load_graph_from_onnx_path(path), OptimizerSettings::default());
+    let graph = optimize_graph(&load_graph_from_onnx_path(path, false), OptimizerSettings::default());
 
     println!("Spawning executor");
     let (eval_client, eval_server) = job_pair(4);

@@ -1,7 +1,6 @@
-use std::path::Path;
-
 use crate::graph::Graph;
-use crate::onnx::load::{load_model_proto, onnx_proto_to_graph};
+use crate::onnx::load::{graph_from_onnx_bytes, ExternalDataLoader, NoExternalData, PathExternalData};
+use std::path::Path;
 
 #[allow(warnings)]
 mod proto {
@@ -13,13 +12,19 @@ mod load;
 mod store;
 mod typed_value;
 
-pub fn load_graph_from_onnx_path(path: impl AsRef<Path>) -> Graph {
+pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -> Graph {
     let path = path.as_ref();
     let buf = std::fs::read(path).unwrap_or_else(|e| panic!("Failed to read input file {:?}, error {:?}", path, e));
-    load_graph_from_onnx_bytes(&buf)
+
+    let external: Box<dyn ExternalDataLoader> = if allow_external {
+        Box::new(PathExternalData(path.parent().unwrap().to_owned()))
+    } else {
+        Box::new(NoExternalData)
+    };
+
+    graph_from_onnx_bytes(&buf, &*external)
 }
 
-pub fn load_graph_from_onnx_bytes(buf: &[u8]) -> Graph {
-    let model = load_model_proto(buf);
-    onnx_proto_to_graph(&model)
+pub fn load_graph_from_onnx_bytes(buffer: &[u8]) -> Graph {
+    graph_from_onnx_bytes(buffer, &NoExternalData)
 }

@@ -60,7 +60,7 @@ fn main() {
 
     let abs_path = std::fs::canonicalize(path).unwrap();
     println!("Loading graph '{:?}'", abs_path);
-    let loaded_graph = load_graph_from_onnx_path(abs_path);
+    let loaded_graph = load_graph_from_onnx_path(abs_path, false);
 
     let graph = if optimize {
         println!("Optimizing graph");

@@ -83,7 +83,7 @@ fn main() -> std::io::Result<()> {
         1.0,
     );
 
-    let graph = optimize_graph(&load_graph_from_onnx_path(path), Default::default());
+    let graph = optimize_graph(&load_graph_from_onnx_path(path, false), Default::default());
     let mapper = ChessStdMapper;
     let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
 
