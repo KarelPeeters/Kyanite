@@ -8,6 +8,7 @@ cuda-sys = { path = "../cuda-sys" }
 nn-graph = { path = "../nn-graph" }
 
 bytemuck = "1.9.1"
+decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 itertools = "0.10.3"
 rand = "0.8.5"
 internal-iterator = "0.2.0"

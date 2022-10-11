@@ -2,8 +2,10 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
+use decorum::Total;
 use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
+use nn_graph::optimizer::optimize_graph;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
@@ -839,27 +841,56 @@ fn softmax_single() {
 
 #[test]
 fn layernorm_fused() {
-    let mut graph = Graph::new();
+    let input_shape = shape![Size::BATCH, 8, 32];
+    let eps = 1e-5;
+    let axis = 2;
 
-    let input = graph.input(shape![Size::BATCH, 8, 32]);
-    let reduced_shape = shape![Size::BATCH, 8, 1];
+    let graph = {
+        let mut graph = Graph::new();
 
-    let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
-    let const_eps = graph.constant(Shape::SCALAR, vec![1e-5]);
+        let input = graph.input(input_shape.clone());
+        let reduced_shape = shape![Size::BATCH, 8, 1];
 
-    let mean = graph.reduce(input, vec![2], ReduceOp::Mean);
-    let mean = graph.view(mean, reduced_shape.clone());
-    let zeroed = graph.sub(input, mean);
+        let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
+        let const_eps = graph.constant(Shape::SCALAR, vec![eps]);
 
-    let pow = graph.pow(zeroed, const_2);
-    let var = graph.reduce(pow, vec![2], ReduceOp::Mean);
-    let var = graph.view(var, reduced_shape.clone());
-    let var = graph.add(var, const_eps);
+        let mean = graph.reduce(input, vec![axis], ReduceOp::Mean);
+        let mean = graph.view(mean, reduced_shape.clone());
+        let zeroed = graph.sub(input, mean);
 
-    let std = graph.unary(UnaryOp::Sqrt, var);
-    let result = graph.binary(BinaryOp::Div, zeroed, std);
+        let pow = graph.pow(zeroed, const_2);
+        let var = graph.reduce(pow, vec![axis], ReduceOp::Mean);
+        let var = graph.view(var, reduced_shape.clone());
+        let var = graph.add(var, const_eps);
 
-    graph.output(result);
+        let std = graph.unary(UnaryOp::Sqrt, var);
+        let result = graph.binary(BinaryOp::Div, zeroed, std);
+
+        graph.output(result);
+
+        graph
+    };
+
+    {
+        println!("Checking for layernorm fusion");
+        // check whether we correctly fuse everything into a single layernorm operation
+        let optimized = optimize_graph(&graph, Default::default());
+        println!("Optimized graph:\n{}:\n\n", optimized);
+        let optimized_values = optimized.values().collect_vec();
+        assert_eq!(optimized_values.len(), 2);
+        let input = optimized_values[0];
+        let output = optimized_values[1];
+
+        assert_eq!(optimized[input].operation, Operation::Input { index: 0 });
+        assert_eq!(
+            optimized[output].operation,
+            Operation::Layernorm {
+                input,
+                axis,
+                eps: Total::from(eps),
+            }
+        );
+    }
 
     test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
 }
