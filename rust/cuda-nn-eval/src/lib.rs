@@ -6,6 +6,7 @@ pub mod autokernel;
 pub mod device_tensor;
 pub mod executor;
 pub mod quant;
+pub mod runtime;
 pub mod shape;
 pub mod tester;
 pub mod util;
