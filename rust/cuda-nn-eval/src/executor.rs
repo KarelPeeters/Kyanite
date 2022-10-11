@@ -111,12 +111,9 @@ impl CudaExecutor {
 
         // map the outputs to tensors
         let outputs = (0..self.outputs.len())
-            .map(|i| unsafe {
-                Tensor::from_shape_vec(
-                    self.outputs[i].strided_shape().shape(),
-                    cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned(),
-                )
-                .unwrap()
+            .map(|i| {
+                let buffer = unsafe { cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned() };
+                Tensor::from_shape_vec(self.outputs[i].strided_shape().shape(), buffer).unwrap()
             })
             .collect_vec();
 
