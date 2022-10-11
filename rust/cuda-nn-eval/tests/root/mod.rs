@@ -7,3 +7,5 @@ mod scalar_fusion;
 mod graphs;
 mod kernels;
 mod onnx;
+
+mod slow;
