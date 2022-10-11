@@ -11,6 +11,7 @@ const int STATIC_STRIDES[2][RANK] = $STATIC_STRIDES$;
 
 const int SOFTMAX_STRIDES[2] = $SOFTMAX_STRIDES$;
 
+// TODO add caching again for small enough sizes (and make sure it works for 64-bit addresses)
 // Every block handles a single softmax group.
 __global__ void softmax_kernel(
         float *input,
@@ -25,36 +26,35 @@ __global__ void softmax_kernel(
 
     Array<int, 2> static_offsets = flat_index_to_offsets<RANK, 2>(static_index, STATIC_DENSE_STRIDES, STATIC_STRIDES);
 
-    float cache[ceil_div(SOFTMAX_SIZE, 32)];
     float max_logit = -1.0 / 0.0;
 
-    // fill cache and calculate max
+    // calculate max
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
-        int offset = static_offsets[0] + i * SOFTMAX_STRIDES[0];
-        float curr_logit = input[offset];
-
-        cache[i / 32] = curr_logit;
-        max_logit = max(max_logit, curr_logit);
+        int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
+        float logit = input[offset_x];
+        max_logit = max(max_logit, logit);
     }
 
     max_logit = warp_reduce(max_logit, [](float a, float b) { return max(a, b); });
     max_logit = __shfl_sync(FULL_WARP_MASK, max_logit, 0);
 
-    // run exp and calculate sum
+    // calculate sum
     float sum = 0.0;
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
-        float tmp = exp(cache[i / 32] - max_logit);
-        cache[i / 32] = tmp;
-        sum += tmp;
+        int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
+        float logit = input[offset_x];
+        sum += exp(logit - max_logit);
     }
 
     sum = warp_reduce(sum, [](float a, float b) { return a + b; });
     sum = __shfl_sync(FULL_WARP_MASK, sum, 0);
 
-    // normalize and write to output
+    // actually normalize and write to output
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
-        int offset = static_offsets[1] + i * SOFTMAX_STRIDES[1];
-        float y = cache[i / 32] / sum;
-        output[offset] = y;
+        int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
+        int offset_y = static_offsets[1] + i * SOFTMAX_STRIDES[1];
+        float logit = input[offset_x];
+        float y = exp(logit - max_logit) / sum;
+        output[offset_y] = y;
     }
 }

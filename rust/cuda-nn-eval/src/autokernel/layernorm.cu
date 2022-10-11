@@ -16,6 +16,15 @@ const int STATIC_STRIDES[2][RANK] = $STATIC_STRIDES$;
 
 const int NORM_STRIDES[2] = $NORM_STRIDES$;
 
+__device__ float calculate_x(float *input0, float *input1, int offset_x) {
+    float x = ALPHA_0 * input0[offset_x];
+    if (ALPHA_1 != 0.0) {
+        x += ALPHA_1 * input1[offset_x];
+    }
+    return x;
+}
+
+// TODO add caching again for small enough sizes (and make sure it works for 64-bit addresses)
 // Every block handles a single layernorm group.
 // Uses Welford's algorithm to compute the mean and variance
 //   (see https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm).
@@ -33,27 +42,19 @@ __global__ void layernorm_kernel(
 
     Array<int, 2> static_offsets = flat_index_to_offsets<RANK, 2>(static_index, STATIC_DENSE_STRIDES, STATIC_STRIDES);
 
-    float cache[ceil_div(NORM_SIZE, 32)];
-
     int count = 0;
     float mean = 0.0;
     float m2 = 0.0;
 
-    // fill cache and calculate max
+    // calculate variance and mean per thread
     for (int i = info.lane_id; i < NORM_SIZE; i += 32) {
-        int offset = static_offsets[0] + i * NORM_STRIDES[0];
-
-        float curr_raw = ALPHA_0 * input0[offset];
-        if (ALPHA_1 != 0.0) {
-            curr_raw += ALPHA_1 * input1[offset];
-        }
-
-        cache[i / 32] = curr_raw;
+        int offset_x = static_offsets[0] + i * NORM_STRIDES[0];
+        float x = calculate_x(input0, input1, offset_x);
 
         count += 1;
-        float delta = curr_raw - mean;
+        float delta = x - mean;
         mean += delta / count;
-        m2 += delta * (curr_raw - mean);
+        m2 += delta * (x - mean);
     }
 
     // combine variance and mean between threads
@@ -83,11 +84,13 @@ __global__ void layernorm_kernel(
     mean = __shfl_sync(FULL_WARP_MASK, mean, 0);
     denom = __shfl_sync(FULL_WARP_MASK, denom, 0);
 
-    // normalize and write to output
+    // actually normalize and write to output
     for (int i = info.lane_id; i < NORM_SIZE; i += 32) {
-        int offset = static_offsets[1] + i * NORM_STRIDES[1];
-        float x = cache[i / 32];
+        int offset_x = static_offsets[0] + i * NORM_STRIDES[0];
+        int offset_y = static_offsets[1] + i * NORM_STRIDES[1];
+
+        float x = calculate_x(input0, input1, offset_x);
         float y = (x - mean) / denom;
-        output[offset] = BETA * y;
+        output[offset_y] = BETA * y;
     }
 }
