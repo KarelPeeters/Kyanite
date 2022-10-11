@@ -147,6 +147,13 @@ fn main() -> std::io::Result<()> {
     for (i, &t) in timesteps.iter().enumerate() {
         println!("  Diffusion step {i}/{}, t={t}", timesteps.len());
 
+        if !args.no_save_latents {
+            println!("    Saving intermediate latents");
+            latent_to_image(&latent)
+                .save(args.output_folder.join(format!("latent_{i}.png")))
+                .unwrap();
+        }
+
         if !args.no_save_intermediate {
             println!("    Decoding intermediate image");
             let image = runtime.eval(runtime_decoder, &[latent.clone()]).single();
@@ -154,13 +161,6 @@ fn main() -> std::io::Result<()> {
             println!("    Saving intermediate image");
             tensor_to_image(&image)
                 .save(args.output_folder.join(format!("image_{i}.png")))
-                .unwrap();
-        }
-
-        if !args.no_save_latents {
-            println!("    Saving latents");
-            latent_to_image(&latent)
-                .save(args.output_folder.join(format!("latent_{i}.png")))
                 .unwrap();
         }
 
@@ -182,16 +182,17 @@ fn main() -> std::io::Result<()> {
         latent = schedule.step_plms(noise_pred, t, latent);
     }
 
+    println!("Saving final latents");
+    latent_to_image(&latent)
+        .save(args.output_folder.join("latent_final.png"))
+        .unwrap();
+
     println!("Decoding final image");
     let image = runtime.eval(runtime_decoder, &[latent.clone()]).single();
 
-    println!("Saving final images");
+    println!("Saving final image");
     tensor_to_image(&image)
         .save(args.output_folder.join("image_final.png"))
-        .unwrap();
-
-    latent_to_image(&latent)
-        .save(args.output_folder.join("latent_final.png"))
         .unwrap();
 
     Ok(())
