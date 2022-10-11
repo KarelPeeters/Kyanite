@@ -628,6 +628,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "cc",
+ "clap 3.1.12",
  "criterion",
  "cuda-sys",
  "image",
@@ -636,6 +637,7 @@ dependencies = [
  "lazy_static",
  "nn-graph",
  "rand 0.8.5",
+ "rand_distr",
 ]
 
 [[package]]
