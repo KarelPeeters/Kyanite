@@ -69,11 +69,14 @@ pub struct MemoryUsage {
     pub dedicated_bytes: usize,
     /// Bytes allocated for shared tensors (inputs, outputs, hidden states)
     pub shared_bytes: usize,
-    /// Bytes that are theoretically necessary for the values that are live at the same time.
-    /// This is a lower bound for `shared_bytes`.
-    pub max_shared_bytes: usize,
     /// Bytes allocated for fixed-zero tensors.
     pub zero_bytes: usize,
+
+    /// Bytes that are theoretically necessary for the values that are live at the same time.
+    /// This is a lower bound for `shared_bytes`.
+    pub hypo_shared_bytes_peak: usize,
+    /// Bytes that would be necessary if each shared buffer got a distinct allocation, without any reuse.
+    pub hypo_shared_bytes_total: usize,
 }
 
 #[derive(Debug)]
@@ -167,7 +170,8 @@ impl<'a> Planner<'a> {
 
         let mut shared_bytes = 0;
         let mut curr_shared_bytes = 0;
-        let mut max_shared_bytes = 0;
+        let mut hypo_shared_bytes_peak = 0;
+        let mut hypo_shared_bytes_total = 0;
 
         for si in 0..step_count {
             for (ti, &(start, _)) in live_ranges.iter().enumerate() {
@@ -175,7 +179,8 @@ impl<'a> Planner<'a> {
                     // allocate the given tensor
                     let size_bytes = planner.shared_buffers[ti].size_bytes;
                     curr_shared_bytes += size_bytes;
-                    max_shared_bytes = max(max_shared_bytes, curr_shared_bytes);
+                    hypo_shared_bytes_peak = max(hypo_shared_bytes_peak, curr_shared_bytes);
+                    hypo_shared_bytes_total += size_bytes;
 
                     let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
                     let ptr = vec.pop().unwrap_or_else(|| {
@@ -231,8 +236,9 @@ impl<'a> Planner<'a> {
         let mem_usage = MemoryUsage {
             dedicated_bytes: planner.dedicated_bytes,
             shared_bytes,
-            max_shared_bytes,
             zero_bytes,
+            hypo_shared_bytes_peak,
+            hypo_shared_bytes_total,
         };
 
         // realize planned tensors and steps
