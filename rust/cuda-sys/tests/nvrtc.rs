@@ -5,6 +5,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
+use cuda_sys::wrapper::status::Status;
 
 const SAXPY_SOURCE: &str = r#"
 
@@ -56,7 +57,9 @@ fn saxpy() {
             args.push(len);
             let args = args.finish();
 
-            fun_saxpy2.launch_kernel(Dim3::new(64, 1, 1), Dim3::new(64, 1, 1), 0, &stream, &args);
+            fun_saxpy2
+                .launch_kernel(Dim3::new(64, 1, 1), Dim3::new(64, 1, 1), 0, &stream, &args)
+                .unwrap();
 
             stream.synchronize();
 

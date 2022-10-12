@@ -5,6 +5,7 @@ use itertools::zip_eq;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -142,7 +143,8 @@ impl ScalarKernel {
 
         // TODO cache all of this so we just have to call launch_kernel at the end?
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .unwrap();
     }
 }
 
@@ -157,7 +159,7 @@ fn build_operation(operand_types: &[String], operation: &str) -> String {
             ty = ty,
             i = i
         )
-        .unwrap();
+            .unwrap();
     }
     writeln!(f, "{}", operation).unwrap();
 

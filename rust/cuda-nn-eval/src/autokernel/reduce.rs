@@ -3,6 +3,7 @@ use itertools::Itertools;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -146,6 +147,7 @@ impl ReduceKernel {
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .unwrap();
     }
 }

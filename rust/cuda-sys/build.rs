@@ -34,10 +34,7 @@ fn link_cuda() -> Vec<PathBuf> {
             "cargo:rustc-link-search=native={}",
             path.join("lib/x64").to_str().unwrap()
         );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path.join("lib").to_str().unwrap()
-        );
+        println!("cargo:rustc-link-search=native={}", path.join("lib").to_str().unwrap());
     }
 
     vec![
@@ -121,6 +118,8 @@ fn main() {
         .must_use_type("cudaError")
         .must_use_type("cudnnStatus_t")
         .must_use_type("cublasStatus_t")
+        .must_use_type("CUresult")
+        .must_use_type("cudaError_enum")
         .layout_tests(false)
         // output
         .generate()
