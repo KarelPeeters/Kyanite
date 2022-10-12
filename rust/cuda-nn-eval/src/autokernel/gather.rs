@@ -103,10 +103,13 @@ impl GatherKernel {
         let threads_per_block = 64;
 
         let items = self.output_shape.size();
-        let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
 
-        self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
-            .unwrap();
+        if items != 0 {
+            let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
+
+            self.function
+                .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+                .unwrap();
+        }
     }
 }
