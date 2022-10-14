@@ -63,6 +63,7 @@ pub fn assert_tensors_match(expected: &[Tensor], actual: &[Tensor], print_match:
                     ref indices,
                     expected_value,
                     actual_value,
+                    more_omitted,
                 } = *error;
 
                 eprintln!(
@@ -72,11 +73,11 @@ pub fn assert_tensors_match(expected: &[Tensor], actual: &[Tensor], print_match:
                     indices,
                     tensor,
                     expected[tensor].shape()
-                )
-            }
+                );
 
-            if error_count > first_errors.len() {
-                eprintln!("  ...");
+                if more_omitted {
+                    eprintln!("  ...");
+                }
             }
 
             panic!("Output mismatch");
@@ -108,6 +109,7 @@ pub struct Error {
     pub indices: Vec<usize>,
     pub expected_value: f32,
     pub actual_value: f32,
+    pub more_omitted: bool,
 }
 
 pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Match, Mismatch> {
@@ -156,7 +158,10 @@ pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Mat
                         indices: indices.slice().to_vec(),
                         expected_value,
                         actual_value: value,
+                        more_omitted: false,
                     });
+                } else {
+                    first_errors.last_mut().unwrap().more_omitted = true;
                 }
             }
         }
