@@ -32,7 +32,7 @@ use crate::simulation::{Position, Simulation};
 pub async fn generator_muzero_main<B: AltBoard, M: BoardMapper<B>>(
     generator_id: usize,
     device: Device,
-    start_pos: impl Fn() -> B,
+    start_pos: impl Fn(&mut StdRng) -> B,
     mapper: M,
     saved_state_channels: usize,
     settings_receiver: Receiver<Settings>,
@@ -75,7 +75,7 @@ pub async fn generator_muzero_main<B: AltBoard, M: BoardMapper<B>>(
             &update_sender,
             &root_client,
             &expand_client,
-            start_pos(),
+            start_pos(&mut rng),
             mapper,
             state_size,
             pool,

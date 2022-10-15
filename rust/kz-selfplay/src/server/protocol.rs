@@ -13,6 +13,7 @@ use crate::simulation::Simulation;
 pub struct StartupSettings {
     pub game: String,
     pub muzero: bool,
+    pub start_pos: String,
 
     pub first_gen: u32,
     pub output_folder: String,

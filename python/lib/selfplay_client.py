@@ -11,6 +11,7 @@ from typing import Union, Optional
 class StartupSettings:
     game: str
     muzero: bool
+    start_pos: str
 
     first_gen: int
     output_folder: str

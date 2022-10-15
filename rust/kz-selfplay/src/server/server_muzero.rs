@@ -2,6 +2,7 @@ use board_game::board::AltBoard;
 use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
+use rand::rngs::StdRng;
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
@@ -26,7 +27,7 @@ impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZe
         device_id: usize,
         startup: &StartupSettings,
         mapper: M,
-        start_pos: impl Fn() -> B + Sync + Send + Clone + 'static,
+        start_pos: impl Fn(&mut StdRng) -> B + Sync + Send + Clone + 'static,
         update_sender: Sender<GeneratorUpdate<B>>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>) {
         let gpu_batch_size_root = startup.gpu_batch_size_root;

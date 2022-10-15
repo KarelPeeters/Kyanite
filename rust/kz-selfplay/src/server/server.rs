@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use board_game::board::{AltBoard, Board};
 use board_game::games::arimaa::ArimaaBoard;
-use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
@@ -13,6 +12,7 @@ use clap::Parser;
 use crossbeam::thread::Scope;
 use flume::{Receiver, Sender};
 use itertools::Itertools;
+use rand::rngs::StdRng;
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::arimaa::ArimaaSplitMapper;
@@ -27,6 +27,7 @@ use crate::server::commander::{commander_main, read_command};
 use crate::server::protocol::{Command, Game, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server_alphazero::AlphaZeroSpecialization;
 use crate::server::server_muzero::MuZeroSpecialization;
+use crate::server::start_pos::ataxx_start_pos;
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -105,67 +106,85 @@ fn selfplay_start_dispatch_game(
     //  is it actually that much? -> investigate with objdump or similar
     //  would it be relatively easy to delay this dispatch some more?
     match game {
-        Game::TTT => selfplay_start_dispatch_spec_alt(
-            game,
-            devices,
-            startup_settings,
-            TTTBoard::default,
-            TTTStdMapper,
-            reader,
-            writer,
-        ),
-        Game::STTT => selfplay_start_dispatch_spec_alt(
-            game,
-            devices,
-            startup_settings,
-            STTTBoard::default,
-            STTTStdMapper,
-            reader,
-            writer,
-        ),
-        Game::Ataxx { size } => selfplay_start_dispatch_spec_alt(
-            game,
-            devices,
-            startup_settings,
-            move || AtaxxBoard::diagonal(size),
-            AtaxxStdMapper::new(size),
-            reader,
-            writer,
-        ),
-        Game::Chess => selfplay_start_dispatch_spec_alt(
-            game,
-            devices,
-            startup_settings,
-            ChessBoard::default,
-            ChessStdMapper,
-            reader,
-            writer,
-        ),
-        Game::ChessHist { length } => selfplay_start_dispatch_spec_alt(
-            game,
-            devices,
-            startup_settings,
-            ChessBoard::default,
-            ChessHistoryMapper::new(length),
-            reader,
-            writer,
-        ),
-        Game::ArimaaSplit => selfplay_start_dispatch_spec_non_alt(
-            game,
-            devices,
-            startup_settings,
-            ArimaaBoard::default,
-            ArimaaSplitMapper,
-            reader,
-            writer,
-        ),
+        Game::TTT => {
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_alt(
+                game,
+                devices,
+                startup_settings,
+                |_| TTTBoard::default(),
+                TTTStdMapper,
+                reader,
+                writer,
+            )
+        }
+        Game::STTT => {
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_alt(
+                game,
+                devices,
+                startup_settings,
+                |_| STTTBoard::default(),
+                STTTStdMapper,
+                reader,
+                writer,
+            )
+        }
+        Game::Ataxx { size } => {
+            let start_pos = ataxx_start_pos(size, &startup_settings.start_pos);
+            selfplay_start_dispatch_spec_alt(
+                game,
+                devices,
+                startup_settings,
+                start_pos,
+                AtaxxStdMapper::new(size),
+                reader,
+                writer,
+            )
+        }
+        Game::Chess => {
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_alt(
+                game,
+                devices,
+                startup_settings,
+                |_| ChessBoard::default(),
+                ChessStdMapper,
+                reader,
+                writer,
+            )
+        }
+        Game::ChessHist { length } => {
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_alt(
+                game,
+                devices,
+                startup_settings,
+                |_| ChessBoard::default(),
+                ChessHistoryMapper::new(length),
+                reader,
+                writer,
+            )
+        }
+        Game::ArimaaSplit => {
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_non_alt(
+                game,
+                devices,
+                startup_settings,
+                |_| ArimaaBoard::default(),
+                ArimaaSplitMapper,
+                reader,
+                writer,
+            )
+        }
     }
 }
 
 fn selfplay_start_dispatch_spec_alt<
     B: AltBoard,
     M: BoardMapper<B> + 'static,
-    F: Fn() -> B + Send + Sync + Clone + 'static,
+    F: Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
 >(
     game: Game,
     devices: Vec<Device>,
@@ -203,7 +222,7 @@ fn selfplay_start_dispatch_spec_alt<
 fn selfplay_start_dispatch_spec_non_alt<
     B: Board,
     M: BoardMapper<B> + 'static,
-    F: Fn() -> B + Send + Sync + Clone + 'static,
+    F: Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
 >(
     game: Game,
     devices: Vec<Device>,
@@ -253,7 +272,7 @@ pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
         device_id: usize,
         startup: &StartupSettings,
         mapper: M,
-        start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
+        start_pos: impl Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
         update_sender: UpdateSender<B>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>);
 
@@ -265,7 +284,7 @@ fn selfplay_start<B: Board, M: BoardMapper<B> + 'static, Z: ZeroSpecialization<B
     devices: Vec<Device>,
     startup: StartupSettings,
     mapper: M,
-    start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
+    start_pos: impl Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
     reader: BufReader<impl Read + Send>,
     writer: BufWriter<impl Write + Send>,
     spec: Z,

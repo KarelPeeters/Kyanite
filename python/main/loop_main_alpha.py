@@ -7,16 +7,19 @@ from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
 from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
+from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("chess")
+    game = Game.find("ataxx")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
         muzero=False,
+        start_pos="default",
+
         simulations_per_gen=200,
 
         cpu_threads_per_device=4,
@@ -64,24 +67,25 @@ def main():
     )
 
     def build_network(depth: int, channels: int):
-        return PredictionHeads(
-            common=ResTower(depth, game.full_input_channels, channels),
-            scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-            policy_head=AttentionPolicyHead(game, channels, channels),
-        )
+        return DenseNetwork(game, depth, channels, res=True)
+        # return PredictionHeads(
+        #     common=ResTower(depth, game.full_input_channels, channels),
+        #     scalar_head=ScalarHead(game.board_size, channels, 8, 128),
+        #     policy_head=AttentionPolicyHead(game, channels, channels),
+        # )
 
     # def dummy_network():
     #     return build_network(1, 8)
 
     def initial_network():
-        return build_network(16, 128)
+        return build_network(16, 1024)
 
     initial_files_pattern = ""
 
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop/{game.name}/profile-batch/",
+        root_path=f"data/loop/{game.name}/startup/",
         port=63105,
         wait_for_new_network=True,
 

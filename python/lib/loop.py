@@ -29,6 +29,7 @@ SAVE_BATCH_SIZE = 2
 class FixedSelfplaySettings:
     game: Game
     muzero: bool
+    start_pos: str
 
     simulations_per_gen: int
 
@@ -44,6 +45,7 @@ class FixedSelfplaySettings:
         return StartupSettings(
             game=self.game.name,
             muzero=self.muzero,
+            start_pos=self.start_pos,
             first_gen=first_gen,
             output_folder=os.path.abspath(output_folder),
             games_per_gen=self.simulations_per_gen,

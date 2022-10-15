@@ -13,3 +13,4 @@ pub mod generator_alphazero;
 pub mod generator_muzero;
 
 pub mod rebatcher;
+pub mod start_pos;

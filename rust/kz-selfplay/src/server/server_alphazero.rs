@@ -2,6 +2,7 @@ use board_game::board::Board;
 use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
+use rand::rngs::StdRng;
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
@@ -31,7 +32,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
         device_id: usize,
         startup: &StartupSettings,
         mapper: M,
-        start_pos: impl Fn() -> B + Send + Sync + Clone + 'static,
+        start_pos: impl Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
         update_sender: Sender<GeneratorUpdate<B>>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Graph>>) {
         let gpu_batch_size = startup.gpu_batch_size;

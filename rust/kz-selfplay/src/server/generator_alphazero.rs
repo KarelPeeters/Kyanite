@@ -20,7 +20,7 @@ use crate::simulation::{Position, Simulation};
 
 pub async fn generator_alphazero_main<B: Board>(
     generator_id: usize,
-    start_pos: impl Fn() -> B,
+    start_pos: impl Fn(&mut StdRng) -> B,
     settings_receiver: Receiver<Settings>,
     search_batch_size: usize,
     eval_client: EvalClient<B>,
@@ -49,7 +49,7 @@ pub async fn generator_alphazero_main<B: Board>(
             search_batch_size,
             &update_sender,
             &eval_client,
-            start_pos(),
+            start_pos(&mut rng),
             &mut rng,
         )
         .await;
