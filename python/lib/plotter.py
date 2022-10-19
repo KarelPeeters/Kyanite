@@ -1,4 +1,5 @@
 import time
+from dataclasses import dataclass
 from threading import Event, Lock, Thread
 from typing import Dict, Tuple, Callable, Optional
 
@@ -23,47 +24,13 @@ class DummyLogPlotter:
         return
 
 
-class LogPlotter(QObject):
-    update_logger_slot = pyqtSignal(object)
-    update_control_slot = pyqtSignal()
+class LogPlotterWindow(QObject):
+    signal_smooth_window_size_changed = pyqtSignal(int)
+    signal_pause_pressed = pyqtSignal()
+    signal_reset_view_pressed = pyqtSignal()
 
     def __init__(self):
         super().__init__()
-
-        self.prev_data = None
-        self.running = Event()
-        self.running.set()
-
-        # noinspection PyUnresolvedReferences
-        self.update_logger_slot.connect(self.on_update_logger)
-        # noinspection PyUnresolvedReferences
-        self.update_control_slot.connect(self.on_update_control)
-
-        self.create_window()
-        self.title = None
-
-        self.plot_widgets: Dict[str, PlotWidget] = {}
-        self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
-
-        self.on_update_control()
-
-    def set_title(self, title: str):
-        self.title = title
-        QTimer.singleShot(0, self._actually_set_title)
-
-    def _actually_set_title(self):
-        if self.title is not None:
-            self.window.setWindowTitle(self.title)
-
-    def set_can_pause(self, can_pause: bool):
-        self.pauseButton.setEnabled(can_pause)
-
-    def update(self, logger: Logger):
-        # noinspection PyUnresolvedReferences
-        self.update_logger_slot.emit(logger.finished_data())
-
-    def create_window(self):
-        set_pg_defaults()
 
         self.window = QMainWindow()
         self.window.setWindowFlag(Qt.WindowCloseButtonHint, False)
@@ -82,81 +49,165 @@ class LogPlotter(QObject):
         self.pauseButton = QPushButton("Pause")
         control_layout.addWidget(self.pauseButton)
         self.pauseButton.setEnabled(False)
-        self.pauseButton.pressed.connect(self.on_pause_pressed)
+        self.pauseButton.pressed.connect(self.signal_pause_pressed)
 
         autoRangeButton = QPushButton("Reset view")
         control_layout.addWidget(autoRangeButton)
-        autoRangeButton.pressed.connect(self.on_auto_range_pressed)
+        autoRangeButton.pressed.connect(self.signal_reset_view_pressed)
 
         self.smooth_slider = QSlider(Qt.Horizontal)
         self.smooth_slider.setMinimum(0)
         self.smooth_slider.setMaximum(100)
         self.smooth_slider.setSingleStep(1)
         self.smooth_slider.setValue(5)
-        self.smooth_slider.valueChanged.connect(self.update_control_slot)
+        self.plot_current_smoothing = 5
+        self.smooth_slider.valueChanged.connect(self._on_smooth_slider_value_changed)
         control_layout.addWidget(self.smooth_slider)
 
-        self.batch_smooth_label = QLabel()
-        control_layout.addWidget(self.batch_smooth_label)
+        self.smooth_label = QLabel()
+        control_layout.addWidget(self.smooth_label)
 
         control_layout.addStretch(1)
 
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
 
+    def show(self):
         self.window.show()
 
-    def on_auto_range_pressed(self):
-        for plot_widget in self.plot_widgets.values():
-            plot_widget.autoPixelRange = True
-            plot_widget.enableAutoRange(x=False, y=False)
-            plot_widget.enableAutoRange(x=True, y=True)
+    def set_title(self, title: str):
+        self.title = title
+        QTimer.singleShot(0, self._actually_set_title)
 
-    def on_pause_pressed(self):
-        if self.running.is_set():
-            self.running.clear()
-            self.pauseButton.setText("Resume")
-        else:
-            self.running.set()
-            self.pauseButton.setText("Pause")
+    def _actually_set_title(self):
+        if self.title is not None:
+            self.window.setWindowTitle(self.title)
+
+    def _on_smooth_slider_value_changed(self):
+        value = self.smooth_slider.value() * 2 + 1
+        self.smooth_label.setText(str(value))
+
+        # noinspection PyUnresolvedReferences
+        self.signal_smooth_window_size_changed.emit(value)
+
+
+@dataclass
+class PlotState:
+    data: Optional[LoggerData]
+    smooth_window_size: Optional[int]
+
+    def __eq__(self, other):
+        return self is other
+
+
+class LogPlotter(QObject):
+    signal_state_changed_to = pyqtSignal(object)
+
+    def __init__(self):
+        super().__init__()
+
+        set_pg_defaults()
+
+        self.state_lock = Lock()
+        self.state_drawn = PlotState(None, None)
+        self.state_latest = PlotState(None, None)
+
+        self.running = Event()
+        self.running.set()
+
+        self.window = LogPlotterWindow()
+        # noinspection PyUnresolvedReferences
+        self.window.signal_pause_pressed.connect(self._on_pause_pressed)
+        # noinspection PyUnresolvedReferences
+        self.window.signal_smooth_window_size_changed.connect(self._on_smooth_window_size_changed)
+        # noinspection PyUnresolvedReferences
+        self.window.signal_reset_view_pressed.connect(self._on_reset_view_pressed)
+
+        # noinspection PyUnresolvedReferences
+        self.signal_state_changed_to.connect(self._on_state_changed_to)
+
+        self.plot_widgets: Dict[str, PlotWidget] = {}
+        self.plot_items: Dict[Tuple[str, str], PlotWidget] = {}
+
+        self.window._on_smooth_slider_value_changed()
+        self.window.show()
+
+    def set_title(self, title: str):
+        self.window.set_title(title)
+
+    def update(self, logger: Logger):
+        data = logger.finished_data()
+        with self.state_lock:
+            state = PlotState(data, self.state_latest.smooth_window_size)
+            self.state_latest = state
+        # noinspection PyUnresolvedReferences
+        self.signal_state_changed_to.emit(state)
+
+    def set_can_pause(self, can_pause: bool):
+        self.window.pauseButton.setEnabled(can_pause)
 
     def block_while_paused(self):
         self.set_can_pause(True)
         self.running.wait()
 
-    def widget_for_group(self, g: str):
-        if g in self.plot_widgets:
-            return self.plot_widgets[g]
+    def _on_pause_pressed(self):
+        if self.running.is_set():
+            self.running.clear()
+            self.window.pauseButton.setText("Resume")
+        else:
+            self.running.set()
+            self.window.pauseButton.setText("Pause")
 
-        widget = PlotWidget()
-        widget.addLegend()
-        self.plot_widgets[g] = widget
-        self.tab_widget.addTab(widget, g)
-        return widget
+    def _on_smooth_window_size_changed(self, smooth_window_size: int):
+        with self.state_lock:
+            state = PlotState(self.state_latest.data, smooth_window_size)
+            self.state_latest = state
 
-    def on_update_control(self):
-        window_size = self.smooth_slider.value() * 2 + 1
-        self.batch_smooth_label.setText(str(window_size))
+        # noinspection PyUnresolvedReferences
+        self.signal_state_changed_to.emit(state)
 
-        if self.prev_data is not None:
-            self.on_update_logger(self.prev_data)
+    def _on_reset_view_pressed(self):
+        for plot_widget in self.plot_widgets.values():
+            plot_widget.autoPixelRange = True
+            plot_widget.enableAutoRange(x=False, y=False)
+            plot_widget.enableAutoRange(x=True, y=True)
 
-    def on_update_logger(self, data: LoggerData):
-        self.prev_data = data
+    def _on_state_changed_to(self, event_state: PlotState):
+        with self.state_lock:
+            state_drawn = self.state_drawn
+            state_latest = self.state_latest
 
-        if len(self.plot_items) != len(data.values):
-            self.update_plot_items(data)
+            if self.state_latest != event_state:
+                # we're not responsible for handling this event, discard it
+                #   if we don't do this the QT event queue can fill up with old events
+                return
 
-        window_size = self.smooth_slider.value() * 2 + 1
-        self.update_data(data, window_size)
+            self.state_drawn = state_latest
 
-    def update_plot_items(self, data: LoggerData):
+        # ignore outdated events
+        if state_drawn == state_latest:
+            return
+
+        self._render_new_state(state_latest)
+
+    def _render_new_state(self, state: PlotState):
+        if state.data is None:
+            return
+
+        # crate new tabs and plots if necessary
+        if len(self.plot_items) != len(state.data.values):
+            self._update_plot_items(state.data)
+
+        # update the plot data
+        self._update_plot_data(state)
+
+    def _update_plot_items(self, data: LoggerData):
         self.plot_items = {}
         groups = list(dict.fromkeys(g for g, _ in data.values))
         keys_per_group = {g: dict.fromkeys(k for h, k in data.values if h == g) for g in groups}
 
         for g in groups:
-            widget = self.widget_for_group(g)
+            widget = self._widget_for_group(g)
             widget.clear()
             widget.addLegend()
 
@@ -167,22 +218,32 @@ class LogPlotter(QObject):
                 pen = pg.mkPen(color)
                 self.plot_items[(g, k)] = widget.plot(name=f"{g} {k}", pen=pen)
 
-    def update_data(self, data: LoggerData, window_size: int):
-        for (g, k), v in data.values.items():
-            x, y = clean_data(data.axis, v, window_size)
+    def _widget_for_group(self, g: str):
+        if g in self.plot_widgets:
+            return self.plot_widgets[g]
+
+        widget = PlotWidget()
+        widget.addLegend()
+        self.plot_widgets[g] = widget
+        self.window.tab_widget.addTab(widget, g)
+        return widget
+
+    def _update_plot_data(self, state: PlotState):
+        for (g, k), v in state.data.values.items():
+            x, y = clean_data(state.data.axis, v, state.smooth_window_size)
             self.plot_items[(g, k)].setData(x, y)
 
 
-def clean_data(axis, values, window_size: int):
+def clean_data(axis, values, smooth_window_size: int):
     mask = np.isnan(values)
 
     axis = axis[~mask]
     values = values[~mask]
 
-    if window_size == 1:
+    if smooth_window_size == 1:
         clean_values = values
     else:
-        clean_values = scipy.signal.savgol_filter(values, window_size, polyorder=1, mode="nearest")
+        clean_values = scipy.signal.savgol_filter(values, smooth_window_size, polyorder=1, mode="nearest")
 
     return axis, clean_values
 
