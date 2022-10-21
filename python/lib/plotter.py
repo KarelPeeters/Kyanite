@@ -298,3 +298,13 @@ def run_with_plotter(target: Callable[[LogPlotter], None]):
     except BaseException as e:
         QApplication.quit()
         raise e
+
+
+def show_log(path: str):
+    logger = Logger.load(path)
+
+    def f(plotter: LogPlotter):
+        plotter.update(logger)
+        plotter.set_title(path)
+
+    run_with_plotter(f)
