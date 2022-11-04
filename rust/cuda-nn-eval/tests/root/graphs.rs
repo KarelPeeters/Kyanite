@@ -1,14 +1,16 @@
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_sys::wrapper::handle::Device;
-use nn_graph::graph::{BinaryOp, Graph, ReduceOp, SliceRange, UnaryOp, Value};
+use decorum::Total;
+use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use nn_graph::ndarray::Array1;
+use nn_graph::optimizer::optimize_graph;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
 
-use crate::root::runner::{test_all, test_all_graph};
-use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec};
+use crate::root::runner::test_all;
+use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor, rng_vec};
 
 #[test]
 fn empty() {
@@ -94,7 +96,7 @@ fn flip_conv() {
     let flipped = graph.flip(input, 3);
 
     let weight = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
-    let result = graph.conv(flipped, weight, 1, 1);
+    let result = graph.conv(flipped, weight, 1, 1, 1, 1);
 
     graph.output(result);
     test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
@@ -102,37 +104,156 @@ fn flip_conv() {
 
 #[test]
 fn repeat() {
-    let tensor = DeviceTensor::alloc_simple(Device::new(0), vec![0]);
-    println!("{:?}", unsafe { tensor.ptr().ptr() });
-
     let mut graph = Graph::new();
-
-    let x = graph.constant(shape![2, 3], linspace_vec(6));
+    let mut rng = StdRng::seed_from_u64(0);
+    let input = graph.input(shape![2, 3]);
 
     let outputs = [
-        graph.repeat(x, 0, 0),
-        graph.repeat(x, 0, 2),
-        graph.repeat(x, 1, 0),
-        graph.repeat(x, 1, 2),
+        graph.repeat(input, 0, Size::fixed(0)),
+        graph.repeat(input, 0, Size::fixed(2)),
+        graph.repeat(input, 1, Size::fixed(0)),
+        graph.repeat(input, 1, Size::fixed(2)),
     ];
-
     graph.output_all(&outputs);
 
-    test_all(&graph, 0, &[], None);
+    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
 }
 
 #[test]
-fn gather() {
+fn repeat_interleave() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+    let input = graph.input(shape![2, 3]);
+
+    let outputs = [
+        graph.repeat_interleave(input, 0, Size::fixed(0)),
+        graph.repeat_interleave(input, 0, Size::fixed(2)),
+        graph.repeat_interleave(input, 1, Size::fixed(0)),
+        graph.repeat_interleave(input, 1, Size::fixed(2)),
+    ];
+    graph.output_all(&outputs);
+
+    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
+}
+
+#[test]
+fn repeat_manual() {
     let mut graph = Graph::new();
 
-    let input = graph.constant(shape![2, 3], range_vec(2 * 3 * 1));
+    let input = graph.input(shape![3]);
+    let outputs = [
+        graph.repeat(input, 0, Size::fixed(2)),
+        graph.repeat_interleave(input, 0, Size::fixed(2)),
+    ];
+    graph.output_all(&outputs);
+
+    let input_tensor = manual_tensor((3,), vec![1.0, 2.0, 3.0]);
+    let output_tensors = [
+        manual_tensor((6,), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
+        manual_tensor((6,), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
+    ];
+
+    test_all(&graph, 0, &[input_tensor], Some(&output_tensors))
+}
+
+#[test]
+fn gather_simple_axis_0() {
+    let mut graph = Graph::new();
+
+    let input = graph.constant(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
+    let index = graph.constant(shape![4], vec![0.0, 1.0, 1.0, 0.0]);
+    let output = graph.gather(input, 0, index);
+    let output_tensor = manual_tensor((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
+    graph.output(output);
+
+    test_all(&graph, 0, &[], Some(&[output_tensor]))
+}
+
+#[test]
+fn gather_simple_axis_1() {
+    let mut graph = Graph::new();
+
+    let input = graph.constant(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
     let index = graph.constant(shape![4], vec![0.0, 2.0, 1.0, 0.0]);
-    let result = graph.gather(input, 1, index);
-    graph.output(result);
+    let output = graph.gather(input, 1, index);
+    let output_tensor = manual_tensor((2, 4), vec![7.0, 7.2, 7.1, 7.0, 7.3, 7.5, 7.4, 7.3]);
+    graph.output(output);
 
-    let expected_result = manual_tensor((2, 4), vec![0.0, 2.0, 1.0, 0.0, 3.0, 5.0, 4.0, 3.0]);
+    test_all(&graph, 0, &[], Some(&[output_tensor]))
+}
 
-    test_all(&graph, 0, &[], Some(&[expected_result]))
+#[test]
+fn gather_complex_axis_0() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 2]);
+    let input_tensor = manual_tensor((3, 2), vec![1.0, 1.2, 2.3, 3.4, 4.5, 5.7]);
+    let indices = graph.constant(shape![2, 2], vec![0.0, 1.0, 1.0, 2.0]);
+    let output = graph.gather(input, 0, indices);
+    let output_tensor = manual_tensor((2, 2, 2), vec![1.0, 1.2, 2.3, 3.4, 2.3, 3.4, 4.5, 5.7]);
+    graph.output(output);
+
+    test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
+}
+
+#[test]
+fn gather_complex_axis_1() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![3, 3]);
+    let input_tensor = manual_tensor((3, 3), vec![1.0, 1.2, 1.9, 2.3, 3.4, 3.9, 4.5, 5.7, 5.9]);
+    let indices = graph.constant(shape![1, 2], vec![0.0, 2.0]);
+    let output = graph.gather(input, 1, indices);
+    let output_tensor = manual_tensor((3, 1, 2), vec![1.0, 1.9, 2.3, 3.9, 4.5, 5.9]);
+    graph.output(output);
+
+    test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
+}
+
+#[test]
+fn gather_size_0() {
+    let mut graph = Graph::new();
+
+    let input = graph.input(shape![8, 4]);
+    let input_tensor = linspace_tensor((8, 4)).into_dyn();
+
+    let indices = graph.constant(shape![0], vec![]);
+    let output0 = graph.gather(input, 0, indices);
+    let output1 = graph.gather(input, 1, indices);
+    graph.output(output0);
+    graph.output(output1);
+
+    assert_eq!(graph[output0].shape, shape![0, 4]);
+    assert_eq!(graph[output1].shape, shape![8, 0]);
+
+    test_all(&graph, 0, &[input_tensor], None);
+}
+
+#[test]
+fn gather_as_index() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+
+    let input = graph.input(shape![16, 8, 4]);
+    let index = graph.constant(Shape::SCALAR, vec![4.0]);
+    let indices = graph.view(index, shape![1]);
+    let indices_repeat = graph.broadcast(indices, shape![3]);
+
+    let result = graph.gather(input, 1, indices);
+    let result_repeat = graph.gather(input, 1, indices_repeat);
+
+    graph.output_all(&[result, result_repeat]);
+
+    // test that this gather is actually implemented as a simple index operation
+    println!("{}", graph);
+    for v in graph.values() {
+        assert!(
+            !matches!(graph[v].operation, Operation::Gather { .. }),
+            "Graph contains a gather operation, it should have been replaced by an index operation"
+        );
+    }
+
+    test_all(&graph, 0, &[rng_tensor((16, 8, 4), &mut rng)], None);
 }
 
 #[test]
@@ -179,7 +300,39 @@ fn linear_sliced() {
 }
 
 #[test]
-fn mat_mul() {
+fn mat_mul_broadcast() {
+    let shapes = vec![
+        (shape![4, 2], shape![2, 3], shape![4, 3]),
+        (shape![8, 4, 2], shape![2, 3], shape![8, 4, 3]),
+        (shape![4, 2], shape![8, 2, 3], shape![8, 4, 3]),
+        (shape![8, 4, 2], shape![8, 2, 3], shape![8, 4, 3]),
+        (shape![1, 1, 1, 4, 2], shape![8, 1, 2, 3], shape![1, 8, 1, 4, 3]),
+    ];
+
+    let mut rng = StdRng::seed_from_u64(0);
+    let mut graph = Graph::new();
+
+    let mut inputs = vec![];
+
+    for (left_shape, right_shape, result_shape) in shapes {
+        println!("Testing {} @ {} => {}", left_shape, right_shape, result_shape);
+
+        inputs.push(rng_tensor(left_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
+        inputs.push(rng_tensor(right_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
+
+        let left = graph.input(left_shape.clone());
+        let right = graph.input(right_shape.clone());
+        let result = graph.mat_mul(left, right);
+
+        assert_eq!(graph[result].shape, result_shape);
+        graph.output(result);
+    }
+
+    test_all(&graph, 0, &inputs, None);
+}
+
+#[test]
+fn mat_mul_transpose() {
     // run the "transposed" cases first since they're simpler for cublas
     for transpose_a in [true, false] {
         for transpose_b in [true, false] {
@@ -226,7 +379,7 @@ fn horizontal_1x1_conv() {
     let input = graph.constant(shape![2, 4, 1, 8], linspace_vec(2 * 4 * 8));
     let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
 
-    let output = graph.conv(input, filter, 0, 0);
+    let output = graph.conv(input, filter, 1, 1, 0, 0);
     graph.output(output);
 
     assert_eq!(graph[output].shape, shape![2, 3, 1, 8]);
@@ -240,7 +393,7 @@ fn vertical_1x1_conv() {
     let input = graph.constant(shape![2, 4, 8, 1], linspace_vec(2 * 4 * 8));
     let filter = graph.constant(shape![3, 4, 1, 1], linspace_vec(3 * 4));
 
-    let output = graph.conv(input, filter, 0, 0);
+    let output = graph.conv(input, filter, 1, 1, 0, 0);
     graph.output(output);
 
     assert_eq!(graph[output].shape, shape![2, 3, 8, 1]);
@@ -301,15 +454,19 @@ fn add_broadcast() {
 
     let left = graph.constant(shape![2, 2, 2], vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     let right = graph.constant(shape![1, 2, 2], vec![0.0, 1.0, 2.0, 3.0]);
-    let output = graph.add(left, right);
-    graph.output(output);
+    let scalar = graph.constant(shape![], vec![10.0]);
 
-    test_all(
-        &graph,
-        0,
-        &[],
-        Some(&[manual_tensor((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0])]),
-    )
+    let output0 = graph.add(left, right);
+    let output1 = graph.add(right, left);
+    let output2 = graph.add(right, scalar);
+
+    graph.output_all(&[output0, output1, output2]);
+
+    let expected_output_01 = manual_tensor((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0]);
+    let expected_output2 = manual_tensor((1, 2, 2), vec![10.0, 11.0, 12.0, 13.0]);
+    let expected_outputs = [expected_output_01.clone(), expected_output_01, expected_output2];
+
+    test_all(&graph, 0, &[], Some(&expected_outputs))
 }
 
 #[test]
@@ -329,7 +486,7 @@ fn affine_single_element() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0, 0);
+    let curr = graph.conv(curr, filter, 1, 1, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
@@ -368,7 +525,7 @@ fn affine_single_div() {
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
-    test_all_graph(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
+    test_all(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
 }
 
 #[test]
@@ -390,12 +547,39 @@ fn affine_multiple_channels() {
     let curr = graph.input(Shape::fixed(input_data.shape()));
     let curr = graph.add(curr, bias_0);
     let curr = graph.mul(curr, scale_0);
-    let curr = graph.conv(curr, filter, 0, 0);
+    let curr = graph.conv(curr, filter, 1, 1, 0, 0);
     let curr = graph.add(curr, bias_1);
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
 
     test_all(&graph, 0, &[input_data], None)
+}
+
+#[test]
+fn conv_padding() {
+    let mut graph = Graph::new();
+
+    let input0 = graph.input(shape![1, 1, 1, 1]);
+    let input1 = graph.input(shape![1, 1, 8, 8]);
+
+    let filter = graph.constant(shape![1, 1, 3, 3], range_vec(3 * 3));
+
+    let output00 = graph.conv(input0, filter, 1, 1, 1, 1);
+    let output01 = graph.conv(input0, filter, 1, 1, 4, 4);
+    let output10 = graph.conv(input1, filter, 1, 1, 1, 1);
+    let output11 = graph.conv(input1, filter, 1, 1, 4, 1);
+
+    graph.output_all(&[output00, output01, output10, output11]);
+
+    test_all(
+        &graph,
+        0,
+        &[
+            manual_tensor((1, 1, 1, 1), vec![1.0]),
+            linspace_tensor((1, 1, 8, 8)).into_dyn(),
+        ],
+        None,
+    );
 }
 
 #[test]
@@ -411,7 +595,7 @@ fn affine_padding() {
 
     let mut curr = graph.input(Shape::fixed(&input_data.shape()));
     curr = graph.add(curr, bias_0);
-    curr = graph.conv(curr, filter, 1, 1);
+    curr = graph.conv(curr, filter, 1, 1, 1, 1);
     curr = graph.add(curr, bias_1);
     graph.output(curr);
 
@@ -429,17 +613,17 @@ fn pre_act_resnet() {
     let filter_tower = graph.constant(shape![5, 5, 3, 3], linspace_vec(5 * 5 * 3 * 3));
     let filter_policy = graph.constant(shape![2, 5, 1, 1], linspace_vec(5 * 2));
 
-    let mut tower = graph.conv(input, filter_initial, 1, 1);
+    let mut tower = graph.conv(input, filter_initial, 1, 1, 1, 1);
     for _ in 0..2 {
         let mut curr = channel_batchnorm(&mut graph, tower);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1, 1, 1);
         curr = graph.clamp(curr, 0.0, 6.0);
-        curr = graph.conv(curr, filter_tower, 1, 1);
+        curr = graph.conv(curr, filter_tower, 1, 1, 1, 1);
         tower = graph.add(curr, tower);
     }
 
-    let policy = graph.conv(tower, filter_policy, 0, 0);
+    let policy = graph.conv(tower, filter_policy, 1, 1, 0, 0);
 
     graph.output(tower);
     graph.output(policy);
@@ -475,7 +659,7 @@ fn fuse_res() {
     let filter = graph.constant(shape![4, 4, 3, 3], linspace_vec(4 * 4 * 3 * 3));
 
     let mut curr = input;
-    curr = graph.conv(curr, filter, 1, 1);
+    curr = graph.conv(curr, filter, 1, 1, 1, 1);
     curr = graph.add(curr, other);
     curr = graph.clamp(curr, 0.0, f32::INFINITY);
     graph.output(curr);
@@ -559,19 +743,34 @@ fn repeated_conv() {
 
     let input = graph.input(shape![Size::BATCH, 4, 8, 8]);
 
-    let x1 = graph.conv(input, weight0, 1, 1);
-    let x2 = graph.conv(x1, weight0, 1, 1);
-    let x3 = graph.conv(x2, weight0, 1, 1);
-    let x4 = graph.conv(x3, weight0, 1, 1);
+    let x1 = graph.conv(input, weight0, 1, 1, 1, 1);
+    let x2 = graph.conv(x1, weight0, 1, 1, 1, 1);
+    let x3 = graph.conv(x2, weight0, 1, 1, 1, 1);
+    let x4 = graph.conv(x3, weight0, 1, 1, 1, 1);
 
-    let y1 = graph.conv(input, weight1, 1, 1);
-    let y2 = graph.conv(y1, weight1, 1, 1);
-    let y3 = graph.conv(y2, weight1, 1, 1);
-    let y4 = graph.conv(y3, weight1, 1, 1);
+    let y1 = graph.conv(input, weight1, 1, 1, 1, 1);
+    let y2 = graph.conv(y1, weight1, 1, 1, 1, 1);
+    let y3 = graph.conv(y2, weight1, 1, 1, 1, 1);
+    let y4 = graph.conv(y3, weight1, 1, 1, 1, 1);
 
     graph.output_all(&[x4, y4]);
 
     test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+}
+
+#[test]
+fn strided_conv() {
+    let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
+
+    let input = graph.input(shape![Size::BATCH, 3, 8, 8]);
+    let filter = graph.constant(shape![16, 3, 3, 3], rng_vec(16 * 3 * 3 * 3, &mut rng));
+    let output = graph.conv(input, filter, 2, 4, 1, 1);
+    assert_eq!(graph[output].shape, shape![Size::BATCH, 16, 4, 2]);
+
+    let batch_size = 4;
+    let input = rng_tensor(graph[input].shape.eval(batch_size).dims.as_slice(), &mut rng);
+    test_all(&graph, batch_size, &[input], None);
 }
 
 #[test]
@@ -642,27 +841,56 @@ fn softmax_single() {
 
 #[test]
 fn layernorm_fused() {
-    let mut graph = Graph::new();
+    let input_shape = shape![Size::BATCH, 8, 32];
+    let eps = 1e-5;
+    let axis = 2;
 
-    let input = graph.input(shape![Size::BATCH, 8, 32]);
-    let reduced_shape = shape![Size::BATCH, 8, 1];
+    let graph = {
+        let mut graph = Graph::new();
 
-    let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
-    let const_eps = graph.constant(Shape::SCALAR, vec![1e-5]);
+        let input = graph.input(input_shape.clone());
+        let reduced_shape = shape![Size::BATCH, 8, 1];
 
-    let mean = graph.reduce(input, vec![2], ReduceOp::Mean);
-    let mean = graph.view(mean, reduced_shape.clone());
-    let zeroed = graph.sub(input, mean);
+        let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
+        let const_eps = graph.constant(Shape::SCALAR, vec![eps]);
 
-    let pow = graph.pow(zeroed, const_2);
-    let var = graph.reduce(pow, vec![2], ReduceOp::Mean);
-    let var = graph.view(var, reduced_shape.clone());
-    let var = graph.add(var, const_eps);
+        let mean = graph.reduce(input, vec![axis], ReduceOp::Mean);
+        let mean = graph.view(mean, reduced_shape.clone());
+        let zeroed = graph.sub(input, mean);
 
-    let std = graph.unary(UnaryOp::Sqrt, var);
-    let result = graph.binary(BinaryOp::Div, zeroed, std);
+        let pow = graph.pow(zeroed, const_2);
+        let var = graph.reduce(pow, vec![axis], ReduceOp::Mean);
+        let var = graph.view(var, reduced_shape.clone());
+        let var = graph.add(var, const_eps);
 
-    graph.output(result);
+        let std = graph.unary(UnaryOp::Sqrt, var);
+        let result = graph.binary(BinaryOp::Div, zeroed, std);
+
+        graph.output(result);
+
+        graph
+    };
+
+    {
+        println!("Checking for layernorm fusion");
+        // check whether we correctly fuse everything into a single layernorm operation
+        let optimized = optimize_graph(&graph, Default::default());
+        println!("Optimized graph:\n{}:\n\n", optimized);
+        let optimized_values = optimized.values().collect_vec();
+        assert_eq!(optimized_values.len(), 2);
+        let input = optimized_values[0];
+        let output = optimized_values[1];
+
+        assert_eq!(optimized[input].operation, Operation::Input { index: 0 });
+        assert_eq!(
+            optimized[output].operation,
+            Operation::Layernorm {
+                input,
+                axis,
+                eps: Total::from(eps),
+            }
+        );
+    }
 
     test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
 }

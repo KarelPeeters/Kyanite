@@ -3,7 +3,9 @@ use std::ops::ControlFlow;
 use internal_iterator::InternalIterator;
 
 use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
+use nn_graph::graph::Value;
 
+use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::ReduceKernel;
 use crate::autokernel::scalar::ScalarKernel;
@@ -12,6 +14,7 @@ use crate::offset_tensor::PtrTensor;
 
 #[derive(Debug)]
 pub struct StepInfo<P> {
+    pub debug_value: Value,
     pub debug_id: String,
     pub step: Step<P>,
 }
@@ -24,7 +27,7 @@ pub enum Step<P> {
     ReduceOp(ReduceOpArgs<P>),
     SoftmaxOp(SoftmaxOpArgs<P>),
     LayernormOp(LayernormOpArgs<P>),
-    Gather(GatherArgs<P>),
+    GatherOp(GatherOpArgs<P>),
 }
 
 #[derive(Debug)]
@@ -56,6 +59,14 @@ pub struct SoftmaxOpArgs<P> {
 }
 
 #[derive(Debug)]
+pub struct GatherOpArgs<P> {
+    pub kernel: GatherKernel,
+    pub input: PtrTensor<P>,
+    pub indices: PtrTensor<P>,
+    pub output: PtrTensor<P>,
+}
+
+#[derive(Debug)]
 pub struct LayernormOpArgs<P> {
     pub kernel: LayernormKernel,
     pub input0: PtrTensor<P>,
@@ -65,6 +76,19 @@ pub struct LayernormOpArgs<P> {
 
 #[derive(Debug)]
 pub struct PlanStepOperands<'a, P>(&'a Step<P>);
+
+#[derive(Debug)]
+pub struct Operand<T> {
+    pub kind: OperandKind,
+    pub value: T,
+}
+
+#[derive(Debug)]
+pub enum OperandKind {
+    In,
+    Out,
+    InOut,
+}
 
 //TODO is there some way to reduce the huge amount of boilerplate here?
 impl<P> Step<P> {
@@ -121,16 +145,16 @@ impl<P> Step<P> {
                 input1: args.input1.map(|op| op.map_ptr(&mut f)),
                 output: args.output.map_ptr(&mut f),
             }),
-            Step::Gather(args) => Step::Gather(GatherArgs {
+            Step::GatherOp(args) => Step::GatherOp(GatherOpArgs {
+                kernel: args.kernel,
                 input: args.input.map_ptr(&mut f),
-                axis: args.axis,
                 indices: args.indices.map_ptr(&mut f),
                 output: args.output.map_ptr(&mut f),
             }),
         }
     }
 
-    pub fn for_each_ptr<'a, R>(&'a self, mut f: impl FnMut(&'a P) -> ControlFlow<R>) -> ControlFlow<R> {
+    fn for_each_ptr<'a, R>(&'a self, mut f: impl FnMut(Operand<&'a P>) -> ControlFlow<R>) -> ControlFlow<R> {
         match self {
             Step::Conv(FusedConvolutionArgs {
                 conv_desc: _,
@@ -148,46 +172,54 @@ impl<P> Step<P> {
                 output_desc: _,
                 output_ptr,
             }) => {
-                f(work_ptr)?;
-                f(filter_ptr)?;
-                f(input_ptr)?;
-                f(bias_ptr)?;
+                f(Operand::new_inout(work_ptr))?;
+                f(Operand::new_in(filter_ptr))?;
+                f(Operand::new_in(input_ptr))?;
+                f(Operand::new_in(bias_ptr))?;
                 if let Some(res_ptr) = res_ptr {
-                    f(res_ptr)?;
+                    f(Operand::new_in(res_ptr))?;
                 }
-                f(output_ptr)?;
+                f(Operand::new_out(output_ptr))?;
             }
             Step::MatMul(BatchedMatMulArgs {
                 m: _,
                 n: _,
                 k: _,
                 alpha: _,
-                beta: _,
+                beta,
                 a,
                 b,
                 c,
                 batch_count: _,
             }) => {
-                f(&a.ptr)?;
-                f(&b.ptr)?;
-                f(&c.ptr)?;
+                f(Operand::new_in(&a.ptr))?;
+                f(Operand::new_in(&b.ptr))?;
+
+                if *beta == 0.0 {
+                    f(Operand::new_out(&c.ptr))?;
+                } else {
+                    f(Operand::new_inout(&c.ptr))?;
+                }
             }
-            Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => operands.iter().map(|a| a.ptr()).try_for_each(f)?,
+            Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => {
+                // TODO mark some of these input/output only if appropriate
+                operands.iter().map(|a| Operand::new_inout(a.ptr())).try_for_each(f)?
+            }
             Step::ReduceOp(ReduceOpArgs {
                 kernel: _,
                 input,
                 output,
             }) => {
-                f(input.ptr())?;
-                f(output.ptr())?;
+                f(Operand::new_in(input.ptr()))?;
+                f(Operand::new_out(output.ptr()))?;
             }
             Step::SoftmaxOp(SoftmaxOpArgs {
                 kernel: _,
                 input,
                 output,
             }) => {
-                f(input.ptr())?;
-                f(output.ptr())?;
+                f(Operand::new_in(input.ptr()))?;
+                f(Operand::new_out(output.ptr()))?;
             }
             Step::LayernormOp(LayernormOpArgs {
                 kernel: _,
@@ -195,21 +227,21 @@ impl<P> Step<P> {
                 input1,
                 output,
             }) => {
-                f(input0.ptr())?;
+                f(Operand::new_in(input0.ptr()))?;
                 if let Some(input1) = input1 {
-                    f(input1.ptr())?;
+                    f(Operand::new_in(input1.ptr()))?;
                 }
-                f(output.ptr())?;
+                f(Operand::new_out(output.ptr()))?;
             }
-            Step::Gather(GatherArgs {
+            Step::GatherOp(GatherOpArgs {
+                kernel: _,
                 input,
-                axis: _,
                 indices,
                 output,
             }) => {
-                f(input.ptr())?;
-                f(indices.ptr())?;
-                f(output.ptr())?;
+                f(Operand::new_in(input.ptr()))?;
+                f(Operand::new_in(indices.ptr()))?;
+                f(Operand::new_out(output.ptr()))?;
             }
         }
 
@@ -218,12 +250,35 @@ impl<P> Step<P> {
 }
 
 impl<'a, P> InternalIterator for PlanStepOperands<'a, P> {
-    type Item = &'a P;
+    type Item = Operand<&'a P>;
 
     fn try_for_each<R, F>(self, f: F) -> ControlFlow<R>
     where
         F: FnMut(Self::Item) -> ControlFlow<R>,
     {
         self.0.for_each_ptr(f)
+    }
+}
+
+impl<T> Operand<T> {
+    pub fn new_in(value: T) -> Self {
+        Operand {
+            kind: OperandKind::In,
+            value,
+        }
+    }
+
+    pub fn new_out(value: T) -> Self {
+        Operand {
+            kind: OperandKind::Out,
+            value,
+        }
+    }
+
+    pub fn new_inout(value: T) -> Self {
+        Operand {
+            kind: OperandKind::InOut,
+            value,
+        }
     }
 }

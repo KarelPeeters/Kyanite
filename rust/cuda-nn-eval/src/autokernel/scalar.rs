@@ -5,6 +5,7 @@ use itertools::zip_eq;
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -120,16 +121,16 @@ impl ScalarKernel {
         assert_eq!(tensors.len(), self.operand_types.len());
         //TODO verify tensor types once that's implemented
 
-        let batch_size = tensors[0].shape().shape()[0];
+        let batch_size = tensors[0].strided_shape().shape()[0];
 
         let mut args = KernelArgs::new();
         args.push_int(batch_size as i32);
 
         for (expected_strides, tensor) in zip_eq(&self.operand_strides, tensors) {
-            assert_eq!(1 + self.inner_shape.len(), tensor.shape().rank());
-            assert_eq!(batch_size, tensor.shape().shape()[0]);
-            assert_eq!(self.inner_shape, tensor.shape().shape()[1..]);
-            assert_eq!(expected_strides, tensor.shape().strides());
+            assert_eq!(1 + self.inner_shape.len(), tensor.strided_shape().rank());
+            assert_eq!(batch_size, tensor.strided_shape().shape()[0]);
+            assert_eq!(self.inner_shape, tensor.strided_shape().shape()[1..]);
+            assert_eq!(expected_strides, tensor.strided_shape().strides());
 
             args.push(tensor.ptr().ptr());
         }
@@ -142,7 +143,8 @@ impl ScalarKernel {
 
         // TODO cache all of this so we just have to call launch_kernel at the end?
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .unwrap();
     }
 }
 
@@ -157,7 +159,7 @@ fn build_operation(operand_types: &[String], operation: &str) -> String {
             ty = ty,
             i = i
         )
-        .unwrap();
+            .unwrap();
     }
     writeln!(f, "{}", operation).unwrap();
 

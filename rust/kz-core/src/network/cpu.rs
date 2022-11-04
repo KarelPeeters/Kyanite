@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use board_game::board::Board;
 use itertools::Itertools;
 
-use nn_graph::cpu::{cpu_execute_graph, ExecutionInfo, Tensor};
+use nn_graph::cpu::{cpu_eval_graph_exec, ExecutionInfo, Tensor};
 use nn_graph::graph::Graph;
 use nn_graph::ndarray::IxDyn;
 
@@ -30,7 +30,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
         }
     }
 
-    pub fn evaluate_batch_exec(&mut self, boards: &[impl Borrow<B>]) -> ExecutionInfo {
+    pub fn evaluate_batch_exec(&mut self, boards: &[impl Borrow<B>], keep_all: bool) -> ExecutionInfo {
         let batch_size = boards.len();
 
         // encore the input
@@ -47,7 +47,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
             .unwrap_or_else(|_| panic!("Incompatible shapes: ({}) -> {:?}", input_len, input_shape));
 
         // evaluate the graph
-        cpu_execute_graph(&self.graph, batch_size, &[input])
+        cpu_eval_graph_exec(&self.graph, batch_size, &[input], keep_all)
     }
 
     pub fn mapper(&self) -> M {
@@ -61,7 +61,7 @@ impl<B: Board, M: BoardMapper<B>> CPUNetwork<B, M> {
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CPUNetwork<B, M> {
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
-        let outputs = self.evaluate_batch_exec(boards).output_tensors();
+        let outputs = self.evaluate_batch_exec(boards, false).output_tensors();
         let batch_outputs = outputs.iter().map(|t| t.as_slice().unwrap()).collect_vec();
 
         decode_output(self.mapper, boards, &batch_outputs)

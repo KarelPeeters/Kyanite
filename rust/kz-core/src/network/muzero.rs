@@ -110,9 +110,9 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
             serde_json::from_reader(File::open(format!("{}info.json", path)).unwrap()).expect("Failed to parse info");
         assert_eq!(info.state_quant_bits, 8, "Only 8-bit quantization supported for now");
 
-        let representation = load_graph_from_onnx_path(format!("{}representation.onnx", path));
-        let dynamics = load_graph_from_onnx_path(format!("{}dynamics.onnx", path));
-        let prediction = load_graph_from_onnx_path(format!("{}prediction.onnx", path));
+        let representation = load_graph_from_onnx_path(format!("{}representation.onnx", path), false);
+        let dynamics = load_graph_from_onnx_path(format!("{}dynamics.onnx", path), false);
+        let prediction = load_graph_from_onnx_path(format!("{}prediction.onnx", path), false);
 
         let input_shape = shape![Size::BATCH].concat(&Shape::fixed(&mapper.input_full_shape()));
         let state_shape = info.state_shape(mapper);

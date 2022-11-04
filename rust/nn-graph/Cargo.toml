@@ -16,7 +16,6 @@ num-traits = "0.2.14"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 
 ndarray = "0.15.4"
-convolutions-rs = "0.3.4"
 indexmap = "1.8.1"
 rand = "0.8.5"
 

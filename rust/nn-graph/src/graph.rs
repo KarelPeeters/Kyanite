@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
@@ -31,8 +32,8 @@ pub struct Value {
 pub struct ValueInfo {
     pub shape: Shape,
     pub operation: Operation,
-    pub users: usize,
     pub debug_id: String,
+    non_output_uses: usize,
 }
 
 /// Wrapper type that prevents the Debug output from getting too large.
@@ -51,7 +52,7 @@ pub enum Operation {
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
     View { input: Value },
-    /// Repeat along axes with size 1 that don't match the output shape.
+    /// Repeat along all axes with size 1 that don't match the output shape.
     Broadcast { input: Value },
     /// Change the order of axis in the shape.
     Permute { input: Value, permutation: Vec<usize> },
@@ -64,7 +65,8 @@ pub enum Operation {
     /// Flip the given axis.
     Flip { input: Value, axis: usize },
 
-    /// Gather values from `input` at the indices in `index` on the given axis.
+    /// Gather values from `input` at the indices in `index` on the given `axis`.
+    /// `indices` is a rank-1 tensor.
     Gather { input: Value, axis: usize, indices: Value },
 
     /// Concatenate values along an axis.
@@ -107,8 +109,16 @@ pub struct SliceRange {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOp {
-    Sqrt,
+    Abs,
+    Neg,
+    Sin,
+    Cos,
     Exp,
+    Log,
+    Sqrt,
+    Sigmoid,
+    Tanh,
+    Erf,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -235,6 +245,8 @@ pub struct ConvDetails {
     pub input_w: usize,
     pub kernel_h: usize,
     pub kernel_w: usize,
+    pub stride_y: usize,
+    pub stride_x: usize,
     pub padding_y: usize,
     pub padding_x: usize,
     pub output_h: usize,
@@ -252,6 +264,10 @@ impl ConvDetails {
 
     pub fn keeps_spatial_shape(&self) -> bool {
         (self.input_h == self.output_h) && (self.input_w == self.output_w)
+    }
+
+    pub fn has_stride(&self) -> bool {
+        self.stride_y != 1 || self.stride_x != 1
     }
 
     pub fn kernel_shape(&self) -> [usize; 4] {
@@ -320,8 +336,17 @@ impl Graph {
         !self.inputs.contains(&value) && !self.outputs.contains(&value)
     }
 
-    pub fn is_hidden_with_users(&self, value: Value, users: usize) -> bool {
-        self.is_hidden(value) && self[value].users == users
+    pub fn is_hidden_with_uses(&self, value: Value, users: usize) -> bool {
+        self.is_hidden(value) && self[value].non_output_uses == users
+    }
+
+    pub fn is_const(&self, value: Value) -> bool {
+        let operation = &self[value].operation;
+        match *operation {
+            Operation::Input { .. } => false,
+            Operation::Constant { .. } => true,
+            _ => operation.inputs().into_iter().all(|input| self.is_const(input)),
+        }
     }
 
     /// Try to evaluate `value` as a constant.
@@ -380,7 +405,7 @@ impl Graph {
         let info = ValueInfo {
             shape,
             operation,
-            users: 0,
+            non_output_uses: 0,
             debug_id: String::new(),
         };
 
@@ -395,7 +420,7 @@ impl Graph {
                 // no duplicate found, create new value
                 for input in info.operation.inputs() {
                     self.check_contains(input);
-                    self.values[input.index].users += 1;
+                    self.values[input.index].non_output_uses += 1;
                 }
 
                 let index = self.values.len();
@@ -476,7 +501,7 @@ impl Graph {
     /// Additional unit axes are are inserted at the front and unit axes are repeated as necessary.
     #[must_use]
     pub fn broadcast(&mut self, input: Value, new_shape: Shape) -> Value {
-        let input_shape = self[input].shape.clone();
+        let input_shape = &self[input].shape.clone();
 
         assert!(
             input_shape.rank() <= new_shape.rank(),
@@ -485,30 +510,48 @@ impl Graph {
             new_shape
         );
 
-        // insert dummy axes until ranks match
-        let mut view_shape = input_shape.clone();
-        while view_shape.rank() < new_shape.rank() {
-            view_shape = view_shape.insert(0, Size::ONE);
-        }
-        assert_eq!(view_shape.rank(), new_shape.rank());
-
+        // pad with 1 axes
+        let view_shape = Shape::ones(new_shape.rank() - input_shape.rank()).concat(&input_shape);
         let curr = self.view(input, view_shape.clone());
+
+        // check that broadcasting is valid)
+        for (&v, &n) in zip_eq(&view_shape.dims, &new_shape.dims) {
+            assert!(
+                v == n || v == Size::ONE,
+                "Cannot broadcast from {:?} to {:?} because of axis ({}, {})",
+                input_shape,
+                new_shape,
+                v,
+                n
+            );
+        }
+
+        // don't need to actually broadcast
         if view_shape == new_shape {
             return curr;
         }
 
-        // check that broadcasting is valid
-        for (&old_axis, &new_axis) in zip_eq(&view_shape.dims, &new_shape.dims) {
-            assert!(
-                old_axis == new_axis || old_axis == Size::ONE,
-                "Cannot broadcast from {:?} to {:?}",
-                view_shape,
-                new_shape
-            );
-        }
-
         // do the actual broadcast
         self.push(new_shape, Operation::Broadcast { input: curr })
+    }
+
+    pub fn repeat_unary(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        let input_shape = &self[input].shape;
+        assert_eq!(
+            input_shape[axis],
+            Size::ONE,
+            "Input shape {} does not have dim 1 for axis {}",
+            input_shape,
+            axis
+        );
+
+        // TODO fuse consecutive broadcast operations, maybe even view/broadcast/view if the axes are independent
+        // skip broadcast operation
+        if count == Size::ONE {
+            return input;
+        }
+
+        self.push(input_shape.replace(axis, shape![count]), Operation::Broadcast { input })
     }
 
     /// View a value with a flattened shape.
@@ -517,20 +560,15 @@ impl Graph {
     pub fn flatten(&mut self, input: Value, start_axis: usize) -> Value {
         let old_shape = &self[input].shape;
         assert!(
-            old_shape.rank() >= start_axis,
-            "Input rank {} to low for start axis {}",
-            old_shape.rank(),
-            start_axis
+            start_axis <= old_shape.rank(),
+            "Flatten start axis {} out of bounds for {}",
+            start_axis,
+            old_shape,
         );
 
-        let new_shape = if start_axis == 0 {
-            shape![1, old_shape.size()]
-        } else {
-            let kept_dims = &old_shape.dims[..start_axis];
-            let flat_size = old_shape.dims[start_axis..].iter().copied().product();
-
-            Shape::new([kept_dims, &[flat_size]].concat())
-        };
+        let kept_dims = &old_shape.dims[..start_axis];
+        let flat_size = old_shape.dims[start_axis..].iter().copied().product();
+        let new_shape = Shape::new([kept_dims, &[flat_size]].concat());
 
         self.view(input, new_shape)
     }
@@ -583,16 +621,11 @@ impl Graph {
         )
     }
 
-    /// Slice a value along an axis. See [slice_range] for a more general version.
+    /// Slice a value along an axis.
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
         let old_shape = &self[input].shape;
-        assert!(
-            axis < old_shape.rank(),
-            "Slice axis {} out of bounds for {:?}",
-            axis,
-            old_shape,
-        );
+        old_shape.assert_has_axis(axis);
 
         let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
         range.assert_in_bounds(old_size);
@@ -603,7 +636,7 @@ impl Graph {
             return input;
         }
 
-        let new_shape = old_shape.replace(axis, Some(Size::fixed(new_size)));
+        let new_shape = old_shape.replace(axis, shape![new_size]);
         self.push(new_shape, Operation::Slice { input, axis, range })
     }
 
@@ -611,75 +644,149 @@ impl Graph {
     /// Similar to slice with a 1-sized interval except that the the resulting value doesn't have the extra axis.
     #[must_use]
     pub fn index(&mut self, input: Value, axis: usize, index: usize) -> Value {
+        let new_shape = self[input].shape.replace(axis, shape![]);
         let sliced = self.slice(input, axis, SliceRange::single(index));
-
-        let mut new_shape = self[input].shape.clone();
-        new_shape.dims.remove(axis);
-
         self.view(sliced, new_shape)
     }
 
     /// Flip the given `axis`.
     pub fn flip(&mut self, input: Value, axis: usize) -> Value {
         let shape = self[input].shape.clone();
-        assert!(axis <= shape.rank(), "Axis {} out of bounds for {:?}", axis, shape);
+        shape.assert_has_axis(axis);
 
         self.push(shape, Operation::Flip { input, axis })
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
-    pub fn repeat(&mut self, input: Value, axis: usize, count: usize) -> Value {
-        //TODO introduce separate (optimized) operation for this?
-        //TODO special-case length-0 axis to some kind of restride operation
-        let base_shape = self[input].shape.replace(axis, Some(Size::ZERO));
-        self.concat(vec![input; count], axis, Some(base_shape))
+    /// This starts by emitting the entire tensor before repeating elements,
+    /// similar to `torch.repeat` or `numpy.tile`.
+    pub fn repeat(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        self.repeat_impl(input, axis, count, false)
     }
 
-    /// Index along the given `axis` with indices given by `index`.
+    /// Repeat elements of `input` along a given `axis`, `count` times.
+    /// This starts by repeat each element before going to the next one,
+    /// similar to `torch.repeat_interleave` or `numpy.repeat`.
+    pub fn repeat_interleave(&mut self, input: Value, axis: usize, count: Size) -> Value {
+        self.repeat_impl(input, axis, count, true)
+    }
+
+    fn repeat_impl(&mut self, input: Value, axis: usize, count: Size, inner: bool) -> Value {
+        let input_shape = self[input].shape.clone();
+        input_shape.assert_has_axis(axis);
+
+        // do simpler repeat operation instead
+        if input_shape[axis] == Size::ONE {
+            return self.repeat_unary(input, axis, count);
+        }
+
+        let new_size = input_shape[axis] * count;
+        let dummy_axis = if inner { axis + 1 } else { axis };
+
+        // insert dummy axis, repeat dummy axis, flatten into main axis
+        let extra = self.view(input, input_shape.insert(dummy_axis, Size::ONE));
+        let broad = self.repeat_unary(extra, dummy_axis, count);
+        let result = self.view(broad, input_shape.replace(axis, shape![new_size]));
+
+        result
+    }
+
+    /// Index `input` along the given `axis` with indices given by `indices`.
+    ///
+    /// The `output` shape is the `input` shape with `axis` replaced by the shape of `indices`.
     #[must_use]
     pub fn gather(&mut self, input: Value, axis: usize, indices: Value) -> Value {
         let input_shape = &self[input].shape;
-        let index_size = self[indices].shape.unwrap_1();
+        let indices_shape = &self[indices].shape;
 
-        let mut result_shape = input_shape.clone();
-        result_shape.dims[axis] = index_size;
+        input_shape.assert_has_axis(axis);
 
-        self.push(result_shape, Operation::Gather { input, axis, indices })
+        let result_shape = input_shape.replace(axis, indices_shape.clone());
+        let result_shape_flat = input_shape.replace(axis, shape![indices_shape.size()]);
+
+        // we support arbitrary rank indices here, but the actual operation does not
+        let flat_indices = self.flatten(indices, 0);
+        let flat_size = self[flat_indices].shape.unwrap_1();
+
+        let result_flat = if let Some(index_f) = self.as_single_const(indices) {
+            // replace gather with simpler slice (+ repeat) operator
+            let index = index_f as usize;
+            assert_eq!(index as f32, index_f, "Index must be an integer, got {}", index_f);
+
+            let result_flat_single = self.slice(input, axis, SliceRange::single(index));
+            let result_flat = self.repeat(result_flat_single, axis, flat_size);
+
+            assert_eq!(self[result_flat].shape, result_shape_flat);
+            result_flat
+        } else {
+            // do a full gather operation
+            self.push(
+                result_shape_flat,
+                Operation::Gather {
+                    input,
+                    axis,
+                    indices: flat_indices,
+                },
+            )
+        };
+
+        let result = self.view(result_flat, result_shape);
+        result
     }
 
     /// Concatenate `inputs` along `axis`.
     /// `base_shape` can be provided to allow the result shape to be inferred in case `inputs` is empty.
     #[must_use]
     pub fn concat(&mut self, inputs: Vec<Value>, axis: usize, base_shape: Option<Shape>) -> Value {
+        // skip operation if there is only a single input
+        // TODO also remove empty inputs from the list of operands
+        // TODO skip concat entirely if there is only a single nonempty input
+        // TODO skip entire operation if the output is empty (generalize this to all operations?)
+        if inputs.len() == 1 {
+            let shape = &self[inputs[0]].shape;
+            shape.assert_has_axis(axis);
+            return inputs[0];
+        }
+
         let base_shape = base_shape.unwrap_or_else(|| {
             assert!(
                 !inputs.is_empty(),
                 "Cannot infer concatenation shape without any values"
             );
-            self[inputs[0]].shape.replace(axis, Some(Size::ZERO))
+            self[inputs[0]].shape.replace(axis, shape![0])
         });
 
         let size_along_axis = inputs
             .iter()
             .map(|&v| {
                 assert_eq!(
-                    self[v].shape.replace(axis, Some(Size::ZERO)),
+                    self[v].shape.replace(axis, shape![0]),
                     base_shape,
                     "All concatenated values must match base shape on non-concatenated axes"
                 );
-                self[v].shape.dims[axis].unwrap_fixed("Size along concatenated axis")
+                self[v].shape.dims[axis]
             })
-            .sum::<usize>();
+            .sum::<Option<Size>>()
+            .unwrap_or_else(|| {
+                let input_shapes = inputs.iter().map(|&v| &self[v].shape).collect_vec();
+                panic!("Could not add all concatenation sizes: {:?}", input_shapes);
+            });
 
-        let mut result_shape = base_shape;
-        result_shape[axis] = Size::fixed(size_along_axis);
-
+        let result_shape = base_shape.replace(axis, shape![size_along_axis]);
         self.push(result_shape, Operation::Concat { inputs, axis })
     }
 
     /// Apply 2D convolution.
     #[must_use]
-    pub fn conv(&mut self, input: Value, filter: Value, padding_y: usize, padding_x: usize) -> Value {
+    pub fn conv(
+        &mut self,
+        input: Value,
+        filter: Value,
+        stride_y: usize,
+        stride_x: usize,
+        padding_y: usize,
+        padding_x: usize,
+    ) -> Value {
         let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input]
             .shape
             .dims
@@ -707,8 +814,16 @@ impl Graph {
 
         assert_eq!(input_channels, in_c_check, "Input channel mismatch");
 
-        let output_h = input_h - kernel_h + 1 + 2 * padding_y;
-        let output_w = input_w - kernel_w + 1 + 2 * padding_x;
+        let padded_input_h = input_h + 2 * padding_y;
+        let padded_input_w = input_w + 2 * padding_x;
+        assert!(
+            padded_input_h >= kernel_h && padded_input_w >= kernel_w,
+            "Kernel must fit inside of padded input"
+        );
+
+        // operations are ordered to avoid underflow
+        let output_h = (padded_input_h - (kernel_h - 1) - 1) / stride_y + 1;
+        let output_w = (padded_input_w - (kernel_w - 1) - 1) / stride_x + 1;
         let output_shape = shape![batch_size, output_channels, output_h, output_w];
 
         let details = ConvDetails {
@@ -719,6 +834,8 @@ impl Graph {
             input_w,
             kernel_h,
             kernel_w,
+            stride_y,
+            stride_x,
             padding_y,
             padding_x,
             output_h,
@@ -735,42 +852,73 @@ impl Graph {
         self.mat_mul(input, weight_transposed)
     }
 
-    /// Single matrix multiply.
+    /// General matrix multiply, with broadcasting.
+    ///
+    /// * The last two axes should have shapes `[n, p]` and `[p, m]` and will result in an output shape `[n, m]`
+    /// * The preceding axes are broadcast together and reappear in the output as-is.
     #[must_use]
     pub fn mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let left_batched = self.view(left, self[left].shape.insert(0, Size::ONE));
-        let right_batched = self.view(right, self[right].shape.insert(0, Size::ONE));
-        let result_batched = self.batched_mat_mul(left_batched, right_batched);
-        let result = self.view(result_batched, self[result_batched].shape.replace(0, None));
+        let left_shape = &self[left].shape;
+        let right_shape = &self[right].shape;
+
+        assert!(
+            left_shape.rank() >= 2 && right_shape.rank() >= 2,
+            "Matmul operands must have rank >= 2, got shapes {} and {}",
+            left_shape,
+            right_shape
+        );
+
+        let (left_head, left_tail) = left_shape.split(left_shape.rank() - 2);
+        let (right_head, right_tail) = right_shape.split(right_shape.rank() - 2);
+
+        // check tails match
+        let [m, n0] = left_tail.unwrap_2();
+        let [n1, p] = right_tail.unwrap_2();
+        assert_eq!(
+            n0, n1,
+            "Inner matmul dimension must, got shapes {} and {}",
+            left_shape, right_shape
+        );
+        let result_tail = shape![m, p];
+
+        // broadcast heads
+        let result_head = broadcast_shape_symmetric(&left_head, &right_head);
+        let batch_size = result_head.size();
+        let left_broadcast = self.broadcast(left, result_head.clone().concat(&left_tail));
+        let right_broadcast = self.broadcast(right, result_head.clone().concat(&right_tail));
+
+        // flatten for bmm
+        let left_flat = self.view(left_broadcast, left_tail.insert(0, batch_size));
+        let right_flat = self.view(right_broadcast, right_tail.insert(0, batch_size));
+        let result_flat = self.batched_mat_mul(left_flat, right_flat);
+
+        // unflatten into final shape
+        let result = self.view(result_flat, result_head.concat(&result_tail));
         result
     }
 
-    /// Batched matrix multiply. Inputs must have shapes `[b, p, q]`, `[b, q, r]` and the result has shape `[N, p, r]`.
+    /// Batched matrix multiply, without any automatic broadcasting.
+    /// Inputs must have shapes `[b, m, n]`, `[b, n, p]` and the result has shape `[b, m, p]`.
     #[must_use]
     pub fn batched_mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let [b0, p, q0] = self[left].shape.unwrap_3();
-        let [b1, q1, r] = self[right].shape.unwrap_3();
+        let [b0, m, n0] = self[left].shape.unwrap_3();
+        let [b1, n1, p] = self[right].shape.unwrap_3();
 
         assert!(
-            b0 == b1 && q0 == q1,
-            "MatMul dimension mismatch: {:?} and {:?}",
+            b0 == b1 && n0 == n1,
+            "Batched matmul dimension mismatch, got shapes {} and {}",
             self[left].shape,
             self[right].shape
         );
 
-        let result_shape = shape![b0, p, r];
+        let result_shape = shape![b0, m, p];
         self.push(result_shape, Operation::MatMul { left, right })
     }
 
     #[must_use]
     pub fn softmax(&mut self, input: Value, axis: usize) -> Value {
         let input_shape = &self[input].shape;
-        assert!(
-            axis < input_shape.dims.len(),
-            "Softmax axis {} out of range for shape {:?}",
-            axis,
-            input_shape
-        );
+        input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
         self.push(new_shape, Operation::Softmax { input, axis })
@@ -779,12 +927,7 @@ impl Graph {
     #[must_use]
     pub fn layernorm(&mut self, input: Value, axis: usize, eps: f32) -> Value {
         let input_shape = &self[input].shape;
-        assert!(
-            axis < input_shape.dims.len(),
-            "Layernorm axis {} out of range for shape {:?}",
-            axis,
-            input_shape
-        );
+        input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
         self.push(
@@ -809,16 +952,23 @@ impl Graph {
 
         // check that the axes are in bounds
         for &axis in &axes {
-            assert!(
-                axis < input_shape.dims.len(),
-                "Reduce axis {} out of range for shape {:?}",
-                axis,
-                input_shape
-            );
+            input_shape.assert_has_axis(axis);
         }
 
-        let new_shape = input_shape.replace_all(&axes, None);
+        let new_shape = input_shape.replace_all(&axes, shape![]);
         self.push(new_shape, Operation::Reduce { input, axes, op })
+    }
+
+    /// Elementwise sigmoid.
+    #[must_use]
+    pub fn sigmoid(&mut self, input: Value) -> Value {
+        self.push(
+            self[input].shape.clone(),
+            Operation::Unary {
+                input,
+                op: UnaryOp::Sigmoid,
+            },
+        )
     }
 
     /// Elementwise relu.
@@ -841,7 +991,7 @@ impl Graph {
             curr = self.binary(BinaryOp::Min, curr, max_value);
         }
 
-        if min != f32::INFINITY {
+        if min != f32::NEG_INFINITY {
             let min_value = self.constant(right_shape, vec![min]);
             curr = self.binary(BinaryOp::Max, curr, min_value);
         }
@@ -889,7 +1039,8 @@ impl Graph {
             return left;
         }
 
-        let result_shape = self[left].shape.clone();
+        let result_shape = broadcast_shape_symmetric(&self[left].shape, &self[right].shape);
+        let left = self.broadcast(left, result_shape.clone());
         let right = self.broadcast(right, result_shape.clone());
 
         self.push(result_shape, Operation::Binary { left, right, op })
@@ -944,6 +1095,25 @@ impl Graph {
     }
 }
 
+pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
+    let rank = max(left.rank(), right.rank());
+
+    // pad with leading 1 axes
+    let left = Shape::ones(rank - left.rank()).concat(&left);
+    let right = Shape::ones(rank - right.rank()).concat(&right);
+
+    // decide the matching axes for both
+    let result = zip_eq(&left.dims, &right.dims)
+        .map(|(&l, &r)| match (l, r) {
+            (Size::ONE, other) | (other, Size::ONE) => other,
+            (any, other) if any == other => any,
+            _ => panic!("Cannot broadcast {} and {} in shapes {} and {}", l, r, left, right),
+        })
+        .collect_vec();
+
+    Shape::new(result)
+}
+
 impl Debug for Graph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Graph")
@@ -964,8 +1134,12 @@ impl Display for Graph {
         } = self;
 
         writeln!(f, "Graph {{")?;
-
         writeln!(f, "  check: {},", self.check)?;
+
+        let input_shapes = self.inputs().iter().map(|&v| &self[v].shape).collect_vec();
+        let output_shapes = self.outputs().iter().map(|&v| &self[v].shape).collect_vec();
+        writeln!(f, "  input_shapes: {:?},", input_shapes)?;
+        writeln!(f, "  output_shapes: {:?},", output_shapes)?;
         writeln!(f, "  inputs: {:?},", inputs)?;
         writeln!(f, "  outputs: {:?},", outputs)?;
 
@@ -1032,6 +1206,16 @@ impl Debug for Value {
     }
 }
 
+impl Display for SliceRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.step == 1 {
+            write!(f, "{}:{}", self.start, self.end)
+        } else {
+            write!(f, "{}:{}:{}", self.start, self.end, self.step)
+        }
+    }
+}
+
 impl From<std::ops::Range<usize>> for SliceRange {
     fn from(range: std::ops::Range<usize>) -> Self {
         let std::ops::Range { start, end } = range;
@@ -1088,12 +1272,31 @@ impl SliceRange {
 }
 
 impl UnaryOp {
-    pub const ALL: &'static [Self] = &[UnaryOp::Sqrt];
+    pub const ALL: &'static [Self] = &[
+        UnaryOp::Abs,
+        UnaryOp::Neg,
+        UnaryOp::Sin,
+        UnaryOp::Cos,
+        UnaryOp::Exp,
+        UnaryOp::Log,
+        UnaryOp::Sqrt,
+        UnaryOp::Sigmoid,
+        UnaryOp::Tanh,
+        UnaryOp::Erf,
+    ];
 
     pub fn map(self, x: f32) -> f32 {
         match self {
-            UnaryOp::Sqrt => x.sqrt(),
+            UnaryOp::Abs => x.abs(),
+            UnaryOp::Neg => -x,
+            UnaryOp::Sin => x.sin(),
+            UnaryOp::Cos => x.cos(),
             UnaryOp::Exp => x.exp(),
+            UnaryOp::Log => x.ln(),
+            UnaryOp::Sqrt => x.sqrt(),
+            UnaryOp::Sigmoid => 1.0 / (1.0 + (-x).exp()),
+            UnaryOp::Tanh => x.tanh(),
+            UnaryOp::Erf => erf(x),
         }
     }
 }
@@ -1165,4 +1368,31 @@ impl ReduceOp {
             total
         }
     }
+}
+
+/// Formula and coefficients from https://en.wikipedia.org/wiki/Error_function#Numerical_approximations (Abramowitz and Stegun),
+/// Max error `3e-7`. We use f64 internally to ensure there are no additional errors introduced.
+pub fn erf(x: f32) -> f32 {
+    let sign = x.signum();
+    let x_abs = x.abs() as f64;
+
+    const A: &[f64] = &[
+        1.0,
+        0.0705230784,
+        0.0422820123,
+        0.0092705272,
+        0.0001520143,
+        0.0002765672,
+        0.0000430638,
+    ];
+
+    let d: f64 = A
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, a)| a * x_abs.powi(i as i32))
+        .sum();
+    let y_abs = 1.0 - 1.0 / d.powi(16);
+
+    return sign * y_abs as f32;
 }

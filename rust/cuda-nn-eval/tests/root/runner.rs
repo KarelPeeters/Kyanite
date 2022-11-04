@@ -1,5 +1,5 @@
 use cuda_nn_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
-use nn_graph::cpu::{cpu_execute_graph, Tensor};
+use nn_graph::cpu::{cpu_eval_graph, Tensor};
 use nn_graph::graph::{Graph, Value};
 use nn_graph::ndarray::ArcArray;
 use nn_graph::onnx::load_graph_from_onnx_bytes;
@@ -14,17 +14,18 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
     println!("Running unoptimized CPU");
 
     println!("Testing unoptimized");
-    let cpu_outputs = test_all_graph(&graph, batch_size, inputs, expected_outputs);
+    let cpu_outputs = test_all_exact_graph(&graph, batch_size, inputs, expected_outputs);
     let expected_outputs = expected_outputs.unwrap_or(&cpu_outputs);
 
     println!("Optimizing graph");
     let optimized = optimize_graph(&graph, OptimizerSettings::default());
 
     println!("Testing optimized");
-    test_all_graph(&optimized, batch_size, inputs, Some(expected_outputs));
+    test_all_exact_graph(&optimized, batch_size, inputs, Some(expected_outputs));
 }
 
-pub fn test_all_graph(
+// TODO remove references to this
+pub fn test_all_exact_graph(
     graph: &Graph,
     batch_size: usize,
     inputs: &[Tensor],
@@ -32,9 +33,9 @@ pub fn test_all_graph(
 ) -> Vec<Tensor> {
     println!("Testing:\n{}", graph);
 
-    println!("Testing with CPU");
+    println!("Testing CPU");
 
-    let cpu_outputs = cpu_execute_graph(graph, batch_size, inputs).output_tensors();
+    let cpu_outputs = cpu_eval_graph(graph, batch_size, inputs);
 
     let expected_outputs = if let Some(expected_outputs) = expected_outputs {
         assert_tensors_match(expected_outputs, &cpu_outputs, true);
@@ -44,7 +45,7 @@ pub fn test_all_graph(
     };
     println!();
 
-    println!("Testing Cudnn without graph");
+    println!("Testing GPU");
     let gpu_outputs = eval_cudnn(graph, batch_size, inputs, true);
     assert_tensors_match(expected_outputs, &gpu_outputs, true);
     println!();

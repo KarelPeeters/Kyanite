@@ -6,7 +6,7 @@ use itertools::{zip, zip_eq, Itertools};
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
 use nn_graph::graph::SliceRange;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct StridedShape {
     shape: Vec<usize>,
     strides: Vec<isize>,
@@ -279,6 +279,15 @@ impl StridedShape {
         new_strides.remove(axis);
 
         StridedShape::new(new_shape, new_strides)
+    }
+}
+
+impl Debug for StridedShape {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StridedShape")
+            .field("shape", &self.shape)
+            .field("strides", &self.strides)
+            .finish()
     }
 }
 

@@ -5,6 +5,7 @@ use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
 use crate::cpu::convolution;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
+use crate::optimizer::core::VisitResult;
 use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -12,11 +13,14 @@ use crate::shape::{Shape, Size};
 type ArcArray4<A> = ArcArray<A, Ix4>;
 
 impl Optimizer<'_> {
-    pub fn try_build_affine_group(&self, old_start: Value) -> Option<AffineGroup> {
+    pub fn try_build_affine_group(&self, old_start: Value) -> VisitResult<Option<AffineGroup>> {
         let output_shape = &self.old_graph[old_start].shape;
 
         if let &[batch, after_channels, width, height] = output_shape.dims.as_slice() {
-            let after_channels = after_channels.try_unwrap_fixed()?;
+            let after_channels = match after_channels.try_unwrap_fixed() {
+                None => return Ok(None),
+                Some(after_channels) => after_channels,
+            };
 
             let initial_shape = AffineShape {
                 batch,
@@ -29,33 +33,30 @@ impl Optimizer<'_> {
 
             let old_input = self.follow_if(old_start, |_, _, operation| {
                 self.grow_affine_group(&mut builder, operation)
-            });
+            })?;
 
             if let Some(old_input) = old_input {
-                return Some(builder.finish(old_input));
+                return Ok(Some(builder.finish(old_input)));
             }
         }
 
-        None
+        Ok(None)
     }
 
-    fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> Option<Value> {
+    fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> VisitResult<Option<Value>> {
         match *operation {
             Operation::Conv { input, filter, details } => {
                 if let Some(filter) = self.old_graph.as_const(filter) {
                     let filter: ArcArray4<f32> = filter.into_dimensionality().unwrap();
 
-                    if builder.conv.is_none() && details.keeps_spatial_shape() {
-                        builder.set_conv(ConvOperation {
-                            details,
-                            filter: filter,
-                        });
-                        Some(input)
+                    if builder.conv.is_none() && details.keeps_spatial_shape() && !details.has_stride() {
+                        builder.set_conv(ConvOperation { details, filter });
+                        Ok(Some(input))
                     } else {
-                        None
+                        Ok(None)
                     }
                 } else {
-                    None
+                    Ok(None)
                 }
             }
             Operation::Binary {
@@ -68,42 +69,41 @@ impl Optimizer<'_> {
                         self.old_graph[right_inner].shape.dims.as_slice()
                     {
                         let channels = builder.current_channels();
-                        assert_eq!(
-                            actual_channels,
-                            Size::fixed(channels),
-                            "Invalid channel count for right in binary operation"
-                        );
+                        // TODO it could also just be a broadcasted scalar, maybe fuse this as well
+                        if actual_channels == Size::fixed(channels) {
+                            if let Some(data) = self.old_graph.as_const(right_inner) {
+                                let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
+                                assert_eq!(data.shape(), &[1, channels, 1, 1]);
+                                let data: ArcArray1<f32> = data.reshape(channels);
 
-                        if let Some(data) = self.old_graph.as_const(right_inner) {
-                            let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
-                            assert_eq!(data.shape(), &[1, channels, 1, 1]);
-                            let data: ArcArray1<f32> = data.reshape(channels);
+                                let affine_op = match op {
+                                    BinaryOp::Add => AffineOperation::AddChannel { data },
+                                    BinaryOp::Sub => AffineOperation::AddChannel {
+                                        data: data.map(|&x| -x).into_shared(),
+                                    },
+                                    BinaryOp::Mul => AffineOperation::ScaleChannel { data },
+                                    BinaryOp::Div => AffineOperation::ScaleChannel {
+                                        data: data.map(|&x| 1.0 / x).into_shared(),
+                                    },
+                                    _ => unreachable!(),
+                                };
 
-                            let affine_op = match op {
-                                BinaryOp::Add => AffineOperation::AddChannel { data },
-                                BinaryOp::Sub => AffineOperation::AddChannel {
-                                    data: data.map(|&x| -x).into_shared(),
-                                },
-                                BinaryOp::Mul => AffineOperation::ScaleChannel { data },
-                                BinaryOp::Div => AffineOperation::ScaleChannel {
-                                    data: data.map(|&x| 1.0 / x).into_shared(),
-                                },
-                                _ => unreachable!(),
-                            };
-
-                            builder.push_affine(affine_op);
-                            Some(left)
+                                builder.push_affine(affine_op);
+                                Ok(Some(left))
+                            } else {
+                                Ok(None)
+                            }
                         } else {
-                            None
+                            Ok(None)
                         }
                     } else {
-                        None
+                        Ok(None)
                     }
                 } else {
-                    None
+                    Ok(None)
                 }
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 }
@@ -198,6 +198,7 @@ fn apply_fused_conv(
     after: ScaleBias,
 ) -> Value {
     let details = conv.details;
+    assert!(!details.has_stride());
 
     let mut total_filter = conv.filter.to_owned();
 
@@ -229,7 +230,7 @@ fn apply_fused_conv(
             let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
 
             let mut curr = input;
-            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
+            curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
             curr = graph.binary(BinaryOp::Add, curr, value_bias);
             curr
         }
@@ -247,7 +248,7 @@ fn apply_fused_conv(
 
             let mut curr = input;
             curr = before.apply(graph, curr);
-            curr = graph.conv(curr, value_filter, details.padding_y, details.padding_x);
+            curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
             curr = graph.binary(BinaryOp::Add, curr, value_bias_after);
             curr
         }
@@ -260,6 +261,8 @@ fn pull_bias_through_conv(
     before: Array1<f32>,
     filter: &Array4<f32>,
 ) -> Result<Array4<f32>, Array1<f32>> {
+    assert!(!details.has_stride());
+
     if is_entirely(&before, 0.0) {
         // we don't need to expand the shape even if there is padding, so immediately return 0 here
         Ok(Array4::zeros((1, details.output_channels, 1, 1)))

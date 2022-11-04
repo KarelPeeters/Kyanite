@@ -12,14 +12,14 @@ use crate::wrapper::status::Status;
 /// Since the memory may be shared all accessor methods are marked unsafe.
 ///
 /// Cloning this type does not copy the underlying memory.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DevicePtr {
     buffer: Arc<DeviceBuffer>,
     offset: isize,
 }
 
 /// A device allocation as returned by cudaMalloc.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 struct DeviceBuffer {
     device: Device,
     base_ptr: *mut c_void,

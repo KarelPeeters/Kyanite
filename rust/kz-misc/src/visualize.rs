@@ -51,7 +51,7 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
     show_variance: bool,
     print_details: bool,
 ) -> Vec<Image> {
-    let exec = network.evaluate_batch_exec(boards);
+    let exec = network.evaluate_batch_exec(boards, true);
 
     let graph = network.graph();
     let mapper = network.mapper();

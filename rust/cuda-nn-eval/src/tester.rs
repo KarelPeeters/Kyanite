@@ -113,13 +113,15 @@ pub struct Error {
 pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Match, Mismatch> {
     assert_eq!(expected.len(), actual.len(), "Wrong number of tensors");
 
-    let mut error_count = 0;
-    let mut total_count = 0;
+    let mut total_error_count = 0;
+    let mut total_element_count = 0;
 
     let mut diff_per_tensor = vec![];
     let mut first_errors = vec![];
 
     for (i, (expected_output, output)) in zip_eq(expected, actual).enumerate() {
+        let mut current_error_count = 0;
+
         assert_eq!(
             expected_output.shape(),
             output.shape(),
@@ -142,12 +144,13 @@ pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Mat
             max_abs_diff = f32::max(max_abs_diff, abs_diff);
             max_rel_diff = f32::max(max_rel_diff, rel_diff);
 
-            total_count += 1;
+            total_element_count += 1;
 
             if abs_diff >= TOLERANCE_ABS_DIFF && rel_diff >= TOLERANCE_REL_DIFF {
-                error_count += 1;
+                total_error_count += 1;
+                current_error_count += 1;
 
-                if first_errors.len() < MAX_LOGGED_ERRORS {
+                if current_error_count < MAX_LOGGED_ERRORS {
                     first_errors.push(Error {
                         tensor: i,
                         indices: indices.slice().to_vec(),
@@ -164,12 +167,12 @@ pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Mat
         });
     }
 
-    if error_count == 0 {
+    if total_error_count == 0 {
         Ok(Match { diff_per_tensor })
     } else {
         Err(Mismatch {
-            error_count,
-            total_count,
+            error_count: total_error_count,
+            total_count: total_element_count,
             first_errors,
         })
     }

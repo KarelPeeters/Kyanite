@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::ControlFlow;
 
 use itertools::Itertools;
 
@@ -54,6 +55,10 @@ impl Shape {
 
     pub fn rank(&self) -> usize {
         self.dims.len()
+    }
+
+    pub fn assert_has_axis(&self, axis: usize) {
+        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
     }
 
     pub fn as_fixed(&self) -> Option<ConcreteShape> {
@@ -114,37 +119,35 @@ impl Shape {
         shape![Size::BATCH].concat(self)
     }
 
-    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept.
-    pub fn replace(&self, axis: usize, replacement: Option<Size>) -> Shape {
+    /// Build a new shape with the shape at `axis` replaced by `replacement`, the rest are kept as-is.
+    pub fn replace(&self, axis: usize, replacement: Shape) -> Shape {
         self.replace_all(&[axis], replacement)
     }
 
-    pub fn replace_all(&self, axes: &[usize], replacement: Option<Size>) -> Shape {
-        assert_eq!(
-            axes.iter().unique().count(),
-            axes.len(),
-            "Axes must be unique, got {:?}",
-            axes
-        );
+    pub fn replace_all(&self, axes: &[usize], replacement: Shape) -> Shape {
+        // validate axes
+        assert!(axes.iter().all_unique(), "Axes must be unique, got {:?}", axes);
 
-        // check that the axes are in bounds
         for &axis in axes {
-            assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+            self.assert_has_axis(axis);
         }
 
-        let dims = self
-            .dims
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &d)| if axes.contains(&i) { replacement } else { Some(d) })
-            .collect_vec();
+        // construct new shape
+        let mut dims = vec![];
+        for i in 0..self.rank() {
+            if axes.contains(&i) {
+                dims.extend_from_slice(&replacement.dims);
+            } else {
+                dims.push(self[i])
+            }
+        }
 
         Shape::new(dims)
     }
 
     /// Build a new shape with the shape at `axis` kept and all other axes replaced by `rest`.
     pub fn keep(&self, axis: usize, rest: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        self.assert_has_axis(axis);
 
         let mut dims = self.dims.clone();
         for i in 0..self.rank() {
@@ -156,7 +159,8 @@ impl Shape {
     }
 
     pub fn repeat_unary(&self, axis: usize, new_size: Size) -> Shape {
-        assert!(axis < self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        self.assert_has_axis(axis);
+
         assert_eq!(
             self.dims[axis],
             Size::ONE,
@@ -171,11 +175,30 @@ impl Shape {
     }
 
     pub fn insert(&self, axis: usize, size: Size) -> Shape {
-        assert!(axis <= self.rank(), "Axis {} out of bounds for {:?}", axis, self);
+        assert!(
+            axis <= self.rank(),
+            "Axis {} out of bounds for inserting into {:?}",
+            axis,
+            self
+        );
 
         let mut dims = self.dims.clone();
         dims.insert(axis, size);
         Shape::new(dims)
+    }
+
+    pub fn split(&self, index: usize) -> (Shape, Shape) {
+        assert!(
+            index <= self.rank(),
+            "Split index {} out of bounds for {:?}",
+            index,
+            self
+        );
+
+        let body = self.dims[..index].to_vec();
+        let tail = self.dims[index..].to_vec();
+
+        (Shape::new(body), Shape::new(tail))
     }
 }
 
@@ -186,31 +209,39 @@ impl From<usize> for Size {
 }
 
 impl Size {
-    pub const ZERO: Size = Size {
-        batch_exp: 0,
-        fixed_factor: 0,
-    };
-    pub const ONE: Size = Size {
-        batch_exp: 0,
-        fixed_factor: 1,
-    };
-    pub const BATCH: Size = Size {
-        batch_exp: 1,
-        fixed_factor: 1,
-    };
+    pub const ZERO: Size = Size::new(0, 0);
+    pub const ONE: Size = Size::new(0, 1);
+    pub const BATCH: Size = Size::new(1, 1);
 
-    pub fn new(batch_exp: u32, fixed_factor: usize) -> Size {
-        Size {
-            batch_exp,
-            fixed_factor,
+    pub const fn new(batch_exp: u32, fixed_factor: usize) -> Size {
+        if fixed_factor == 0 {
+            Size {
+                batch_exp: 0,
+                fixed_factor: 0,
+            }
+        } else {
+            Size {
+                batch_exp,
+                fixed_factor,
+            }
         }
     }
 
-    pub fn fixed(size: usize) -> Size {
+    pub const fn fixed(size: usize) -> Size {
         Size {
             batch_exp: 0,
             fixed_factor: size,
         }
+    }
+
+    pub const fn is_zero(&self) -> bool {
+        matches!(
+            self,
+            Size {
+                batch_exp: 0,
+                fixed_factor: 0
+            }
+        )
     }
 
     pub fn eval(self, batch_size: usize) -> usize {
@@ -231,10 +262,15 @@ impl Size {
         self.fixed_factor
     }
 
-    #[track_caller]
-    pub fn unwrap_fixed_mut(&mut self, what: &str) -> &mut usize {
-        assert_eq!(0, self.batch_exp, "{} must be fixed, but got size {:?}", what, self);
-        &mut self.fixed_factor
+    pub fn floor_div(self, rhs: Self) -> Option<Self> {
+        if self.batch_exp < rhs.batch_exp {
+            None
+        } else {
+            Some(Size::new(
+                self.batch_exp - rhs.batch_exp,
+                self.fixed_factor / rhs.fixed_factor,
+            ))
+        }
     }
 }
 
@@ -264,14 +300,45 @@ impl ConcreteShape {
     }
 }
 
+impl std::ops::Add for Size {
+    type Output = Option<Size>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        if self == Size::ZERO {
+            return Some(rhs);
+        }
+        if rhs == Size::ZERO {
+            return Some(self);
+        }
+        if self.batch_exp != rhs.batch_exp {
+            return None;
+        }
+
+        Some(Size::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor))
+    }
+}
+
+impl std::ops::Sub for Size {
+    type Output = Option<Size>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        if rhs == Size::ZERO {
+            return Some(self);
+        }
+
+        if self.batch_exp != rhs.batch_exp || self.fixed_factor < rhs.fixed_factor {
+            return None;
+        }
+
+        Some(Size::new(self.batch_exp, self.fixed_factor - rhs.fixed_factor))
+    }
+}
+
 impl std::ops::Mul for Size {
     type Output = Size;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Size {
-            batch_exp: self.batch_exp + rhs.batch_exp,
-            fixed_factor: self.fixed_factor * rhs.fixed_factor,
-        }
+        Size::new(self.batch_exp + rhs.batch_exp, self.fixed_factor * rhs.fixed_factor)
     }
 }
 
@@ -282,10 +349,24 @@ impl std::ops::Div for Size {
         if self.batch_exp < rhs.batch_exp || self.fixed_factor % rhs.fixed_factor != 0 {
             None
         } else {
-            Some(Size {
-                batch_exp: self.batch_exp - rhs.batch_exp,
-                fixed_factor: self.fixed_factor / rhs.fixed_factor,
-            })
+            Some(Size::new(
+                self.batch_exp - rhs.batch_exp,
+                self.fixed_factor / rhs.fixed_factor,
+            ))
+        }
+    }
+}
+
+impl std::iter::Sum<Size> for Option<Size> {
+    fn sum<I: Iterator<Item = Size>>(mut iter: I) -> Self {
+        let result = iter.try_fold(Size::ZERO, |a, s| match a + s {
+            Some(v) => ControlFlow::Continue(v),
+            None => ControlFlow::Break(()),
+        });
+
+        match result {
+            ControlFlow::Continue(v) => Some(v),
+            ControlFlow::Break(()) => None,
         }
     }
 }
@@ -299,14 +380,9 @@ impl std::iter::Product for Size {
 impl std::ops::Index<usize> for Shape {
     type Output = Size;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.dims[index]
-    }
-}
-
-impl std::ops::IndexMut<usize> for Shape {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.dims[index]
+    fn index(&self, axis: usize) -> &Self::Output {
+        self.assert_has_axis(axis);
+        &self.dims[axis]
     }
 }
 
@@ -324,16 +400,7 @@ impl Debug for Size {
 
 impl Display for Shape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for i in 0..self.rank() {
-            if i != 0 {
-                write!(f, " x ")?;
-            }
-
-            write!(f, "{}", self.dims[i])?;
-        }
-        write!(f, ")")?;
-        Ok(())
+        fmt_shape_impl(f, &self.dims)
     }
 }
 
@@ -351,15 +418,19 @@ impl Display for Size {
 
 impl Display for ConcreteShape {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for i in 0..self.rank() {
-            if i != 0 {
-                write!(f, " x ")?;
-            }
-
-            write!(f, "{}", self.dims[i])?;
-        }
-        write!(f, ")")?;
-        Ok(())
+        fmt_shape_impl(f, &self.dims)
     }
+}
+
+fn fmt_shape_impl(f: &mut Formatter, dims: &[impl Display]) -> Result<(), std::fmt::Error> {
+    write!(f, "(")?;
+    for i in 0..dims.len() {
+        if i != 0 {
+            write!(f, " x ")?;
+        }
+
+        write!(f, "{}", dims[i])?;
+    }
+    write!(f, ")")?;
+    Ok(())
 }

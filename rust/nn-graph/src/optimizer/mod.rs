@@ -2,7 +2,8 @@ use crate::graph::Graph;
 use crate::optimizer::core::Optimizer;
 
 mod affine;
-pub mod core;
+mod core;
+pub mod recurse;
 
 #[derive(Debug, Copy, Clone)]
 pub struct OptimizerSettings {
@@ -22,12 +23,12 @@ pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
     for &old_input in graph.inputs() {
         let shape = graph[old_input].shape.clone();
         let new_input = optimizer.new_graph.input(shape);
-        optimizer.define(old_input, new_input);
+        optimizer.insert_mapping(old_input, new_input);
     }
 
     // register all outputs, again in the same order as before
     for &old_output in graph.outputs() {
-        let new_output = optimizer.map(old_output);
+        let new_output = optimizer.visit_completely(old_output);
         optimizer.new_graph.output(new_output);
     }
 

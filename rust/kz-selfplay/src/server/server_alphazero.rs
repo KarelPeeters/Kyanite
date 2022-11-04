@@ -112,6 +112,6 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
     }
 
     fn load_graph(&self, path: &str, _: M, _: &StartupSettings) -> Self::G {
-        optimize_graph(&load_graph_from_onnx_path(path), Default::default())
+        optimize_graph(&load_graph_from_onnx_path(path, false), Default::default())
     }
 }

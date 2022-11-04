@@ -55,7 +55,7 @@ impl AtaxxStdMapper {
         let size = self.size as usize;
 
         let index = match mv {
-            Move::Pass => (17 * size * size),
+            Move::Pass => 17 * size * size,
             Move::Copy { to } => to.dense_index(size as u8),
             Move::Jump { from, to } => {
                 let dx = from.x() as i8 - to.x() as i8;

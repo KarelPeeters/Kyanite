@@ -67,7 +67,11 @@ pub fn visualize_graph_activations(
         }
 
         let is_input = matches!(&info.operation, Operation::Input { .. });
-        let data = value.tensor.to_shared();
+        let data = value
+            .tensor
+            .as_ref()
+            .expect("Intermediate values should have been kept for visualization")
+            .to_shared();
 
         let vis_tensor = VisTensor {
             normalize: !is_input,

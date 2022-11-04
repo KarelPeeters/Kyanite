@@ -1,21 +1,25 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use convolutions_rs::convolutions::*;
-use convolutions_rs::Padding;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
-    concatenate, s, ArcArray, Array3, Array4, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
+    s, ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
 };
 
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
+use crate::shape::ConcreteShape;
 
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
 
-pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> ExecutionInfo {
+pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Tensor> {
+    let exec = cpu_eval_graph_exec(&graph, batch_size, inputs, false);
+    exec.output_tensors()
+}
+
+pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], keep_all: bool) -> ExecutionInfo {
     assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
 
     let mut map: IndexMap<Value, CalculatedValue> = IndexMap::default();
@@ -27,12 +31,36 @@ pub fn cpu_execute_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) ->
         let result = run_cpu_operation(info, &map, inputs, batch_size);
         let end_time = Instant::now();
 
-        let calc = CalculatedValue {
+        let tensor_shape = ConcreteShape::new(result.shape().to_vec());
+
+        let mut output_calc = CalculatedValue {
             value: output,
-            tensor: result,
+            tensor: Some(result),
+            tensor_shape,
+            uses_seen: 0,
             time_spent: (end_time - start_time).as_secs_f32(),
         };
-        let prev = map.insert(output, calc);
+
+        // free tensors that won't be used again
+        if !keep_all {
+            // immediately discard this output
+            if graph.is_hidden_with_uses(output, 0) {
+                output_calc.tensor = None
+            }
+
+            // discard inputs that just got used for the last time
+            for input in graph[output].operation.inputs() {
+                let input_calc: &mut CalculatedValue = map.get_mut(&input).unwrap();
+                input_calc.uses_seen += 1;
+
+                if graph.is_hidden_with_uses(input, input_calc.uses_seen) {
+                    input_calc.tensor = None;
+                }
+            }
+        }
+
+        // store output for later
+        let prev = map.insert(output, output_calc);
         assert!(prev.is_none());
     }
 
@@ -60,7 +88,7 @@ fn run_cpu_operation(
 ) -> Tensor {
     try_run_cpu_operation(
         info,
-        |value| Ok(map.get(&value).unwrap().tensor.clone()),
+        |value| Ok(map.get(&value).unwrap().tensor.as_ref().unwrap().clone()),
         |index| Ok(inputs[index].clone()),
         Some(batch_size),
     )
@@ -138,17 +166,13 @@ fn try_run_cpu_operation(
                 })
                 .collect_vec();
 
-            concatenate(Axis(axis), &slices).unwrap().into_shared()
+            concatenate(output_shape_dyn.clone(), axis, &slices)
         }
         &Operation::Concat { ref inputs, axis } => {
             let inputs: Vec<_> = inputs.iter().map(|&x| Ok(map(x)?)).try_collect()?;
             let inputs_viewed = inputs.iter().map(|x| x.view()).collect_vec();
 
-            if inputs.is_empty() {
-                Tensor::zeros(output_shape_dyn)
-            } else {
-                ndarray::concatenate(Axis(axis), &inputs_viewed).unwrap().into_shared()
-            }
+            concatenate(output_shape_dyn.clone(), axis, &inputs_viewed)
         }
         &Operation::Conv {
             input,
@@ -214,20 +238,85 @@ fn try_run_cpu_operation(
     Ok(result)
 }
 
-pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, filter: ArrayView4<f32>) -> Array4<f32> {
-    assert!(
-        details.keeps_spatial_shape(),
-        "Different in/out shape not supported yet"
-    );
-
-    let batch_size = input.shape()[0];
-    let output_shape = (batch_size, details.output_channels, details.output_h, details.output_w);
-
-    let mut result = Array4::zeros(output_shape);
-    for b in 0..batch_size {
-        let result_b = conv2d(&filter, None, input.index_axis(Axis(0), b), Padding::Same, 1);
-        result.index_axis_mut(Axis(0), b).assign(&result_b);
+/// Wrapper around [ndarray::concatenate] that can handle an empty input list.
+fn concatenate(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<f32, IxDyn>]) -> Tensor {
+    if inputs.is_empty() {
+        Tensor::zeros(output_shape)
+    } else {
+        let result = ndarray::concatenate(Axis(axis), &inputs).unwrap().into_shared();
+        assert_eq!(result.dim(), output_shape);
+        result
     }
+}
+
+pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayView4<f32>) -> Array4<f32> {
+    let ConvDetails {
+        batch_size: _,
+        input_channels,
+        output_channels,
+        input_h,
+        input_w,
+        kernel_h,
+        kernel_w,
+        stride_y,
+        stride_x,
+        padding_y,
+        padding_x,
+        output_h,
+        output_w,
+    } = details;
+
+    assert!(
+        kernel_h % 2 == 1 && kernel_w % 2 == 1,
+        "Only odd kernels supported for now"
+    );
+    let batch_size = input.shape()[0];
+
+    // We compute the convolution via im2col
+    //   * create the input matrix by repeating input values around F^2 times with some padding
+    //   * permute and reshape the kernel weights into a flat matrix
+    //   * compute the dot product
+    //   * permute and reshape the output back into a tensor
+    let input_matrix = {
+        let mut input_matrix = Array::zeros((batch_size, output_h, output_w, input_channels, kernel_h, kernel_w));
+
+        // copy over entire (batch_size, input_channels) slices at once
+        //   this mostly helps with non-optimized build performance, which is nice to have
+        for oy in 0..output_h {
+            for ox in 0..output_w {
+                for fy in 0..kernel_h {
+                    for fx in 0..kernel_w {
+                        let iy = (oy * stride_y) as isize + fy as isize - padding_y as isize;
+                        let ix = (ox * stride_x) as isize + fx as isize - padding_x as isize;
+
+                        if (0..input_h as isize).contains(&iy) && (0..input_w as isize).contains(&ix) {
+                            input_matrix
+                                .slice_mut(s![.., oy, ox, .., fy, fx])
+                                .assign(&input.slice(s![.., .., iy as usize, ix as isize]));
+                        }
+                        // leave the padding values at zero
+                    }
+                }
+            }
+        }
+
+        input_matrix
+            .into_shape((batch_size * output_h * output_w, input_channels * kernel_h * kernel_w))
+            .unwrap()
+    };
+
+    let kernel_permuted = kernel.permuted_axes([1, 2, 3, 0]);
+    let kernel_matrix = kernel_permuted
+        .as_standard_layout()
+        .into_shape((input_channels * kernel_h * kernel_w, output_channels))
+        .unwrap();
+
+    let result_matrix = input_matrix.dot(&kernel_matrix);
+
+    let result = result_matrix
+        .into_shape((batch_size, output_h, output_w, output_channels))
+        .unwrap()
+        .permuted_axes([0, 3, 1, 2]);
 
     result
 }
@@ -330,7 +419,9 @@ pub struct ExecutionInfo {
 
 pub struct CalculatedValue {
     pub value: Value,
-    pub tensor: Tensor,
+    pub tensor: Option<Tensor>,
+    pub tensor_shape: ConcreteShape,
+    pub uses_seen: usize,
     pub time_spent: f32,
 }
 
@@ -340,7 +431,14 @@ impl ExecutionInfo {
             .iter()
             .map(|v| {
                 // convert to standard layout so users get easily get &[f32] slices
-                self.values.get(v).unwrap().tensor.as_standard_layout().to_shared()
+                self.values
+                    .get(v)
+                    .unwrap()
+                    .tensor
+                    .as_ref()
+                    .unwrap()
+                    .as_standard_layout()
+                    .to_shared()
             })
             .collect_vec()
     }
@@ -350,8 +448,21 @@ impl Debug for CalculatedValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CalculatedTensor")
             .field("value", &self.value)
-            .field("shape", &self.tensor.dim())
+            .field("kept", &self.tensor.is_some())
+            .field("shape", &self.tensor_shape)
             .field("time_spent", &self.time_spent)
             .finish()
+    }
+}
+
+impl Display for ExecutionInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ExecutionInfo {{")?;
+        for (_, value) in &self.values {
+            writeln!(f, "  {:?}", value)?;
+        }
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 }

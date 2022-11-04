@@ -26,6 +26,8 @@ fn main() {
         input_w: io_size,
         kernel_h: kernel_size,
         kernel_w: kernel_size,
+        stride_y: 1,
+        stride_x: 1,
         padding_y: padding,
         padding_x: padding,
         output_h: io_size,

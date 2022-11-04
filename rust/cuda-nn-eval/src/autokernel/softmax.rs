@@ -1,6 +1,7 @@
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -75,8 +76,8 @@ impl SoftmaxKernel {
     }
 
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
-        assert_eq!(input.shape(), &self.input_shape);
-        assert_eq!(output.shape(), &self.output_shape);
+        assert_eq!(input.strided_shape(), &self.input_shape);
+        assert_eq!(output.strided_shape(), &self.output_shape);
 
         let mut args = KernelArgs::new();
         args.push(input.ptr().ptr());
@@ -91,6 +92,7 @@ impl SoftmaxKernel {
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .unwrap();
     }
 }

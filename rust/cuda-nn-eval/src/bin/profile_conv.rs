@@ -24,7 +24,7 @@ fn profile_conv(
     let input = graph.input(input_shape.clone());
     let kernel_size = kernel_shape.size().unwrap_fixed("");
     let filter = graph.constant(kernel_shape, vec![2.0; kernel_size]);
-    let output = graph.conv(input, filter, 0, 0);
+    let output = graph.conv(input, filter, 1, 1, 0, 0);
     graph.output(output);
 
     let input = vec![2.0; input_shape.size().eval(batch_size)];

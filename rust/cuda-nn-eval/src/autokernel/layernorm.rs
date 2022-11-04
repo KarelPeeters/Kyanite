@@ -1,10 +1,12 @@
+use std::ptr::null_mut;
+
 use cuda_sys::wrapper::handle::{CudaStream, Device};
 use cuda_sys::wrapper::rtc::args::KernelArgs;
 use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
-use std::ptr::null_mut;
+use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, DisplayCFloat, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -62,10 +64,10 @@ impl LayernormKernel {
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$STATIC_SIZE$", format!("{}", static_size)),
             ("$NORM_SIZE$", format!("{}", norm_size)),
-            ("$EPS$", format!("{}", eps)),
-            ("$ALPHA_0$", format!("{}", alpha_0)),
-            ("$ALPHA_1$", format!("{}", alpha_1)),
-            ("$BETA$", format!("{}", beta)),
+            ("$EPS$", format!("{}", DisplayCFloat(eps))),
+            ("$ALPHA_0$", format!("{}", DisplayCFloat(alpha_0))),
+            ("$ALPHA_1$", format!("{}", DisplayCFloat(alpha_1))),
+            ("$BETA$", format!("{}", DisplayCFloat(beta))),
             ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
             ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
             ("$NORM_STRIDES$", c_array_string(&norm_strides)),
@@ -101,11 +103,11 @@ impl LayernormKernel {
         input1: Option<&DeviceTensor>,
         output: &DeviceTensor,
     ) {
-        assert_eq!(input0.shape(), &self.input_shape);
+        assert_eq!(input0.strided_shape(), &self.input_shape);
         if let Some(input1) = input1 {
-            assert_eq!(input1.shape(), &self.input_shape);
+            assert_eq!(input1.strided_shape(), &self.input_shape);
         }
-        assert_eq!(output.shape(), &self.output_shape);
+        assert_eq!(output.strided_shape(), &self.output_shape);
 
         if self._alpha1 != 0.0 {
             assert_eq!(input1.is_some(), true);
@@ -127,6 +129,7 @@ impl LayernormKernel {
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args);
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .unwrap();
     }
 }

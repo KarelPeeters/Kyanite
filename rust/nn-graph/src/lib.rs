@@ -10,5 +10,6 @@ pub mod shape;
 
 pub mod cpu;
 
+pub mod dot;
 pub mod visualize;
 pub mod wrap_debug;

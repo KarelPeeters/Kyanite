@@ -34,8 +34,8 @@ impl KernelArgs {
         self.push(value)
     }
 
-    pub fn finish(mut self) -> Vec<u8> {
-        self.pad_to(self.max_alignment);
+    pub fn finish(self) -> Vec<u8> {
+        // we're not supposed to pad until alignment here
         self.buffer
     }
 

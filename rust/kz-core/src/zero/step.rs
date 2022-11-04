@@ -280,9 +280,9 @@ mod tests {
     #[test]
     fn q_mode_string() {
         assert_eq!(QMode::from_str("value"), Ok(QMode::Value));
-        assert_eq!(QMode::from_str("wdl-1.0"), Ok(QMode::WDL { draw_score: -1.0 }));
+        assert_eq!(QMode::from_str("wdl-0.5"), Ok(QMode::WDL { draw_score: -0.5 }));
 
         assert_eq!(&QMode::Value.to_string(), "value");
-        assert_eq!(&QMode::WDL { draw_score: -1.0 }.to_string(), "wdl-1.0");
+        assert_eq!(&QMode::WDL { draw_score: -0.5 }.to_string(), "wdl-0.5");
     }
 }
