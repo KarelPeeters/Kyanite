@@ -300,10 +300,11 @@ impl ConcreteShape {
     }
 }
 
-impl std::ops::Add for Size {
+impl<R: Into<Size>> std::ops::Add<R> for Size {
     type Output = Option<Size>;
 
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         if self == Size::ZERO {
             return Some(rhs);
         }
@@ -318,10 +319,11 @@ impl std::ops::Add for Size {
     }
 }
 
-impl std::ops::Sub for Size {
+impl<R: Into<Size>> std::ops::Sub<R> for Size {
     type Output = Option<Size>;
 
-    fn sub(self, rhs: Self) -> Self::Output {
+    fn sub(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         if rhs == Size::ZERO {
             return Some(self);
         }
@@ -334,18 +336,20 @@ impl std::ops::Sub for Size {
     }
 }
 
-impl std::ops::Mul for Size {
+impl<R: Into<Size>> std::ops::Mul<R> for Size {
     type Output = Size;
 
-    fn mul(self, rhs: Self) -> Self::Output {
+    fn mul(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         Size::new(self.batch_exp + rhs.batch_exp, self.fixed_factor * rhs.fixed_factor)
     }
 }
 
-impl std::ops::Div for Size {
+impl<R: Into<Size>> std::ops::Div<R> for Size {
     type Output = Option<Size>;
 
-    fn div(self, rhs: Self) -> Self::Output {
+    fn div(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         if self.batch_exp < rhs.batch_exp || self.fixed_factor % rhs.fixed_factor != 0 {
             None
         } else {
