@@ -79,6 +79,8 @@ dependencies = [
 [[package]]
 name = "arimaa_engine_step"
 version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1c6726d7896a539a62e157b05fa4b7308ffb7872f2b4a2a592d5adb19837861"
 dependencies = [
  "anyhow",
  "itertools",
@@ -199,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "board-game"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "arimaa_engine_step",
  "cast_trait",

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 licorice = { path = "../licorice" }
-board-game = { version = "0.5.0", path = "../../../board-game-rs" }
+board-game = { version = "0.6.0", path = "../../../board-game-rs" }
 
 kz-selfplay = { path = "../kz-selfplay" }
 kz-core = { path = "../kz-core" }
