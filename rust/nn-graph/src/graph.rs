@@ -450,6 +450,11 @@ impl Graph {
         value
     }
 
+    #[must_use]
+    pub fn scalar(&mut self, value: f32) -> Value {
+        self.constant(Shape::SCALAR, vec![value])
+    }
+
     /// Declare a new constant.
     #[must_use]
     pub fn constant(&mut self, shape: Shape, data: Vec<f32>) -> Value {

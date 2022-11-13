@@ -230,7 +230,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
 
                     let result_value = op.map(left_value, right_value);
 
-                    let result = graph.constant(Shape::SCALAR, vec![result_value]);
+                    let result = graph.scalar(result_value);
                     TypedValue::FloatTensor(result)
                 } else {
                     panic!(
@@ -449,7 +449,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
                 };
 
                 let value = match attrs.maybe_take_tensor("value") {
-                    None => TypedValue::FloatTensor(graph.constant(Shape::SCALAR, vec![0.0])),
+                    None => TypedValue::FloatTensor(graph.scalar(0.0)),
                     Some(tensor) => define_tensor_data(&mut graph, tensor, external),
                 };
 
@@ -762,7 +762,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
 
                 assert_eq!(mode, "constant", "Only 'constant' pad mode supported");
 
-                let constant = graph.constant(Shape::SCALAR, vec![constant_value]);
+                let constant = graph.scalar(constant_value);
 
                 // TODO consider adding a real pad operation instead of this concat workaround
                 let output = axes.iter().fold(input, |acc, &axis| {

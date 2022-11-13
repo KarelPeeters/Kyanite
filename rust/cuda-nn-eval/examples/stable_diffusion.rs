@@ -17,7 +17,6 @@ use nn_graph::graph::{BinaryOp, Graph, SliceRange};
 use nn_graph::ndarray::Array;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
-use nn_graph::shape::Shape;
 use nn_graph::{ndarray, shape};
 
 use crate::ndarray::{Array1, IxDyn, Slice};
@@ -280,7 +279,7 @@ fn fuse_autoencoder_graphs(graph_encoder: &Graph, graph_decoder: &Graph) -> Grap
     let input = graph.input(shape![1, 3, 512, 512]);
     let moments = graph.call(&graph_encoder, &[input]).single();
     let latents_raw = graph.slice(moments, 1, SliceRange::simple(0, 4));
-    let latent_scalar = graph.constant(Shape::SCALAR, vec![LATENT_SCALAR]);
+    let latent_scalar = graph.scalar(LATENT_SCALAR);
     let latents = graph.binary(BinaryOp::Div, latents_raw, latent_scalar);
     let result = graph.call(&graph_decoder, &[latents]).single();
     graph.output(result);

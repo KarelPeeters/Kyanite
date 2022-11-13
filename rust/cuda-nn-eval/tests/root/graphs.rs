@@ -235,7 +235,7 @@ fn gather_as_index() {
     let mut rng = StdRng::seed_from_u64(0);
 
     let input = graph.input(shape![16, 8, 4]);
-    let index = graph.constant(Shape::SCALAR, vec![4.0]);
+    let index = graph.scalar(4.0);
     let indices = graph.view(index, shape![1]);
     let indices_repeat = graph.broadcast(indices, shape![3]);
 
@@ -520,7 +520,7 @@ fn affine_single_div() {
     let mut graph = Graph::new();
 
     let left = graph.constant(shape![2, 3], range_vec(2 * 3));
-    let right = graph.constant(Shape::SCALAR, vec![2.0]);
+    let right = graph.scalar(2.0);
     let result = graph.binary(BinaryOp::Div, left, right);
     graph.output(result);
 
@@ -782,7 +782,7 @@ fn softmax() {
     let result0 = graph.softmax(input, 0);
     let result1 = graph.softmax(input, 1);
 
-    let scale = graph.constant(Shape::SCALAR, vec![2.0]);
+    let scale = graph.scalar(2.0);
     let input_scaled = graph.mul(input, scale);
     let result2 = graph.softmax(input_scaled, 0);
 
@@ -855,8 +855,8 @@ fn layernorm_fused() {
         let input = graph.input(input_shape.clone());
         let reduced_shape = shape![Size::BATCH, 8, 1];
 
-        let const_2 = graph.constant(Shape::SCALAR, vec![2.0]);
-        let const_eps = graph.constant(Shape::SCALAR, vec![eps]);
+        let const_2 = graph.scalar(2.0);
+        let const_eps = graph.scalar(eps);
 
         let mean = graph.reduce(input, vec![axis], ReduceOp::Mean);
         let mean = graph.view(mean, reduced_shape.clone());
