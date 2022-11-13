@@ -782,7 +782,11 @@ fn softmax() {
     let result0 = graph.softmax(input, 0);
     let result1 = graph.softmax(input, 1);
 
-    graph.output_all(&[result0, result1]);
+    let scale = graph.constant(Shape::SCALAR, vec![2.0]);
+    let input_scaled = graph.mul(input, scale);
+    let result2 = graph.softmax(input_scaled, 0);
+
+    graph.output_all(&[result0, result1, result2]);
 
     let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
     test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);

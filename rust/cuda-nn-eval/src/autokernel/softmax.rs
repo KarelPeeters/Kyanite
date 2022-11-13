@@ -4,7 +4,7 @@ use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, DisplayCFloat, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -15,6 +15,7 @@ pub struct SoftmaxKernel {
     output_shape: StridedShape,
 
     _softmax_axis: usize,
+    _input_scale: f32,
     static_size: usize,
 
     function: CuFunction,
@@ -23,7 +24,13 @@ pub struct SoftmaxKernel {
 const SOFTMAX_SOURCE: &str = include_str!("softmax.cu");
 
 impl SoftmaxKernel {
-    pub fn new(device: Device, input_shape: &StridedShape, output_shape: &StridedShape, softmax_axis: usize) -> Self {
+    pub fn new(
+        device: Device,
+        input_shape: &StridedShape,
+        output_shape: &StridedShape,
+        softmax_axis: usize,
+        input_scale: f32,
+    ) -> Self {
         assert_eq!(input_shape.shape(), output_shape.shape());
 
         let softmax_size = input_shape.shape()[softmax_axis];
@@ -51,6 +58,7 @@ impl SoftmaxKernel {
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$STATIC_SIZE$", format!("{}", static_size)),
             ("$SOFTMAX_SIZE$", format!("{}", softmax_size)),
+            ("$INPUT_SCALE$", format!("{}", DisplayCFloat(input_scale))),
             ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
             ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
             ("$SOFTMAX_STRIDES$", c_array_string(&softmax_strides)),
@@ -71,6 +79,7 @@ impl SoftmaxKernel {
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
             _softmax_axis: softmax_axis,
+            _input_scale: input_scale,
             static_size,
         }
     }

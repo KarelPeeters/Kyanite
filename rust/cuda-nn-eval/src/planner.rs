@@ -394,10 +394,10 @@ impl<'a> Planner<'a> {
             &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true)?,
             &Operation::Unary { .. } | &Operation::Binary { .. } => self.visit_fused_scalar(value)?,
             &Operation::Softmax { input, axis } => {
-                let input = self.visit(input)?;
+                let (input_scale, input) = self.visit_scalable_value(input)?;
                 let output = self.alloc_tensor_shared(result_shape, Some(value));
 
-                let kernel = SoftmaxKernel::new(self.device(), input.strided_shape(), output.strided_shape(), axis);
+                let kernel = SoftmaxKernel::new(self.device(), input.strided_shape(), output.strided_shape(), axis, input_scale);
 
                 let args = SoftmaxOpArgs {
                     kernel,

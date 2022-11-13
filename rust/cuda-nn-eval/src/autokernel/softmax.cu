@@ -4,6 +4,7 @@
 const int RANK = $RANK$;
 const int STATIC_SIZE = $STATIC_SIZE$;
 const int SOFTMAX_SIZE = $SOFTMAX_SIZE$;
+const float INPUT_SCALE = $INPUT_SCALE$;
 
 // *CAREFUL* these arrays are actually of length RANK-1, but zero-sized arrays are not allowed in C++ so we pad them
 const int STATIC_DENSE_STRIDES[RANK] = $STATIC_DENSE_STRIDES$;
@@ -31,7 +32,7 @@ __global__ void softmax_kernel(
     // calculate max
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
         int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
-        float logit = input[offset_x];
+        float logit = INPUT_SCALE * input[offset_x];
         max_logit = max(max_logit, logit);
     }
 
@@ -42,7 +43,7 @@ __global__ void softmax_kernel(
     float sum = 0.0;
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
         int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
-        float logit = input[offset_x];
+        float logit = INPUT_SCALE * input[offset_x];
         sum += exp(logit - max_logit);
     }
 
@@ -53,7 +54,7 @@ __global__ void softmax_kernel(
     for (int i = info.lane_id; i < SOFTMAX_SIZE; i += 32) {
         int offset_x = static_offsets[0] + i * SOFTMAX_STRIDES[0];
         int offset_y = static_offsets[1] + i * SOFTMAX_STRIDES[1];
-        float logit = input[offset_x];
+        float logit = INPUT_SCALE * input[offset_x];
         float y = exp(logit - max_logit) / sum;
         output[offset_y] = y;
     }
