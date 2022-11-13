@@ -31,10 +31,7 @@ impl PinnedMem {
         unsafe {
             let mut result = null_mut();
             cudaHostAlloc(&mut result as *mut _, len_bytes, flags).unwrap();
-            PinnedMem {
-                ptr: result,
-                len_bytes,
-            }
+            PinnedMem { ptr: result, len_bytes }
         }
     }
 
@@ -44,7 +41,16 @@ impl PinnedMem {
 
     /// Safety: ensure no other slice currently exists and no device is writing to this memory.
     pub unsafe fn as_slice(&self) -> &mut [u8] {
-        slice::from_raw_parts_mut(self.ptr as *mut u8, self.len_bytes)
+        // TODO this function (and maybe others like it, check) is terrible:
+        //     * it can expose uninitialized memory as a slice
+        //     * we need a hack to get empty slices to work at all (they can't be null)
+        //     * more generally it's too easy to abuse
+        //   consider replacing this with https://crates.io/crates/presser
+        if self.len_bytes == 0 {
+            &mut []
+        } else {
+            slice::from_raw_parts_mut(self.ptr as *mut u8, self.len_bytes)
+        }
     }
 
     pub fn len_bytes(&self) -> usize {
