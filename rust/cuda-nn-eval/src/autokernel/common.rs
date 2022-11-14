@@ -69,7 +69,12 @@ fn prefix_line_numbers(s: &str) -> String {
 
 pub fn fill_replacements(src: &str, replacements: &[(&str, String)]) -> String {
     let result = replacements.iter().fold(src.to_owned(), |src, (key, value)| {
-        assert!(src.contains(key), "Source does not contain key {}", key);
+        assert!(
+            key.starts_with('$') && key.ends_with('$'),
+            "Key '{}' should start and end with '$'",
+            key
+        );
+        assert!(src.contains(key), "Source does not contain key '{}'", key);
         src.replace(key, value)
     });
 

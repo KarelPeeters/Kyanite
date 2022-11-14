@@ -20,7 +20,13 @@ pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Ve
 }
 
 pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], keep_all: bool) -> ExecutionInfo {
-    assert_eq!(graph.inputs().len(), inputs.len(), "Wrong input count");
+    assert_eq!(
+        graph.inputs().len(),
+        inputs.len(),
+        "Wrong input count, graph has {} but got {}",
+        graph.inputs().len(),
+        inputs.len()
+    );
 
     let mut map: IndexMap<Value, CalculatedValue> = IndexMap::default();
 
