@@ -135,7 +135,7 @@ pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Mat
         let mut max_rel_diff = 0.0;
 
         for ((indices, &expected_value), &value) in zip_eq(expected_output.indexed_iter(), output.iter()) {
-            let (abs_diff, rel_diff) = if expected_value == value || (expected_value.is_nan() && value.is_nan()) {
+            let (abs_diff, rel_diff) = if expected_value == value || expected_value.is_nan() || value.is_nan() {
                 (0.0, 0.0)
             } else {
                 let abs_diff = (expected_value - value).abs();
@@ -148,7 +148,10 @@ pub fn check_tensors_match(expected: &[Tensor], actual: &[Tensor]) -> Result<Mat
 
             total_element_count += 1;
 
-            if abs_diff >= TOLERANCE_ABS_DIFF && rel_diff >= TOLERANCE_REL_DIFF {
+            let exceeds_tolerance = abs_diff >= TOLERANCE_ABS_DIFF && rel_diff >= TOLERANCE_REL_DIFF;
+            let nan_mismatch = expected_value.is_nan() != value.is_nan();
+
+            if exceeds_tolerance || nan_mismatch {
                 total_error_count += 1;
                 current_error_count += 1;
 
