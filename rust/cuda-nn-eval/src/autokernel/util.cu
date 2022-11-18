@@ -28,6 +28,7 @@ __device__ KernelInfo kernel_info() {
     info.block_id = blockIdx.x;
     info.thread_id = threadIdx.x;
     info.global_thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+    info.warp_id = info.thread_id / 32;
 
     int warps_per_block = ceil_div(info.threads_per_block, 32);
     info.global_warp_id = info.block_id * warps_per_block + info.thread_id / 32;
