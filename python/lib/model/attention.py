@@ -112,6 +112,7 @@ class EncoderLayer(nn.Module):
         # weights: (b*h, n_q, n_k)
         # att_raw: (n_q, b*h, d_v)
 
+        # TODO add scale factor
         logits = torch.bmm(q.transpose(0, 1), k.transpose(0, 1).transpose(1, 2))
         weights = nnf.softmax(logits, -1)
 
