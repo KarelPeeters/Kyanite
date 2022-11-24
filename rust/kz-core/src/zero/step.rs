@@ -30,15 +30,22 @@ pub struct ZeroResponse<'a, B> {
     pub eval: ZeroEvaluation<'a>,
 }
 
+/// Which value to use as `Q` for unvisited nodes in the PUCT formula.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FpuMode {
+    /// Use the given fixed value.
     Fixed(f32),
+    /// Use the parent value (from the current POV) with an offset added to it.
     Relative(f32),
 }
 
+/// Which value to use as `Q` in the PUCT formula.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum QMode {
+    /// Use the value head output.
     Value,
+    /// Use the WDL head output.
+    /// `draw_score` is the value assigned to a draw from the POV of the current player.
     WDL { draw_score: f32 },
 }
 
