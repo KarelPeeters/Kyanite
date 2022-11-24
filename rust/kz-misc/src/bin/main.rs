@@ -3,7 +3,7 @@ use std::cmp::{max, min, Reverse};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use board_game::board::{Board, Outcome, Player};
-use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::ataxx::AtaxxBoard;
 use clap::Parser;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
@@ -22,7 +22,7 @@ use tui::widgets::Widget;
 use tui::Terminal;
 
 use cuda_nn_eval::Device;
-use kz_core::mapping::chess::ChessStdMapper;
+use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
@@ -40,6 +40,8 @@ struct Args {
     fen: Option<String>,
     #[clap(long, default_value_t = 1.0)]
     virtual_loss_weight: f32,
+    #[clap(long, default_value_t = 0)]
+    visits: u64,
 }
 
 #[derive(Debug)]
@@ -68,11 +70,15 @@ fn main() -> std::io::Result<()> {
     let args: Args = Args::parse();
 
     let board = match &args.fen {
-        Some(fen) => ChessBoard::new_without_history_fen(fen, Rules::default()),
-        None => ChessBoard::default(),
+        Some(fen) => AtaxxBoard::from_fen(fen).unwrap(),
+        None => AtaxxBoard::default(),
     };
 
-    let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
+    println!("Using board:");
+    println!("{}", board);
+
+    // let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
+    let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
     let settings = ZeroSettings::new(
         1,
         UctWeights::default(),
@@ -84,24 +90,33 @@ fn main() -> std::io::Result<()> {
     );
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path, false), Default::default());
-    let mapper = ChessStdMapper;
+    let mapper = AtaxxStdMapper::new(board.size());
     let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
 
-    main_impl(&mut network, board, settings)
+    main_impl(&mut network, board, settings, args.visits)
 }
 
-fn main_impl<B: Board>(network: &mut impl Network<B>, board: B, settings: ZeroSettings) -> std::io::Result<()> {
-    // state
+fn main_impl<B: Board>(
+    network: &mut impl Network<B>,
+    board: B,
+    settings: ZeroSettings,
+    visits: u64,
+) -> std::io::Result<()> {
+    // initialize state
+    let mut rng = StdRng::from_entropy();
+    println!("Building initial tree");
+    let tree = settings.build_tree(&board, network, &mut rng, |tree| tree.root_visits() >= visits);
+
     let mut requests = VecDeque::new();
     let mut state = State {
-        tree: Tree::new(board),
+        tree,
         settings,
         prev_nodes: Default::default(),
         board_cache: Default::default(),
         expanded_nodes: Default::default(),
         selected_node: 0,
         view_offset: 0,
-        rng: StdRng::from_entropy(),
+        rng,
     };
     state.expanded_nodes.insert(0);
 
