@@ -21,3 +21,12 @@ pub struct Position<B: Board> {
     pub zero_evaluation: ZeroEvaluation<'static>,
     pub net_evaluation: ZeroEvaluation<'static>,
 }
+
+impl<B: Board> Simulation<B> {
+    pub fn start_board(&self) -> &B {
+        match self.positions.get(0) {
+            Some(pos) => &pos.board,
+            None => &self.final_board,
+        }
+    }
+}

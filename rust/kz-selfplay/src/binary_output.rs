@@ -127,7 +127,6 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 
     pub fn append(&mut self, simulation: &Simulation<B>) -> io::Result<()> {
         let Simulation { positions, final_board } = simulation;
-        assert!(!positions.is_empty(), "Simulation cannot be empty");
 
         // collect metadata statistics
         let game_id = self.game_count;
@@ -142,7 +141,7 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
         self.min_game_length = Some(min(game_length as i32, self.min_game_length.unwrap_or(i32::MAX)));
 
         let outcome = final_board.outcome().unwrap_or(Outcome::Draw);
-        self.total_root_wdl += outcome.pov(positions[0].board.next_player()).to_wdl();
+        self.total_root_wdl += outcome.pov(simulation.start_board().next_player()).to_wdl();
         self.hit_move_limit_count += final_board.outcome().is_none() as u8 as u64;
 
         // write the positions
