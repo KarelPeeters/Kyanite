@@ -1,4 +1,6 @@
+import math
 import os.path
+import random
 import shutil
 from typing import TypeVar, Optional, Callable
 
@@ -84,3 +86,11 @@ def map_none(x: Optional[X], f: Callable[[X], Y]) -> Optional[Y]:
 
 def map_none_or(x: Optional[X], f: Callable[[X], Y], y: Y) -> Y:
     return f(x) if x is not None else y
+
+
+def stochastic_round(f: float) -> int:
+    a = math.floor(f)
+
+    if random.random() < (f - a):
+        return a + 1
+    return a

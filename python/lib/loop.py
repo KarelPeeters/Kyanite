@@ -19,7 +19,7 @@ from lib.plotter import LogPlotter, run_with_plotter
 from lib.save_onnx import save_onnx, save_muzero_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings
-from lib.util import DEVICE, print_param_count, clean_folder
+from lib.util import DEVICE, print_param_count, clean_folder, stochastic_round
 
 CHECK_BATCH_SIZE = 2
 SAVE_BATCH_SIZE = 2
@@ -107,43 +107,41 @@ class LoopSettings:
         self.training_path = os.path.join(self.root_path, "training")
         self.tmp_path = os.path.join(self.root_path, "tmp")
 
-    def calc_batch_count_per_gen(self) -> int:
-        game = self.fixed_settings.game
+    def calc_batch_count_per_gen(self, estimate_moves_per_game: float, do_print: bool) -> float:
         positions_in_buffer = self.max_buffer_size
         samples_per_position = float(self.samples_per_position)
 
         # this does not depend on gens_in_buffer since that divides itself away
-        positions_per_gen = game.estimate_moves_per_game * self.fixed_settings.simulations_per_gen
+        positions_per_gen = estimate_moves_per_game * self.fixed_settings.simulations_per_gen
 
         samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
         batch_count = samples_per_position * positions_per_gen / samples_per_batch
 
-        batch_count_int = round(batch_count)
-        if batch_count_int == 0:
-            batch_count_int = 1
-
         # extra calculations for prints
         gens_in_buffer = positions_in_buffer / positions_per_gen
         simulations_in_buffer = gens_in_buffer * self.fixed_settings.simulations_per_gen
-        samples_per_game = samples_per_position * game.estimate_moves_per_game
+        samples_per_game = samples_per_position * estimate_moves_per_game
         samples_per_gen = samples_per_game * self.fixed_settings.simulations_per_gen
 
-        print("Behaviour estimates:")
-        print(f"  Gen:")
-        print(f"    {self.fixed_settings.simulations_per_gen} games")
-        print(f"    {positions_per_gen} positions")
-        print(f"  Buffer:")
-        print(f"    {gens_in_buffer:.4} gens")
-        print(f"    {simulations_in_buffer:.4} games")
-        print(f"    {positions_in_buffer} positions")
-        print(f"  Sampling rate:")
-        print(f"    {samples_per_batch} /batch")
-        print(f"    {samples_per_gen:.4} /gen")
-        print(f"    {samples_per_game:.4} /game")
-        print(f"    {samples_per_position :.4} /position")
-        print(f"Calculated {batch_count:.4} -> {batch_count_int} batches per gen")
+        if do_print:
+            print("Buffer and batch behaviour:")
+            print(f"  Game:")
+            print(f"    {estimate_moves_per_game} moves per game")
+            print(f"  Gen:")
+            print(f"    {self.fixed_settings.simulations_per_gen} games")
+            print(f"    {positions_per_gen} positions")
+            print(f"  Buffer:")
+            print(f"    {gens_in_buffer:.4} gens")
+            print(f"    {simulations_in_buffer:.4} games")
+            print(f"    {positions_in_buffer} positions")
+            print(f"  Sampling rate:")
+            print(f"    {samples_per_batch} /batch")
+            print(f"    {samples_per_gen:.4} /gen")
+            print(f"    {samples_per_game:.4} /game")
+            print(f"    {samples_per_position :.4} /position")
+            print(f"Calculated {batch_count:.4} batches per gen")
 
-        return batch_count_int
+        return batch_count
 
     def run_loop(self):
         print(f"Starting loop with cwd {os.getcwd()}")
@@ -189,7 +187,6 @@ class LoopSettings:
 
         game = self.fixed_settings.game
         optimizer = self.optimizer(network.parameters())
-        batch_count_per_gen = self.calc_batch_count_per_gen()
 
         startup_settings = self.fixed_settings.to_startup(
             output_folder=self.selfplay_path,
@@ -247,11 +244,20 @@ class LoopSettings:
                     self.train_batch_size, self.muzero_steps, self.include_final,
                     only_last=False, test=False
                 )
+
+                positions_per_simulation = buffer.position_count / buffer.simulation_count
+                batch_count_float = self.calc_batch_count_per_gen(positions_per_simulation, False)
+                batch_count = stochastic_round(batch_count_float)
+                logger.log("buffer", "batch_count_float", batch_count_float)
+                logger.log("buffer", "batch_count", batch_count)
+
                 print(
-                    f"Training network on buffer with size {len(train_sampler.group.positions)} for {batch_count_per_gen} batches")
+                    f"Training network on {len(train_sampler.group.positions)}/{buffer.position_count} positions"
+                    f" in buffer with batch count {batch_count_float:.4f} -> {batch_count}"
+                )
                 train_start = time.perf_counter()
 
-                for bi in range(batch_count_per_gen):
+                for bi in range(batch_count):
                     if bi != 0:
                         logger.start_batch()
 

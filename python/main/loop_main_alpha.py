@@ -113,7 +113,7 @@ def main():
         include_final=False,
     )
 
-    # settings.calc_batch_count_per_gen()
+    settings.calc_batch_count_per_gen(game.estimate_moves_per_game, do_print=True)
     settings.run_loop()
 
 
