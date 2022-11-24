@@ -193,6 +193,27 @@ const HEADER_SIZE: u16 = 2;
 const OFFSET_MARGIN: usize = 3;
 const COL_SPACING: u16 = 2;
 
+#[derive(Debug, Clone)]
+struct ColorString {
+    string: String,
+    color: Option<Color>,
+}
+
+impl ColorString {
+    fn colored(string: String, color: Color) -> Self {
+        ColorString {
+            string,
+            color: Some(color),
+        }
+    }
+}
+
+impl From<String> for ColorString {
+    fn from(string: String) -> Self {
+        ColorString { string, color: None }
+    }
+}
+
 impl<B: Board> State<B> {
     fn node_board(&self, node: usize) -> B {
         if let Some(board) = self.board_cache.borrow().get(&node) {
@@ -324,7 +345,7 @@ impl<B: Board> State<B> {
 
         for &RenderNode { node, depth } in &self.prev_nodes {
             for (i, v) in self.column_values(node, depth).iter().enumerate() {
-                col_sizes[i] = max(col_sizes[i], v.len() as u16);
+                col_sizes[i] = max(col_sizes[i], v.string.len() as u16);
             }
         }
 
@@ -339,7 +360,7 @@ impl<B: Board> State<B> {
         (col_sizes, col_starts)
     }
 
-    fn column_values(&self, node_index: usize, depth: u32) -> Vec<String> {
+    fn column_values(&self, node_index: usize, depth: u32) -> Vec<ColorString> {
         let board = self.node_board(node_index);
         let node = &self.tree[node_index];
 
@@ -350,29 +371,29 @@ impl<B: Board> State<B> {
         };
 
         let player = match board.next_player() {
-            Player::A => "A",
-            Player::B => "B",
+            Player::A => ColorString::colored("A".to_owned(), Color::Green),
+            Player::B => ColorString::colored("B".to_owned(), Color::Red),
         };
 
         let terminal = match node.outcome() {
-            Err(_) => '?',
-            Ok(None) => '.',
-            Ok(Some(Outcome::WonBy(Player::A))) => 'A',
-            Ok(Some(Outcome::Draw)) => 'D',
-            Ok(Some(Outcome::WonBy(Player::B))) => 'B',
+            Err(_) => "?".to_owned().into(),
+            Ok(None) => " ".to_owned().into(),
+            Ok(Some(Outcome::WonBy(Player::A))) => ColorString::colored("A".to_owned(), Color::Green),
+            Ok(Some(Outcome::Draw)) => ColorString::colored("D".to_owned(), Color::DarkGray),
+            Ok(Some(Outcome::WonBy(Player::B))) => ColorString::colored("B".to_owned(), Color::Red),
         };
 
-        let mut result = vec![];
+        let mut result: Vec<ColorString> = vec![];
 
-        result.push(format!("{:>2$} {}", arrow, node_index, (depth * 2) as usize));
-        result.push(format!("{}", player));
-        result.push(format!("{}", display_option_empty(node.last_move)));
-        result.push(format!("{}", terminal));
+        result.push(format!("{:>2$} {}", arrow, node_index, (depth * 2) as usize).into());
+        result.push(player);
+        result.push(format!("{}", display_option_empty(node.last_move)).into());
+        result.push(terminal);
 
         if node.virtual_visits == 0 {
-            result.push(format!("{}", node.complete_visits));
+            result.push(format!("{}", node.complete_visits).into());
         } else {
-            result.push(format!("{} +{}", node.complete_visits, node.virtual_visits));
+            result.push(format!("{} +{}", node.complete_visits, node.virtual_visits).into());
         }
 
         {
@@ -417,7 +438,7 @@ impl<B: Board> State<B> {
             result.extend(
                 values
                     .iter()
-                    .map(|v| if v.is_nan() { "".to_owned() } else { format!("{:.3}", v) }),
+                    .map(|v| (if v.is_nan() { "".to_owned() } else { format!("{:.3}", v) }).into()),
             );
         }
 
@@ -472,15 +493,16 @@ impl<B: Board> Widget for &State<B> {
 
                 for (i, v) in self.column_values(node, depth).iter().enumerate() {
                     let just_right = COLUMN_INFO[i].2;
-                    let color = COLUMN_INFO[i].3;
+                    let column_color = COLUMN_INFO[i].3;
+                    let color = v.color.unwrap_or(column_color);
 
                     let x = if just_right {
-                        col_starts[i] + (col_sizes[i] - v.len() as u16)
+                        col_starts[i] + (col_sizes[i] - v.string.len() as u16)
                     } else {
                         col_starts[i]
                     };
 
-                    buf.set_string(x, full_y, v, Style::default().fg(color));
+                    buf.set_string(x, full_y, &v.string, Style::default().fg(color));
                 }
             }
         }
