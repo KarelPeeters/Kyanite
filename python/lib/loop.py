@@ -107,12 +107,12 @@ class LoopSettings:
         self.training_path = os.path.join(self.root_path, "training")
         self.tmp_path = os.path.join(self.root_path, "tmp")
 
-    def calc_batch_count_per_gen(self, estimate_moves_per_game: float, do_print: bool) -> float:
+    def calc_batch_count_per_gen(self, estimate_moves_per_simulation: float, do_print: bool) -> float:
         positions_in_buffer = self.max_buffer_size
         samples_per_position = float(self.samples_per_position)
 
         # this does not depend on gens_in_buffer since that divides itself away
-        positions_per_gen = estimate_moves_per_game * self.fixed_settings.simulations_per_gen
+        positions_per_gen = estimate_moves_per_simulation * self.fixed_settings.simulations_per_gen
 
         samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
         batch_count = samples_per_position * positions_per_gen / samples_per_batch
@@ -120,24 +120,24 @@ class LoopSettings:
         # extra calculations for prints
         gens_in_buffer = positions_in_buffer / positions_per_gen
         simulations_in_buffer = gens_in_buffer * self.fixed_settings.simulations_per_gen
-        samples_per_game = samples_per_position * estimate_moves_per_game
-        samples_per_gen = samples_per_game * self.fixed_settings.simulations_per_gen
+        samples_per_simulation = samples_per_position * estimate_moves_per_simulation
+        samples_per_gen = samples_per_simulation * self.fixed_settings.simulations_per_gen
 
         if do_print:
             print("Buffer and batch behaviour:")
-            print(f"  Game:")
-            print(f"    {estimate_moves_per_game} moves per game")
+            print(f"  Simulation:")
+            print(f"    {estimate_moves_per_simulation} moves per simulation")
             print(f"  Gen:")
-            print(f"    {self.fixed_settings.simulations_per_gen} games")
+            print(f"    {self.fixed_settings.simulations_per_gen} simulations")
             print(f"    {positions_per_gen} positions")
             print(f"  Buffer:")
             print(f"    {gens_in_buffer:.4} gens")
-            print(f"    {simulations_in_buffer:.4} games")
+            print(f"    {simulations_in_buffer:.4} simulations")
             print(f"    {positions_in_buffer} positions")
             print(f"  Sampling rate:")
             print(f"    {samples_per_batch} /batch")
             print(f"    {samples_per_gen:.4} /gen")
-            print(f"    {samples_per_game:.4} /game")
+            print(f"    {samples_per_simulation:.4} /simulation")
             print(f"    {samples_per_position :.4} /position")
             print(f"Calculated {batch_count:.4} batches per gen")
 
@@ -218,7 +218,7 @@ class LoopSettings:
             logger.start_batch()
             logger.log("info", "gen", gi)
 
-            print(f"Waiting for gen {gi} games")
+            print(f"Waiting for gen {gi} simulations")
             gen_start = time.perf_counter()
             actual_gi = client.wait_for_file()
             logger.log("time", "selfplay", time.perf_counter() - gen_start)
@@ -281,7 +281,8 @@ class LoopSettings:
 
         for file in self.initial_data_files:
             buffer.append(None, file)
-        print(f"Initial buffer: {len(buffer.files)} files, {buffer.simulation_count} games, {buffer.position_count}")
+        print(
+            f"Initial buffer: {len(buffer.files)} files, {buffer.simulation_count} simulations, {buffer.position_count}")
 
         for gi in itertools.count():
             gen = Generation.from_gi(self, gi)
@@ -292,7 +293,7 @@ class LoopSettings:
                 try:
                     buffer.append(None, DataFile.open(game, gen.simulations_path))
                 except FileNotFoundError:
-                    print(f"Could not find games file for gen {gi}, skipping")
+                    print(f"Could not find simulations file for gen {gi}, skipping")
             else:
                 if prev is None:
                     print("Starting new run")
@@ -396,16 +397,16 @@ class LoopBuffer:
 
         if logger:
             logger.log("buffer", "gens", len(self.files))
-            logger.log("buffer", "games", self.simulation_count)
+            logger.log("buffer", "simulations", self.simulation_count)
             logger.log("buffer", "positions", self.position_count)
 
             info = file.info
 
             logger.log("gen-size", "games", info.simulation_count)
             logger.log("gen-size", "positions", info.position_count)
-            logger.log("gen-game-len", "game length min", info.min_simulation_length)
-            logger.log("gen-game-len", "game length mean", info.mean_simulation_length)
-            logger.log("gen-game-len", "game length max", info.max_simulation_length)
+            logger.log("gen-sim-len", "sim length min", info.min_simulation_length)
+            logger.log("gen-sim-len", "sim length mean", info.mean_simulation_length)
+            logger.log("gen-sim-len", "sim length max", info.max_simulation_length)
 
             if info.root_wdl is not None:
                 logger.log("gen-root-wdl", "w", info.root_wdl[0])
