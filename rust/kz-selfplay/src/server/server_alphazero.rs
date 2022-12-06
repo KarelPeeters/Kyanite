@@ -3,11 +3,13 @@ use crossbeam::thread::Scope;
 use flume::Sender;
 use futures::executor::ThreadPoolBuilder;
 use rand::rngs::StdRng;
+use rand::thread_rng;
 
 use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::BoardMapper;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::job_channel::job_pair;
+use kz_core::network::symmetry::RandomSymmetryNetwork;
 use kz_core::network::Network;
 use kz_util::math::ceil_div;
 use nn_graph::graph::Graph;
@@ -88,6 +90,7 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
 
             let eval_server = eval_server.clone();
             let update_sender = update_sender.clone();
+            let eval_random_symmetries = startup.eval_random_symmetries;
 
             s.builder()
                 .name(format!("gpu-expand-{}-{}", device_id, local_id))
@@ -97,7 +100,10 @@ impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZe
                         RunCondition::JobCount(eval_job_count),
                         graph_receiver,
                         eval_server,
-                        |graph| CudaNetwork::new(mapper, &graph, gpu_batch_size, device),
+                        |graph| {
+                            let inner = CudaNetwork::new(mapper, &graph, gpu_batch_size, device);
+                            RandomSymmetryNetwork::new(inner, thread_rng(), eval_random_symmetries)
+                        },
                         |network, x| {
                             let y = network.evaluate_batch(&x);
                             let msg = GeneratorUpdate::ExpandEvals(Evals::new(x.len(), gpu_batch_size, 0));

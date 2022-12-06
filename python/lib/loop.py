@@ -40,6 +40,7 @@ class FixedSelfplaySettings:
     search_batch_size: int
 
     saved_state_channels: int
+    eval_random_symmetries: bool
 
     def to_startup(self, output_folder: str, first_gen: int):
         return StartupSettings(
@@ -55,6 +56,7 @@ class FixedSelfplaySettings:
             gpu_batch_size_root=self.gpu_batch_size_root,
             search_batch_size=self.search_batch_size,
             saved_state_channels=self.saved_state_channels,
+            eval_random_symmetries=self.eval_random_symmetries,
         )
 
 

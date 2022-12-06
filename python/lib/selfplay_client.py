@@ -24,6 +24,7 @@ class StartupSettings:
     search_batch_size: int
 
     saved_state_channels: int
+    eval_random_symmetries: bool
 
     def as_dict(self):
         return dataclasses.asdict(self)
@@ -52,7 +53,6 @@ class SelfplaySettings:
     max_game_length: int
     weights: UctWeights
     q_mode: str
-    random_symmetries: bool
     temperature: float
     zero_temp_move_count: int
     dirichlet_alpha: float

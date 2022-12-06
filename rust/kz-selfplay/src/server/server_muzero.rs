@@ -30,12 +30,17 @@ impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZe
         start_pos: impl Fn(&mut StdRng) -> B + Sync + Send + Clone + 'static,
         update_sender: Sender<GeneratorUpdate<B>>,
     ) -> (Vec<Sender<Settings>>, Vec<GraphSender<Self::G>>) {
+        assert!(
+            !startup.eval_random_symmetries,
+            "random symmetries not supported in muzero"
+        );
+
         let gpu_batch_size_root = startup.gpu_batch_size_root;
         let gpu_batch_size_expand = startup.gpu_batch_size;
         let cpu_threads = startup.cpu_threads_per_device;
         let gpu_threads = startup.gpu_threads_per_device;
 
-        assert!(startup.search_batch_size == 1);
+        assert_eq!(startup.search_batch_size, 1);
         let concurrent_games = (gpu_threads + 1) * gpu_batch_size_expand + 2 * gpu_batch_size_root;
         println!("Spawning {} games", concurrent_games);
 

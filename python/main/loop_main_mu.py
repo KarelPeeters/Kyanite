@@ -23,6 +23,7 @@ def main():
     fixed_settings = FixedSelfplaySettings(
         game=game,
         muzero=True,
+        start_pos="default",
         simulations_per_gen=200,
 
         cpu_threads_per_device=4,
@@ -32,6 +33,7 @@ def main():
         search_batch_size=16,
 
         saved_state_channels=saved_state_channels,
+        eval_random_symmetries=False,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -51,7 +53,6 @@ def main():
         full_iterations=200,
         part_iterations=20,
         weights=UctWeights.default(),
-        random_symmetries=False,
         cache_size=0,
         top_moves=100,
     )

@@ -6,7 +6,6 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.post_act import ScalarHead, AttentionPolicyHead, PredictionHeads, ResTower
 from lib.model.simple import DenseNetwork
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
@@ -29,6 +28,7 @@ def main():
         search_batch_size=16,
 
         saved_state_channels=0,
+        eval_random_symmetries=True,
     )
 
     selfplay_settings = SelfplaySettings(
@@ -47,7 +47,6 @@ def main():
         full_iterations=200,
         part_iterations=20,
         weights=UctWeights.default(),
-        random_symmetries=False,
         cache_size=200,
         top_moves=100,
     )

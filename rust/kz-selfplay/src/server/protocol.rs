@@ -27,6 +27,7 @@ pub struct StartupSettings {
     pub search_batch_size: usize,
 
     pub saved_state_channels: usize,
+    pub eval_random_symmetries: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,8 +87,6 @@ pub struct Settings {
     pub max_game_length: Option<u64>,
     pub weights: Weights,
     pub q_mode: ToFromStringArg<QMode>,
-
-    pub random_symmetries: bool,
 
     pub temperature: f32,
     pub zero_temp_move_count: u32,

@@ -21,11 +21,6 @@ pub fn commander_main<B: Board, G>(
         match cmd {
             Command::StartupSettings(_) => panic!("Already received startup settings"),
             Command::NewSettings(settings) => {
-                assert!(
-                    !settings.random_symmetries,
-                    "Random symmetries are currently not supported"
-                );
-
                 for sender in &settings_senders {
                     sender.send(settings.clone()).unwrap();
                 }
