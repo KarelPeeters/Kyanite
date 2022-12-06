@@ -1,11 +1,27 @@
 import re
+from abc import abstractmethod, ABC
 from dataclasses import dataclass, field
 from typing import Tuple, Optional, Callable, Sequence
 
 import numpy as np
 
-from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES, ATAXX_INDEX_TO_MOVE_INPUT
+from lib.mapping.mapping import CHESS_FLAT_TO_MOVE_INPUT, ATAXX_VALID_MOVES, ATAXX_INDEX_TO_MOVE_INPUT, \
+    get_ataxx_symmetry_data
 from lib.util import prod
+
+
+class Symmetry(ABC):
+    @abstractmethod
+    def __len__(self) -> int:
+        pass
+
+    @abstractmethod
+    def map_bools(self, index: int, bools):
+        pass
+
+    @abstractmethod
+    def map_moves(self, index: int, moves):
+        pass
 
 
 @dataclass
@@ -32,6 +48,8 @@ class Game:
 
     encode_mv: Optional[Callable[[int], np.array]]
     possible_mvs: Sequence[int]
+
+    symmetry: Symmetry
 
     def __post_init__(self):
         self.input_bool_shape = (self.input_bool_channels, self.board_size, self.board_size)
@@ -73,6 +91,52 @@ class Game:
         return game
 
 
+class UnitSymmetry(Symmetry):
+    def __len__(self) -> int:
+        return 1
+
+    def map_bools(self, index: int, bools):
+        assert index == 0
+        return bools
+
+    def map_moves(self, index: int, moves):
+        assert index == 0
+        return moves
+
+
+class AtaxxSymmetry(Symmetry):
+    def __init__(self, size: int):
+        self.size = size
+
+    def __len__(self) -> int:
+        return 8
+
+    def map_bools(self, index: int, bools):
+        assert index < len(self)
+        data = get_ataxx_symmetry_data(self.size, index)
+
+        assert len(bools.shape) == 3, f"Unexpected bool shape {bools.shape}"
+
+        if data.transpose:
+            bools = np.transpose(bools, (0, 2, 1))
+        if data.flip_x:
+            bools = bools[:, :, ::-1]
+        if data.flip_y:
+            bools = bools[:, ::-1, :]
+
+        return bools
+
+    def map_moves(self, index: int, moves):
+        assert index < len(self)
+        data = get_ataxx_symmetry_data(self.size, index)
+
+        assert np.all((0 <= moves) & (moves <= len(data.map_mv))), "Got invalid input move"
+        moves_mapped = data.map_mv[moves]
+        assert np.all(0 <= moves_mapped), "Got invalid output move"
+
+        return moves_mapped
+
+
 def _ataxx_game(size: int):
     assert 2 <= size <= 8
     return Game(
@@ -87,6 +151,7 @@ def _ataxx_game(size: int):
         estimate_moves_per_game=[0, 4, 19, 51, 106, 183, 275][size - 2],
         encode_mv=lambda mv: encode_ataxx_mv(size, mv),
         possible_mvs=ATAXX_VALID_MOVES[size - 2],
+        symmetry=AtaxxSymmetry(size),
     )
 
 
@@ -104,6 +169,7 @@ def _chess_hist_game(length: int):
         estimate_moves_per_game=chess.estimate_moves_per_game,
         encode_mv=chess.encode_mv,
         possible_mvs=chess.possible_mvs,
+        symmetry=chess.symmetry,
     )
 
 
@@ -153,6 +219,7 @@ GAMES = {
         estimate_moves_per_game=150,
         encode_mv=encode_chess_move,
         possible_mvs=range(1880),
+        symmetry=UnitSymmetry(),
     ),
     "sttt": Game(
         name="sttt",
@@ -165,6 +232,7 @@ GAMES = {
         estimate_moves_per_game=40,
         encode_mv=None,
         possible_mvs=range(9 * 9),
+        symmetry=UnitSymmetry(),
     ),
     "ttt": Game(
         name="ttt",
@@ -177,6 +245,7 @@ GAMES = {
         estimate_moves_per_game=5,
         encode_mv=encode_ttt_move,
         possible_mvs=range(3 * 3),
+        symmetry=UnitSymmetry(),
     ),
     "arimaa-split": Game(
         name="arimaa-split",
@@ -189,5 +258,6 @@ GAMES = {
         estimate_moves_per_game=300,
         encode_mv=None,
         possible_mvs=range(1 + 6 + 256),
+        symmetry=UnitSymmetry(),
     )
 }

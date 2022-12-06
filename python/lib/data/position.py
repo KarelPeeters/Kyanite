@@ -94,13 +94,24 @@ class Position:
         bool_count = prod(game.input_bool_shape)
         bit_buffer = np.frombuffer(data.take((bool_count + 7) // 8), dtype=np.uint8)
         bool_buffer = np.unpackbits(bit_buffer, bitorder="little")
-        self.input_bools = bool_buffer[:bool_count]
+        self.input_bools = bool_buffer[:bool_count].reshape(*game.input_bool_shape)
         self.input_scalars = np.frombuffer(data.take(game.input_scalar_channels * 4), dtype=np.float32)
 
         self.policy_indices = np.frombuffer(data.take(self.available_mv_count * 4), dtype=np.int32)
         self.policy_values = np.frombuffer(data.take(self.available_mv_count * 4), dtype=np.float32)
 
         data.finish()
+
+    def map_symmetry_inplace(self, index: int):
+        symmetries = self.game.symmetry
+
+        self.input_bools = symmetries.map_bools(index, self.input_bools)
+
+        if not (self.played_mv is None or self.played_mv == -1):
+            self.played_mv = symmetries.map_moves(index, np.array([self.played_mv]))[0]
+
+        self.policy_indices = symmetries.map_moves(index, self.policy_indices)
+        # (policy_values can stay as-is)
 
 
 class PostFinalPosition:

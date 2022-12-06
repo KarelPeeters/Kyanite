@@ -1,4 +1,6 @@
+import json
 import os
+from dataclasses import dataclass
 from io import StringIO
 
 import numpy as np
@@ -64,3 +66,39 @@ def load_ataxx_index_to_move_input(name: str):
 
 
 ATAXX_INDEX_TO_MOVE_INPUT = load_ataxx_index_to_move_input("ataxx_index_to_move_input.txt")
+
+
+@dataclass
+class AtaxxSymmetryData:
+    transpose: bool
+    flip_x: bool
+    flip_y: bool
+    map_mv: np.array
+
+
+def load_ataxx_symmetry():
+    with open(rel_path("ataxx_symmetry.json"), "r") as f:
+        all_dump = json.load(f)
+
+    result = []
+    for size_dump in all_dump:
+        size_result = []
+        for index_dump in size_dump:
+            data = AtaxxSymmetryData(
+                transpose=index_dump["transpose"],
+                flip_x=index_dump["flip_x"],
+                flip_y=index_dump["flip_y"],
+                map_mv=np.array(index_dump["map_mv"]),
+            )
+            size_result.append(data)
+        result.append(size_result)
+    return result
+
+
+_ATAXX_SYMMETRY_DATA = load_ataxx_symmetry()
+
+
+def get_ataxx_symmetry_data(size: int, index: int):
+    assert 2 <= size <= 8
+    assert 0 <= index < 8
+    return _ATAXX_SYMMETRY_DATA[size - 2][index]
