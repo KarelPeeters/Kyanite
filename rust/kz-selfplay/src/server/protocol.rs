@@ -65,7 +65,7 @@ pub enum GeneratorUpdate<B: Board> {
 
     FinishedSimulation {
         generator_id: usize,
-        simulation: Simulation<B>,
+        simulation: Simulation<'static, B>,
     },
 
     ExpandEvals(Evals),

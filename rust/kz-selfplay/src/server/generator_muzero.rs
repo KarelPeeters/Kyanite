@@ -104,7 +104,7 @@ async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
     state_size: usize,
     pool: &mut DevicePool,
     rng: &mut impl Rng,
-) -> Simulation<B> {
+) -> Simulation<'static, B> {
     let mut positions = vec![];
 
     let max_moves = settings.max_game_length.unwrap_or(u64::MAX) as u32;

@@ -73,7 +73,7 @@ async fn generate_simulation<B: Board>(
     eval_client: &EvalClient<B>,
     start: B,
     rng: &mut impl Rng,
-) -> Simulation<B> {
+) -> Simulation<'static, B> {
     // create a new cache for every game, to prevent long-term stale values for short games
     // TODO maybe explicitly clear the cache when a new network is loaded instead?
     let mut cache: Cache<B> = LruCache::new(settings.cache_size);

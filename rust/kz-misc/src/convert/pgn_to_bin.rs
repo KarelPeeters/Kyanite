@@ -211,7 +211,12 @@ impl Logger {
     }
 }
 
-fn build_position(board: &ChessBoard, mv: ChessMove, eval: Option<PgnEval>, moves_left: f32) -> Position<ChessBoard> {
+fn build_position(
+    board: &ChessBoard,
+    mv: ChessMove,
+    eval: Option<PgnEval>,
+    moves_left: f32,
+) -> Position<'static, ChessBoard> {
     let policy: Vec<f32> = board.available_moves().map(|cand| (cand == mv) as u8 as f32).collect();
 
     let zero_values = eval.map_or(ZeroValuesPov::nan(), |eval| {
