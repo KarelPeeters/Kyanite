@@ -1286,6 +1286,8 @@ dependencies = [
  "pgn-reader",
  "rand 0.8.5",
  "rayon",
+ "serde",
+ "serde_json",
  "shakmaty",
  "tabled",
  "tar",
