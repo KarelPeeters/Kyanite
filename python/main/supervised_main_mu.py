@@ -36,6 +36,7 @@ def main(plotter: LogPlotter):
         unroll_steps=5,
         include_final=True,
         include_final_for_each=False,
+        random_symmetries=False,
         threads=1,
     )
 

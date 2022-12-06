@@ -45,6 +45,7 @@ def main(plotter: LogPlotter):
     allow_resume = True
 
     batch_size = 256
+    train_random_symmetries = True
 
     test_steps = 16
     save_steps = 128
@@ -81,8 +82,11 @@ def main(plotter: LogPlotter):
 
     train_group = DataGroup.from_files(game, files, 0, 1 - test_fraction)
     test_group = DataGroup.from_files(game, files, 1 - test_fraction, 1)
-    train_sampler = PositionSampler(train_group, batch_size, None, include_final, False, threads=1)
-    test_sampler = PositionSampler(test_group, batch_size, None, include_final, False, threads=1)
+
+    train_sampler = PositionSampler(train_group, batch_size, None, include_final, False, train_random_symmetries,
+                                    threads=1)
+    test_sampler = PositionSampler(test_group, batch_size, None, include_final, False, train_random_symmetries,
+                                   threads=1)
 
     print(f"File count: {len(files)}")
     print(f"  Train simulation count: {len(train_group.simulations)}")

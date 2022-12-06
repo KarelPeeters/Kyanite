@@ -16,14 +16,19 @@ class PositionSampler:
             unroll_steps: Optional[int],
             include_final: bool,
             include_final_for_each: bool,
+            random_symmetries: bool,
             threads: int,
     ):
         self.group = group
+
+        if random_symmetries:
+            assert unroll_steps is None, "Random symmetries not yet supported for unrolled sampling"
 
         self.batch_size = batch_size
         self.unroll_steps = unroll_steps
         self.include_final = include_final
         self.include_final_for_each = include_final_for_each
+        self.random_symmetries = random_symmetries
 
         self.queue = CQueue(threads + 1)
 
@@ -72,12 +77,19 @@ def collect_simple_batch(sampler: PositionSampler, group: DataGroup):
 
     for _ in range(sampler.batch_size):
         _, p = sample_position(group, sampler.include_final, sampler.include_final_for_each)
+
+        if sampler.random_symmetries:
+            index = random.randrange(len(p.game.symmetry))
+            p.map_symmetry_inplace(index)
+
         positions.append(p)
 
     return PositionBatch(group.game, positions, sampler.include_final_for_each, PIN_MEMORY)
 
 
 def collect_unrolled_batch(sampler: PositionSampler, group: DataGroup, unroll_steps: int):
+    assert not sampler.random_symmetries
+
     chains = []
 
     for _ in range(sampler.batch_size):

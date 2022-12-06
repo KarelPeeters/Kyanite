@@ -132,8 +132,9 @@ def main():
         selfplay_settings=selfplay_settings,
         train_settings=train_settings,
 
-        muzero_steps=5,
-        include_final=True,
+        sample_muzero_steps=5,
+        sample_include_final=True,
+        sample_random_symmetries=False,
     )
 
     # settings.calc_batch_count_per_gen()

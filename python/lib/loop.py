@@ -90,8 +90,9 @@ class LoopSettings:
     selfplay_settings: Optional[SelfplaySettings]
     train_settings: TrainSettings
 
-    muzero_steps: Optional[int]
-    include_final: bool
+    sample_muzero_steps: Optional[int]
+    sample_include_final: bool
+    sample_random_symmetries: bool
 
     muzero: bool = field(init=False)
 
@@ -101,8 +102,8 @@ class LoopSettings:
     tmp_path: str = field(init=False)
 
     def __post_init__(self):
-        self.muzero = self.muzero_steps is not None
-        assert self.muzero == self.fixed_settings.muzero, f"Muzero state mismatch, got steps {self.muzero_steps} but fixed settings {self.fixed_settings.muzero}"
+        self.muzero = self.sample_muzero_steps is not None
+        assert self.muzero == self.fixed_settings.muzero, f"Muzero state mismatch, got steps {self.sample_muzero_steps} but fixed settings {self.fixed_settings.muzero}"
 
         self.log_path = os.path.join(self.root_path, "log.npz")
         self.selfplay_path = os.path.join(self.root_path, "selfplay")
@@ -116,7 +117,7 @@ class LoopSettings:
         # this does not depend on gens_in_buffer since that divides itself away
         positions_per_gen = estimate_moves_per_simulation * self.fixed_settings.simulations_per_gen
 
-        samples_per_batch = self.train_batch_size * (1 + (self.muzero_steps or 0))
+        samples_per_batch = self.train_batch_size * (1 + (self.sample_muzero_steps or 0))
         batch_count = samples_per_position * positions_per_gen / samples_per_batch
 
         # extra calculations for prints
@@ -242,10 +243,7 @@ class LoopSettings:
                     client.send_wait_for_new_network()
                 self.evaluate_network(buffer, logger, network)
 
-                train_sampler = buffer.sampler(
-                    self.train_batch_size, self.muzero_steps, self.include_final,
-                    only_last=False, test=False
-                )
+                train_sampler = self.sampler(buffer, only_last_gen=False, test=False)
 
                 positions_per_simulation = buffer.position_count / buffer.simulation_count
                 batch_count_float = self.calc_batch_count_per_gen(positions_per_simulation, False)
@@ -310,14 +308,8 @@ class LoopSettings:
 
     def evaluate_network(self, buffer: 'LoopBuffer', logger: Logger, network):
         setups = [
-            (
-                "test-buffer",
-                buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, only_last=False, test=True)
-            ),
-            (
-                "test-last",
-                buffer.sampler(self.train_batch_size, self.muzero_steps, self.include_final, only_last=True, test=True)
-            ),
+            ("test-buffer", self.sampler(buffer, only_last_gen=False, test=True)),
+            ("test-last", self.sampler(buffer, only_last_gen=True, test=True)),
         ]
 
         network.eval()
@@ -338,6 +330,16 @@ class LoopSettings:
             save_onnx(self.fixed_settings.game, path, network, None)
 
         return path
+
+    def sampler(self, buffer: 'LoopBuffer', only_last_gen: bool, test: bool) -> PositionSampler:
+        return buffer.sampler(
+            batch_size=self.train_batch_size,
+            unroll_steps=self.sample_muzero_steps,
+            include_final=self.sample_include_final,
+            random_symmetries=self.sample_random_symmetries,
+            only_last_gen=only_last_gen,
+            test=test
+        )
 
 
 @dataclass
@@ -415,8 +417,12 @@ class LoopBuffer:
                 logger.log("gen-root-wdl", "d", info.root_wdl[1])
                 logger.log("gen-root-wdl", "l", info.root_wdl[2])
 
-    def sampler(self, batch_size: int, unroll_steps: Optional[int], include_final: bool, only_last: bool, test: bool):
-        files = [self.files[-1]] if only_last else self.files
+    def sampler(
+            self,
+            batch_size: int, unroll_steps: Optional[int], include_final: bool, random_symmetries: bool,
+            only_last_gen: bool, test: bool
+    ):
+        files = [self.files[-1]] if only_last_gen else self.files
 
         if test:
             range_min = 1 - self.test_fraction
@@ -432,6 +438,7 @@ class LoopBuffer:
             batch_size,
             unroll_steps=unroll_steps,
             include_final=include_final,
-            threads=1,
             include_final_for_each=False,
+            random_symmetries=random_symmetries,
+            threads=1,
         )

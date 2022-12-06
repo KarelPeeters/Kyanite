@@ -29,7 +29,7 @@ def collect_training_data(data_gens, network_gens, batch_size: int, positions: i
         for gi in data_gens
     ]
     group = DataGroup.from_files(game, files)
-    sampler = PositionSampler(group, batch_size, None, False, 1)
+    sampler = PositionSampler(group, batch_size, None, False, False, False, 1)
 
     networks = []
     for gi in network_gens:

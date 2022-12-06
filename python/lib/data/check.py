@@ -49,7 +49,7 @@ def check_data_file(file: DataFile):
             for p in s.positions:
                 allowed_indices.add(p.file_pi)
 
-        sampler = PositionSampler(group, 16, None, True, 1)
+        sampler = PositionSampler(group, 16, None, True, False, False, 1)
         for _ in range(32):
             batch = sampler.next_batch()
 
@@ -57,7 +57,7 @@ def check_data_file(file: DataFile):
                 assert int(file_pi) in allowed_indices
         sampler.close()
 
-        sampler = PositionSampler(group, 16, 6, True, 1)
+        sampler = PositionSampler(group, 16, 6, True, False, False, 1)
         for i in range(32):
             unrolled_batch = sampler.next_unrolled_batch()
 

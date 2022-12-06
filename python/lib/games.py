@@ -124,7 +124,8 @@ class AtaxxSymmetry(Symmetry):
         if data.flip_y:
             bools = bools[:, ::-1, :]
 
-        return bools
+        # fix potentially negative strides
+        return np.copy(bools)
 
     def map_moves(self, index: int, moves):
         assert index < len(self)
