@@ -41,7 +41,7 @@ pub fn ataxx_start_pos(
     }
 }
 
-fn ataxx_gen_gap_board(rng: &mut impl Rng, size: u8, gap_range: RangeInclusive<f32>) -> AtaxxBoard {
+pub fn ataxx_gen_gap_board(rng: &mut impl Rng, size: u8, gap_range: RangeInclusive<f32>) -> AtaxxBoard {
     let size = size as usize;
 
     let tile_count_a = 2.clamp(0, (size * size) / 2);
