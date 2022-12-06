@@ -13,7 +13,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScree
 use decorum::N32;
 use itertools::Itertools;
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{thread_rng, SeedableRng};
 use tui::backend::CrosstermBackend;
 use tui::buffer::Buffer;
 use tui::layout::{Margin, Rect};
@@ -24,6 +24,7 @@ use tui::Terminal;
 use cuda_nn_eval::Device;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
 use kz_core::network::cudnn::CudaNetwork;
+use kz_core::network::symmetry::RandomSymmetryNetwork;
 use kz_core::network::Network;
 use kz_core::zero::node::{Uct, UctWeights};
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode, ZeroRequest};
@@ -42,6 +43,8 @@ struct Args {
     virtual_loss_weight: f32,
     #[clap(long, default_value_t = 0)]
     visits: u64,
+    #[clap(long)]
+    no_random_symmetries: bool,
 }
 
 #[derive(Debug)]
@@ -78,7 +81,8 @@ fn main() -> std::io::Result<()> {
     println!("{}", board);
 
     // let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
-    let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
+    // let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
+    let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\16x128_gaps\training\gen_6732\network.onnx"#;
     let settings = ZeroSettings::new(
         1,
         UctWeights::default(),
@@ -91,8 +95,8 @@ fn main() -> std::io::Result<()> {
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path, false), Default::default());
     let mapper = AtaxxStdMapper::new(board.size());
-    let mut network = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-
+    let network_inner = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
+    let mut network = RandomSymmetryNetwork::new(network_inner, thread_rng(), !args.no_random_symmetries);
     main_impl(&mut network, board, settings, args.visits)
 }
 
