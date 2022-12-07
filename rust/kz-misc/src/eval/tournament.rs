@@ -3,13 +3,15 @@ use std::time::Instant;
 
 use board_game::board::{Board, Outcome};
 use board_game::pov::{NonPov, Pov};
+use board_game::util::rating::elo_from_wdl;
 use board_game::wdl::{OutcomeWDL, WDL};
 use flume::Sender;
 use futures::executor::{block_on, ThreadPoolBuilder};
 use futures::task::SpawnExt;
 use futures::StreamExt;
 use itertools::Itertools;
-use tabled::{Margin, Style};
+use tabled::builder::Builder;
+use tabled::{Margin, Style, Table};
 
 use kz_core::bot::AsyncBot;
 
@@ -20,12 +22,13 @@ pub type BoxBot<B> = Box<dyn AsyncBot<B> + Send>;
 pub struct Tournament<B: Board> {
     pub bot_names: Vec<String>,
     pub pos_count: usize,
+    pub self_games: bool,
     pub flip_games: bool,
 
     pub rounds: Vec<Round<B>>,
 
-    pub total_wdl: Vec<WDL<usize>>,
     pub grid_wdl: Vec<Vec<WDL<usize>>>,
+    pub grid_wdl_decisive: Option<Vec<Vec<WDL<usize>>>>,
 }
 
 #[derive(Debug)]
@@ -70,27 +73,40 @@ pub fn run_tournament<S: Display, B: Board, F: FnMut() + Send + 'static>(
     let (bot_names, bots) = bots.into_iter().map(|(s, b)| (s.to_string(), b)).unzip();
     let rounds = run_rounds(bots, &start_positions, limit_threads, self_games, flip_games, on_print);
 
-    let mut total_wdl = vec![WDL::<usize>::default(); bot_count];
-    let mut grid_wdl = vec![vec![WDL::<usize>::default(); bot_count]; bot_count];
+    let mut grid_wdl = vec![vec![WDL::default(); bot_count]; bot_count];
+    let mut grid_wdl_decisive = if flip_games {
+        Some(vec![vec![WDL::default(); bot_count]; bot_count])
+    } else {
+        None
+    };
 
     for round in &rounds {
         let id = round.id;
         let wdl_i = round.outcome_i().to_wdl();
         let wdl_j = round.outcome_i().flip().to_wdl();
 
-        total_wdl[id.i] += wdl_i;
-        total_wdl[id.j] += wdl_j;
         grid_wdl[id.i][id.j] += wdl_i;
         grid_wdl[id.j][id.i] += wdl_j;
+
+        if let Some(grid_wdl_decisive) = &mut grid_wdl_decisive {
+            let other = rounds.iter().find(|other| RoundId::is_flipped_pair(id, other.id));
+            if let Some(other) = other {
+                if round.outcome != other.outcome {
+                    grid_wdl_decisive[id.i][id.j] += wdl_i;
+                    grid_wdl_decisive[id.j][id.i] += wdl_j;
+                }
+            }
+        }
     }
 
     Tournament {
         bot_names,
         pos_count,
+        self_games,
         flip_games,
         rounds,
-        total_wdl,
         grid_wdl,
+        grid_wdl_decisive,
     }
 }
 
@@ -250,6 +266,26 @@ async fn run_round<B: Board>(
     }
 }
 
+impl RoundId {
+    fn is_flipped_pair(left: Self, right: Self) -> bool {
+        let RoundId {
+            i: li,
+            j: lj,
+            s: ls,
+            global: _,
+        } = left;
+        let RoundId {
+            i: ri,
+            j: rj,
+            s: rs,
+            global: _,
+        } = right;
+
+        // intentionally mismatched i/j
+        li == rj && lj == ri && ls == rs
+    }
+}
+
 impl<B: Board> Round<B> {
     fn outcome_i(&self) -> OutcomeWDL {
         self.outcome.pov(self.start.next_player())
@@ -257,49 +293,90 @@ impl<B: Board> Round<B> {
 }
 
 impl<B: Board> Tournament<B> {
-    fn bot_count(&self) -> usize {
+    pub fn bot_count(&self) -> usize {
         self.bot_names.len()
     }
 }
 
 impl<B: Board> Display for Tournament<B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let bot_count = self.bot_count();
-        let format_wdl = |wdl: WDL<usize>| {
-            let wdl = wdl.cast::<f32>().normalized();
-
-            if wdl.sum().is_nan() {
-                "".to_string()
-            } else {
-                format!("{:.2}/{:.2}/{:.2}", wdl.win, wdl.draw, wdl.loss)
-            }
-        };
-
-        let mut cols = vec!["", "total"];
-        for j in 0..bot_count {
-            cols.push(&self.bot_names[j]);
-        }
-
-        let mut table = tabled::builder::Builder::default().set_columns(cols);
-
-        for i in 0..bot_count {
-            let mut row = vec![self.bot_names[i].clone(), format_wdl(self.total_wdl[i])];
-            for j in 0..bot_count {
-                row.push(format_wdl(self.grid_wdl[i][j]));
-            }
-            table = table.add_record(row);
-        }
-
-        let table = table.build().with(Margin::new(4, 0, 0, 0)).with(Style::modern());
-
         writeln!(f, "Tournament {{")?;
         writeln!(f, "  pos_count: {}", self.pos_count)?;
-        writeln!(f, "  total_games: {}", self.rounds.len())?;
+        writeln!(f, "  self_games: {}", self.self_games)?;
         writeln!(f, "  flip_games: {}", self.flip_games)?;
+
         writeln!(f, "  results:")?;
-        write!(f, "{}", table)?;
+        write!(
+            f,
+            "{}",
+            display_build_table(&self.bot_names, &self.grid_wdl, self.grid_wdl_decisive.as_deref())
+        )?;
+
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+fn display_build_table(
+    bot_names: &[String],
+    grid_wdl: &[Vec<WDL<usize>>],
+    grid_wdl_decisive: Option<&[Vec<WDL<usize>>]>,
+) -> Table {
+    let mut table = Builder::default();
+
+    table = display_add_rows(table, "ALL", bot_names, grid_wdl);
+    if let Some(grid_wdl_decisive) = grid_wdl_decisive {
+        table = display_add_rows(table, "DECISIVE", bot_names, grid_wdl_decisive);
+    }
+
+    table.build().with(Margin::new(4, 0, 0, 0)).with(Style::modern())
+}
+
+fn display_add_rows(mut table: Builder, name: &str, bot_names: &[String], grid_wdl: &[Vec<WDL<usize>>]) -> Builder {
+    let bot_count = grid_wdl.len();
+
+    let total_wdl_per_bot = grid_wdl
+        .iter()
+        .map(|line| line.iter().sum::<WDL<usize>>())
+        .collect_vec();
+    let total_wdl = total_wdl_per_bot.iter().sum::<WDL<usize>>();
+
+    let total_wdl_str = format!(
+        "{}: {}/{}/{}",
+        total_wdl.sum(),
+        total_wdl.win,
+        total_wdl.draw,
+        total_wdl.loss,
+    );
+
+    let mut header = vec![name.to_owned(), total_wdl_str, "total".to_owned()];
+    header.extend_from_slice(bot_names);
+    table = table.add_record(header);
+
+    for i in 0..bot_count {
+        let bot_wdl = total_wdl_per_bot[i];
+        let mut row = vec![
+            bot_names[i].clone(),
+            format!("{}", bot_wdl.sum()),
+            display_format_wdl_elo(bot_wdl),
+        ];
+        for j in 0..bot_count {
+            row.push(display_format_wdl_elo(grid_wdl[i][j]));
+        }
+        table = table.add_record(row);
+    }
+
+    table
+}
+
+fn display_format_wdl_elo(wdl: WDL<usize>) -> String {
+    let wdl = wdl.cast::<f32>().normalized();
+
+    if wdl.sum().is_nan() {
+        "".to_string()
+    } else {
+        let elo = elo_from_wdl(wdl);
+        format!("{:.2}/{:.2}/{:.2} => {:.2}", wdl.win, wdl.draw, wdl.loss, elo)
     }
 }
