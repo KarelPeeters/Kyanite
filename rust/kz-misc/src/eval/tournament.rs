@@ -114,10 +114,10 @@ fn run_rounds<B: Board>(
 
     let mut started_games = 0;
     for i in 0..bots.len() {
-        let j_start = if flip_games { 0 } else { i + 1 };
+        let j_start = if flip_games { 0 } else { i };
         for j in j_start..bots.len() {
             for (s, start) in start_positions.iter().enumerate() {
-                if (i == j) ^ self_games {
+                if (i == j) && !self_games {
                     break;
                 }
                 let global = started_games;
