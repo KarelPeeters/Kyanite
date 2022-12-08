@@ -72,8 +72,6 @@ fn main() -> std::io::Result<()> {
                     map_mv[old_index] = new_index as isize;
                 }
 
-                all_numbers += map_mv.len();
-
                 AtaxxSymmetry {
                     transpose: sym.transpose,
                     flip_x: sym.flip_x,
