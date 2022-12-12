@@ -28,7 +28,7 @@ struct Args {
     #[clap(short, long)]
     skip_io: bool,
 
-    #[clap(long)]
+    #[clap(long, short)]
     n: Option<usize>,
 
     path: String,
