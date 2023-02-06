@@ -479,9 +479,9 @@ impl<B: Board> Widget for &State<B> {
 
         for (i, &(n1, n2, _, color)) in COLUMN_INFO.iter().enumerate() {
             if i == 0 || COLUMN_INFO[i - 1].0 != n1 {
-                buf.set_string(col_starts[i], area.y, n1, Style::default().fg(color));
+                buf.set_string_safe(col_starts[i], area.y, n1, Style::default().fg(color));
             }
-            buf.set_string(col_starts[i], area.y + 1, n2, Style::default().fg(color));
+            buf.set_string_safe(col_starts[i], area.y + 1, n2, Style::default().fg(color));
         }
 
         for y in 0..area.height - HEADER_SIZE {
@@ -506,9 +506,24 @@ impl<B: Board> Widget for &State<B> {
                         col_starts[i]
                     };
 
-                    buf.set_string(x, full_y, &v.string, Style::default().fg(color));
+                    buf.set_string_safe(x, full_y, &v.string, Style::default().fg(color));
                 }
             }
+        }
+    }
+}
+
+trait BufExt {
+    fn set_string_safe(&mut self, x: u16, y: u16, s: impl AsRef<str>, style: Style);
+}
+
+impl BufExt for Buffer {
+    fn set_string_safe(&mut self, x: u16, y: u16, s: impl AsRef<str>, style: Style) {
+        let has_x = (self.area.left()..self.area.right()).contains(&x);
+        let has_y = (self.area.top()..self.area.bottom()).contains(&y);
+
+        if has_x && has_y {
+            self.set_stringn(x, y, s, usize::MAX, style);
         }
     }
 }
