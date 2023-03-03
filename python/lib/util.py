@@ -94,3 +94,9 @@ def stochastic_round(f: float) -> int:
     if random.random() < (f - a):
         return a + 1
     return a
+
+
+def json_map(o):
+    if isinstance(o, range):
+        return str(o)
+    return o.__dict__

@@ -15,6 +15,7 @@ from lib.plotter import LogPlotter
 from lib.save_onnx import save_onnx
 from lib.schedule import Schedule
 from lib.train import TrainSettings
+from lib.util import json_map
 
 
 def supervised_loop(
@@ -26,7 +27,7 @@ def supervised_loop(
         test_steps: int, save_steps: int,
 ):
     with open(os.path.join(output_folder, f"settings_{start_bi}.json"), "w") as settings_f:
-        json.dump(settings, settings_f, default=lambda o: o.__dict__, indent=2)
+        json.dump(settings, settings_f, default=json_map, indent=2)
 
     prev_start = time.perf_counter()
 

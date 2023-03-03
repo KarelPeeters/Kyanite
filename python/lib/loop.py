@@ -19,7 +19,7 @@ from lib.plotter import LogPlotter, run_with_plotter
 from lib.save_onnx import save_onnx, save_muzero_onnx
 from lib.selfplay_client import SelfplaySettings, StartupSettings, SelfplayClient
 from lib.train import TrainSettings
-from lib.util import DEVICE, print_param_count, clean_folder, stochastic_round
+from lib.util import DEVICE, print_param_count, clean_folder, stochastic_round, json_map
 
 CHECK_BATCH_SIZE = 2
 SAVE_BATCH_SIZE = 2
@@ -178,12 +178,7 @@ class LoopSettings:
         print("Saving current settings")
         os.makedirs(start_gen.train_path, exist_ok=True)
         with open(start_gen.settings_path, "w") as settings_f:
-            def map(o):
-                if isinstance(o, range):
-                    return str(o)
-                return o.__dict__
-
-            json.dump(self, settings_f, default=map, indent=2)
+            json.dump(self, settings_f, default=json_map, indent=2)
 
         print("Main network parameters:")
         print_param_count(network)
