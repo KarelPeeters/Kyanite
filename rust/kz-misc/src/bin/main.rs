@@ -45,6 +45,8 @@ struct Args {
     visits: u64,
     #[clap(long)]
     no_random_symmetries: bool,
+    #[clap(long, default_value_t = 0)]
+    batch_size: usize,
 }
 
 #[derive(Debug)]
@@ -84,7 +86,7 @@ fn main() -> std::io::Result<()> {
     // let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
     let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\16x128_gaps\training\gen_6732\network.onnx"#;
     let settings = ZeroSettings::new(
-        1,
+        args.batch_size,
         UctWeights::default(),
         QMode::wdl(),
         FpuMode::Fixed(1.0),
