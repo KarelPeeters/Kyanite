@@ -108,7 +108,7 @@ class AttentionPolicyHead(nn.Module):
         self.conv_bulk = conv2d(channels, 2 * query_channels, 1)
         self.conv_under = conv2d(channels, 3 * query_channels, 1)
 
-        self.FLAT_TO_ATT = CHESS_FLAT_TO_ATT
+        self.register_buffer("FLAT_TO_ATT", CHESS_FLAT_TO_ATT.clone())
 
     def forward(self, common):
         bulk = self.conv_bulk(common)
