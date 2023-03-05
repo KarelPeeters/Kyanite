@@ -40,6 +40,11 @@ def main():
 
     game: Game = Game.find(game)
     network = torch.jit.load(input_path)
+
+    # bugfix for old networks that didn't register this attribute as a buffer
+    if hasattr(network, "policy_head") and hasattr(network.policy_head, "FLAT_TO_ATT"):
+        network.policy_head.FLAT_TO_ATT = network.policy_head.FLAT_TO_ATT.to("cpu")
+
     save_onnx(game, output_path, network, check_batch_size)
 
 
