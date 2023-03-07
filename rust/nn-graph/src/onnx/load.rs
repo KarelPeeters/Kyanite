@@ -404,48 +404,50 @@ fn visit_node(
                 ),
             }
         }
+        // TODO ensure the optimizer can fuse the scale/eps/var and mean/bias operations
         "BatchNormalization" => {
-            //TODO also try without merging anything here to see how much of a difference it makes
-
             let input = inputs.required(0)?.unwrap_float();
 
-            // assume everything is constant for now, so we can immediately fuse stuff
-            let scale = graph.as_const(inputs.required(1)?.unwrap_float()).unwrap();
-            let bias = graph.as_const(inputs.required(2)?.unwrap_float()).unwrap();
-            let mean = graph.as_const(inputs.required(3)?.unwrap_float()).unwrap();
-            let variance = graph.as_const(inputs.required(4)?.unwrap_float()).unwrap();
+            let input_scale = inputs.required(1)?.unwrap_float();
+            let input_bias = inputs.required(2)?.unwrap_float();
+            let input_mean = inputs.required(3)?.unwrap_float();
+            let input_variance = inputs.required(4)?.unwrap_float();
 
             let epsilon = attrs.take_float("epsilon")?;
-            let _: f32 = attrs.take_float("momentum")?;
+            let _ = attrs.take_float("momentum")?;
 
             // figure out the shapes
             let input_shape = &graph[input].shape;
             assert!(input_shape.rank() >= 2, "BN input must have at least rank 2");
-            let index = 1;
-            let const_shape = input_shape.keep(index, Size::ONE);
 
-            let channels = input_shape[1].unwrap_fixed("BN channel count must be fixed");
-            assert!(
-                scale.len() == channels
-                    && bias.len() == channels
-                    && mean.len() == channels
-                    && variance.len() == channels
-            );
+            let channels = input_shape[1];
+            let shape_vec = shape![channels];
+            let shape_exp = input_shape.keep(1, Size::ONE);
 
-            // fuse everything into a single scale and bias
-            let total_scale = (0..channels)
-                .map(|i| scale[i] / (variance[i] + epsilon).sqrt())
-                .collect_vec();
-            let total_bias = (0..channels)
-                .map(|i| bias[i] - (mean[i] * scale[i] / (variance[i] + epsilon).sqrt()))
-                .collect_vec();
+            for param in [input_scale, input_bias, input_mean, input_variance] {
+                assert_eq!(graph[param].shape, shape_vec);
+            }
 
             // put everything into the graph
-            let total_scale = graph.constant(const_shape.clone(), total_scale);
-            let total_bias = graph.constant(const_shape.clone(), total_bias);
+            let result = {
+                let value_eps = graph.scalar(epsilon);
 
-            let scaled = graph.mul(input, total_scale);
-            let result = graph.add(scaled, total_bias);
+                let exp_scale = graph.view(input_scale, shape_exp.clone());
+                let exp_bias = graph.view(input_bias, shape_exp.clone());
+                let exp_mean = graph.view(input_mean, shape_exp.clone());
+                let exp_variance = graph.view(input_variance, shape_exp.clone());
+
+                let div_squared = graph.add(exp_variance, value_eps);
+                let div = graph.unary(UnaryOp::Sqrt, div_squared);
+
+                let x = input;
+                let x_mean = graph.sub(x, exp_mean);
+                let x_div = graph.binary(BinaryOp::Div, x_mean, div);
+                let x_scale = graph.mul(x_div, exp_scale);
+                let x_bias = graph.add(x_scale, exp_bias);
+                x_bias
+            };
+
             TypedValue::FloatTensor(result)
         }
         "InstanceNormalization" => {
