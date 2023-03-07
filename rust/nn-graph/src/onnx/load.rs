@@ -14,7 +14,7 @@ use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
-use crate::onnx::result::OnnxResult;
+use crate::onnx::result::{OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{float_to_i64_exact, SignedSize, TypedValue};
 use crate::shape;
@@ -23,7 +23,7 @@ use crate::shape::{Shape, Size};
 // we use &dyn to avoid duplicate codegen of this large and non-critical function
 pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> OnnxResult<Graph> {
     let model = load_model_proto(buf);
-    let model_graph = model.graph.as_ref().unwrap();
+    let model_graph = model.graph.as_ref().unwrap_proto("model.graph")?;
 
     let mut graph = Graph::new();
     let mut nodes: Store<TypedValue> = Store::default();
@@ -43,7 +43,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
             continue;
         }
 
-        let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap());
+        let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?);
         let value = graph.input(shape);
 
         let typed_value = if is_int {
@@ -78,15 +78,13 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
         }
 
         // check that we used all attributes and inputs
-        assert!(
-            attrs.is_done(),
-            "Node {} has leftover attributes: {:?}",
-            node.name,
-            attrs
-        );
-        let leftover_inputs = inputs.leftover_inputs();
-        if leftover_inputs.len() > 0 {
-            panic!("Node {} has leftover inputs: {:?}", node.name, leftover_inputs);
+        let leftover_attributes = attrs.leftover();
+        if !leftover_attributes.is_empty() {
+            return Err(OnnxError::LeftoverAttributes(node.name.clone(), leftover_attributes));
+        }
+        let leftover_inputs = inputs.leftover();
+        if !leftover_inputs.is_empty() {
+            return Err(OnnxError::LeftoverInputs(node.name.clone(), leftover_inputs));
         }
 
         // actually define the current node
@@ -94,7 +92,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
     }
 
     for output in &model_graph.output {
-        graph.output(nodes[&output.name].unwrap_float());
+        graph.output(nodes[output.name.as_str()].unwrap_float());
     }
 
     Ok(graph)
@@ -177,7 +175,7 @@ fn visit_node(
 
                     result_biased
                 }
-                rank => panic!("{}d convolution not yet supported", rank),
+                rank => return Err(OnnxError::UnsupportedNdConvolution(node_name.to_owned(), rank)),
             };
 
             TypedValue::FloatTensor(result)
@@ -203,7 +201,13 @@ fn visit_node(
 
                     (min[0], max[0])
                 }
-                _ => panic!("Clip must have either 1 or 3 inputs, got 2",),
+                _ => {
+                    let message = format!("Clip must have either 1 or 3 inputs, got 2");
+                    return Err(OnnxError::InvalidOperationArgs {
+                        node: node_name.to_owned(),
+                        message,
+                    });
+                }
             };
 
             let result = graph.clamp(input, min, max);
@@ -927,8 +931,10 @@ fn visit_node(
             TypedValue::with_same_type(result, input)
         }
         _ => {
-            eprintln!("Already parsed graph:\n{}", graph);
-            panic!("Unsupported op_type '{}' in node {}", op_type, node_name);
+            return Err(OnnxError::UnsupportedOperation(
+                node_name.to_owned(),
+                op_type.to_owned(),
+            ));
         }
     };
 

@@ -79,7 +79,7 @@ impl<'a> Inputs<'a> {
             .collect()
     }
 
-    pub fn leftover_inputs(&mut self) -> Vec<usize> {
+    pub fn leftover(&mut self) -> Vec<usize> {
         self.inner
             .iter()
             .positions(|x| matches!(x, Storage::Present(_)))
@@ -188,8 +188,8 @@ impl<'a> Attributes<'a> {
         self.take(key, AttributeType::Tensor).t.as_ref().unwrap()
     }
 
-    pub fn is_done(&self) -> bool {
-        self.inner.is_empty()
+    pub fn leftover(&self) -> Vec<String> {
+        self.inner.keys().map(|&s| s.to_owned()).collect()
     }
 }
 
