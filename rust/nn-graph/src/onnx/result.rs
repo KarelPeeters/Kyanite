@@ -1,7 +1,7 @@
-use std::io;
-use std::path::{Path, PathBuf};
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;
+use std::io;
+use std::path::{Path, PathBuf};
 
 pub type OnnxResult<T> = Result<T, OnnxError>;
 
@@ -34,9 +34,14 @@ pub enum OnnxError {
 
     UnsupportedMultipleOutputs(Node, Vec<String>),
     UnsupportedNonFloatOutput(String),
-    UnsupportedTensorType(DataType),
+    UnsupportedType(DataType),
 
     UnsupportedNdConvolution(Node, usize),
+
+    UnsupportedPartialShape(Node, String),
+    UnsupportedShape(Node, String),
+
+    UnsupportedElementWiseCombination(Node, String, String),
 }
 
 pub trait ToOnnxLoadResult {

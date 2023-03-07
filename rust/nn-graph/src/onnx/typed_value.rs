@@ -5,6 +5,7 @@ use ndarray::{ArcArray, IxDyn};
 use unwrap_match::unwrap_match;
 
 use crate::graph::{Graph, Value};
+use crate::onnx::result::{Node, OnnxError, OnnxResult};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -40,7 +41,7 @@ impl TypedValue {
                     shape_shape
                 );
 
-                let dims_f = graph.as_const(inner).expect("Shape tensor must be constant");
+                let dims_f = graph.as_const(inner)?;
                 let shape = dims_f
                     .iter()
                     .copied()
@@ -56,16 +57,18 @@ impl TypedValue {
 
     pub fn as_shape(&self, graph: &Graph) -> Option<Shape> {
         let partial = self.as_partial_shape(&graph)?;
-
-        let dims = partial
-            .iter()
-            .map(|s| {
-                s.as_size()
-                    .unwrap_or_else(|| panic!("Cannot convert {:?} to real shape", partial))
-            })
-            .collect_vec();
-
+        let dims = partial.iter().map(|s| s.as_size()).collect::<Option<_>>()?;
         Some(Shape::new(dims))
+    }
+
+    pub fn unwrap_partial_shape(&self, node: Node<&str>, graph: &Graph) -> OnnxResult<Vec<SignedSize>> {
+        self.as_partial_shape(graph)
+            .ok_or_else(|| OnnxError::UnsupportedPartialShape(node.to_owned(), format!("{:?}", self)))
+    }
+
+    pub fn unwrap_shape(&self, node: Node<&str>, graph: &Graph) -> OnnxResult<Shape> {
+        self.as_shape(graph)
+            .ok_or_else(|| OnnxError::UnsupportedShape(node.to_owned(), format!("{:?}", self)))
     }
 
     pub fn unwrap_float(&self) -> Value {

@@ -72,7 +72,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
         let mut attrs = Attributes::from(node, &node_proto.attribute);
         let mut inputs = Inputs::from(node, &node_proto.input, &nodes)?;
 
-        let value: TypedValue = visit_node(&mut graph, external, node, output_name, &mut inputs, &mut attrs)?;
+        let value: TypedValue = visit_node(&mut graph, external, node, &mut inputs, &mut attrs)?;
 
         // set debug id for all newly created nodes to the current node name
         for value in graph.take_new_values() {
@@ -104,7 +104,6 @@ fn visit_node(
     graph: &mut Graph,
     external: &dyn ExternalDataLoader,
     node: Node<&str>,
-    output_name: &str,
     inputs: &mut Inputs,
     attrs: &mut Attributes,
 ) -> OnnxResult<TypedValue> {
@@ -187,20 +186,21 @@ fn visit_node(
             let input_min = inputs.optional(1);
             let input_max = inputs.optional(2);
 
-            let (min, max) = match (input_min, input_max) {
-                (None, None) => (attrs.take_float("min")?, attrs.take_float("max")?),
+            let result = match (input_min, input_max) {
+                (None, None) => {
+                    let min = attrs.take_float("min")?;
+                    let max = attrs.take_float("max")?;
+                    graph.clamp(input, min, max)
+                }
                 (Some(min), Some(max)) => {
-                    let min = graph.as_const(min.unwrap_float()).unwrap();
-                    let max = graph.as_const(max.unwrap_float()).unwrap();
+                    let min = min.unwrap_float();
+                    let max = max.unwrap_float();
+                    assert_eq!(graph[min].shape, Shape::SCALAR);
+                    assert_eq!(graph[max].shape, Shape::SCALAR);
 
-                    assert!(
-                        min.len() == 1 && max.len() == 1,
-                        "Expected min and max to be a single element, got {} and {}",
-                        min.len(),
-                        max.len(),
-                    );
-
-                    (min[0], max[0])
+                    let mid = graph.binary(BinaryOp::Min, input, max);
+                    let result = graph.binary(BinaryOp::Max, mid, min);
+                    result
                 }
                 _ => {
                     let message = format!("Clip must have either 1 or 3 inputs, got 2");
@@ -208,7 +208,6 @@ fn visit_node(
                 }
             };
 
-            let result = graph.clamp(input, min, max);
             TypedValue::FloatTensor(result)
         }
         "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" | "Erf" => {
@@ -274,16 +273,16 @@ fn visit_node(
                 let result = graph.scalar(result_value);
                 TypedValue::FloatTensor(result)
             } else {
-                panic!(
-                    "Elementwise operation between {:?} and {:?} not implemented for node {:?}",
-                    left, right, output_name,
-                )
+                return Err(OnnxError::UnsupportedElementWiseCombination(
+                    node.to_owned(),
+                    format!("{:?}", left),
+                    format!("{:?}", right),
+                ));
             }
         }
         "Equal" => {
-            let error = "Equal operator only supports shapes for now";
-            let left = inputs.required(0)?.as_partial_shape(&graph).expect(error);
-            let right = inputs.required(1)?.as_partial_shape(&graph).expect(error);
+            let left = inputs.required(0)?.unwrap_partial_shape(node, &graph)?;
+            let right = inputs.required(1)?.unwrap_partial_shape(node, &graph)?;
 
             // TODO implement broadcasting
             // TODO is shape the best way to store bools?
@@ -294,11 +293,9 @@ fn visit_node(
             TypedValue::Shape(result)
         }
         "Where" => {
-            let error = "Where operator only supports shapes for now";
-
-            let condition = inputs.required(0)?.as_partial_shape(&graph).expect(error);
-            let x = inputs.required(1)?.as_partial_shape(&graph).expect(error);
-            let y = inputs.required(2)?.as_partial_shape(&graph).expect(error);
+            let condition = inputs.required(0)?.unwrap_partial_shape(node, graph)?;
+            let x = inputs.required(1)?.unwrap_partial_shape(node, graph)?;
+            let y = inputs.required(2)?.unwrap_partial_shape(node, graph)?;
 
             // TODO implement broadcasting
             assert!(
@@ -488,7 +485,7 @@ fn visit_node(
 
             let shape = match shape {
                 None => Shape::SCALAR,
-                Some(shape) => shape.as_shape(&graph).expect("ConstantOfShape needs shape input"),
+                Some(shape) => shape.unwrap_shape(node, &graph)?,
             };
 
             let value = match attrs.maybe_take_tensor("value")? {
@@ -518,14 +515,14 @@ fn visit_node(
                     match to_type {
                         DataType::Float | DataType::Double => TypedValue::FloatTensor(input),
                         DataType::Int64 => TypedValue::IntTensor(input),
-                        _ => panic!("Casting to type {:?} not supported yet", to_type),
+                        _ => return Err(OnnxError::UnsupportedType(to_type)),
                     }
                 }
             }
         }
         "Reshape" => {
             let input = inputs.required(0)?;
-            let new_shape = inputs.required(1)?.as_partial_shape(&graph).unwrap();
+            let new_shape = inputs.required(1)?.unwrap_partial_shape(node, graph)?;
             let allow_zero = attrs.maybe_take_bool("allowzero")?.unwrap_or(false);
 
             let input_tensor = input.unwrap_tensor();
@@ -537,10 +534,7 @@ fn visit_node(
         }
         "Expand" => {
             let input = inputs.required(0)?;
-            let shape = inputs
-                .required(1)?
-                .as_shape(&graph)
-                .expect("Expand shape must be a shape");
+            let shape = inputs.required(1)?.unwrap_shape(node, graph)?;
 
             let input_value = input.unwrap_tensor();
 
@@ -742,10 +736,10 @@ fn visit_node(
             if any_shape {
                 assert_eq!(axis, 0, "Shape concatenation must happen along axis 0");
 
-                let shape = inputs
-                    .iter()
-                    .flat_map(|x| x.as_partial_shape(&graph).unwrap().into_iter())
-                    .collect_vec();
+                let mut shape = vec![];
+                for x in inputs {
+                    shape.extend(x.unwrap_partial_shape(node, graph)?.into_iter());
+                }
 
                 TypedValue::Shape(shape)
             } else {
@@ -1040,7 +1034,7 @@ fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, bool)> {
             let is_int = match data_type {
                 DataType::Float | DataType::Double => false,
                 DataType::Int32 | DataType::Int64 => true,
-                data_type => return Err(OnnxError::UnsupportedTensorType(data_type)),
+                data_type => return Err(OnnxError::UnsupportedType(data_type)),
             };
 
             let dims = tensor
