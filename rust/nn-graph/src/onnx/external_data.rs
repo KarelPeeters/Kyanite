@@ -1,4 +1,4 @@
-use crate::onnx::result::{OnnxLoadError, OnnxResult, ToOnnxLoadResult};
+use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
@@ -25,7 +25,7 @@ impl ExternalDataLoader for NoExternalData {
 impl ExternalDataLoader for PathExternalData {
     fn load_external_data(&self, location: &Path, offset: usize, length: Option<usize>) -> OnnxResult<Vec<u8>> {
         if !path_is_normal(location) {
-            return Err(OnnxLoadError::NonNormalExternalDataPath(location.to_owned()));
+            return Err(OnnxError::NonNormalExternalDataPath(location.to_owned()));
         }
 
         let path = self.0.join(location);

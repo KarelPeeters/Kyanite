@@ -1,9 +1,11 @@
+use std::path::Path;
+
+use external_data::ExternalDataLoader;
+
 use crate::graph::Graph;
 use crate::onnx::external_data::{NoExternalData, PathExternalData};
 use crate::onnx::load::graph_from_onnx_bytes;
-use crate::onnx::result::OnnxResult;
-use external_data::ExternalDataLoader;
-use std::path::Path;
+use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
 
 #[allow(warnings)]
 mod proto {
@@ -19,10 +21,13 @@ mod typed_value;
 
 pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -> OnnxResult<Graph> {
     let path = path.as_ref();
-    let buf = std::fs::read(path).unwrap_or_else(|e| panic!("Failed to read input file {:?}, error {:?}", path, e));
+    let buf = std::fs::read(path).to_onnx_result(path)?;
 
     let external: Box<dyn ExternalDataLoader> = if allow_external {
-        Box::new(PathExternalData(path.parent().unwrap().to_owned()))
+        let parent = path
+            .parent()
+            .ok_or_else(|| OnnxError::MustHaveParentPath(path.to_owned()))?;
+        Box::new(PathExternalData(parent.to_owned()))
     } else {
         Box::new(NoExternalData)
     };
