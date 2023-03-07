@@ -43,7 +43,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
     let stream = CudaStream::new(device);
 
     println!("Loading graphs");
-    let graphs = MuZeroGraphs::load(&path, mapper);
+    let graphs = MuZeroGraphs::load(&path, mapper).unwrap();
     let state_shape = graphs.info.state_shape(mapper).eval(1);
     let saved_state_shape = graphs.info.state_saved_shape(mapper).eval(1);
     let state_slice = SliceRange::simple(0, graphs.info.state_channels_saved);

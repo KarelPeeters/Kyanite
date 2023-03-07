@@ -12,6 +12,7 @@ use cuda_sys::wrapper::handle::Device;
 use kz_util::sequence::VecExtPad;
 use nn_graph::graph::{Graph, SliceRange};
 use nn_graph::onnx::load_graph_from_onnx_path;
+use nn_graph::onnx::result::OnnxResult;
 use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -103,16 +104,16 @@ pub struct MuZeroOutputDecoder<B: Board, M: BoardMapper<B>> {
 }
 
 impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
-    pub fn load(path: &str, mapper: M) -> MuZeroGraphs<B, M> {
+    pub fn load(path: &str, mapper: M) -> OnnxResult<MuZeroGraphs<B, M>> {
         assert!(path.ends_with("_"), "Path should end with '_', got '{}'", path);
 
         let info: MuZeroNetworkInfo =
             serde_json::from_reader(File::open(format!("{}info.json", path)).unwrap()).expect("Failed to parse info");
         assert_eq!(info.state_quant_bits, 8, "Only 8-bit quantization supported for now");
 
-        let representation = load_graph_from_onnx_path(format!("{}representation.onnx", path), false);
-        let dynamics = load_graph_from_onnx_path(format!("{}dynamics.onnx", path), false);
-        let prediction = load_graph_from_onnx_path(format!("{}prediction.onnx", path), false);
+        let representation = load_graph_from_onnx_path(format!("{}representation.onnx", path), false)?;
+        let dynamics = load_graph_from_onnx_path(format!("{}dynamics.onnx", path), false)?;
+        let prediction = load_graph_from_onnx_path(format!("{}prediction.onnx", path), false)?;
 
         let input_shape = shape![Size::BATCH].concat(&Shape::fixed(&mapper.input_full_shape()));
         let state_shape = info.state_shape(mapper);
@@ -128,14 +129,14 @@ impl<B: Board, M: BoardMapper<B>> MuZeroGraphs<B, M> {
         assert_eq!(prediction.input_shapes(), &[state_shape.clone()]);
         assert_eq!(prediction.output_shapes(), &[scalar_shape, policy_shape]);
 
-        MuZeroGraphs {
+        Ok(MuZeroGraphs {
             mapper,
             info,
             representation,
             dynamics,
             prediction,
             ph: PhantomData,
-        }
+        })
     }
 
     pub fn optimize(&self, settings: OptimizerSettings) -> MuZeroGraphs<B, M> {

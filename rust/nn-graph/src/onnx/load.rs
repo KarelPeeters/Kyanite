@@ -1,6 +1,4 @@
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::{zip_eq, Itertools};
@@ -9,23 +7,21 @@ use prost::Message;
 
 pub use crate::graph::Graph;
 use crate::graph::{broadcast_shape_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp};
+use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
+use crate::onnx::result::OnnxResult;
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{float_to_i64_exact, SignedSize, TypedValue};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
-pub trait ExternalDataLoader {
-    fn load_external_data(&self, location: &Path, offset: usize, length: Option<usize>) -> Vec<u8>;
-}
-
 // we use &dyn to avoid duplicate codegen of this large and non-critical function
-pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> Graph {
+pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> OnnxResult<Graph> {
     let model = load_model_proto(buf);
     let model_graph = model.graph.as_ref().unwrap();
 
@@ -34,7 +30,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
 
     // load initializer values (similar to constants but defined separately)
     for tensor in &model_graph.initializer {
-        let value = define_tensor_data(&mut graph, tensor, external);
+        let value = define_tensor_data(&mut graph, tensor, external)?;
         nodes.define(&tensor.name, value)
     }
 
@@ -438,7 +434,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
             }
             "Constant" => {
                 let tensor = attrs.take_tensor("value");
-                define_tensor_data(&mut graph, tensor, external)
+                define_tensor_data(&mut graph, tensor, external)?
             }
             "ConstantOfShape" => {
                 let shape = inputs.optional(0);
@@ -450,7 +446,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
 
                 let value = match attrs.maybe_take_tensor("value") {
                     None => TypedValue::FloatTensor(graph.scalar(0.0)),
-                    Some(tensor) => define_tensor_data(&mut graph, tensor, external),
+                    Some(tensor) => define_tensor_data(&mut graph, tensor, external)?,
                 };
 
                 assert_eq!(
@@ -920,10 +916,14 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> G
         graph.output(nodes[&output.name].unwrap_float());
     }
 
-    graph
+    Ok(graph)
 }
 
-fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto, external: &dyn ExternalDataLoader) -> TypedValue {
+fn define_tensor_data(
+    graph: &mut Graph,
+    tensor: &TensorProto,
+    external: &dyn ExternalDataLoader,
+) -> OnnxResult<TypedValue> {
     let data_location = DataLocation::from_i32(tensor.data_location).expect("Illegal data_location");
 
     // figure out the shape and type
@@ -955,7 +955,7 @@ fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto, external: &dyn Ex
 
         // try loading from external source
         let location = location.expect("External data must have a location");
-        raw_data_storage = external.load_external_data(&PathBuf::from(location), offset, length);
+        raw_data_storage = external.load_external_data(&PathBuf::from(location), offset, length)?;
 
         if let Some(length) = length {
             assert_eq!(raw_data_storage.len(), length, "Raw data length mismatch");
@@ -1005,11 +1005,11 @@ fn define_tensor_data(graph: &mut Graph, tensor: &TensorProto, external: &dyn Ex
     };
 
     let value = graph.constant(shape, data);
-
-    match is_int {
+    let typed_value = match is_int {
         false => TypedValue::FloatTensor(value),
         true => TypedValue::IntTensor(value),
-    }
+    };
+    Ok(typed_value)
 }
 
 fn resolve_tensor_type(ty: &TypeProto) -> (Shape, bool) {
@@ -1150,48 +1150,4 @@ fn eval_binary_op(op: BinaryOp, a: SignedSize, b: SignedSize) -> Option<SignedSi
 fn load_model_proto(buf: &[u8]) -> ModelProto {
     let mut buf: &[u8] = buf;
     ModelProto::decode(&mut buf).unwrap()
-}
-
-#[derive(Debug)]
-pub struct NoExternalData;
-
-#[derive(Debug)]
-pub struct PathExternalData(pub PathBuf);
-
-impl ExternalDataLoader for NoExternalData {
-    fn load_external_data(&self, location: &Path, _: usize, _: Option<usize>) -> Vec<u8> {
-        panic!(
-            "External data not allowed, trying to read from '{}'",
-            location.display()
-        );
-    }
-}
-
-impl ExternalDataLoader for PathExternalData {
-    fn load_external_data(&self, location: &Path, offset: usize, length: Option<usize>) -> Vec<u8> {
-        assert_path_is_normal(location);
-        let path = self.0.join(location);
-
-        let mut file = File::open(&path).unwrap_or_else(|_| panic!("Failed to open file {:?}", path));
-        file.seek(SeekFrom::Start(offset as u64)).unwrap();
-
-        let mut buffer = vec![];
-
-        if let Some(length) = length {
-            buffer.resize(length, 0);
-            file.read_exact(&mut buffer).unwrap();
-        } else {
-            file.read_to_end(&mut buffer).unwrap();
-        }
-
-        buffer
-    }
-}
-
-fn assert_path_is_normal(path: &Path) {
-    assert!(
-        path.components().all(|c| matches!(c, Component::Normal(_))),
-        "Expected normal path, got '{}'",
-        path.display()
-    );
 }

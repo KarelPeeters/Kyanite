@@ -85,10 +85,10 @@ fn main() -> std::io::Result<()> {
     // let path_encoder = args.network_path.join("vae_encoder.onnx");
     let path_decoder = args.network_path.join("vae_decoder.onnx");
 
-    let graph_text_encoder = load_graph_from_onnx_path(path_text_encoder, true);
-    let graph_unet = load_graph_from_onnx_path(path_unet, true);
-    // let graph_encoder = load_graph_from_onnx_path(path_encoder, true);
-    let graph_decoder = load_graph_from_onnx_path(path_decoder, true);
+    let graph_text_encoder = load_graph_from_onnx_path(path_text_encoder, true).unwrap();
+    let graph_unet = load_graph_from_onnx_path(path_unet, true).unwrap();
+    // let graph_encoder = load_graph_from_onnx_path(path_encoder, true).unwrap();
+    let graph_decoder = load_graph_from_onnx_path(path_decoder, true).unwrap();
 
     println!("Optimizing graphs");
     let graph_text_encoder = optimize_graph(&graph_text_encoder, Default::default());

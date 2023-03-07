@@ -38,7 +38,7 @@ fn main() -> std::io::Result<()> {
     let batch_size = 100;
     let settings = ZeroSettings::simple(batch_size, UctWeights::default(), QMode::wdl(), FpuMode::Relative(0.0));
 
-    let graph = load_graph_from_onnx_path(path, false);
+    let graph = load_graph_from_onnx_path(path, false).unwrap();
     let mut network = CudaNetwork::new(ChessStdMapper, &graph, batch_size, Device::new(0));
     let mut rng = StdRng::from_entropy();
 

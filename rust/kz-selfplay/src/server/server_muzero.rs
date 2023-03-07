@@ -147,7 +147,7 @@ impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZe
     }
 
     fn load_graph(&self, path: &str, mapper: M, startup: &StartupSettings) -> Self::G {
-        let graphs = MuZeroGraphs::load(path, mapper);
+        let graphs = MuZeroGraphs::load(path, mapper).unwrap();
 
         assert_eq!(
             startup.saved_state_channels, graphs.info.state_channels_saved,

@@ -95,7 +95,7 @@ fn main() -> std::io::Result<()> {
         1.0,
     );
 
-    let graph = optimize_graph(&load_graph_from_onnx_path(path, false), Default::default());
+    let graph = optimize_graph(&load_graph_from_onnx_path(path, false).unwrap(), Default::default());
     let mapper = AtaxxStdMapper::new(board.size());
     let network_inner = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
     let mut network = RandomSymmetryNetwork::new(network_inner, thread_rng(), !args.no_random_symmetries);

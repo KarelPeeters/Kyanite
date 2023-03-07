@@ -23,7 +23,7 @@ use nn_graph::optimizer::optimize_graph;
 fn main() {
     let path = read_to_string("ignored/network_path.txt").unwrap();
 
-    let graph = optimize_graph(&load_graph_from_onnx_path(path, false), Default::default());
+    let graph = optimize_graph(&load_graph_from_onnx_path(path, false).unwrap(), Default::default());
 
     let settings = ZeroSettings::simple(100, UctWeights::default(), QMode::wdl(), FpuMode::Relative(0.0));
     let visits = 10_000;

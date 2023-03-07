@@ -47,7 +47,7 @@ fn main() {
     println!("Using devices {:?}", devices);
     assert!(!devices.is_empty());
 
-    let graph = load_graph_from_onnx_path(path, false);
+    let graph = load_graph_from_onnx_path(path, false).unwrap();
     let graph = optimize_graph(&graph, OptimizerSettings::default());
 
     println!("Generating io pairs");

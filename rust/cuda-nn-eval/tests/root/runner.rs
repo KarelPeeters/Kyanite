@@ -78,7 +78,7 @@ pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, V
 }
 
 pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {
-    let graph = load_graph_from_onnx_bytes(onnx);
+    let graph = load_graph_from_onnx_bytes(onnx).unwrap();
     let (batch_size, inputs, expected_outputs) = load_check_data(&graph, bin);
     println!("Loaded batch size {}", batch_size);
     test_all(&graph, batch_size, &inputs, Some(&expected_outputs));

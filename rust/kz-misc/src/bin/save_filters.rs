@@ -27,7 +27,7 @@ fn main() {
 
         println!("Saving filters for network {}", ei);
 
-        let graph = load_graph_from_onnx_path(network_path, false);
+        let graph = load_graph_from_onnx_path(network_path, false).unwrap();
 
         for (_, &v) in ordered_values(&graph).iter().enumerate() {
             if let Some(data) = graph.as_const(v) {
