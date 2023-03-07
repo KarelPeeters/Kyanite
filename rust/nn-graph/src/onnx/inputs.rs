@@ -4,12 +4,13 @@ use itertools::Itertools;
 
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::{AttributeProto, TensorProto};
+use crate::onnx::result::{Node, OnnxError, OnnxResult};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::TypedValue;
 
 #[derive(Debug)]
 pub struct Inputs<'a> {
-    node_name: String,
+    node: Node<&'a str>,
     inner: Vec<Storage<&'a TypedValue>>,
 }
 
@@ -21,35 +22,30 @@ enum Storage<T> {
 }
 
 impl<'a> Inputs<'a> {
-    pub fn from(node_name: String, inputs: &'a Vec<String>, nodes: &'a Store<TypedValue>) -> Self {
+    pub fn from(node: Node<&'a str>, inputs: &'a Vec<String>, nodes: &'a Store<TypedValue>) -> OnnxResult<Self> {
         let inner = inputs
             .iter()
             .enumerate()
             .map(|(i, name)| {
                 // an empty attribute name means the input is missing (which is only allowed for optional inputs)
                 if name == "" {
-                    Storage::Missing
+                    Ok(Storage::Missing)
                 } else {
                     let value = nodes
                         .get(name)
-                        .unwrap_or_else(|| panic!("Input {} '{}' of node '{}' not found", i, name, node_name));
-                    Storage::Present(value)
+                        .ok_or_else(|| OnnxError::InputNodeDoesNotExist(node.to_owned(), i, name.to_owned()))?;
+                    Ok(Storage::Present(value))
                 }
             })
-            .collect_vec();
+            .try_collect()?;
 
-        Inputs { inner, node_name }
+        Ok(Inputs { node, inner })
     }
 
-    pub fn required(&mut self, index: usize) -> &'a TypedValue {
+    pub fn required(&mut self, index: usize) -> OnnxResult<&'a TypedValue> {
         match self.optional(index) {
-            Some(input) => input,
-            None => panic!(
-                "Missing input {} of node '{}', {} inputs were provided",
-                index,
-                self.node_name,
-                self.inner.len()
-            ),
+            Some(input) => Ok(input),
+            None => Err(OnnxError::MissingInput(self.node.to_owned(), index, self.inner.len())),
         }
     }
 
@@ -58,7 +54,8 @@ impl<'a> Inputs<'a> {
             Storage::Present(value) => Some(value),
             Storage::Missing => None,
             Storage::Used => {
-                panic!("Already used input {} of node '{}'", index, self.node_name)
+                // this is a panic since this is always a bug in the code, not an invalid input
+                panic!("Already used input {} of node {:?}", index, self.node)
             }
         }
     }
@@ -67,14 +64,12 @@ impl<'a> Inputs<'a> {
         (0..self.inner.len())
             .map(|i| match self.take(i) {
                 Storage::Present(value) => value,
+                // TODO potentially replace these panics with errors (although not if they can only be caused by bugs)
                 Storage::Used => panic!(
-                    "Cannot get variadic input, input {} of node '{}' has already been used",
-                    i, self.node_name
+                    "Cannot get variadic input, input {} of node {:?} has already been used",
+                    i, self.node
                 ),
-                Storage::Missing => panic!(
-                    "Missing input {} not allowed in variadic on node '{}'",
-                    i, self.node_name
-                ),
+                Storage::Missing => panic!("Missing input {} not allowed in variadic on node {:?}", i, self.node),
             })
             .collect()
     }
@@ -101,91 +96,97 @@ impl<'a> Inputs<'a> {
 
 #[derive(Debug)]
 pub struct Attributes<'a> {
-    node_name: String,
+    node: Node<&'a str>,
     inner: HashMap<&'a str, &'a AttributeProto>,
 }
 
 #[allow(dead_code)]
 impl<'a> Attributes<'a> {
-    pub fn from(node_name: String, attrs: &'a [AttributeProto]) -> Self {
+    pub fn from(node: Node<&'a str>, attrs: &'a [AttributeProto]) -> Self {
         let inner: HashMap<&str, &AttributeProto> = attrs.iter().map(|a| (&*a.name, a)).collect();
-        Attributes { node_name, inner }
+        Attributes { inner, node }
     }
 
-    pub fn maybe_take(&mut self, key: &str, ty: AttributeType) -> Option<&'a AttributeProto> {
-        self.inner.remove(key).map(|attribute| {
-            assert_eq!(
-                ty,
-                attribute.r#type(),
-                "Expected type {:?} for attribute '{}' of node '{}'",
-                ty,
-                key,
-                self.node_name
-            );
-            attribute
+    pub fn maybe_take(&mut self, key: &str, ty: AttributeType) -> OnnxResult<Option<&'a AttributeProto>> {
+        self.inner
+            .remove(key)
+            .map(|attribute| {
+                let actual = attribute.r#type();
+                if ty == actual {
+                    Ok(attribute)
+                } else {
+                    Err(OnnxError::UnexpectedAttributeType(
+                        self.node.to_owned(),
+                        key.to_owned(),
+                        ty,
+                        actual,
+                    ))
+                }
+            })
+            .transpose()
+    }
+
+    pub fn take(&mut self, key: &str, ty: AttributeType) -> OnnxResult<&'a AttributeProto> {
+        self.maybe_take(key, ty)?.ok_or_else(|| {
+            let available = self.inner.keys().map(|&s| s.to_owned()).collect_vec();
+            OnnxError::MissingAttribute(self.node.to_owned(), key.to_owned(), ty, available)
         })
     }
 
-    pub fn take(&mut self, key: &str, ty: AttributeType) -> &'a AttributeProto {
-        self.maybe_take(key, ty).unwrap_or_else(|| {
-            let available = self.inner.keys().collect_vec();
-            panic!(
-                "Missing attribute '{}' in node '{}', available: {:?}",
-                key, self.node_name, available
-            )
-        })
+    pub fn maybe_take_string(&mut self, key: &str) -> OnnxResult<Option<&str>> {
+        Ok(self
+            .maybe_take(key, AttributeType::String)?
+            .map(|s| std::str::from_utf8(&s.s).unwrap()))
     }
 
-    pub fn maybe_take_string(&mut self, key: &str) -> Option<&str> {
-        self.maybe_take(key, AttributeType::String)
-            .map(|s| std::str::from_utf8(&s.s).unwrap())
+    pub fn take_string(&mut self, key: &str) -> OnnxResult<&str> {
+        Ok(std::str::from_utf8(&self.take(key, AttributeType::String)?.s).unwrap())
     }
 
-    pub fn take_string(&mut self, key: &str) -> &str {
-        std::str::from_utf8(&self.take(key, AttributeType::String).s).unwrap()
+    pub fn maybe_take_int(&mut self, key: &str) -> OnnxResult<Option<i64>> {
+        Ok(self.maybe_take(key, AttributeType::Int)?.map(|a| a.i))
     }
 
-    pub fn maybe_take_int(&mut self, key: &str) -> Option<i64> {
-        self.maybe_take(key, AttributeType::Int).map(|a| a.i)
+    pub fn take_int(&mut self, key: &str) -> OnnxResult<i64> {
+        Ok(self.take(key, AttributeType::Int)?.i)
     }
 
-    pub fn take_int(&mut self, key: &str) -> i64 {
-        self.take(key, AttributeType::Int).i
+    pub fn maybe_take_bool(&mut self, key: &str) -> OnnxResult<Option<bool>> {
+        match self.maybe_take(key, AttributeType::Int)? {
+            None => Ok(None),
+            Some(a) => Ok(Some(map_bool(self.node, key, a.i)?)),
+        }
     }
 
-    pub fn maybe_take_bool(&mut self, key: &str) -> Option<bool> {
-        self.maybe_take(key, AttributeType::Int)
-            .map(|a| map_bool(&self.node_name, key, a.i))
+    pub fn take_bool(&mut self, key: &str) -> OnnxResult<bool> {
+        let i = self.take(key, AttributeType::Int)?.i;
+        Ok(map_bool(self.node, key, i)?)
     }
 
-    pub fn take_bool(&mut self, key: &str) -> bool {
-        let i = self.take(key, AttributeType::Int).i;
-        map_bool(&self.node_name, key, i)
+    pub fn maybe_take_ints(&mut self, key: &str) -> OnnxResult<Option<&'a [i64]>> {
+        Ok(self.maybe_take(key, AttributeType::Ints)?.map(|a| &*a.ints))
     }
 
-    pub fn maybe_take_ints(&mut self, key: &str) -> Option<&'a [i64]> {
-        self.maybe_take(key, AttributeType::Ints).map(|a| &*a.ints)
+    pub fn take_ints(&mut self, key: &str) -> OnnxResult<&'a [i64]> {
+        Ok(&self.take(key, AttributeType::Ints)?.ints)
     }
 
-    pub fn take_ints(&mut self, key: &str) -> &'a [i64] {
-        &self.take(key, AttributeType::Ints).ints
+    pub fn maybe_take_float(&mut self, key: &str) -> OnnxResult<Option<f32>> {
+        Ok(self.maybe_take(key, AttributeType::Float)?.map(|a| a.f))
     }
 
-    pub fn maybe_take_float(&mut self, key: &str) -> Option<f32> {
-        self.maybe_take(key, AttributeType::Float).map(|a| a.f)
+    pub fn take_float(&mut self, key: &str) -> OnnxResult<f32> {
+        Ok(self.take(key, AttributeType::Float)?.f)
     }
 
-    pub fn take_float(&mut self, key: &str) -> f32 {
-        self.take(key, AttributeType::Float).f
+    pub fn maybe_take_tensor(&mut self, key: &str) -> OnnxResult<Option<&TensorProto>> {
+        Ok(self
+            .maybe_take(key, AttributeType::Tensor)?
+            .map(|a| a.t.as_ref().unwrap()))
     }
 
-    pub fn maybe_take_tensor(&mut self, key: &str) -> Option<&TensorProto> {
-        self.maybe_take(key, AttributeType::Tensor)
-            .map(|a| a.t.as_ref().unwrap())
-    }
-
-    pub fn take_tensor(&mut self, key: &str) -> &TensorProto {
-        self.take(key, AttributeType::Tensor).t.as_ref().unwrap()
+    pub fn take_tensor(&mut self, key: &str) -> OnnxResult<&TensorProto> {
+        Ok(self.take(key, AttributeType::Tensor)?.t.as_ref().unwrap())
     }
 
     pub fn leftover(&self) -> Vec<String> {
@@ -193,13 +194,10 @@ impl<'a> Attributes<'a> {
     }
 }
 
-fn map_bool(node_name: &str, key: &str, i: i64) -> bool {
-    assert!(
-        i == 0 || i == 1,
-        "Attribute '{}' in node '{}' is a bool and should be 0 or 1, got {}",
-        key,
-        node_name,
-        i
-    );
-    i != 0
+fn map_bool(node: Node<&str>, key: &str, i: i64) -> OnnxResult<bool> {
+    if i == 0 || i == 1 {
+        Ok(i != 0)
+    } else {
+        Err(OnnxError::InvalidAttributeBool(node.to_owned(), key.to_owned(), i))
+    }
 }

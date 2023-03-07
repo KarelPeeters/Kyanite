@@ -1,7 +1,15 @@
 use std::io;
 use std::path::{Path, PathBuf};
+use crate::onnx::proto::attribute_proto::AttributeType;
+use crate::onnx::proto::tensor_proto::DataType;
 
 pub type OnnxResult<T> = Result<T, OnnxError>;
+
+#[derive(Debug, Copy, Clone)]
+pub struct Node<S = String> {
+    pub name: S,
+    pub op_type: S,
+}
 
 #[derive(Debug)]
 pub enum OnnxError {
@@ -12,14 +20,23 @@ pub enum OnnxError {
 
     MissingProtoField(&'static str),
 
-    LeftoverInputs(String, Vec<usize>),
-    LeftoverAttributes(String, Vec<String>),
+    LeftoverInputs(Node, Vec<usize>),
+    LeftoverAttributes(Node, Vec<String>),
 
-    InvalidOperationArgs { node: String, message: String },
+    InvalidOperationArgs(Node, String),
+    InputNodeDoesNotExist(Node, usize, String),
+    MissingInput(Node, usize, usize),
+    MissingAttribute(Node, String, AttributeType, Vec<String>),
+    UnexpectedAttributeType(Node, String, AttributeType, AttributeType),
+    InvalidAttributeBool(Node, String, i64),
 
-    UnsupportedOperation(String, String),
+    UnsupportedOperation(Node),
+
+    UnsupportedMultipleOutputs(Node, Vec<String>),
     UnsupportedNonFloatOutput(String),
-    UnsupportedNdConvolution(String, usize),
+    UnsupportedTensorType(DataType),
+
+    UnsupportedNdConvolution(Node, usize),
 }
 
 pub trait ToOnnxLoadResult {
@@ -43,5 +60,14 @@ impl<T> UnwrapProto for Option<T> {
     type T = T;
     fn unwrap_proto(self, field: &'static str) -> OnnxResult<T> {
         self.ok_or(OnnxError::MissingProtoField(field))
+    }
+}
+
+impl<S: AsRef<str>> Node<S> {
+    pub fn to_owned(self) -> Node<String> {
+        Node {
+            name: self.name.as_ref().to_owned(),
+            op_type: self.op_type.as_ref().to_owned(),
+        }
     }
 }

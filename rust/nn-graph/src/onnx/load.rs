@@ -14,7 +14,7 @@ use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
-use crate::onnx::result::{OnnxError, OnnxResult, UnwrapProto};
+use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{float_to_i64_exact, SignedSize, TypedValue};
 use crate::shape;
@@ -43,7 +43,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
             continue;
         }
 
-        let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?);
+        let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?)?;
         let value = graph.input(shape);
 
         let typed_value = if is_int {
@@ -55,36 +55,38 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
         nodes.define(&input.name, typed_value);
     }
 
-    for node in &model_graph.node {
-        assert_eq!(1, node.output.len(), "nodes with multiple outputs not yet supported");
-        let output_name = &node.output[0];
+    for node_proto in &model_graph.node {
+        let node = Node {
+            name: node_proto.name.as_str(),
+            op_type: node_proto.op_type.as_str(),
+        };
 
-        let mut attrs = Attributes::from(node.name.clone(), &node.attribute);
-        let mut inputs = Inputs::from(node.name.clone(), &node.input, &nodes);
+        if node_proto.output.len() != 1 {
+            return Err(OnnxError::UnsupportedMultipleOutputs(
+                node.to_owned(),
+                node_proto.output.clone(),
+            ));
+        }
+        let output_name = &node_proto.output[0];
 
-        let value: TypedValue = visit_node(
-            &mut graph,
-            external,
-            &node.name,
-            &node.op_type,
-            output_name,
-            &mut inputs,
-            &mut attrs,
-        )?;
+        let mut attrs = Attributes::from(node, &node_proto.attribute);
+        let mut inputs = Inputs::from(node, &node_proto.input, &nodes)?;
+
+        let value: TypedValue = visit_node(&mut graph, external, node, output_name, &mut inputs, &mut attrs)?;
 
         // set debug id for all newly created nodes to the current node name
         for value in graph.take_new_values() {
-            graph.set_debug_id(value, node.name.clone())
+            graph.set_debug_id(value, node.name.to_owned())
         }
 
         // check that we used all attributes and inputs
         let leftover_attributes = attrs.leftover();
         if !leftover_attributes.is_empty() {
-            return Err(OnnxError::LeftoverAttributes(node.name.clone(), leftover_attributes));
+            return Err(OnnxError::LeftoverAttributes(node.to_owned(), leftover_attributes));
         }
         let leftover_inputs = inputs.leftover();
         if !leftover_inputs.is_empty() {
-            return Err(OnnxError::LeftoverInputs(node.name.clone(), leftover_inputs));
+            return Err(OnnxError::LeftoverInputs(node.to_owned(), leftover_inputs));
         }
 
         // actually define the current node
@@ -101,23 +103,22 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
 fn visit_node(
     graph: &mut Graph,
     external: &dyn ExternalDataLoader,
-    node_name: &str,
-    op_type: &str,
+    node: Node<&str>,
     output_name: &str,
     inputs: &mut Inputs,
     attrs: &mut Attributes,
 ) -> OnnxResult<TypedValue> {
-    let result = match op_type {
+    let result = match node.op_type {
         "Conv" => {
-            let input = inputs.required(0).unwrap_float();
-            let filter = inputs.required(1).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
+            let filter = inputs.required(1)?.unwrap_float();
             let bias_raw = inputs.optional(2).map(|v| v.unwrap_float());
 
-            let groups = attrs.take_int("group");
-            let kernel_shape = attrs.take_ints("kernel_shape");
-            let padding = attrs.take_ints("pads");
-            let strides = attrs.take_ints("strides");
-            let dilations = attrs.take_ints("dilations");
+            let groups = attrs.take_int("group")?;
+            let kernel_shape = attrs.take_ints("kernel_shape")?;
+            let padding = attrs.take_ints("pads")?;
+            let strides = attrs.take_ints("strides")?;
+            let dilations = attrs.take_ints("dilations")?;
 
             let filter_shape = graph[filter]
                 .shape
@@ -175,19 +176,19 @@ fn visit_node(
 
                     result_biased
                 }
-                rank => return Err(OnnxError::UnsupportedNdConvolution(node_name.to_owned(), rank)),
+                rank => return Err(OnnxError::UnsupportedNdConvolution(node.to_owned(), rank)),
             };
 
             TypedValue::FloatTensor(result)
         }
         "Clip" => {
-            let input = inputs.required(0).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
             // these are optional since the older version of the operator used attributes instead
             let input_min = inputs.optional(1);
             let input_max = inputs.optional(2);
 
             let (min, max) = match (input_min, input_max) {
-                (None, None) => (attrs.take_float("min"), attrs.take_float("max")),
+                (None, None) => (attrs.take_float("min")?, attrs.take_float("max")?),
                 (Some(min), Some(max)) => {
                     let min = graph.as_const(min.unwrap_float()).unwrap();
                     let max = graph.as_const(max.unwrap_float()).unwrap();
@@ -203,10 +204,7 @@ fn visit_node(
                 }
                 _ => {
                     let message = format!("Clip must have either 1 or 3 inputs, got 2");
-                    return Err(OnnxError::InvalidOperationArgs {
-                        node: node_name.to_owned(),
-                        message,
-                    });
+                    return Err(OnnxError::InvalidOperationArgs(node.to_owned(), message));
                 }
             };
 
@@ -214,9 +212,9 @@ fn visit_node(
             TypedValue::FloatTensor(result)
         }
         "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" | "Erf" => {
-            let input = inputs.required(0).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
 
-            let result = match op_type {
+            let result = match node.op_type {
                 "Abs" => graph.unary(UnaryOp::Abs, input),
                 "Neg" => graph.unary(UnaryOp::Neg, input),
                 "Sin" => graph.unary(UnaryOp::Sin, input),
@@ -234,7 +232,7 @@ fn visit_node(
             TypedValue::FloatTensor(result)
         }
         "Add" | "Sub" | "Mul" | "Div" | "Min" | "Max" | "Pow" => {
-            let op = match op_type {
+            let op = match node.op_type {
                 "Add" => BinaryOp::Add,
                 "Sub" => BinaryOp::Sub,
                 "Mul" => BinaryOp::Mul,
@@ -245,8 +243,8 @@ fn visit_node(
                 _ => unreachable!(),
             };
 
-            let left = inputs.required(0);
-            let right = inputs.required(1);
+            let left = inputs.required(0)?;
+            let right = inputs.required(1)?;
 
             if let (Some(left), Some(right)) = (left.as_partial_shape(&graph), right.as_partial_shape(&graph)) {
                 // if they're both shapes keep it that way
@@ -284,8 +282,8 @@ fn visit_node(
         }
         "Equal" => {
             let error = "Equal operator only supports shapes for now";
-            let left = inputs.required(0).as_partial_shape(&graph).expect(error);
-            let right = inputs.required(1).as_partial_shape(&graph).expect(error);
+            let left = inputs.required(0)?.as_partial_shape(&graph).expect(error);
+            let right = inputs.required(1)?.as_partial_shape(&graph).expect(error);
 
             // TODO implement broadcasting
             // TODO is shape the best way to store bools?
@@ -298,9 +296,9 @@ fn visit_node(
         "Where" => {
             let error = "Where operator only supports shapes for now";
 
-            let condition = inputs.required(0).as_partial_shape(&graph).expect(error);
-            let x = inputs.required(1).as_partial_shape(&graph).expect(error);
-            let y = inputs.required(2).as_partial_shape(&graph).expect(error);
+            let condition = inputs.required(0)?.as_partial_shape(&graph).expect(error);
+            let x = inputs.required(1)?.as_partial_shape(&graph).expect(error);
+            let y = inputs.required(2)?.as_partial_shape(&graph).expect(error);
 
             // TODO implement broadcasting
             assert!(
@@ -322,10 +320,10 @@ fn visit_node(
             TypedValue::Shape(result)
         }
         "Flatten" => {
-            let input_typed = inputs.required(0);
+            let input_typed = inputs.required(0)?;
             let input = input_typed.unwrap_tensor();
 
-            let rel_axis = attrs.maybe_take_int("axis").unwrap_or(1);
+            let rel_axis = attrs.maybe_take_int("axis")?.unwrap_or(1);
             let axis = abs_axis(rel_axis, graph[input].shape.rank());
 
             let result = graph.flatten(input, axis);
@@ -341,13 +339,13 @@ fn visit_node(
             TypedValue::with_same_type(result, input_typed)
         }
         "Gemm" => {
-            let input = inputs.required(0).unwrap_float();
-            let weight = inputs.required(1).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
+            let weight = inputs.required(1)?.unwrap_float();
             let bias = inputs.optional(2).map(|v| v.unwrap_float());
 
-            let alpha = attrs.take_float("alpha");
-            let beta = attrs.take_float("beta");
-            let trans_b = attrs.take_int("transB") != 0;
+            let alpha = attrs.take_float("alpha")?;
+            let beta = attrs.take_float("beta")?;
+            let trans_b = attrs.take_int("transB")? != 0;
 
             assert_eq!(1.0, alpha);
             assert_eq!(1.0, beta);
@@ -368,8 +366,8 @@ fn visit_node(
             TypedValue::FloatTensor(result)
         }
         "MatMul" => {
-            let left = inputs.required(0).unwrap_float();
-            let right = inputs.required(1).unwrap_float();
+            let left = inputs.required(0)?.unwrap_float();
+            let right = inputs.required(1)?.unwrap_float();
 
             // TODO we're still missing support for 1D operand broadcasting, but that should be pretty rare
             let result = graph.mat_mul(left, right);
@@ -377,7 +375,7 @@ fn visit_node(
         }
         "Einsum" => {
             let inputs = inputs.take_all_variadic();
-            let equation = attrs.take_string("equation");
+            let equation = attrs.take_string("equation")?;
 
             let equation_compact = equation.replace(' ', "");
 
@@ -409,16 +407,16 @@ fn visit_node(
         "BatchNormalization" => {
             //TODO also try without merging anything here to see how much of a difference it makes
 
-            let input = inputs.required(0).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
 
             // assume everything is constant for now, so we can immediately fuse stuff
-            let scale = graph.as_const(inputs.required(1).unwrap_float()).unwrap();
-            let bias = graph.as_const(inputs.required(2).unwrap_float()).unwrap();
-            let mean = graph.as_const(inputs.required(3).unwrap_float()).unwrap();
-            let variance = graph.as_const(inputs.required(4).unwrap_float()).unwrap();
+            let scale = graph.as_const(inputs.required(1)?.unwrap_float()).unwrap();
+            let bias = graph.as_const(inputs.required(2)?.unwrap_float()).unwrap();
+            let mean = graph.as_const(inputs.required(3)?.unwrap_float()).unwrap();
+            let variance = graph.as_const(inputs.required(4)?.unwrap_float()).unwrap();
 
-            let epsilon = attrs.take_float("epsilon");
-            let _ = attrs.take_float("momentum");
+            let epsilon = attrs.take_float("epsilon")?;
+            let _: f32 = attrs.take_float("momentum")?;
 
             // figure out the shapes
             let input_shape = &graph[input].shape;
@@ -451,10 +449,10 @@ fn visit_node(
             TypedValue::FloatTensor(result)
         }
         "InstanceNormalization" => {
-            let input = inputs.required(0).unwrap_float();
-            let scale = inputs.required(1).unwrap_float();
-            let bias = inputs.required(2).unwrap_float();
-            let epsilon = attrs.take_float("epsilon");
+            let input = inputs.required(0)?.unwrap_float();
+            let scale = inputs.required(1)?.unwrap_float();
+            let bias = inputs.required(2)?.unwrap_float();
+            let epsilon = attrs.take_float("epsilon")?;
 
             let shape = graph[input].shape.clone();
             assert!(
@@ -480,7 +478,7 @@ fn visit_node(
             TypedValue::FloatTensor(result)
         }
         "Constant" => {
-            let tensor = attrs.take_tensor("value");
+            let tensor = attrs.take_tensor("value")?;
             define_tensor_data(graph, tensor, external)?
         }
         "ConstantOfShape" => {
@@ -491,7 +489,7 @@ fn visit_node(
                 Some(shape) => shape.as_shape(&graph).expect("ConstantOfShape needs shape input"),
             };
 
-            let value = match attrs.maybe_take_tensor("value") {
+            let value = match attrs.maybe_take_tensor("value")? {
                 None => TypedValue::FloatTensor(graph.scalar(0.0)),
                 Some(tensor) => define_tensor_data(graph, tensor, external)?,
             };
@@ -507,8 +505,8 @@ fn visit_node(
             TypedValue::with_same_type(result, &value)
         }
         "Cast" => {
-            let input = inputs.required(0);
-            let to_type = DataType::from_i32(attrs.take_int("to") as i32).expect("Invalid data type");
+            let input = inputs.required(0)?;
+            let to_type = DataType::from_i32(attrs.take_int("to")? as i32).expect("Invalid data type");
 
             match input {
                 // ignore casting for shapes
@@ -524,9 +522,9 @@ fn visit_node(
             }
         }
         "Reshape" => {
-            let input = inputs.required(0);
-            let new_shape = inputs.required(1).as_partial_shape(&graph).unwrap();
-            let allow_zero = attrs.maybe_take_bool("allowzero").unwrap_or(false);
+            let input = inputs.required(0)?;
+            let new_shape = inputs.required(1)?.as_partial_shape(&graph).unwrap();
+            let allow_zero = attrs.maybe_take_bool("allowzero")?.unwrap_or(false);
 
             let input_tensor = input.unwrap_tensor();
             let old_shape = &graph[input_tensor].shape;
@@ -536,9 +534,9 @@ fn visit_node(
             TypedValue::with_same_type(result, input)
         }
         "Expand" => {
-            let input = inputs.required(0);
+            let input = inputs.required(0)?;
             let shape = inputs
-                .required(1)
+                .required(1)?
                 .as_shape(&graph)
                 .expect("Expand shape must be a shape");
 
@@ -551,7 +549,7 @@ fn visit_node(
             TypedValue::with_same_type(result_value, input)
         }
         "Unsqueeze" => {
-            let input = inputs.required(0);
+            let input = inputs.required(0)?;
 
             let rel_axes = match inputs.optional(1) {
                 Some(rel_axes) => {
@@ -564,7 +562,7 @@ fn visit_node(
                     );
                     axes.iter().copied().collect_vec()
                 }
-                None => attrs.take_ints("axes").to_vec(),
+                None => attrs.take_ints("axes")?.to_vec(),
             };
 
             match input {
@@ -605,18 +603,18 @@ fn visit_node(
             }
         }
         "Transpose" => {
-            let input = inputs.required(0);
+            let input = inputs.required(0)?;
 
-            let permutation = attrs.take_ints("perm");
+            let permutation = attrs.take_ints("perm")?;
             let permutation = permutation.iter().map(|&x| x as usize).collect_vec();
 
             let result = graph.permute(input.unwrap_tensor(), permutation);
             TypedValue::with_same_type(result, input)
         }
         "Gather" => {
-            let input = inputs.required(0);
-            let indices = inputs.required(1).unwrap_int(graph);
-            let rel_axis = attrs.maybe_take_int("axis").unwrap_or(0);
+            let input = inputs.required(0)?;
+            let indices = inputs.required(1)?.unwrap_int(graph);
+            let rel_axis = attrs.maybe_take_int("axis")?.unwrap_or(0);
 
             let input_shape = input.shape(&graph);
             let indices_shape = &graph[indices].shape;
@@ -664,18 +662,18 @@ fn visit_node(
                             name,
                             value.shape()
                         );
-                        Some(value.iter().copied().collect_vec())
+                        Ok(Some(value.iter().copied().collect_vec()))
                     }
-                    None => attrs.maybe_take_ints(name).map(|v| v.to_vec()),
+                    None => Ok(attrs.maybe_take_ints(name)?.map(|v| v.to_vec())),
                 };
 
-            let input = inputs.required(0);
-            let starts = get(inputs, attrs, 1, "starts").expect("Missing starts input and attribute");
-            let ends = get(inputs, attrs, 2, "ends").expect("Missing ends input and attribute");
+            let input = inputs.required(0)?;
+            let starts = get(inputs, attrs, 1, "starts")?.expect("Missing starts input and attribute");
+            let ends = get(inputs, attrs, 2, "ends")?.expect("Missing ends input and attribute");
 
             let slice_rank = starts.len();
-            let axes = get(inputs, attrs, 3, "axes").unwrap_or_else(|| (0..slice_rank as i64).collect_vec());
-            let steps = get(inputs, attrs, 4, "steps").unwrap_or_else(|| vec![1; slice_rank]);
+            let axes = get(inputs, attrs, 3, "axes")?.unwrap_or_else(|| (0..slice_rank as i64).collect_vec());
+            let steps = get(inputs, attrs, 4, "steps")?.unwrap_or_else(|| vec![1; slice_rank]);
 
             assert!(
                 slice_rank == ends.len() && slice_rank == axes.len() && slice_rank == steps.len(),
@@ -732,7 +730,7 @@ fn visit_node(
 
             let rank = inputs[0].shape(&graph).rank();
 
-            let rel_axis = attrs.take_int("axis");
+            let rel_axis = attrs.take_int("axis")?;
             let axis = abs_axis(rel_axis, rank);
 
             let any_shape = inputs.iter().any(|x| matches!(x, TypedValue::Shape(_)));
@@ -771,11 +769,11 @@ fn visit_node(
         }
         "Pad" => {
             // operands
-            let input = inputs.required(0).unwrap_float();
-            let pads = inputs.required(1).unwrap_const_int(graph);
+            let input = inputs.required(0)?.unwrap_float();
+            let pads = inputs.required(1)?.unwrap_const_int(graph);
             let constant_value = inputs.optional(2);
             let axes = inputs.optional(3);
-            let mode = attrs.maybe_take_string("mode").unwrap_or("constant");
+            let mode = attrs.maybe_take_string("mode")?.unwrap_or("constant");
 
             // map operands
             let input_shape = &graph[input].shape.clone();
@@ -824,26 +822,26 @@ fn visit_node(
             TypedValue::FloatTensor(output)
         }
         "Shape" => {
-            let input = inputs.required(0).unwrap_tensor();
+            let input = inputs.required(0)?.unwrap_tensor();
             let shape = graph[input].shape.clone();
             let dims = shape.dims.iter().copied().map(SignedSize::from_size).collect_vec();
             TypedValue::Shape(dims)
         }
         "Identity" => {
-            let input = inputs.required(0);
+            let input = inputs.required(0)?;
             input.clone()
         }
         "Softmax" => {
-            let input = inputs.required(0).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
 
             let shape = graph[input].shape.clone();
-            let axis = attrs.maybe_take_int("axis").unwrap_or(-1);
+            let axis = attrs.maybe_take_int("axis")?.unwrap_or(-1);
             let axis = abs_axis(axis, shape.rank());
 
             TypedValue::FloatTensor(graph.softmax(input, axis))
         }
         "ReduceSum" | "ReduceMean" | "ReduceProd" | "ReduceMin" | "ReduceMax" => {
-            let op = match op_type {
+            let op = match node.op_type {
                 "ReduceSum" => ReduceOp::Sum,
                 "ReduceMean" => ReduceOp::Mean,
                 "ReduceProd" => ReduceOp::Prod,
@@ -852,14 +850,14 @@ fn visit_node(
                 _ => unreachable!(),
             };
 
-            let input = inputs.required(0).unwrap_float();
+            let input = inputs.required(0)?.unwrap_float();
             let input_shape = graph[input].shape.clone();
 
-            let axes = attrs.maybe_take_ints("axes").map_or_else(
+            let axes = attrs.maybe_take_ints("axes")?.map_or_else(
                 || (0..input_shape.rank()).collect_vec(),
                 |axes| axes.iter().map(|&a| abs_axis(a, input_shape.rank())).collect_vec(),
             );
-            let keep_dims = attrs.maybe_take_int("keepdims").unwrap_or(1) != 0;
+            let keep_dims = attrs.maybe_take_int("keepdims")?.unwrap_or(1) != 0;
 
             let result_shape = if keep_dims {
                 input_shape.replace_all(&axes, shape![1])
@@ -874,26 +872,26 @@ fn visit_node(
         }
         "Resize" => {
             // operands
-            let input = inputs.required(0);
+            let input = inputs.required(0)?;
             let roi = inputs.optional(1);
             let scales = inputs.optional(2).map(|v| v.unwrap_float());
             let sizes = inputs.optional(3).map(|v| v.unwrap_int(graph));
 
-            let _antialias = attrs.maybe_take_bool("antialias").unwrap_or(false);
-            let axes = attrs.maybe_take_ints("axes");
+            let _antialias = attrs.maybe_take_bool("antialias")?.unwrap_or(false);
+            let axes = attrs.maybe_take_ints("axes")?;
             let _coordinate_transformation_mode = attrs
-                .maybe_take_string("coordinate_transformation_mode")
+                .maybe_take_string("coordinate_transformation_mode")?
                 .unwrap_or("half_pixel");
-            let _cubic_coeff_a = attrs.take_float("cubic_coeff_a");
-            let _exclude_outside = attrs.maybe_take_int("exclude_outside").unwrap_or(0);
-            let _extrapolation_value = attrs.maybe_take_float("extrapolation_value").unwrap_or(0.0);
+            let _cubic_coeff_a = attrs.take_float("cubic_coeff_a")?;
+            let _exclude_outside = attrs.maybe_take_int("exclude_outside")?.unwrap_or(0);
+            let _extrapolation_value = attrs.maybe_take_float("extrapolation_value")?.unwrap_or(0.0);
             let keep_aspect_ratio_policy = attrs
-                .maybe_take_string("keep_aspect_ratio_policy")
+                .maybe_take_string("keep_aspect_ratio_policy")?
                 .unwrap_or("stretch")
                 .to_owned();
-            let mode = attrs.maybe_take_string("mode").unwrap_or("nearest").to_owned();
+            let mode = attrs.maybe_take_string("mode")?.unwrap_or("nearest").to_owned();
             let nearest_mode = attrs
-                .maybe_take_string("nearest_mode")
+                .maybe_take_string("nearest_mode")?
                 .unwrap_or("round_prefer_floor")
                 .to_owned();
 
@@ -931,10 +929,7 @@ fn visit_node(
             TypedValue::with_same_type(result, input)
         }
         _ => {
-            return Err(OnnxError::UnsupportedOperation(
-                node_name.to_owned(),
-                op_type.to_owned(),
-            ));
+            return Err(OnnxError::UnsupportedOperation(node.to_owned()));
         }
     };
 
@@ -1034,16 +1029,16 @@ fn define_tensor_data(
     Ok(typed_value)
 }
 
-fn resolve_tensor_type(ty: &TypeProto) -> (Shape, bool) {
+fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, bool)> {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
-    match value {
+    let result = match value {
         ProtoTypeValue::TensorType(tensor) => {
             let data_type = DataType::from_i32(tensor.elem_type).expect("Invalid data type");
 
             let is_int = match data_type {
                 DataType::Float | DataType::Double => false,
                 DataType::Int32 | DataType::Int64 => true,
-                data_type => panic!("Unsupported input type {:?}", data_type),
+                data_type => return Err(OnnxError::UnsupportedTensorType(data_type)),
             };
 
             let dims = tensor
@@ -1058,7 +1053,8 @@ fn resolve_tensor_type(ty: &TypeProto) -> (Shape, bool) {
             (Shape::new(dims), is_int)
         }
         _ => panic!("Unsupported value kind {:?}", value),
-    }
+    };
+    Ok(result)
 }
 
 fn resolve_tensor_dim(dim: &tensor_shape_proto::Dimension) -> Size {
