@@ -45,7 +45,7 @@ struct Args {
     visits: u64,
     #[clap(long)]
     no_random_symmetries: bool,
-    #[clap(long, default_value_t = 0)]
+    #[clap(long, default_value_t = 1)]
     batch_size: usize,
 }
 
