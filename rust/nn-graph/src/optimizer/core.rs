@@ -72,7 +72,7 @@ impl<'a> Optimizer<'a> {
 
         let old_operation = &old_info.operation;
 
-        // pre-visit inputs to ensure they're mapepd
+        // pre-visit inputs to ensure they're mapped
         for old_input in old_operation.inputs() {
             self.visit(old_input)?;
         }
@@ -95,8 +95,10 @@ impl<'a> Optimizer<'a> {
         if let Some(result) = self.try_fuse_conv_affine(old_start)? {
             return Ok(Some(result));
         }
-        if let Some(result) = self.try_convert_div_to_mul(old_start)? {
-            return Ok(Some(result));
+        if self.settings.div_to_mul {
+            if let Some(result) = self.try_convert_div_to_mul(old_start)? {
+                return Ok(Some(result));
+            }
         }
 
         Ok(None)

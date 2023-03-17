@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
 
@@ -337,7 +337,6 @@ fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'
     }
 }
 
-#[derive(Debug)]
 struct ConvOperation {
     details: ConvDetails,
     filter: ArcArray4<f32>,
@@ -353,7 +352,6 @@ struct AffineShape {
     height: Size,
 }
 
-#[derive(Debug)]
 enum AffineOperation {
     AddChannel { data: ArcArray1<f32> },
     ScaleChannel { data: ArcArray1<f32> },
@@ -362,4 +360,19 @@ enum AffineOperation {
 fn reversed<T>(mut v: Vec<T>) -> Vec<T> {
     v.reverse();
     v
+}
+
+impl Debug for ConvOperation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ConvOperation {{ details: {:?}, filter: ... }}", self.details)
+    }
+}
+
+impl Debug for AffineOperation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AffineOperation::AddChannel { data } => write!(f, "AddChannel {{ len: {}, data: ... }}", data.len()),
+            AffineOperation::ScaleChannel { data } => write!(f, "ScaleChannel {{ len: {}, data: ... }}", data.len()),
+        }
+    }
 }

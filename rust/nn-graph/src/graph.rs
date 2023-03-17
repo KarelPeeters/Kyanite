@@ -107,6 +107,8 @@ pub struct SliceRange {
     pub step: usize,
 }
 
+// TODO consider removing the compound operations (sigmoid, mish)
+//   alternatively check if either the CPU or CUDA implementations are faster/more accurate
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOp {
     Abs,
@@ -119,6 +121,7 @@ pub enum UnaryOp {
     Sigmoid,
     Tanh,
     Erf,
+    Mish,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -474,6 +477,13 @@ impl Graph {
                 data: ConstantData(data),
             },
         )
+    }
+
+    #[must_use]
+    pub fn constant_tensor(&mut self, tensor: Tensor) -> Value {
+        let shape = Shape::fixed(tensor.shape());
+        let data = tensor.iter().copied().collect();
+        self.constant(shape, data)
     }
 
     /// View an existing value as a new shape.
@@ -881,7 +891,7 @@ impl Graph {
         let [n1, p] = right_tail.unwrap_2();
         assert_eq!(
             n0, n1,
-            "Inner matmul dimension must, got shapes {} and {}",
+            "Inner matmul dimension must match, got shapes {} and {}",
             left_shape, right_shape
         );
         let result_tail = shape![m, p];
@@ -1128,6 +1138,7 @@ impl Debug for Graph {
     }
 }
 
+// TODO output nicer table with debug_id near the front
 impl Display for Graph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Graph {
@@ -1288,6 +1299,7 @@ impl UnaryOp {
         UnaryOp::Sigmoid,
         UnaryOp::Tanh,
         UnaryOp::Erf,
+        UnaryOp::Mish,
     ];
 
     pub fn map(self, x: f32) -> f32 {
@@ -1302,6 +1314,7 @@ impl UnaryOp {
             UnaryOp::Sigmoid => 1.0 / (1.0 + (-x).exp()),
             UnaryOp::Tanh => x.tanh(),
             UnaryOp::Erf => erf(x),
+            UnaryOp::Mish => x * (1.0 + x.exp()).ln().tanh(),
         }
     }
 }

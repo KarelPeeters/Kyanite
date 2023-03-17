@@ -397,7 +397,13 @@ impl<'a> Planner<'a> {
                 let (input_scale, input) = self.visit_scalable_value(input)?;
                 let output = self.alloc_tensor_shared(result_shape, Some(value));
 
-                let kernel = SoftmaxKernel::new(self.device(), input.strided_shape(), output.strided_shape(), axis, input_scale);
+                let kernel = SoftmaxKernel::new(
+                    self.device(),
+                    input.strided_shape(),
+                    output.strided_shape(),
+                    axis,
+                    input_scale,
+                );
 
                 let args = SoftmaxOpArgs {
                     kernel,
@@ -1033,5 +1039,6 @@ fn unary_op_str(op: UnaryOp, x: &str) -> String {
         UnaryOp::Sigmoid => format!("1.0 / (1.0 + exp(-({})))", x),
         UnaryOp::Tanh => format!("tanh({})", x),
         UnaryOp::Erf => format!("erff({})", x),
+        UnaryOp::Mish => format!("({}) * tanh(log(1.0 + exp({})))", x, x),
     }
 }

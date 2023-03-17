@@ -53,10 +53,15 @@ pub fn test_all_exact_graph(
     cpu_outputs
 }
 
+pub const ELEMENTWISE_TEST_VALUES: &[f32] = &[
+    0.0, 0.1, 0.5, 0.8, 1.0, 1.1, 1.5, 1.7, 2.0, 5.0, 6.0, 7.0, -1.0, -1.0, 0.5, 20.0, 80.0, 100.0, 1000.0, -20.0,
+    -100.0,
+];
+
 pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mut Graph, Value, Value) -> Value) {
     let mut graph = Graph::new();
 
-    let values = vec![0.0, 1.0, 2.0, 5.0, 6.0, 7.0, -1.0, -1.0, 0.5, 100.0, -100.0];
+    let values = ELEMENTWISE_TEST_VALUES;
     let pair_count = values.len() * values.len();
 
     let left = graph.input(shape![pair_count]);
@@ -74,7 +79,20 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
 }
 
 pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, Value) -> Value) {
-    test_elementwise_pair(|left, _| op(left), |graph, left, _| graph_op(graph, left))
+    let mut graph = Graph::new();
+
+    let values = ELEMENTWISE_TEST_VALUES;
+
+    let input = graph.input(shape![values.len()]);
+    let output = graph_op(&mut graph, input);
+    graph.output(output);
+
+    let input_tensor = ArcArray::from_shape_vec(values.len(), values.to_vec())
+        .unwrap()
+        .into_dyn();
+    let expected_output = input_tensor.map(|&v| op(v)).into_shared().into_dyn();
+
+    test_all(&graph, 0, &[input_tensor], Some(&[expected_output]));
 }
 
 pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {

@@ -85,14 +85,20 @@ fn main() -> std::io::Result<()> {
     // let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
     // let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
     let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\16x128_gaps\training\gen_6732\network.onnx"#;
-    let settings = ZeroSettings::new(
+    // let settings = ZeroSettings::new(
+    //     args.batch_size,
+    //     UctWeights::default(),
+    //     QMode::wdl(),
+    //     FpuMode::Fixed(1.0),
+    //     FpuMode::Relative(0.0),
+    //     args.virtual_loss_weight,
+    //     1.0,
+    // );
+    let settings = ZeroSettings::simple(
         args.batch_size,
         UctWeights::default(),
         QMode::wdl(),
-        FpuMode::Fixed(1.0),
         FpuMode::Relative(0.0),
-        args.virtual_loss_weight,
-        1.0,
     );
 
     let graph = optimize_graph(&load_graph_from_onnx_path(path, false).unwrap(), Default::default());
@@ -112,6 +118,14 @@ fn main_impl<B: Board>(
     let mut rng = StdRng::from_entropy();
     println!("Building initial tree");
     let tree = settings.build_tree(&board, network, &mut rng, |tree| tree.root_visits() >= visits);
+
+    println!(
+        "nodes: {}, values: {:?}, depth {:?}",
+        tree.root_visits(),
+        tree.values(),
+        tree.depth_range(0)
+    );
+    // return Ok(());
 
     let mut requests = VecDeque::new();
     let mut state = State {

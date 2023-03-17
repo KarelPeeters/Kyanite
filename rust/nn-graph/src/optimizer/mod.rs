@@ -10,6 +10,7 @@ pub struct OptimizerSettings {
     pub optimize: bool,
     pub force_bias_through_conv: bool,
     pub fuse_layernorm: bool,
+    pub div_to_mul: bool,
 }
 
 pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
@@ -42,6 +43,7 @@ impl Default for OptimizerSettings {
             optimize: true,
             force_bias_through_conv: false,
             fuse_layernorm: true,
+            div_to_mul: true,
         }
     }
 }
