@@ -18,6 +18,12 @@ use kz_core::bot::AsyncBot;
 pub type BoxBotFn<B> = Box<dyn Fn() -> BoxBot<B>>;
 pub type BoxBot<B> = Box<dyn AsyncBot<B> + Send>;
 
+// TODO write a better NN tournament runner that:
+//   * prefers playing on games that are the least far along
+//   * has some limit to the amount of concurrent games
+//   * automatically picks and changes the batch size of the NNs
+//   * prefers running the NN with the most evals or the most full batch
+
 #[derive(Debug)]
 pub struct Tournament<B: Board> {
     pub bot_names: Vec<String>,
