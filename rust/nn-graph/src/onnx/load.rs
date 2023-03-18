@@ -39,7 +39,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
 
     for input in &model_graph.input {
         // initializers are allowed to re-appear in the inputs, so we skip them the second time
-        if nodes.contains(&*input.name) {
+        if nodes.contains(&input.name) {
             continue;
         }
 
@@ -203,7 +203,7 @@ fn visit_node(
                     result
                 }
                 _ => {
-                    let message = format!("Clip must have either 1 or 3 inputs, got 2");
+                    let message = "Clip must have either 1 or 3 inputs, got 2".to_owned();
                     return Err(OnnxError::InvalidOperationArgs(node.to_owned(), message));
                 }
             };
@@ -245,7 +245,7 @@ fn visit_node(
             let left = inputs.required(0)?;
             let right = inputs.required(1)?;
 
-            if let (Some(left), Some(right)) = (left.as_partial_shape(&graph), right.as_partial_shape(&graph)) {
+            if let (Some(left), Some(right)) = (left.as_partial_shape(graph), right.as_partial_shape(graph)) {
                 // if they're both shapes keep it that way
                 assert_eq!(left.len(), right.len());
 
@@ -281,8 +281,8 @@ fn visit_node(
             }
         }
         "Equal" => {
-            let left = inputs.required(0)?.unwrap_partial_shape(node, &graph)?;
-            let right = inputs.required(1)?.unwrap_partial_shape(node, &graph)?;
+            let left = inputs.required(0)?.unwrap_partial_shape(node, graph)?;
+            let right = inputs.required(1)?.unwrap_partial_shape(node, graph)?;
 
             // TODO implement broadcasting
             // TODO is shape the best way to store bools?
@@ -432,7 +432,7 @@ fn visit_node(
                 let exp_scale = graph.view(input_scale, shape_exp.clone());
                 let exp_bias = graph.view(input_bias, shape_exp.clone());
                 let exp_mean = graph.view(input_mean, shape_exp.clone());
-                let exp_variance = graph.view(input_variance, shape_exp.clone());
+                let exp_variance = graph.view(input_variance, shape_exp);
 
                 let div_squared = graph.add(exp_variance, value_eps);
                 let div = graph.unary(UnaryOp::Sqrt, div_squared);
@@ -485,7 +485,7 @@ fn visit_node(
 
             let shape = match shape {
                 None => Shape::SCALAR,
-                Some(shape) => shape.unwrap_shape(node, &graph)?,
+                Some(shape) => shape.unwrap_shape(node, graph)?,
             };
 
             let value = match attrs.maybe_take_tensor("value")? {
@@ -494,7 +494,7 @@ fn visit_node(
             };
 
             assert_eq!(
-                value.shape(&graph).size(),
+                value.shape(graph).size(),
                 Size::ONE,
                 "value must be a one-element tensor"
             );
@@ -612,7 +612,7 @@ fn visit_node(
             let indices = inputs.required(1)?.unwrap_int(graph);
             let rel_axis = attrs.maybe_take_int("axis")?.unwrap_or(0);
 
-            let input_shape = input.shape(&graph);
+            let input_shape = input.shape(graph);
             let indices_shape = &graph[indices].shape;
 
             let axis = abs_axis(rel_axis, input_shape.rank());
@@ -642,7 +642,7 @@ fn visit_node(
                 &TypedValue::FloatTensor(input_value) | &TypedValue::IntTensor(input_value) => {
                     // TODO properly support negative indices
                     let result = graph.gather(input_value, axis, indices);
-                    TypedValue::with_same_type(result, &input)
+                    TypedValue::with_same_type(result, input)
                 }
             }
         }
@@ -724,7 +724,7 @@ fn visit_node(
             let inputs = inputs.take_all_variadic();
             assert!(!inputs.is_empty(), "Must concatenate at least one value");
 
-            let rank = inputs[0].shape(&graph).rank();
+            let rank = inputs[0].shape(graph).rank();
 
             let rel_axis = attrs.take_int("axis")?;
             let axis = abs_axis(rel_axis, rank);
@@ -858,7 +858,7 @@ fn visit_node(
             let result_shape = if keep_dims {
                 input_shape.replace_all(&axes, shape![1])
             } else {
-                input_shape.clone()
+                input_shape
             };
 
             let result = graph.reduce(input, axes, op);
@@ -986,7 +986,7 @@ fn define_tensor_data(
                 tensor.float_data.clone()
             } else {
                 let mut float_data = vec![0.0; size];
-                LittleEndian::read_f32_into(&raw_data, &mut float_data);
+                LittleEndian::read_f32_into(raw_data, &mut float_data);
                 float_data
             };
 
@@ -997,7 +997,7 @@ fn define_tensor_data(
                 tensor.double_data.iter().map(|&f| f as f32).collect_vec()
             } else {
                 let mut data = vec![0.0; size];
-                LittleEndian::read_f64_into(&raw_data, &mut data);
+                LittleEndian::read_f64_into(raw_data, &mut data);
                 data.iter().map(|&d| cast(d).unwrap()).collect_vec()
             };
 
@@ -1008,7 +1008,7 @@ fn define_tensor_data(
                 tensor.int64_data.iter().map(|&i| cast(i).unwrap()).collect_vec()
             } else {
                 let mut data = vec![0; size];
-                LittleEndian::read_i64_into(&raw_data, &mut data);
+                LittleEndian::read_i64_into(raw_data, &mut data);
                 data.iter().map(|&i| cast(i).unwrap()).collect_vec()
             };
 

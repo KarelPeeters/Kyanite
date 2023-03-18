@@ -72,7 +72,7 @@ impl DevicePtr {
             assert_eq!(offset, 0, "Non-zero offset not allowed on empty buffer");
         } else {
             assert!(
-                (0..self.buffer.len_bytes as isize).contains(&new_offset),
+                (0..self.buffer.len_bytes).contains(&new_offset),
                 "Offset {} is out of range on {:?}",
                 offset,
                 self

@@ -81,11 +81,10 @@ impl Lichess {
         &self,
         max: Option<u64>,
     ) -> LichessResult<impl Stream<Item = LichessResult<PuzzleActivity>>> {
-        let query: String;
-        match max {
-            Some(val) => query = format!("{}", val),
-            None => query = String::new(),
-        }
+        let query = match max {
+            Some(val) => format!("{}", val),
+            None => String::new(),
+        };
         let url = format!("{}{}?max={}", self.base, "/api/user/puzzle-activity", query);
         let builder = self.client.get(&url);
         self.to_model_stream(builder).await

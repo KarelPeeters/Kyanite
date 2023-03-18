@@ -67,7 +67,7 @@ impl Shape {
             .map(|d| d.try_unwrap_fixed().ok_or(()))
             .try_collect()
             .ok()
-            .map(|dims| ConcreteShape::new(dims))
+            .map(ConcreteShape::new)
     }
 
     pub fn unwrap_fixed(&self, what: &str) -> ConcreteShape {

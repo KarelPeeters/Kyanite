@@ -22,13 +22,13 @@ enum Storage<T> {
 }
 
 impl<'a> Inputs<'a> {
-    pub fn from(node: Node<&'a str>, inputs: &'a Vec<String>, nodes: &'a Store<TypedValue>) -> OnnxResult<Self> {
+    pub fn from(node: Node<&'a str>, inputs: &'a [String], nodes: &'a Store<TypedValue>) -> OnnxResult<Self> {
         let inner = inputs
             .iter()
             .enumerate()
             .map(|(i, name)| {
                 // an empty attribute name means the input is missing (which is only allowed for optional inputs)
-                if name == "" {
+                if name.is_empty() {
                     Ok(Storage::Missing)
                 } else {
                     let value = nodes
@@ -160,7 +160,7 @@ impl<'a> Attributes<'a> {
 
     pub fn take_bool(&mut self, key: &str) -> OnnxResult<bool> {
         let i = self.take(key, AttributeType::Int)?.i;
-        Ok(map_bool(self.node, key, i)?)
+        map_bool(self.node, key, i)
     }
 
     pub fn maybe_take_ints(&mut self, key: &str) -> OnnxResult<Option<&'a [i64]>> {

@@ -15,7 +15,7 @@ use crate::shape::ConcreteShape;
 pub type Tensor = ArcArray<f32, IxDyn>;
 
 pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Tensor> {
-    let exec = cpu_eval_graph_exec(&graph, batch_size, inputs, false);
+    let exec = cpu_eval_graph_exec(graph, batch_size, inputs, false);
     exec.output_tensors()
 }
 
@@ -120,25 +120,25 @@ fn try_run_cpu_operation(
 
     let output_shape_dyn = IxDyn(&output_shape.dims);
 
-    let result: Tensor = match &info.operation {
-        &Operation::Input { index } => input(index)?,
-        &Operation::Constant { ref data } => {
-            let data = (&**data).clone();
+    let result: Tensor = match info.operation {
+        Operation::Input { index } => input(index)?,
+        Operation::Constant { ref data } => {
+            let data = data.0.clone();
             Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
         }
-        &Operation::View { input } => {
+        Operation::View { input } => {
             let input = map(input)?;
             input.reshape(output_shape_dyn)
         }
-        &Operation::Broadcast { input } => {
+        Operation::Broadcast { input } => {
             let input = map(input)?;
             input.broadcast(output_shape_dyn).unwrap().to_shared()
         }
-        &Operation::Permute { input, ref permutation } => {
+        Operation::Permute { input, ref permutation } => {
             let input = map(input)?;
             input.view().permuted_axes(permutation.clone()).to_shared()
         }
-        &Operation::Slice { input, axis, range } => {
+        Operation::Slice { input, axis, range } => {
             let input = map(input)?;
 
             let info = slice_info(
@@ -150,14 +150,14 @@ fn try_run_cpu_operation(
             );
             input.slice(info).to_shared()
         }
-        &Operation::Flip { input, axis } => {
+        Operation::Flip { input, axis } => {
             let input = map(input)?;
 
             // slice with negative step (ndarray convention is different from python)
             let info = slice_info(input.ndim(), axis, 0, None, -1);
             input.slice(info).to_shared()
         }
-        &Operation::Gather { input, axis, indices } => {
+        Operation::Gather { input, axis, indices } => {
             let input = map(input)?;
             let indices = map(indices)?;
 
@@ -172,15 +172,15 @@ fn try_run_cpu_operation(
                 })
                 .collect_vec();
 
-            concatenate(output_shape_dyn.clone(), axis, &slices)
+            concatenate(output_shape_dyn, axis, &slices)
         }
-        &Operation::Concat { ref inputs, axis } => {
-            let inputs: Vec<_> = inputs.iter().map(|&x| Ok(map(x)?)).try_collect()?;
+        Operation::Concat { ref inputs, axis } => {
+            let inputs: Vec<_> = inputs.iter().map(|&x| map(x)).try_collect()?;
             let inputs_viewed = inputs.iter().map(|x| x.view()).collect_vec();
 
-            concatenate(output_shape_dyn.clone(), axis, &inputs_viewed)
+            concatenate(output_shape_dyn, axis, &inputs_viewed)
         }
-        &Operation::Conv {
+        Operation::Conv {
             input,
             filter,
             details: conv_shape,
@@ -194,7 +194,7 @@ fn try_run_cpu_operation(
             );
             result.into_dyn().into_shared()
         }
-        &Operation::MatMul { left, right } => {
+        Operation::MatMul { left, right } => {
             let left = map(left)?;
             let right = map(right)?;
 
@@ -205,11 +205,11 @@ fn try_run_cpu_operation(
             .into_dyn()
             .into_shared()
         }
-        &Operation::Unary { input, op } => {
+        Operation::Unary { input, op } => {
             let input = map(input)?;
             input.map(|&x| op.map(x)).into_shared()
         }
-        &Operation::Binary { left, right, op } => {
+        Operation::Binary { left, right, op } => {
             let left = map(left)?;
             let right = map(right)?;
 
@@ -218,15 +218,15 @@ fn try_run_cpu_operation(
                 .map_collect(|&l, &r| op.map(l, r))
                 .into_shared()
         }
-        &Operation::Softmax { input, axis } => {
+        Operation::Softmax { input, axis } => {
             let input = map(input)?;
             softmax(input.view(), Axis(axis)).into_shared()
         }
-        &Operation::Layernorm { input, axis, eps } => {
+        Operation::Layernorm { input, axis, eps } => {
             let input = map(input)?;
             layernorm(input.view(), Axis(axis), eps.into_inner()).into_shared()
         }
-        &Operation::Reduce { input, ref axes, op } => {
+        Operation::Reduce { input, ref axes, op } => {
             let input = map(input)?;
 
             let result = axes.iter().fold(input.to_shared(), |curr, &axis| {
@@ -249,7 +249,7 @@ fn concatenate(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<f32, IxDyn>
     if inputs.is_empty() {
         Tensor::zeros(output_shape)
     } else {
-        let result = ndarray::concatenate(Axis(axis), &inputs).unwrap().into_shared();
+        let result = ndarray::concatenate(Axis(axis), inputs).unwrap().into_shared();
         assert_eq!(result.dim(), output_shape);
         result
     }
@@ -298,7 +298,7 @@ pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayVi
                         if (0..input_h as isize).contains(&iy) && (0..input_w as isize).contains(&ix) {
                             input_matrix
                                 .slice_mut(s![.., oy, ox, .., fy, fx])
-                                .assign(&input.slice(s![.., .., iy as usize, ix as isize]));
+                                .assign(&input.slice(s![.., .., iy as usize, ix]));
                         }
                         // leave the padding values at zero
                     }

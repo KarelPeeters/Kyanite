@@ -56,7 +56,7 @@ impl TypedValue {
     }
 
     pub fn as_shape(&self, graph: &Graph) -> Option<Shape> {
-        let partial = self.as_partial_shape(&graph)?;
+        let partial = self.as_partial_shape(graph)?;
         let dims = partial.iter().map(|s| s.as_size()).collect::<Option<_>>()?;
         Some(Shape::new(dims))
     }
@@ -103,11 +103,7 @@ impl TypedValue {
 
     pub fn unwrap_const_int(&self, graph: &mut Graph) -> ArcArray<i64, IxDyn> {
         let value = self.unwrap_int(graph);
-        graph
-            .as_const(value)
-            .unwrap()
-            .mapv(|f| float_to_i64_exact(f))
-            .to_shared()
+        graph.as_const(value).unwrap().mapv(float_to_i64_exact).to_shared()
     }
 
     pub fn with_same_type(result: Value, other: &TypedValue) -> TypedValue {

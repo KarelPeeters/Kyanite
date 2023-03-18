@@ -302,7 +302,7 @@ impl PgnEval {
     pub fn as_white_win_prob(self) -> f32 {
         let pawns = match self {
             PgnEval::MateIn(n) => n.signum() as f32 * f32::INFINITY,
-            PgnEval::Pawns(p) => p as f32,
+            PgnEval::Pawns(p) => p,
         };
 
         ((pawns / EVAL_PAWNS_TANH_DIV).tanh() + 1.0) / 2.0

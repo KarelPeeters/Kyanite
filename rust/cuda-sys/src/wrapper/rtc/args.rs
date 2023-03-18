@@ -26,7 +26,7 @@ impl KernelArgs {
         // append bytes
         unsafe {
             let bytes = slice::from_raw_parts(&value as *const T as *const u8, std::mem::size_of::<T>());
-            self.buffer.extend_from_slice(&bytes);
+            self.buffer.extend_from_slice(bytes);
         }
     }
 

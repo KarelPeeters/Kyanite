@@ -34,9 +34,10 @@ impl<'a> Optimizer<'a> {
 
     fn visit(&mut self, old: Value) -> VisitResult<Value> {
         if let Some(&new) = self.map.get(&old) {
-            return Ok(new);
+            Ok(new)
+        } else {
+            Err(old)
         }
-        return Err(old);
     }
 
     fn visit_single_cached(&mut self, old: Value) -> VisitResult<Value> {
@@ -161,7 +162,7 @@ impl<'a> Optimizer<'a> {
 
                                                     // check that the intermediate values are not used elsewhere
                                                     if fused_values.iter().any(|(&fused_value, &count)| {
-                                                        value != value
+                                                        fused_value != value
                                                             && !self.old_graph.is_hidden_with_uses(fused_value, count)
                                                     }) {
                                                         return Ok(None);
