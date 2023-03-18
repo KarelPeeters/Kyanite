@@ -75,14 +75,16 @@ pub fn decode_output<B: Board, P: PolicyMapper<B>>(
             };
 
             // policy
-            let mut policy: Vec<f32> = board
-                .available_moves()
-                .map(|mv| {
-                    let index = policy_mapper.move_to_index(board, mv);
-                    batch_policy_logit[(bi, index)]
-                })
-                .collect();
-            softmax_in_place(&mut policy);
+            let policy = board.available_moves().map_or(vec![], |moves| {
+                let mut policy: Vec<f32> = moves
+                    .map(|mv| {
+                        let index = policy_mapper.move_to_index(board, mv);
+                        batch_policy_logit[(bi, index)]
+                    })
+                    .collect();
+                softmax_in_place(&mut policy);
+                policy
+            });
 
             // combine everything
             let values = ZeroValuesPov {

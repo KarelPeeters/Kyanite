@@ -377,7 +377,11 @@ fn test_pairs(board: &ChessBoard, pairs: &[(usize, Option<ChessMove>)]) {
         println!("  Testing pair {:?} <-> {}", index, display_option(mv));
 
         if let Some(mv) = mv {
-            assert!(board.is_available_move(mv), "Move is not available on current board");
+            assert_eq!(
+                board.is_available_move(mv),
+                Ok(true),
+                "Move is not available on current board"
+            );
 
             println!("    mv -> index");
             let classified = ClassifiedPovMove::from_move(mv);

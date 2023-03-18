@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "board-game"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arimaa_engine_step",
  "cast_trait",

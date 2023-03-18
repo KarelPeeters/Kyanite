@@ -1,6 +1,6 @@
 use std::iter;
 
-use board_game::board::AltBoard;
+use board_game::board::{AltBoard, PlayError};
 
 use cuda_nn_eval::device_tensor::DeviceTensor;
 use cuda_nn_eval::executor::CudaExecutor;
@@ -124,7 +124,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
             println!("Detailed policy: index mv available p");
             for i in 0..mapper.policy_len() {
                 let mv = mapper.index_to_move(&board, i);
-                let available = board.is_done() || mv.map_or(false, |mv| board.is_available_move(mv));
+                let available = board.is_done() || mv.map_or(false, |mv| board.is_available_move(mv).unwrap());
 
                 println!("  {} {} {} {}", i, display_option(mv), available, policy[i]);
 
@@ -162,7 +162,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
             full_state_tensor.copy_from(&dynamics.outputs[0]);
 
             // actually play the move on the given board
-            board.play(mv);
+            board.play(mv).unwrap();
         }
     }
 
@@ -203,7 +203,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
                 None => break,
                 Some(mv) => {
                     let mv_index = mapper.move_to_index(&curr_board, mv);
-                    curr_board.play(mv);
+                    curr_board.play(mv).unwrap();
 
                     let expand_args = ExpandArgs {
                         state: curr_quant.clone(),
@@ -251,7 +251,7 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
                         .iter()
                         .find(|&n| tree[n].last_move_index == Some(mv_index))
                         .unwrap();
-                    curr_board.play(mv);
+                    curr_board.play(mv).unwrap();
                     curr_node = child_node;
                     continue;
                 }
@@ -271,12 +271,19 @@ unsafe fn muzero_debug_utility_inner<B: AltBoard, M: BoardMapper<B>>(
             let mv = mapper.index_to_move(&test_board, mv_index.unwrap());
             println!("  {:?} {}", mv_index, display_option(mv));
             if let Some(mv) = mv {
-                if !test_board.is_done() && test_board.is_available_move(mv) {
-                    test_board.play(mv);
-                } else {
-                    break;
+                match test_board.play(mv) {
+                    Ok(()) => {}
+                    Err(PlayError::BoardDone) => {
+                        println!("  failed, board done");
+                        break;
+                    }
+                    Err(PlayError::UnavailableMove) => {
+                        println!("  failed, move not available");
+                        break;
+                    }
                 }
             } else {
+                println!("  failed, index does not correspond to move");
                 break;
             }
         }

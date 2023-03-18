@@ -37,7 +37,7 @@ fn random_impl(f: impl Fn(&ChessBoard)) {
 
         while !board.is_done() {
             f(&board);
-            board.play(board.random_available_move(&mut rng));
+            board.play(board.random_available_move(&mut rng).unwrap()).unwrap();
         }
     }
 }

@@ -48,13 +48,13 @@ fn keep_tree() {
 
     println!("{}", parent_tree.display(100, true, 200, true));
 
-    let mv = board.available_moves().next().unwrap();
+    let mv = board.available_moves().unwrap().next().unwrap();
     let actual_child_tree = parent_tree.keep_moves(&[mv]).unwrap();
 
     let actual_string = actual_child_tree.display(100, true, 200, true).to_string();
     println!("{}", actual_string);
 
-    let expected_child_tree = settings.build_tree(&board.clone_and_play(mv), &mut DummyNetwork, &mut rng, |tree| {
+    let expected_child_tree = settings.build_tree(&board.clone_and_play(mv).unwrap(), &mut DummyNetwork, &mut rng, |tree| {
         tree.root_visits() >= actual_child_tree.root_visits()
     });
 

@@ -20,11 +20,12 @@ use crate::server::executor::{batched_executor_loop, RunCondition};
 use crate::server::generator_alphazero::generator_alphazero_main;
 use crate::server::protocol::{Evals, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server::{GraphSender, ZeroSpecialization};
+use std::hash::Hash;
 
 #[derive(Debug)]
 pub struct AlphaZeroSpecialization;
 
-impl<B: Board, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZeroSpecialization {
+impl<B: Board + Hash, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for AlphaZeroSpecialization {
     type G = Graph;
 
     fn spawn_device_threads<'s>(

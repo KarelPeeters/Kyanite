@@ -47,7 +47,9 @@ impl<B: Board> Network<B> for DummyNetwork {
             .iter()
             .map(|board| ZeroEvaluation {
                 values: uniform_values(),
-                policy: Cow::Owned(uniform_policy(board.borrow().available_moves().count())),
+                policy: Cow::Owned(uniform_policy(
+                    board.borrow().available_moves().map_or(0, |moves| moves.count()),
+                )),
             })
             .collect()
     }

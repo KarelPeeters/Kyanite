@@ -6,6 +6,7 @@ use lru::LruCache;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Dirichlet;
+use std::hash::Hash;
 
 use kz_core::network::common::policy_softmax_temperature_in_place;
 use kz_core::network::{EvalClient, ZeroEvaluation};
@@ -18,7 +19,7 @@ use crate::server::protocol::{Evals, GeneratorUpdate, Settings};
 use crate::server::server::UpdateSender;
 use crate::simulation::{Position, Simulation};
 
-pub async fn generator_alphazero_main<B: Board>(
+pub async fn generator_alphazero_main<B: Board + Hash>(
     generator_id: usize,
     start_pos: impl Fn(&mut StdRng) -> B,
     settings_receiver: Receiver<Settings>,
@@ -65,7 +66,7 @@ pub async fn generator_alphazero_main<B: Board>(
 
 type Cache<B> = LruCache<B, ZeroEvaluation<'static>>;
 
-async fn generate_simulation<B: Board>(
+async fn generate_simulation<B: Board + Hash>(
     generator_id: usize,
     settings: &Settings,
     search_batch_size: usize,
@@ -123,7 +124,7 @@ async fn generate_simulation<B: Board>(
         positions.push(position);
 
         // actually play the move
-        curr_board.play(picked_move);
+        curr_board.play(picked_move).unwrap();
 
         // send updates
         // TODO these cached evals are somewhat temporally misaligned with when the evals actually take place,
@@ -146,7 +147,7 @@ async fn generate_simulation<B: Board>(
     }
 }
 
-async fn build_tree<B: Board>(
+async fn build_tree<B: Board + Hash>(
     settings: &Settings,
     search_batch_size: usize,
     eval_client: &EvalClient<B>,

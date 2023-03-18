@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use board_game::board::Board;
 
@@ -14,7 +13,7 @@ pub mod sttt;
 pub mod ttt;
 
 /// A way to encode a board as a tensor.
-pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
+pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + Eq + PartialEq {
     fn input_bool_shape(&self) -> [usize; 3];
     fn input_scalar_count(&self) -> usize;
 
@@ -62,7 +61,7 @@ pub trait InputMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUn
 }
 
 /// A way to encode and decode moves on a board into a tensor.
-pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
+pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + Eq + PartialEq {
     fn policy_shape(&self) -> &[usize];
 
     fn policy_len(&self) -> usize {
@@ -79,7 +78,7 @@ pub trait PolicyMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefU
 }
 
 //TODO update the docs in the file
-pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + UnwindSafe + RefUnwindSafe + Eq + PartialEq {
+pub trait MuZeroMapper<B: Board>: Debug + Copy + Send + Sync + Eq + PartialEq {
     fn state_board_size(&self) -> usize;
 
     fn encoded_move_shape(&self) -> [usize; 3];

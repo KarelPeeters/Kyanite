@@ -3,14 +3,13 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
-use board_game::board::{Board, BoardMoves};
+use board_game::board::Board;
 use board_game::games::chess::{ChessBoard, Rules};
 use board_game::pov::NonPov;
 use board_game::wdl::WDL;
 use flume::{Receiver, RecvError, Sender, TryRecvError};
 use internal_iterator::InternalIterator;
 use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
 use vampirc_uci::UciMessage;
 
@@ -108,7 +107,7 @@ fn main() -> std::io::Result<()> {
                     };
 
                     for mv in moves {
-                        board.play(mv);
+                        board.play(mv).unwrap();
                     }
 
                     writeln!(log, "setting curr_board to {}", board)?;
@@ -124,8 +123,7 @@ fn main() -> std::io::Result<()> {
                         let best_move = if tree.root_visits() > 0 {
                             tree.best_move().unwrap()
                         } else {
-                            let moves: Vec<_> = tree.root_board().available_moves().collect();
-                            *moves.choose(&mut thread_rng()).unwrap()
+                            tree.root_board().random_available_move(&mut thread_rng()).unwrap()
                         };
 
                         println!("bestmove {}", best_move);

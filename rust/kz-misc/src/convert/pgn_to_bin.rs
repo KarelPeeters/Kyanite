@@ -76,7 +76,7 @@ pub fn append_pgn_to_bin<M: BoardMapper<ChessBoard>>(
                 } else {
                     let mv = board.parse_move(mv.mv).unwrap();
                     positions.push(build_position(&board, mv, eval, (move_count - i) as f32));
-                    board.play(mv);
+                    board.play(mv).unwrap();
 
                     ControlFlow::Continue(())
                 }
@@ -217,7 +217,11 @@ fn build_position(
     eval: Option<PgnEval>,
     moves_left: f32,
 ) -> Position<'static, ChessBoard> {
-    let policy: Vec<f32> = board.available_moves().map(|cand| (cand == mv) as u8 as f32).collect();
+    let policy: Vec<f32> = board
+        .available_moves()
+        .unwrap()
+        .map(|cand| (cand == mv) as u8 as f32)
+        .collect();
 
     let zero_values = eval.map_or(ZeroValuesPov::nan(), |eval| {
         let win = match board.next_player() {

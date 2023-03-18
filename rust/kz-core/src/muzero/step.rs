@@ -146,7 +146,10 @@ pub fn muzero_step_apply<B: AltBoard, M: BoardMapper<B>>(
     let children = if node == 0 {
         // only keep available moves for root node
         let board = &tree.root_board;
-        let indices = board.available_moves().map(|mv| tree.mapper.move_to_index(&board, mv));
+        let indices = board
+            .available_moves()
+            .unwrap()
+            .map(|mv| tree.mapper.move_to_index(&board, mv));
         create_child_nodes(&mut tree.nodes, node, indices, &policy_logits)
     } else {
         // keep all moves deeper in the tree

@@ -28,15 +28,15 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
         let mut positions = vec![];
 
         while !board.is_done() {
-            let mv_count = board.available_moves().count();
+            let moves = board.available_moves().unwrap();
+            let mv_count = moves.clone().count();
 
             let (mv, policy) = if solver_depth != 0 {
                 // pick a random best move and use all best moves for the policy
                 let solution = solve_all_moves(&board, solver_depth);
                 let best_moves = solution.best_move.unwrap();
 
-                let policy = board
-                    .available_moves()
+                let policy = moves
                     .map(|mv: B::Move| best_moves.contains(&mv) as u8 as f32 / best_moves.len() as f32)
                     .collect();
                 let mv = *best_moves.choose(&mut rng).unwrap();
@@ -44,9 +44,10 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
                 (mv, policy)
             } else {
                 // pick a random best move with uniform policy
-                let mv = board.random_available_move(&mut rng);
+                let mv = board.random_available_move(&mut rng).unwrap();
                 let policy = vec![1.0 / mv_count as f32; mv_count];
 
+                drop(moves);
                 (mv, policy)
             };
 
@@ -65,7 +66,7 @@ pub fn append_random_games_to_bin<B: Board, M: BoardMapper<B>>(
                 },
             });
 
-            board.play(mv);
+            board.play(mv).unwrap();
         }
 
         bin.append(&Simulation {

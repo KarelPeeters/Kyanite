@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use board_game::ai::Bot;
-use board_game::board::Board;
+use board_game::board::{Board, BoardDone};
 use flume::RecvError;
 use futures::executor::block_on;
 use itertools::Itertools;
@@ -207,9 +207,10 @@ impl<B: Board, N: Network<B>, R: Rng + Send> ZeroBot<B, N, R> {
 }
 
 impl<B: Board, N: Network<B>, R: Rng + Send> Bot<B> for ZeroBot<B, N, R> {
-    fn select_move(&mut self, board: &B) -> B::Move {
-        assert!(!board.is_done());
-        self.build_tree(board).best_move().unwrap()
+    fn select_move(&mut self, board: &B) -> Result<B::Move, BoardDone> {
+        board.check_done()?;
+        // the board is not done and visits >= 1, so we can unwrap
+        Ok(self.build_tree(board).best_move().unwrap())
     }
 }
 
@@ -253,9 +254,10 @@ impl<B: Board, R: Rng + Send> AsyncZeroBot<B, R> {
 
 #[async_trait]
 impl<B: Board, R: Rng + Send> AsyncBot<B> for AsyncZeroBot<B, R> {
-    async fn select_move(&mut self, board: &B) -> B::Move {
-        assert!(!board.is_done());
-        self.build_tree(board).await.best_move().unwrap()
+    async fn select_move(&mut self, board: &B) -> Result<B::Move, BoardDone> {
+        board.check_done()?;
+        // the board is not done and visits >= 1, so we can unwrap
+        Ok(self.build_tree(board).await.best_move().unwrap())
     }
 }
 

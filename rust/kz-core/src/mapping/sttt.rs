@@ -19,7 +19,8 @@ impl InputMapper<STTTBoard> for STTTStdMapper {
     fn encode_input(&self, bools: &mut BitBuffer, _: &mut Vec<f32>, board: &STTTBoard) {
         bools.extend(Coord::all().map(|c| board.tile(c) == Some(board.next_player())));
         bools.extend(Coord::all().map(|c| board.tile(c) == Some(board.next_player().other())));
-        bools.extend(Coord::all().map(|c| board.is_available_move(c)));
+        // represent done board without any available moves
+        bools.extend(Coord::all().map(|c| board.is_available_move(c).unwrap_or(false)));
     }
 }
 

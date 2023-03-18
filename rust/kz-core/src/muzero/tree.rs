@@ -272,11 +272,12 @@ impl<B: AltBoard, M: BoardMapper<B>> Display for MuTreeDisplay<'_, B, M> {
 
                 let (child_board, child_mv) = match (&self.curr_board, tree[child].last_move_index) {
                     (Some(curr_board), Some(child_mv_index)) => {
+                        // TODO should we unwrap is_available_move here? debug when fixing muzero again :)
                         let child_mv = tree
                             .mapper
                             .index_to_move(curr_board, child_mv_index)
-                            .filter(|&mv| !curr_board.is_done() && curr_board.is_available_move(mv));
-                        let child_board = child_mv.map(|child_mv| curr_board.clone_and_play(child_mv));
+                            .filter(|&mv| curr_board.is_available_move(mv).unwrap());
+                        let child_board = child_mv.map(|child_mv| curr_board.clone_and_play(child_mv).unwrap());
                         (child_board, child_mv)
                     }
                     _ => (None, None),

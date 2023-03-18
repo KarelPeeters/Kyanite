@@ -109,7 +109,7 @@ pub fn visualize_network_activations<B: Board, M: BoardMapper<B>>(
                 for i in 0..mapper.policy_len() {
                     let is_available = mapper
                         .index_to_move(board, i)
-                        .map_or(false, |mv| board.is_available_move(mv));
+                        .map_or(false, |mv| board.is_available_move(mv).unwrap_or(false));
 
                     any_available |= is_available;
                     if is_available {

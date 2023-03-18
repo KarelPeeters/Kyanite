@@ -38,7 +38,7 @@ pub fn test_valid_policy_mapping<B: Board, M: PolicyMapper<B>>(mapper: M, board:
 pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     let mut prev = vec![vec![]; mapper.policy_len()];
 
-    board.available_moves().for_each(|mv: B::Move| {
+    board.available_moves().unwrap().for_each(|mv: B::Move| {
         let index = mapper.move_to_index(board, mv);
 
         //check that roundtrip works out
@@ -72,30 +72,12 @@ pub fn test_move_to_index<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     assert!(!err, "Multiple moves mapped to the same index");
 }
 
+/// (implicitly) test that `index_to_move` and `is_available_move` don't panic for any valid index.
 pub fn test_index_to_move<B: Board, M: PolicyMapper<B>>(mapper: M, board: &B) {
     for index in 0..mapper.policy_len() {
-        let mv = std::panic::catch_unwind(|| mapper.index_to_move(board, index));
-
-        match mv {
-            Err(e) => {
-                eprintln!("Panic while mapping index {} to move on board\n  {}", index, board);
-                resume_unwind(e);
-            }
-            Ok(mv) => {
-                if let Some(mv) = mv {
-                    let available = std::panic::catch_unwind(|| board.is_available_move(mv));
-                    match available {
-                        Ok(_) => {}
-                        Err(e) => {
-                            eprintln!(
-                                "Panic while using move {} from index {} to move on board\n  {}",
-                                mv, index, board
-                            );
-                            resume_unwind(e);
-                        }
-                    }
-                }
-            }
+        let mv = mapper.index_to_move(board, index);
+        if let Some(mv) = mv {
+            let _ = board.is_available_move(mv).unwrap();
         }
     }
 }

@@ -181,8 +181,10 @@ fn selfplay_start_dispatch_game(
     }
 }
 
+use std::hash::Hash;
+
 fn selfplay_start_dispatch_spec_alt<
-    B: AltBoard,
+    B: AltBoard + Hash,
     M: BoardMapper<B> + 'static,
     F: Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
 >(
@@ -220,7 +222,7 @@ fn selfplay_start_dispatch_spec_alt<
 }
 
 fn selfplay_start_dispatch_spec_non_alt<
-    B: Board,
+    B: Board + Hash,
     M: BoardMapper<B> + 'static,
     F: Fn(&mut StdRng) -> B + Send + Sync + Clone + 'static,
 >(

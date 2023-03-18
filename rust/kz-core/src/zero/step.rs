@@ -82,11 +82,11 @@ pub fn zero_step_gather<B: Board>(
         let children = match tree[curr_node].children {
             None => {
                 // initialize the children with uniform policy
-                let mv_count = curr_board.available_moves().count();
+                let mv_count = curr_board.available_moves().unwrap().count();
                 let p = 1.0 / mv_count as f32;
 
                 let start = tree.len();
-                curr_board.available_moves().for_each(|mv| {
+                curr_board.available_moves().unwrap().for_each(|mv| {
                     tree.nodes.push(Node::new(Some(curr_node), Some(mv), p));
                 });
                 let end = tree.len();
@@ -129,7 +129,7 @@ pub fn zero_step_gather<B: Board>(
         let selected = selected.expect("Board is not done, this node should have a child");
 
         curr_node = selected;
-        curr_board.play(tree[curr_node].last_move.unwrap());
+        curr_board.play(tree[curr_node].last_move.unwrap()).unwrap();
     }
 }
 

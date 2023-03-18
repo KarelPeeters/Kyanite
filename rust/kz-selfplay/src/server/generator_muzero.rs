@@ -215,7 +215,7 @@ async fn generate_simulation<B: AltBoard, M: BoardMapper<B>>(
         positions.push(position);
 
         // actually play the move
-        curr_board.play(picked_move);
+        curr_board.play(picked_move).unwrap();
 
         // send update
         update_sender
@@ -256,12 +256,12 @@ fn add_dirichlet_noise<B: AltBoard, M: BoardMapper<B>>(
     let policy = policy_logits;
     softmax_in_place(policy);
 
-    let mv_count = board.available_moves().count();
+    let mv_count = board.available_moves().unwrap().count();
     if mv_count > 1 {
         let distr = Dirichlet::new_with_size(alpha, mv_count).unwrap();
         let noise = rng.sample(distr);
 
-        board.available_moves().enumerate().for_each(|(i, mv)| {
+        board.available_moves().unwrap().enumerate().for_each(|(i, mv)| {
             let mi = mapper.move_to_index(board, mv);
             policy[mi] = policy[mi] * (1.0 - eps) + noise[i] * eps;
         });
@@ -279,6 +279,7 @@ fn extract_zero_eval<B: AltBoard, M: BoardMapper<B>>(
 
     let mut policy: Vec<f32> = board
         .available_moves()
+        .unwrap()
         .map(|mv| {
             let index = mapper.move_to_index(board, mv);
             eval.policy_logits[index]

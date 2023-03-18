@@ -249,7 +249,7 @@ fn board_from_state(game: &GameFull) -> ChessBoard {
     if !game.state.moves.is_empty() {
         for mv in game.state.moves.split(' ') {
             let mv = board.parse_move(mv).unwrap();
-            board.play(mv)
+            board.play(mv).unwrap();
         }
     }
 

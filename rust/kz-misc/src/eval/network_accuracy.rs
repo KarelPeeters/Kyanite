@@ -36,7 +36,10 @@ pub fn network_accuracy<B: Board>(network: &mut impl Network<B>, challenges: &[C
     } in challenges
     {
         println!("{}", board);
-        println!("Number of available moves: {}", board.available_moves().count());
+        println!(
+            "Number of available moves: {}",
+            board.available_moves().unwrap().count()
+        );
 
         let eval = network.evaluate(board);
 

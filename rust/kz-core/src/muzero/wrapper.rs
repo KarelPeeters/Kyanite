@@ -1,7 +1,7 @@
 use board_game::ai::Bot;
 use std::fmt::{Debug, Formatter};
 
-use board_game::board::AltBoard;
+use board_game::board::{AltBoard, BoardDone};
 use cuda_nn_eval::quant::QuantizedStorage;
 
 use crate::mapping::BoardMapper;
@@ -154,7 +154,9 @@ impl<B: AltBoard, M: BoardMapper<B>> MuZeroBot<B, M> {
 }
 
 impl<B: AltBoard, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
-    fn select_move(&mut self, board: &B) -> B::Move {
+    fn select_move(&mut self, board: &B) -> Result<B::Move, BoardDone> {
+        board.check_done()?;
+
         let tree = self
             .settings
             .build_tree(board, u32::MAX, &mut self.root_exec, &mut self.expand_exec, |tree| {
@@ -163,6 +165,6 @@ impl<B: AltBoard, M: BoardMapper<B>> Bot<B> for MuZeroBot<B, M> {
         let index = tree.best_move_index().unwrap();
         // the root move index is always valid
         let mv = self.mapper.index_to_move(board, index).unwrap();
-        mv
+        Ok(mv)
     }
 }

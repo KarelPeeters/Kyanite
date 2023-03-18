@@ -115,7 +115,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
 
             let net_eval = ZeroEvaluation {
                 values: uniform_values(),
-                policy: Cow::Owned(uniform_policy(board.available_moves().count())),
+                policy: Cow::Owned(uniform_policy(board.available_moves().unwrap().count())),
             };
 
             let solution = solve_all_moves(&board, solver_depth);
@@ -123,6 +123,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
                 let outcome = solution.value.to_outcome_wdl().unwrap_or(OutcomeWDL::Draw);
                 let policy = board
                     .available_moves()
+                    .unwrap()
                     .map(|mv: B::Move| moves.contains(&mv) as u8 as f32 / moves.len() as f32)
                     .collect();
 
@@ -135,7 +136,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
 
                 (zero_eval, mv)
             } else {
-                (net_eval.clone(), board.random_available_move(&mut rng))
+                (net_eval.clone(), board.random_available_move(&mut rng).unwrap())
             };
 
             let position = Position {
@@ -148,7 +149,7 @@ fn main_generator<B: Board>(args: &Args, start_pos: impl Fn() -> B, sender: Send
             };
             positions.push(position);
 
-            board.play(mv);
+            board.play(mv).unwrap();
         }
 
         let sim = Simulation {

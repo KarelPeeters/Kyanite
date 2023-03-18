@@ -40,10 +40,10 @@ fn visit<B: Board, M: BoardMapper<B>>(
 
     let eval = ZeroEvaluation {
         values: uniform_values(),
-        policy: Cow::Owned(uniform_policy(board.available_moves().count())),
+        policy: Cow::Owned(uniform_policy(board.available_moves().unwrap().count())),
     };
 
-    board.available_moves().for_each(|mv: B::Move| {
+    board.available_moves().unwrap().for_each(|mv: B::Move| {
         let position = Position {
             board: board.clone(),
             is_full_search: true,
@@ -54,7 +54,7 @@ fn visit<B: Board, M: BoardMapper<B>>(
         };
 
         positions.push(position);
-        let next = board.clone_and_play(mv);
+        let next = board.clone_and_play(mv).unwrap();
         visit(&next, positions, output).unwrap();
         positions.pop().unwrap();
     });

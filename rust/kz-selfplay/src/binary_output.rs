@@ -5,7 +5,7 @@ use std::io::{BufWriter, Seek, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use board_game::board::{Board, Outcome};
+use board_game::board::{Board, BoardDone, Outcome};
 use board_game::pov::NonPov;
 use board_game::wdl::WDL;
 use bytemuck::cast_slice;
@@ -297,16 +297,21 @@ impl<B: Board, M: BoardMapper<B>> BinaryOutput<B, M> {
 }
 
 fn collect_policy_indices<B: Board, M: BoardMapper<B>>(board: &B, mapper: M) -> (usize, Vec<u32>) {
-    let mut policy_indices = vec![];
-    let mut available_mv_count = 0;
+    match board.available_moves() {
+        Ok(moves) => {
+            let mut policy_indices = vec![];
+            let mut available_mv_count = 0;
 
-    board.available_moves().for_each(|mv: B::Move| {
-        available_mv_count += 1;
-        let index = mapper.move_to_index(board, mv);
-        policy_indices.push(index as u32);
-    });
+            moves.for_each(|mv: B::Move| {
+                available_mv_count += 1;
+                let index = mapper.move_to_index(board, mv);
+                policy_indices.push(index as u32);
+            });
 
-    (available_mv_count, policy_indices)
+            (available_mv_count, policy_indices)
+        }
+        Err(BoardDone) => (0, vec![]),
+    }
 }
 
 fn assert_normalized_or_nan(x: f32) {

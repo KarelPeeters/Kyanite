@@ -228,7 +228,7 @@ impl<B: Board> State<B> {
 
         let board = if let Some(parent) = self.tree[node].parent {
             let mut board = self.node_board(parent);
-            board.play(self.tree[node].last_move.unwrap());
+            board.play(self.tree[node].last_move.unwrap()).unwrap();
             board
         } else {
             self.tree.root_board().clone()

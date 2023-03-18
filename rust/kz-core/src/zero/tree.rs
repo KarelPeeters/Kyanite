@@ -157,7 +157,7 @@ impl<B: Board> Tree<B> {
             if let Some(outcome) = new_root_board.outcome() {
                 return Err(KeepMoveError::Outcome { depth, outcome });
             }
-            new_root_board.play(mv);
+            new_root_board.play(mv).unwrap();
 
             old_new_root = self[old_new_root]
                 .children
@@ -367,7 +367,7 @@ impl<B: Board> Display for TreeDisplay<'_, B> {
                     tree: self.tree,
 
                     node: child,
-                    curr_board: curr_board.clone_and_play(tree[child].last_move.unwrap()),
+                    curr_board: curr_board.clone_and_play(tree[child].last_move.unwrap()).unwrap(),
                     parent_player: curr_player,
                     curr_depth: self.curr_depth + 1,
 

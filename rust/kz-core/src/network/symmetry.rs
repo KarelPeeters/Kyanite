@@ -68,16 +68,17 @@ fn unmap_eval<B: Board>(
     mapped_board: B,
     mapped_eval: ZeroEvaluation,
 ) -> ZeroEvaluation<'static> {
-    let mapped_moves: Vec<B::Move> = mapped_board.available_moves().collect();
+    let mapped_moves: Vec<B::Move> = mapped_board.available_moves().map_or(vec![], |moves| moves.collect());
 
-    let policy = board
-        .available_moves()
-        .map(|mv| {
-            let mapped_mv = board.map_move(sym, mv);
-            let index = mapped_moves.iter().index_of(&mapped_mv).unwrap();
-            mapped_eval.policy[index]
-        })
-        .collect();
+    let policy = board.available_moves().map_or(vec![], |moves| {
+        moves
+            .map(|mv| {
+                let mapped_mv = board.map_move(sym, mv);
+                let index = mapped_moves.iter().index_of(&mapped_mv).unwrap();
+                mapped_eval.policy[index]
+            })
+            .collect()
+    });
 
     ZeroEvaluation {
         values: mapped_eval.values,

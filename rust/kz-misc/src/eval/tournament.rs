@@ -239,9 +239,9 @@ async fn run_round<B: Board>(
             break outcome;
         }
 
-        let mv_i = bot_i.select_move(&board).await;
+        let mv_i = bot_i.select_move(&board).await.unwrap();
         moves.push(mv_i);
-        board.play(mv_i);
+        board.play(mv_i).unwrap();
 
         sender
             .send_async(Message::FinishedMove { id, mv: moves.len() })
@@ -252,9 +252,9 @@ async fn run_round<B: Board>(
             break outcome;
         }
 
-        let mv_j = bot_j.select_move(&board).await;
+        let mv_j = bot_j.select_move(&board).await.unwrap();
         moves.push(mv_j);
-        board.play(mv_j);
+        board.play(mv_j).unwrap();
 
         sender
             .send_async(Message::FinishedMove { id, mv: moves.len() })

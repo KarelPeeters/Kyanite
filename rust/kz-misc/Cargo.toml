@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-board-game = { version = "0.6.0", path = "../../../board-game-rs" }
+board-game = { version = "0.7.0", path = "../../../board-game-rs" }
 pgn-reader = { path = "../pgn-reader" }
 nn-graph = { path = "../nn-graph" }
 cuda-nn-eval = { path = "../cuda-nn-eval" }

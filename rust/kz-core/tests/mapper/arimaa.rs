@@ -23,7 +23,7 @@ fn typical_placement() {
 #[test]
 fn can_pass() {
     let mut board = ArimaaBoard::from_str(BASIC_SETUP).unwrap();
-    board.play(board.available_moves().next().unwrap());
+    board.play(board.available_moves().unwrap().next().unwrap()).unwrap();
 
     test_valid_mapping(ArimaaSplitMapper, &board);
 }

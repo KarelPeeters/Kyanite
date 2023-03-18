@@ -42,19 +42,20 @@ fn main() {
 
         // set up the board
         let mut board = ChessBoard::new_without_history_fen(puzzle.fen, Rules::default());
-        board.play(board.parse_move(moves.next().unwrap()).unwrap());
+        board.play(board.parse_move(moves.next().unwrap()).unwrap()).unwrap();
 
         let player = board.next_player();
         let won_outcome = Some(Outcome::WonBy(player));
 
         for correct_mv in moves {
             let correct_mv = board.parse_move(correct_mv).unwrap();
-            let correct_next_board = board.clone_and_play(correct_mv);
+            let correct_next_board = board.clone_and_play(correct_mv).unwrap();
             let is_mate = correct_next_board.outcome() == won_outcome;
 
             if board.next_player() == player {
                 let correct_moves: Vec<_> = board
                     .available_moves()
+                    .unwrap()
                     .filter(|&mv| is_correct_move(&board, is_mate, correct_mv, mv))
                     .collect();
                 println!(
@@ -152,5 +153,5 @@ fn main() {
 
 fn is_correct_move(board: &ChessBoard, is_mate: bool, correct_mv: ChessMove, mv: ChessMove) -> bool {
     let mate_outcome = Outcome::WonBy(board.next_player());
-    mv == correct_mv || (is_mate && board.clone_and_play(mv).outcome() == Some(mate_outcome))
+    mv == correct_mv || (is_mate && board.clone_and_play(mv).unwrap().outcome() == Some(mate_outcome))
 }
