@@ -1,7 +1,30 @@
 use std::fmt::Write as _;
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::process::Command;
 
 use crate::graph::{Graph, Operation};
+
+pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool) -> std::io::Result<()> {
+    let path = path.as_ref();
+
+    let path_gv = path.with_extension("gv");
+    let path_svg = path.with_extension("svg");
+
+    let output = BufWriter::new(File::create(&path_gv)?);
+    graph_to_dot(output, graph, hide_const)?;
+
+    let result = Command::new("dot")
+        .arg("-Tsvg")
+        .arg(path_gv)
+        .arg("-o")
+        .arg(path_svg)
+        .status()?;
+    assert!(result.success(), "Running 'dot' failed with status {:?}", result);
+
+    Ok(())
+}
 
 pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::io::Result<()> {
     writeln!(f, "digraph {{")?;
@@ -14,8 +37,8 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
 
         let info = &graph[value];
 
-        let (color, op, mut attrs) = match info.operation {
-            Operation::Input { index } => ("gray", "Input", vec![("index", format!("index = {}", index))]),
+        let (color, op, attrs_operation) = match info.operation {
+            Operation::Input { index } => ("gray", "Input", vec![("index", format!("{}", index))]),
             Operation::Constant { ref data } => {
                 let mut attrs = vec![];
                 if data.len() == 1 {
@@ -71,10 +94,18 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
             ),
         };
 
-        attrs.insert(0, ("shape", format!("{}", info.shape)));
+        let mut attrs_general = vec![];
+        attrs_general.push(("shape", format!("{}", info.shape)));
         if let Some(output_index) = graph.outputs().iter().position(|&v| v == value) {
-            attrs.insert(1, ("output", format!("{}", output_index)));
+            attrs_general.push(("output", format!("{}", output_index)));
         }
+        let debug_id = &graph[value].debug_id;
+        if !debug_id.is_empty() {
+            attrs_general.push(("debug_id", format!("{:?}", debug_id)));
+        }
+
+        let mut attrs = attrs_general;
+        attrs.extend(attrs_operation.into_iter());
 
         let mut table = String::new();
         writeln!(&mut table, "<TABLE BORDER=\"0\">").unwrap();
