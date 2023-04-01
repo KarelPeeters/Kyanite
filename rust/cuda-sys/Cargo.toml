@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [build-dependencies]
-bindgen = "0.59.2"
+bindgen.workspace = true
 
 [dependencies]
-bytemuck = "1.9.1"
-itertools = "0.10.3"
+bytemuck.workspace = true
+itertools.workspace = true

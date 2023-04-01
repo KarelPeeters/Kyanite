@@ -4,18 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-licorice = { path = "../licorice" }
-board-game = { version = "0.7.0", path = "../../../board-game-rs" }
+board-game.workspace = true
+cuda-nn-eval.workspace = true
+kz-core.workspace = true
+kz-selfplay.workspace = true
+nn-graph.workspace = true
 
-kz-selfplay = { path = "../kz-selfplay" }
-kz-core = { path = "../kz-core" }
-kz-util = { path = "../kz-util" }
-nn-graph = { path = "../nn-graph" }
-cuda-nn-eval = { path = "../cuda-nn-eval" }
-
-tokio-stream = "0.1.8"
-futures-core = "0.3.21"
-itertools = "0.10.3"
-tokio = { version = "1.17.0", features = ["macros"] }
-
-rand = "0.8.5"
+itertools.workspace = true
+licorice.workspace = true
+rand.workspace = true
+tokio-stream.workspace = true
+tokio.workspace = true

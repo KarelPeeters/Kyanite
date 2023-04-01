@@ -26,3 +26,76 @@ opt-level = 3
 opt-level = 3
 [profile.test.build-override]
 opt-level = 3
+
+
+# TODO try turning off default features
+# TODO require features per-subcrate instead of here for all of them
+# TODO use either flume or crossbeam, not both
+# TODO get rid of criterion
+# TODO replace chess with shakmaty everywhere
+# TODO switch from serde to nanoserde or similar, we just want basic json deserialization
+
+[workspace.dependencies]
+# path dependencies
+board-game = { version = "0.7.0", path = "../../board-game-rs" }
+cuda-nn-eval = { path = "cuda-nn-eval" }
+cuda-sys = { path = "cuda-sys" }
+kz-core = { path = "kz-core" }
+kz-selfplay = { path = "kz-selfplay" }
+kz-util = { path = "kz-util" }
+licorice = { path = "licorice" }
+nn-graph = { path = "nn-graph" }
+pgn-reader = { path = "pgn-reader" }
+
+# crates.io dependencies
+anyhow = "1.0.57"
+async-trait = "0.1.53"
+bindgen = "0.59.2"
+buffered-reader = "1.1.2"
+bytemuck = "1.9.1"
+byteorder = "1.4.3"
+bytes = "1.1.0"
+bzip2 = "0.4.3"
+cc = "1.0.73"
+chrono = { version = "0.4.19" }
+clap = { version = "3.1.12", features = ["derive"] }
+criterion = "0.3.5"
+crossbeam = "0.8.1"
+crossterm = "0.23.2"
+decorum = { version = "0.3.1", default-features = false, features = ["std"] }
+flume = "0.10.12"
+futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
+futures-core = "0.3.21"
+futures-util = "0.3.21"
+image = { version = "0.24.1", default-features = false, features = ["png"] }
+indexmap = "1.8.1"
+internal-iterator = "0.2.0"
+itertools = "0.10.3"
+lazy_static = "1.4.0"
+lru = "0.7.5"
+memchr = "2.4.1"
+ndarray = "0.15.4"
+num-traits = "0.2.14"
+palette = { version = "0.6.0", default-features = false, features = ["std"] }
+prost = "0.10.1"
+prost-build = "0.10.1"
+rand = "0.8.5"
+rand_distr = "0.4.3"
+rayon = "1.5.2"
+reqwest = { version = "0.11.10" }
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.79"
+serde_with = { version = "1.13.0" }
+shakmaty = "0.21.1"
+shakmaty-syzygy = "0.19.0"
+structopt = "0.3.26"
+superluminal-perf = "0.1.1"
+tabled = "0.7.0"
+tar = "0.4.38"
+thiserror = "1.0.30"
+tokio = { version = "1.17.0", features = ["macros"] }
+tokio-stream = "0.1.8"
+tokio-util = { version = "0.7.1" }
+tui = "0.18.0"
+unwrap-match = "0.1.0"
+vampirc-uci = { version = "0.11.1", features = ["chess"] }

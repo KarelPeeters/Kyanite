@@ -4,32 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-board-game = { version = "0.7.0", path = "../../../board-game-rs" }
-pgn-reader = { path = "../pgn-reader" }
-cuda-nn-eval = { path = "../cuda-nn-eval" }
-cuda-sys = { path = "../cuda-sys" }
-nn-graph = { path = "../nn-graph" }
+board-game.workspace = true
+cuda-nn-eval.workspace = true
+cuda-sys.workspace = true
+kz-core.workspace = true
+kz-util.workspace = true
+nn-graph.workspace = true
 
-kz-core = { path = "../kz-core" }
-kz-util = { path = "../kz-util" }
-
-rand = "0.8.5"
-rand_distr = "0.4.3"
-
-internal-iterator = "0.2.0"
-itertools = "0.10.3"
-
-futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
-crossbeam = "0.8.1"
-flume = "0.10.12"
-
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
-bytemuck = "1.9.1"
-tar = "0.4.38"
-bzip2 = "0.4.3"
-decorum = { version = "0.3.1", default-features = false, features = ["std"] }
-lru = "0.7.5"
-clap = { version = "3.1.12", features = ["derive"] }
-
-superluminal-perf = "0.1.1"
+bytemuck.workspace = true
+clap.workspace = true
+crossbeam.workspace = true
+decorum.workspace = true
+flume.workspace = true
+futures.workspace = true
+internal-iterator.workspace = true
+itertools.workspace = true
+lru.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+superluminal-perf.workspace = true

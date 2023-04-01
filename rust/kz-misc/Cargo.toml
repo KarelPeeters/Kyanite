@@ -4,39 +4,32 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-board-game = { version = "0.7.0", path = "../../../board-game-rs" }
-pgn-reader = { path = "../pgn-reader" }
-nn-graph = { path = "../nn-graph" }
-cuda-nn-eval = { path = "../cuda-nn-eval" }
-cuda-sys = { path = "../cuda-sys" }
+board-game.workspace = true
+cuda-nn-eval.workspace = true
+cuda-sys.workspace = true
+kz-core.workspace = true
+kz-selfplay.workspace = true
+kz-util.workspace = true
+nn-graph.workspace = true
+pgn-reader.workspace = true
 
-kz-core = { path = "../kz-core" }
-kz-util = { path = "../kz-util" }
-kz-selfplay = { path = "../kz-selfplay" }
-
-ndarray = "0.15.4"
-crossbeam = "0.8.1"
-flume = "0.10.12"
-decorum = { version = "0.3.1", default-features = false, features = ["std"] }
-rand = "0.8.5"
-internal-iterator = "0.2.0"
-itertools = "0.10.3"
-clap = { version = "3.1.12", features = ["derive"] }
-crossterm = "0.23.2"
-tui = "0.18.0"
-vampirc-uci = { version = "0.11.1", features = ["chess"] }
-rayon = "1.5.2"
-shakmaty = "0.21.1"
-tar = "0.4.38"
-bzip2 = "0.4.3"
-image = { version = "0.24.1", default-features = false, features = ["png"] }
-palette = { version = "0.6.0", default-features = false, features = ["std"] }
-
-futures = { version = "0.3.21", default-features = false, features = ["executor", "thread-pool"] }
-async-trait = "0.1.53"
-
-tabled = "0.7.0"
-bytemuck = "1.9.1"
-
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
+bzip2.workspace = true
+clap.workspace = true
+crossbeam.workspace = true
+crossterm.workspace = true
+decorum.workspace = true
+flume.workspace = true
+futures.workspace = true
+image.workspace = true
+internal-iterator.workspace = true
+itertools.workspace = true
+ndarray.workspace = true
+palette.workspace = true
+rand.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tabled.workspace = true
+tar.workspace = true
+tui.workspace = true
+vampirc-uci.workspace = true

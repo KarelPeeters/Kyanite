@@ -4,20 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [build-dependencies]
-prost-build = "0.10.1"
+prost-build.workspace = true
 
 [dependencies]
-prost = "0.10.1"
-
-byteorder = "1.4.3"
-itertools = "0.10.3"
-unwrap-match = "0.1.0"
-num-traits = "0.2.14"
-decorum = { version = "0.3.1", default-features = false, features = ["std"] }
-
-ndarray = "0.15.4"
-indexmap = "1.8.1"
-rand = "0.8.5"
-
-image = { version = "0.24.1", default-features = false }
-palette = { version = "0.6.0", default-features = false, features = ["std"] }
+byteorder.workspace = true
+decorum.workspace = true
+image.workspace = true
+indexmap.workspace = true
+itertools.workspace = true
+ndarray.workspace = true
+num-traits.workspace = true
+palette.workspace = true
+prost.workspace = true
+rand.workspace = true
+unwrap-match.workspace = true
