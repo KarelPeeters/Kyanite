@@ -89,8 +89,9 @@ async fn main_async(settings: ZeroSettings, eval_client: &EvalClient, cache: &mu
 }
 
 async fn main_inner(settings: ZeroSettings, eval_client: &EvalClient, cache: &mut Cache) -> LichessResult<()> {
-    println!("Connecting to lichess");
+    println!("Reading token");
     let token = std::fs::read_to_string("ignored/lichess_token.txt")?;
+    println!("Connecting to lichess");
     let lichess = Lichess::new(token);
 
     let mut info_game_ids: HashSet<String> = Default::default();
