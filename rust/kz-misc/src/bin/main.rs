@@ -416,6 +416,8 @@ impl<B: Board> State<B> {
             result.push(format!("{} +{}", node.complete_visits, node.virtual_visits).into());
         }
 
+        result.push(format!("{:?}", self.tree.depth_range(node_index)).into());
+
         {
             let zero = node.values();
             let net = node.net_values.unwrap_or(ZeroValuesAbs::nan());
@@ -473,6 +475,7 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("Move", "", false, Color::Gray),
     ("T", "", false, Color::Gray),
     ("Visits", "", false, Color::Gray),
+    ("Depth", "", false, Color::Gray),
     ("Zero", "A", true, Color::Green),
     ("Zero", "D", true, Color::DarkGray),
     ("Zero", "B", true, Color::Red),
