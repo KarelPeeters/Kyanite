@@ -247,11 +247,12 @@ where
     if !history.is_empty() {
         for record in history.iter() {
             struggle.push((
-                NaiveDate::from_ymd(
+                NaiveDate::from_ymd_opt(
                     record[0].try_into().map_err(de::Error::custom)?,
                     (record[1] + 1).into(), // At lichess months start at 0
                     record[2].into(),
-                ),
+                )
+                .unwrap(),
                 record[3],
             ))
         }

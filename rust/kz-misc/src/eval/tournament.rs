@@ -331,15 +331,18 @@ fn display_build_table(
 ) -> Table {
     let mut table = Builder::default();
 
-    table = display_add_rows(table, "ALL", bot_names, grid_wdl);
+    display_add_rows(&mut table, "ALL", bot_names, grid_wdl);
     if let Some(grid_wdl_decisive) = grid_wdl_decisive {
-        table = display_add_rows(table, "DECISIVE", bot_names, grid_wdl_decisive);
+        display_add_rows(&mut table, "DECISIVE", bot_names, grid_wdl_decisive);
     }
 
-    table.build().with(Margin::new(4, 0, 0, 0)).with(Style::modern())
+    let mut table = table.build();
+    table.with(Margin::new(4, 0, 0, 0));
+    table.with(Style::modern());
+    table
 }
 
-fn display_add_rows(mut table: Builder, name: &str, bot_names: &[String], grid_wdl: &[Vec<WDL<usize>>]) -> Builder {
+fn display_add_rows(table: &mut Builder, name: &str, bot_names: &[String], grid_wdl: &[Vec<WDL<usize>>]) {
     let bot_count = grid_wdl.len();
 
     let total_wdl_per_bot = grid_wdl
@@ -358,7 +361,7 @@ fn display_add_rows(mut table: Builder, name: &str, bot_names: &[String], grid_w
 
     let mut header = vec![name.to_owned(), total_wdl_str, "total".to_owned()];
     header.extend_from_slice(bot_names);
-    table = table.add_record(header);
+    table.add_record(header);
 
     for i in 0..bot_count {
         let bot_wdl = total_wdl_per_bot[i];
@@ -370,10 +373,8 @@ fn display_add_rows(mut table: Builder, name: &str, bot_names: &[String], grid_w
         for j in 0..bot_count {
             row.push(display_format_wdl_elo(grid_wdl[i][j]));
         }
-        table = table.add_record(row);
+        table.add_record(row);
     }
-
-    table
 }
 
 fn display_format_wdl_elo(wdl: WDL<usize>) -> String {

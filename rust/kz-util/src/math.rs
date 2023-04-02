@@ -1,6 +1,5 @@
 use std::fmt::Display;
-
-use itertools::zip;
+use std::iter::zip;
 
 /// Calculates `D_KDL(P || Q)`, read as _the divergence of P from Q_,
 /// a measure of how different two probability distributions are.

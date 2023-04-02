@@ -8,7 +8,6 @@ use board_game::games::chess::{ChessBoard, Rules};
 use board_game::pov::NonPov;
 use board_game::wdl::WDL;
 use flume::{Receiver, RecvError, Sender, TryRecvError};
-use internal_iterator::InternalIterator;
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
 use vampirc_uci::UciMessage;

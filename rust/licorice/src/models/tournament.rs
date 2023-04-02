@@ -121,7 +121,7 @@ where
         where
             E: serde::de::Error,
         {
-            Ok(Some(Utc.timestamp_millis(val as i64)))
+            Ok(Some(Utc.timestamp_millis_opt(val as i64).unwrap()))
         }
         fn visit_str<E>(self, val: &str) -> Result<Self::Value, E>
         where

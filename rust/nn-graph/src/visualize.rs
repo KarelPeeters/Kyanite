@@ -1,8 +1,9 @@
 use std::cmp::max;
 use std::fmt::{Debug, Formatter};
+use std::iter::zip;
 
 use image::{ImageBuffer, Rgb};
-use itertools::{zip, Itertools};
+use itertools::Itertools;
 use ndarray::{ArcArray, Axis, Ix4};
 use palette::{LinSrgb, Srgb};
 

@@ -1,7 +1,8 @@
 use std::cmp::Reverse;
 use std::fmt::{Debug, Formatter};
+use std::iter::zip;
 
-use itertools::{zip, zip_eq, Itertools};
+use itertools::{zip_eq, Itertools};
 
 use cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
 use nn_graph::graph::SliceRange;

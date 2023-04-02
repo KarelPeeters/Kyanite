@@ -1,5 +1,3 @@
-use std::panic::resume_unwind;
-
 use board_game::board::Board;
 use internal_iterator::InternalIterator;
 

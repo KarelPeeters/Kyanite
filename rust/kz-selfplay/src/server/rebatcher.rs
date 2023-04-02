@@ -1,4 +1,6 @@
-use itertools::{Itertools, zip};
+use std::iter::zip;
+
+use itertools::Itertools;
 
 use kz_core::network::job_channel::{Job, job_pair, JobClient, JobServer};
 
