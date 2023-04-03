@@ -875,6 +875,9 @@ fn layernorm_fused() {
         graph
     };
 
+    println!("Input graph:");
+    println!("{}", graph);
+
     {
         println!("Checking for layernorm fusion");
         // check whether we correctly fuse everything into a single layernorm operation

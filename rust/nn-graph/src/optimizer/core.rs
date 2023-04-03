@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
@@ -105,7 +106,8 @@ impl<'a> Optimizer<'a> {
     }
 
     fn try_fuse_layernorm(&mut self, value: Value) -> VisitResult<Option<Value>> {
-        let mut fused_values = HashMap::<Value, usize>::new();
+        // map from intermediate values to the amount of times they are used in the matched subgraph
+        let mut fused_values = IndexMap::<Value, usize>::new();
 
         let mut op = |v| {
             *fused_values.entry(v).or_insert(0) += 1;
@@ -117,7 +119,7 @@ impl<'a> Optimizer<'a> {
             left: zeroed0,
             right: std_broadcast,
             op: BinaryOp::Div,
-        } = op(value)
+        } = &self.old_graph[value].operation
         {
             if let &Operation::Binary {
                 left: input0,
@@ -158,14 +160,16 @@ impl<'a> Optimizer<'a> {
                                                     op: BinaryOp::Pow,
                                                 } = op(pow)
                                                 {
+                                                    // count second usage of zeroed
+                                                    op(zeroed1);
+
                                                     if input0 != input1 || zeroed0 != zeroed1 || axes0 != axes1 {
                                                         return Ok(None);
                                                     }
 
                                                     // check that the intermediate values are not used elsewhere
                                                     if fused_values.iter().any(|(&fused_value, &count)| {
-                                                        fused_value != value
-                                                            && !self.old_graph.is_hidden_with_uses(fused_value, count)
+                                                        !self.old_graph.is_hidden_with_uses(fused_value, count)
                                                     }) {
                                                         return Ok(None);
                                                     }
