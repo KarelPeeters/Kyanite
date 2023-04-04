@@ -326,12 +326,25 @@ impl<B: Board> State<B> {
                         .map_or(self.selected_node, |n| n.node);
                 }
                 KeyCode::Right => {
-                    self.expanded_nodes.insert(self.selected_node);
+                    // try to expand the selected node
+                    let expanded = self.expanded_nodes.insert(self.selected_node);
+
+                    // if already expanded
+                    if !expanded {
+                        // expand and select first child
+                        if let Some(child) = self.tree.best_child(self.selected_node) {
+                            self.selected_node = child;
+                            self.expanded_nodes.insert(child);
+                        }
+                    }
                 }
                 KeyCode::Left => {
-                    if self.expanded_nodes.contains(&self.selected_node) {
-                        self.expanded_nodes.remove(&self.selected_node);
-                    } else {
+                    // try to collapse the selected node
+                    let collapsed = self.expanded_nodes.remove(&self.selected_node);
+
+                    // if already collapsed
+                    if !collapsed {
+                        // collapse and select parent
                         if let Some(parent) = self.tree[self.selected_node].parent {
                             self.selected_node = parent;
                             self.expanded_nodes.remove(&parent);
@@ -416,7 +429,10 @@ impl<B: Board> State<B> {
             result.push(format!("{} +{}", node.complete_visits, node.virtual_visits).into());
         }
 
-        result.push(format!("{:?}", self.tree.depth_range(node_index)).into());
+        // result.push(format!("{:?}", self.tree.depth_range(node_index)).into());
+        // TODO depth calculations are slow for deep trees
+        //   either cache, remove or speed up
+        result.push(format!("{:?}", (0, 0)).into());
 
         {
             let zero = node.values();
