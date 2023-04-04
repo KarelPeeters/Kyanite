@@ -64,7 +64,7 @@ impl<P: OffsetPtr> PtrTensor<P> {
 
         let offset = if result_shape.size() != 0 {
             // offset initial pointer to account for `start`
-            result_shape.strides()[axis] * range.start as isize
+            self.strided_shape().strides()[axis] * range.start as isize
         } else {
             0
         };

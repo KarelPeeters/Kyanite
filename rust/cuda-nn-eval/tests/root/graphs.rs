@@ -1,10 +1,10 @@
+use decorum::Total;
 use itertools::Itertools;
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 
-use decorum::Total;
 use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
-use nn_graph::ndarray::Array1;
+use nn_graph::ndarray::{Array, Array1};
 use nn_graph::optimizer::optimize_graph;
 use nn_graph::shape;
 use nn_graph::shape::{Shape, Size};
@@ -911,4 +911,125 @@ fn scalar_scalar() {
     graph.output(result);
 
     test_all(&graph, 0, &[manual_tensor((), vec![2.0])], None);
+}
+
+#[test]
+fn split_stride() {
+    let mut graph = Graph::new();
+
+    let len = 4;
+
+    let x = graph.input(shape![2 * len]);
+    // let y1 = graph.slice(x, 0, SliceRange::new(0, 2 * len, 2));
+    // graph.output(y1);
+    let y2 = graph.slice(x, 0, SliceRange::new(1, 2 * len + 1, 2));
+    graph.output(y2);
+
+    let mut rng = StdRng::seed_from_u64(0);
+    let input = rng_tensor(2 * len, &mut rng);
+    println!("{}", input);
+    test_all(&graph, 0, &[input], None);
+}
+
+#[test]
+fn complex_multiply_stride() {
+    complex_multiply(false);
+}
+
+#[test]
+fn complex_multiply_new_axis() {
+    complex_multiply(true);
+}
+
+fn complex_multiply(new_axis: bool) {
+    let batch = 8;
+    let len = 32;
+    let axis = 1;
+
+    let mut graph = Graph::new();
+    let a = graph.input(shape![batch, len * 2]);
+    let b = graph.input(shape![batch, len * 2]);
+
+    // TODO create utility function for this entire operation, "complex_multiply"
+    // TODO this is a good test for scalar fusion, especially the final concat
+    let result = {
+        let (ar, ai, br, bi);
+
+        if new_axis {
+            println!("Using new axis slice");
+
+            let a_split = graph.view(a, shape![batch, len, 2]);
+            let b_split = graph.view(b, shape![batch, len, 2]);
+
+            let ar_split = graph.slice(a_split, axis + 1, SliceRange::single(0));
+            let ai_split = graph.slice(a_split, axis + 1, SliceRange::single(1));
+            let br_split = graph.slice(b_split, axis + 1, SliceRange::single(0));
+            let bi_split = graph.slice(b_split, axis + 1, SliceRange::single(1));
+
+            ar = graph.view(ar_split, shape![batch, len]);
+            ai = graph.view(ai_split, shape![batch, len]);
+            br = graph.view(br_split, shape![batch, len]);
+            bi = graph.view(bi_split, shape![batch, len]);
+        } else {
+            println!("Using stride 2 slice");
+
+            ar = graph.slice(a, axis, SliceRange::new(0, len * 2, 2));
+            ai = graph.slice(a, axis, SliceRange::new(1, len * 2 + 1, 2));
+            br = graph.slice(b, axis, SliceRange::new(0, len * 2, 2));
+            bi = graph.slice(b, axis, SliceRange::new(1, len * 2 + 1, 2));
+        }
+
+        let ar_br = graph.binary(BinaryOp::Mul, ar, br);
+        let ai_bi = graph.binary(BinaryOp::Mul, ai, bi);
+        let ar_bi = graph.binary(BinaryOp::Mul, ar, bi);
+        let ai_br = graph.binary(BinaryOp::Mul, ai, br);
+
+        let r = graph.binary(BinaryOp::Sub, ar_br, ai_bi);
+        let i = graph.binary(BinaryOp::Add, ar_bi, ai_br);
+
+        // interleave again
+        // TODO create a graph utility function for this, "interleave"
+        let concat_values = vec![
+            graph.view(r, shape![batch, len, 1]),
+            graph.view(i, shape![batch, len, 1]),
+        ];
+
+        let result_extra = graph.concat(concat_values, axis + 1, None);
+        let result = graph.view(result_extra, shape![batch, len * 2]);
+        result
+    };
+
+    graph.output(result);
+
+    let mut rng = StdRng::seed_from_u64(0);
+    let input_a = Array::from_shape_simple_fn((batch, len * 2), || rng.gen());
+    let input_b = Array::from_shape_simple_fn((batch, len * 2), || rng.gen());
+    let output = Array::from_shape_fn((batch, len * 2), |(bi, ni_split)| {
+        let ni = ni_split / 2;
+        let get_r = ni_split % 2 == 0;
+
+        let ar = input_a[(bi, 2 * ni)];
+        let ai = input_a[(bi, 2 * ni + 1)];
+        let br = input_b[(bi, 2 * ni)];
+        let bi = input_b[(bi, 2 * ni + 1)];
+
+        if get_r {
+            ar * br - ai * bi
+        } else {
+            ar * bi + ai * br
+        }
+    });
+
+    if batch * len < 16 {
+        println!("input_a: {:?}", input_a.iter().collect_vec());
+        println!("input_b: {:?}", input_b.iter().collect_vec());
+        println!("output: {:?}", output.iter().collect_vec());
+    }
+
+    test_all(
+        &graph,
+        0,
+        &[input_a.into_shared().into_dyn(), input_b.into_shared().into_dyn()],
+        Some(&[output.into_shared().into_dyn()]),
+    );
 }

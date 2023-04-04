@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
@@ -141,11 +142,17 @@ fn try_run_cpu_operation(
         Operation::Slice { input, axis, range } => {
             let input = map(input)?;
 
+            // We have to clamp the end:
+            // * SliceRange requires that `(end - start) % step == 0`
+            // * SliceInfo instead requires that `end <= len`.
+            let axis_len = input.shape()[axis];
+            let clamped_end = min(range.end, axis_len);
+
             let info = slice_info(
                 input.ndim(),
                 axis,
                 range.start as isize,
-                Some(range.end as isize),
+                Some(clamped_end as isize),
                 range.step as isize,
             );
             input.slice(info).to_shared()
