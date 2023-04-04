@@ -170,8 +170,6 @@ fn main_impl<B: Board>(
         if let Event::Key(KeyEvent {
             code: KeyCode::Char(code),
             modifiers: KeyModifiers::NONE,
-            kind: _,
-            state: _,
         }) = event
         {
             match code {

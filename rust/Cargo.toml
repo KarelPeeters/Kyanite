@@ -35,7 +35,8 @@ opt-level = 3
 # TODO replace chess with shakmaty everywhere
 # TODO switch from serde to nanoserde or similar, we just want basic json deserialization
 # TODO there are two different syn versions in the tree
-# TODO update LRU once zero-capacity cache is allowed again
+# TODO update LRU once zero-capacity cache is allowed again https://github.com/jeromefroe/lru-rs/issues/165
+# TODO update crossterm once double events are fixed https://github.com/crossterm-rs/crossterm/issues/772
 
 [workspace.dependencies]
 # path dependencies
@@ -63,7 +64,7 @@ chrono = { version = "0.4.24" }
 clap = { version = "4.2.1", features = ["derive"] }
 criterion = "0.4.0"
 crossbeam = "0.8.2"
-crossterm = "0.26.1"
+crossterm = "0.23.2"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 flume = "0.10.14"
 futures = { version = "0.3.28", default-features = false, features = ["executor", "thread-pool"] }
