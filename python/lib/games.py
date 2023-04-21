@@ -82,6 +82,9 @@ class Game:
         m = re.match(r"chess-hist-(\d+)", name)
         if m:
             game = _chess_hist_game(int(m.group(1)))
+        m = re.match(r"go-(\d+)", name)
+        if m:
+            game = _go_game(int(m.group(1)))
 
         if game is None:
             raise KeyError(f"Game '{name}' not found")
@@ -171,6 +174,23 @@ def _chess_hist_game(length: int):
         encode_mv=chess.encode_mv,
         possible_mvs=chess.possible_mvs,
         symmetry=chess.symmetry,
+    )
+
+
+def _go_game(size: int):
+    assert size >= 0
+    return Game(
+        name=f"go-{size}",
+        board_size=size,
+        input_bool_channels=4,
+        input_scalar_channels=6,
+        input_mv_channels=None,
+        policy_shape=(1 + size * size,),
+        policy_conv_channels=1,
+        estimate_moves_per_game=2 + 2 * size * size,
+        encode_mv=None,
+        possible_mvs=list(range(1 + size * size)),
+        symmetry=UnitSymmetry(),
     )
 
 

@@ -7,7 +7,7 @@ use board_game::ai::Bot;
 use board_game::board::BoardDone;
 
 #[async_trait]
-pub trait AsyncBot<B: Board>: Debug {
+pub trait AsyncBot<B: Board> {
     async fn select_move(&mut self, board: &B) -> Result<B::Move, BoardDone>;
 }
 

@@ -138,6 +138,7 @@ pub enum Game {
     ChessHist { length: usize },
     Ataxx { size: u8 },
     ArimaaSplit,
+    Go { size: u8 },
 }
 
 impl Game {
@@ -159,6 +160,10 @@ impl Game {
             let length: usize = length.parse().ok()?;
             return Some(Game::ChessHist { length });
         }
+        if let Some(size) = str.strip_prefix("go-") {
+            let size: u8 = size.parse().ok()?;
+            return Some(Game::Go { size });
+        }
 
         None
     }
@@ -173,6 +178,7 @@ impl Display for Game {
             Game::ChessHist { length } => write!(f, "chess-hist-{}", length),
             Game::Ataxx { size } => write!(f, "ataxx-{}", size),
             Game::ArimaaSplit => write!(f, "arimaa-split"),
+            Game::Go { size } => write!(f, "go-{}", size),
         }
     }
 }

@@ -52,9 +52,19 @@ class DensePolicyHead(nn.Module):
 
 
 class ConvPolicyHead(nn.Module):
-    def __init__(self, game: Game, channels: int):
+    def __init__(self, game: Game, channels: int, extra_moves: int = 0):
         assert game.policy_conv_channels is not None, "Conv head only works for games with policy_conv_channels set"
         super().__init__()
+
+        policy_count = extra_moves + game.policy_conv_channels * game.board_size * game.board_size
+        assert game.policy_shape == (policy_count,)
+
+        self.extra_moves = extra_moves
+        self.seq_extra = nn.Sequential(
+            conv2d(channels, 1, 1),
+            nn.Flatten(),
+            nn.Linear(game.board_size * game.board_size, extra_moves)
+        )
 
         self.seq = nn.Sequential(
             conv2d(channels, channels, 1),
@@ -68,6 +78,10 @@ class ConvPolicyHead(nn.Module):
         policy = self.seq(common)
 
         if self.flatten_indices is None:
+            if self.extra_moves != 0:
+                extra = self.seq_extra(common)
+                return torch.concat([policy.flatten(1), extra], dim=1)
+
             return policy
         else:
             flat_policy = policy.flatten(1)[:, self.flatten_indices]

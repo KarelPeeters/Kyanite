@@ -178,9 +178,24 @@ fn selfplay_start_dispatch_game(
                 writer,
             )
         }
+        Game::Go { size } => {
+            // TODO vary size, komi and rules
+            assert_eq!(startup_settings.start_pos, "default");
+            selfplay_start_dispatch_spec_non_alt(
+                game,
+                devices,
+                startup_settings,
+                move |_| GoBoard::new(size, 15, Rules::cgos()),
+                GoStdMapper::new(size),
+                reader,
+                writer,
+            )
+        }
     }
 }
 
+use board_game::games::go::{GoBoard, Rules};
+use kz_core::mapping::go::GoStdMapper;
 use std::hash::Hash;
 
 fn selfplay_start_dispatch_spec_alt<

@@ -9,6 +9,7 @@ pub mod arimaa;
 pub mod ataxx;
 pub mod bit_buffer;
 pub mod chess;
+pub mod go;
 pub mod sttt;
 pub mod ttt;
 
