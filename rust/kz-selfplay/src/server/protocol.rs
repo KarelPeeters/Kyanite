@@ -37,17 +37,18 @@ pub enum Command {
     NewSettings(Settings),
     NewNetwork(String),
     WaitForNewNetwork,
+    UseDummyNetwork,
     Stop,
 }
 
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Evals {
     // evals that actually happened, does not include cached
-    pub real: usize,
+    pub real: u64,
     // evals that would have happened if the batch was full
-    pub potential: usize,
+    pub potential: u64,
     // evals that hit the cache
-    pub cached: usize,
+    pub cached: u64,
 }
 
 #[derive(Debug)]
@@ -184,7 +185,7 @@ impl Display for Game {
 }
 
 impl Evals {
-    pub fn new(real: usize, potential: usize, cached: usize) -> Self {
+    pub fn new(real: u64, potential: u64, cached: u64) -> Self {
         Self {
             real,
             potential,

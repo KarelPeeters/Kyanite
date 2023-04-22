@@ -155,7 +155,7 @@ async fn build_tree<B: Board + Hash>(
     curr_board: &MaxMovesBoard<B>,
     target_visits: u64,
     rng: &mut impl Rng,
-) -> (Tree<MaxMovesBoard<B>>, usize, ZeroEvaluation<'static>) {
+) -> (Tree<MaxMovesBoard<B>>, u64, ZeroEvaluation<'static>) {
     let mut tree = Tree::new(curr_board.clone());
     let mut cached_evals = 0;
     let mut root_net_eval = None;

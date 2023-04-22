@@ -106,12 +106,15 @@ class SelfplayClient:
     def send_new_settings(self, settings: SelfplaySettings):
         self.send({"NewSettings": settings.as_dict()})
 
+    def send_wait_for_new_network(self):
+        self.send("WaitForNewNetwork")
+
+    def send_dummy_network(self):
+        self.send("UseDummyNetwork")
+
     def send_new_network(self, path: str):
         path = os.path.abspath(path)
         self.send({"NewNetwork": path})
-
-    def send_wait_for_new_network(self):
-        self.send("WaitForNewNetwork")
 
     def send_stop(self):
         self.send("Stop")

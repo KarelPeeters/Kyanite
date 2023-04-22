@@ -193,7 +193,7 @@ class LoopSettings:
 
         if buffer.position_count < self.min_buffer_size:
             if self.dummy_network is None:
-                initial_onnx_path = self.save_tmp_onnx_network(network, "network_initial")
+                initial_onnx_path = None
             else:
                 dummy_network = torch.jit.script(self.dummy_network())
                 print("Dummy network parameters:")
@@ -206,7 +206,10 @@ class LoopSettings:
         client = SelfplayClient(self.port)
         client.send_startup_settings(startup_settings)
         client.send_new_settings(self.selfplay_settings)
-        client.send_new_network(initial_onnx_path)
+        if initial_onnx_path is None:
+            client.send_dummy_network()
+        else:
+            client.send_new_network(initial_onnx_path)
 
         for gi in itertools.count(start_gen.gi):
             if plotter is not None:

@@ -1,7 +1,6 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::sync::Arc;
 
 use board_game::board::{AltBoard, Board};
 use board_game::games::arimaa::ArimaaBoard;
@@ -196,7 +195,9 @@ fn selfplay_start_dispatch_game(
 
 use board_game::games::go::{GoBoard, Rules};
 use kz_core::mapping::go::GoStdMapper;
+use kz_core::network::dummy::NetworkOrDummy;
 use std::hash::Hash;
+use std::sync::Arc;
 
 fn selfplay_start_dispatch_spec_alt<
     B: AltBoard + Hash,
@@ -276,8 +277,9 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
 }
 
 pub type UpdateSender<B> = Sender<GeneratorUpdate<B>>;
-pub type GraphSender<G> = Sender<Option<Arc<G>>>;
-pub type GraphReceiver<G> = Receiver<Option<Arc<G>>>;
+pub type GraphMessage<G> = Option<NetworkOrDummy<Arc<G>>>;
+pub type GraphSender<G> = Sender<GraphMessage<G>>;
+pub type GraphReceiver<G> = Receiver<GraphMessage<G>>;
 
 pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
     type G: Send + Sync;

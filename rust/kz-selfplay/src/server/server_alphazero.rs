@@ -102,12 +102,15 @@ impl<B: Board + Hash, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for 
                         graph_receiver,
                         eval_server,
                         |graph| {
-                            let inner = CudaNetwork::new(mapper, &graph, gpu_batch_size, device);
-                            RandomSymmetryNetwork::new(inner, thread_rng(), eval_random_symmetries)
+                            graph.map_left(|graph| {
+                                let inner = CudaNetwork::new(mapper, &graph, gpu_batch_size, device);
+                                RandomSymmetryNetwork::new(inner, thread_rng(), eval_random_symmetries)
+                            })
                         },
                         |network, x| {
                             let y = network.evaluate_batch(&x);
-                            let msg = GeneratorUpdate::ExpandEvals(Evals::new(x.len(), gpu_batch_size, 0));
+                            let msg =
+                                GeneratorUpdate::ExpandEvals(Evals::new(x.len() as u64, gpu_batch_size as u64, 0));
                             update_sender.send(msg).unwrap();
                             y
                         },
