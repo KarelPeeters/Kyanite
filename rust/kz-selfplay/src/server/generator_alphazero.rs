@@ -5,7 +5,7 @@ use itertools::Itertools;
 use lru::LruCache;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rand_distr::Dirichlet;
+
 use std::hash::Hash;
 
 use kz_core::network::common::policy_softmax_temperature_in_place;
@@ -13,6 +13,7 @@ use kz_core::network::{EvalClient, ZeroEvaluation};
 use kz_core::zero::step::{zero_step_apply, zero_step_gather, ZeroRequest};
 use kz_core::zero::tree::Tree;
 use kz_util::sequence::zip_eq_exact;
+use kz_util::stable_dirichlet::StableDirichlet;
 
 use crate::move_selector::MoveSelector;
 use crate::server::protocol::{Evals, GeneratorUpdate, Settings};
@@ -248,11 +249,12 @@ fn add_dirichlet_noise(policy: &mut [f32], settings: &Settings, rng: &mut impl R
     let eps = settings.dirichlet_eps;
 
     if policy.len() > 1 && eps != 0.0 {
-        let distr = Dirichlet::new_with_size(alpha, policy.len()).unwrap();
+        let distr = StableDirichlet::new(alpha, policy.len()).unwrap();
         let noise = rng.sample(distr);
 
         for (p, n) in zip_eq_exact(policy, noise) {
             *p = (1.0 - eps) * (*p) + eps * n;
+            assert!(p.is_finite(),);
         }
     }
 }
