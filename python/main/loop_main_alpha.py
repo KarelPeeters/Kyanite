@@ -6,13 +6,13 @@ from torch.optim import AdamW
 from lib.data.file import DataFile
 from lib.games import Game
 from lib.loop import FixedSelfplaySettings, LoopSettings
-from lib.model.simple import DenseNetwork
+from lib.model.post_act import PredictionHeads, ResTower, ScalarHead, ConvPolicyHead
 from lib.selfplay_client import SelfplaySettings, UctWeights
 from lib.train import TrainSettings, ScalarTarget
 
 
 def main():
-    game = Game.find("ataxx")
+    game = Game.find("go-9")
 
     fixed_settings = FixedSelfplaySettings(
         game=game,
@@ -36,7 +36,7 @@ def main():
         zero_temp_move_count=30,
         q_mode="wdl+0.0",
         max_game_length=400,
-        dirichlet_alpha=0.2,
+        dirichlet_alpha=0.03,
         dirichlet_eps=0.25,
         search_policy_temperature_root=1.4,
         search_policy_temperature_child=1.0,
@@ -66,15 +66,11 @@ def main():
     )
 
     def build_network(depth: int, channels: int):
-        return DenseNetwork(game, depth, channels, res=True)
-        # return PredictionHeads(
-        #     common=ResTower(depth, game.full_input_channels, channels),
-        #     scalar_head=ScalarHead(game.board_size, channels, 8, 128),
-        #     policy_head=AttentionPolicyHead(game, channels, channels),
-        # )
-
-    # def dummy_network():
-    #     return build_network(1, 8)
+        return PredictionHeads(
+            common=ResTower(depth, game.full_input_channels, channels),
+            scalar_head=ScalarHead(game.board_size, channels, 4, 32),
+            policy_head=ConvPolicyHead(game, channels, extra_moves=1),
+        )
 
     def initial_network():
         return build_network(16, 1024)
@@ -84,7 +80,7 @@ def main():
     # TODO implement retain setting, maybe with a separate training folder even
     settings = LoopSettings(
         gui=sys.platform == "win32",
-        root_path=f"data/loop/{game.name}/startup/",
+        root_path=f"data/loop/{game.name}/first/",
         port=63105,
         wait_for_new_network=True,
 
@@ -94,8 +90,8 @@ def main():
 
         only_generate=False,
 
-        min_buffer_size=1_500_000,
-        max_buffer_size=2_000_000,
+        min_buffer_size=500_000,
+        max_buffer_size=1_000_000,
 
         train_batch_size=128,
         samples_per_position=0.3,
