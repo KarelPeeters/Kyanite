@@ -23,7 +23,7 @@ def main():
 
         cpu_threads_per_device=4,
         gpu_threads_per_device=1,
-        gpu_batch_size=1024,
+        gpu_batch_size=2048,
         gpu_batch_size_root=0,
         search_batch_size=16,
 
