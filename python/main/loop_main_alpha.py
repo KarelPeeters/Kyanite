@@ -47,7 +47,7 @@ def main():
         full_iterations=800,
         part_iterations=20,
         weights=UctWeights.default(),
-        cache_size=200,
+        cache_size=800,
         top_moves=100,
     )
 
