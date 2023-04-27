@@ -74,16 +74,21 @@ impl InputMapper<GoBoard> for GoStdMapper {
         }
 
         // scalars
-        scalars.push((board.next_player() == Player::A) as u8 as f32);
-        scalars.push((board.next_player() == Player::B) as u8 as f32);
+        let komi_pov = match next {
+            Player::A => board.komi(),
+            Player::B => -board.komi(),
+        };
         let (pass_1, pass_2) = match board.state() {
             State::Normal => (false, false),
             State::Passed => (true, false),
             State::Done(_) => (false, true),
         };
+
+        scalars.push((board.next_player() == Player::A) as u8 as f32);
+        scalars.push((board.next_player() == Player::B) as u8 as f32);
         scalars.push(pass_1 as u8 as f32);
         scalars.push(pass_2 as u8 as f32);
-        scalars.push(board.komi() / 15.0);
+        scalars.push(komi_pov / 15.0);
         scalars.push(board.rules().allow_multi_stone_suicide as u8 as f32);
     }
 }
