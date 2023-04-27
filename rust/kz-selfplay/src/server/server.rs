@@ -192,7 +192,6 @@ fn selfplay_start_dispatch_game(
     }
 }
 
-use board_game::games::go::{GoBoard, Rules};
 use kz_core::mapping::go::GoStdMapper;
 use kz_core::network::dummy::NetworkOrDummy;
 use std::hash::Hash;
