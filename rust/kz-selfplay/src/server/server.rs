@@ -26,7 +26,7 @@ use crate::server::commander::{commander_main, read_command};
 use crate::server::protocol::{Command, Game, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server_alphazero::AlphaZeroSpecialization;
 use crate::server::server_muzero::MuZeroSpecialization;
-use crate::server::start_pos::ataxx_start_pos;
+use crate::server::start_pos::{ataxx_start_pos, go_start_pos};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -178,13 +178,12 @@ fn selfplay_start_dispatch_game(
             )
         }
         Game::Go { size } => {
-            // TODO vary size, komi and rules
-            assert_eq!(startup_settings.start_pos, "default");
+            let start_pos = go_start_pos(size, &startup_settings.start_pos);
             selfplay_start_dispatch_spec_non_alt(
                 game,
                 devices,
                 startup_settings,
-                move |_| GoBoard::new(size, 15, Rules::cgos()),
+                start_pos,
                 GoStdMapper::new(size),
                 reader,
                 writer,
