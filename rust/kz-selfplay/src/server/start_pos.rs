@@ -68,7 +68,7 @@ pub fn ataxx_gen_gap_board(rng: &mut impl Rng, size: u8, gap_range: RangeInclusi
 
 pub fn go_start_pos(size: u8, start_pos: &str) -> impl Fn(&mut StdRng) -> GoBoard + Send + Sync + Clone + 'static {
     // TODO vary size too once that it supported by training, mapper and inference
-    assert_eq!(start_pos, "standard");
+    assert_eq!(start_pos, "default");
     let komi_index = WeightedIndex::new([4, 4, 2]).unwrap();
 
     move |rng| {
