@@ -8,6 +8,7 @@ use kz_util::display::display_option;
 mod arimaa;
 mod ataxx;
 mod chess;
+mod go;
 
 pub fn test_valid_mapping<B: Board, M: BoardMapper<B>>(mapper: M, board: &B) {
     if !board.is_done() {

@@ -32,8 +32,9 @@ impl GoStdMapper {
         match index {
             0 => Move::Pass,
             _ => {
-                assert!(index < self.max_area as usize);
-                Move::Place(FlatTile::new(index as u16).to_tile(self.max_size))
+                let tile_index = index - 1;
+                assert!(tile_index < self.max_area as usize);
+                Move::Place(FlatTile::new(tile_index as u16).to_tile(self.max_size))
             }
         }
     }
