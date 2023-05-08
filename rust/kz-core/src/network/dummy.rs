@@ -42,6 +42,10 @@ impl<B: Board, N: Network<B>> DummyPolicyNetwork<B, N> {
 }
 
 impl<B: Board> Network<B> for DummyNetwork {
+    fn max_batch_size(&self) -> usize {
+        usize::MAX
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         boards
             .iter()
@@ -56,6 +60,10 @@ impl<B: Board> Network<B> for DummyNetwork {
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
+    fn max_batch_size(&self) -> usize {
+        self.inner.max_batch_size()
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         self.inner
             .evaluate_batch(boards)
@@ -69,6 +77,10 @@ impl<B: Board, N: Network<B>> Network<B> for DummyValueNetwork<B, N> {
 }
 
 impl<B: Board, N: Network<B>> Network<B> for DummyPolicyNetwork<B, N> {
+    fn max_batch_size(&self) -> usize {
+        self.inner.max_batch_size()
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         self.inner
             .evaluate_batch(boards)
@@ -104,6 +116,10 @@ pub fn uniform_policy(available_moves: usize) -> Vec<f32> {
 pub struct MaxMovesNetwork<N>(pub N);
 
 impl<N: Network<B>, B: Board> Network<MaxMovesBoard<B>> for MaxMovesNetwork<N> {
+    fn max_batch_size(&self) -> usize {
+        self.0.max_batch_size()
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<MaxMovesBoard<B>>]) -> Vec<ZeroEvaluation<'static>> {
         // TODO memory allocation, look into changing network so it accepts an iterator
         //   maybe instead of that (since it generates a lot of extra code), accept already-encoded boards as an input?
@@ -116,6 +132,13 @@ impl<N: Network<B>, B: Board> Network<MaxMovesBoard<B>> for MaxMovesNetwork<N> {
 pub type NetworkOrDummy<N> = Either<N, DummyNetwork>;
 
 impl<L: Network<B>, R: Network<B>, B: Board> Network<B> for Either<L, R> {
+    fn max_batch_size(&self) -> usize {
+        match self {
+            Either::Left(left) => left.max_batch_size(),
+            Either::Right(right) => right.max_batch_size(),
+        }
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         match self {
             Either::Left(left) => left.evaluate_batch(boards),

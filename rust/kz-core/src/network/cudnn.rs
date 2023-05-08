@@ -47,6 +47,10 @@ impl<B: Board, M: BoardMapper<B>> CudaNetwork<B, M> {
 }
 
 impl<B: Board, M: BoardMapper<B>> Network<B> for CudaNetwork<B, M> {
+    fn max_batch_size(&self) -> usize {
+        self.max_batch_size
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let batch_size = boards.len();
         let max_batch_size = self.max_batch_size;

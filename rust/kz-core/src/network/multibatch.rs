@@ -36,6 +36,10 @@ impl<I: Debug> MultiBatchNetwork<I> {
 }
 
 impl<B: Board, I: Network<B>> Network<B> for MultiBatchNetwork<I> {
+    fn max_batch_size(&self) -> usize {
+        self.networks.iter().map(|(size, _)| *size).max().unwrap_or(0)
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
         let index = self.used_network_index(boards.len());
         let network = &mut self.networks[index].1;

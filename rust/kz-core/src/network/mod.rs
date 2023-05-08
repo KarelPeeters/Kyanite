@@ -40,6 +40,9 @@ impl ZeroEvaluation<'_> {
 pub type EvalClient<B> = JobClient<B, ZeroEvaluation<'static>>;
 
 pub trait Network<B: Board>: Debug {
+    fn max_batch_size(&self) -> usize;
+
+    // TODO change arg type to impl exact size iterator instead?
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>>;
 
     fn evaluate(&mut self, board: &B) -> ZeroEvaluation<'static> {
@@ -50,7 +53,11 @@ pub trait Network<B: Board>: Debug {
 }
 
 impl<B: Board, N: Network<B>> Network<B> for &mut N {
+    fn max_batch_size(&self) -> usize {
+        (**self).max_batch_size()
+    }
+
     fn evaluate_batch(&mut self, boards: &[impl Borrow<B>]) -> Vec<ZeroEvaluation<'static>> {
-        (*self).evaluate_batch(boards)
+        (**self).evaluate_batch(boards)
     }
 }
