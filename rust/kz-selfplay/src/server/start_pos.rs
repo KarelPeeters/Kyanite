@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use board_game::board::{BoardSymmetry, Player};
 use board_game::games::ataxx::AtaxxBoard;
-use board_game::games::go::{GoBoard, Rules};
+use board_game::games::go::{GoBoard, Komi, Rules};
 use board_game::symmetry::SymmetryDistribution;
 use board_game::util::bitboard::BitBoard8;
 use itertools::Itertools;
@@ -83,6 +83,6 @@ pub fn go_start_pos(size: u8, start_pos: &str) -> impl Fn(&mut StdRng) -> GoBoar
             false => Rules::tromp_taylor(),
         };
 
-        GoBoard::new(size, komi_2, rules)
+        GoBoard::new(size, Komi::new(komi_2), rules)
     }
 }

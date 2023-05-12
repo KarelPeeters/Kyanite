@@ -6,7 +6,7 @@ use board_game::board::Board;
 use board_game::games::arimaa::ArimaaBoard;
 use board_game::games::ataxx::AtaxxBoard;
 use board_game::games::chess::ChessBoard;
-use board_game::games::go::{GoBoard, Rules};
+use board_game::games::go::{GoBoard, Komi, Rules};
 use board_game::games::sttt::STTTBoard;
 use board_game::games::ttt::TTTBoard;
 use board_game::wdl::OutcomeWDL;
@@ -61,7 +61,11 @@ fn main() {
         Game::Ataxx { size } => main_impl(&args, || AtaxxBoard::diagonal(size), AtaxxStdMapper::new(size)),
         Game::ChessHist { length } => main_impl(&args, ChessBoard::default, ChessHistoryMapper::new(length)),
         Game::ArimaaSplit => main_impl(&args, ArimaaBoard::default, ArimaaSplitMapper),
-        Game::Go { size } => main_impl(&args, || GoBoard::new(size, 15, Rules::cgos()), GoStdMapper::new(size)),
+        Game::Go { size } => main_impl(
+            &args,
+            || GoBoard::new(size, Komi::new(15), Rules::cgos()),
+            GoStdMapper::new(size),
+        ),
     }
 }
 
