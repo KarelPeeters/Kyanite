@@ -103,10 +103,17 @@ impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZe
                         RunCondition::FullBatch,
                         graph_receiver,
                         expand_server,
-                        |graph| graph.expand_executor(device, gpu_batch_size_expand),
+                        |graph| {
+                            let graph = graph.expect_left("MuZero does not support dummy graphs");
+                            graph.expand_executor(device, gpu_batch_size_expand)
+                        },
                         |network, x| {
                             let y = network.eval_expand(&x);
-                            let msg = GeneratorUpdate::ExpandEvals(Evals::new(x.len(), gpu_batch_size_expand, 0));
+                            let msg = GeneratorUpdate::ExpandEvals(Evals::new(
+                                x.len() as u64,
+                                gpu_batch_size_expand as u64,
+                                0,
+                            ));
                             update_sender.send(msg).unwrap();
                             y
                         },
@@ -131,10 +138,14 @@ impl<B: AltBoard, M: BoardMapper<B> + 'static> ZeroSpecialization<B, M> for MuZe
                         RunCondition::FullBatch,
                         graph_receiver,
                         root_server,
-                        |graph| graph.root_executor(device, gpu_batch_size_root),
+                        |graph| {
+                            let graph = graph.expect_left("MuZero does not support dummy graphs");
+                            graph.root_executor(device, gpu_batch_size_root)
+                        },
                         |network, x| {
                             let y = network.eval_root(&x);
-                            let msg = GeneratorUpdate::RootEvals(Evals::new(x.len(), gpu_batch_size_root, 0));
+                            let msg =
+                                GeneratorUpdate::RootEvals(Evals::new(x.len() as u64, gpu_batch_size_root as u64, 0));
                             update_sender.send(msg).unwrap();
                             y
                         },

@@ -1,7 +1,6 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::sync::Arc;
 
 use board_game::board::{AltBoard, Board};
 use board_game::games::arimaa::ArimaaBoard;
@@ -27,7 +26,7 @@ use crate::server::commander::{commander_main, read_command};
 use crate::server::protocol::{Command, Game, GeneratorUpdate, Settings, StartupSettings};
 use crate::server::server_alphazero::AlphaZeroSpecialization;
 use crate::server::server_muzero::MuZeroSpecialization;
-use crate::server::start_pos::ataxx_start_pos;
+use crate::server::start_pos::{ataxx_start_pos, go_start_pos};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -178,10 +177,25 @@ fn selfplay_start_dispatch_game(
                 writer,
             )
         }
+        Game::Go { size } => {
+            let start_pos = go_start_pos(size, &startup_settings.start_pos);
+            selfplay_start_dispatch_spec_non_alt(
+                game,
+                devices,
+                startup_settings,
+                start_pos,
+                GoStdMapper::new(size, true),
+                reader,
+                writer,
+            )
+        }
     }
 }
 
+use kz_core::mapping::go::GoStdMapper;
+use kz_core::network::dummy::NetworkOrDummy;
 use std::hash::Hash;
+use std::sync::Arc;
 
 fn selfplay_start_dispatch_spec_alt<
     B: AltBoard + Hash,
@@ -261,8 +275,9 @@ fn wait_for_startup_settings(reader: &mut BufReader<&TcpStream>) -> StartupSetti
 }
 
 pub type UpdateSender<B> = Sender<GeneratorUpdate<B>>;
-pub type GraphSender<G> = Sender<Option<Arc<G>>>;
-pub type GraphReceiver<G> = Receiver<Option<Arc<G>>>;
+pub type GraphMessage<G> = Option<NetworkOrDummy<Arc<G>>>;
+pub type GraphSender<G> = Sender<GraphMessage<G>>;
+pub type GraphReceiver<G> = Receiver<GraphMessage<G>>;
 
 pub trait ZeroSpecialization<B: Board, M: BoardMapper<B> + 'static> {
     type G: Send + Sync;

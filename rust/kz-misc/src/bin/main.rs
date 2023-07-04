@@ -169,7 +169,7 @@ fn main_impl<B: Board>(
 
         if let Event::Key(KeyEvent {
             code: KeyCode::Char(code),
-            modifiers: KeyModifiers::NONE,
+            modifiers,
         }) = event
         {
             match code {
@@ -185,12 +185,28 @@ fn main_impl<B: Board>(
                     }
                 }
                 's' => {
-                    state.gather_step(&mut requests);
-
-                    // apply all requests
+                    // apply all outstanding requests
                     while let Some(request) = requests.pop_front() {
                         let eval = network.evaluate(&request.board);
                         zero_step_apply(&mut state.tree, request.respond(eval));
+                    }
+
+                    if modifiers.contains(KeyModifiers::ALT) {
+                        // single batch
+                        let start_visits = state.tree.root_visits();
+                        state
+                            .settings
+                            .expand_tree(&mut state.tree, network, &mut state.rng, |tree| {
+                                tree.root_visits() > start_visits
+                            });
+                    } else {
+                        // single step
+                        state.gather_step(&mut requests);
+                        if let Some(request) = requests.pop_front() {
+                            let eval = network.evaluate(&request.board);
+                            zero_step_apply(&mut state.tree, request.respond(eval));
+                        }
+                        assert!(requests.is_empty());
                     }
                 }
 

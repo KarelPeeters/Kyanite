@@ -41,6 +41,7 @@ impl ScalarKernel {
         operand_types: Vec<String>,
         operand_strides: Vec<Vec<isize>>,
     ) -> Self {
+        // TODO try to simplify shape and operand strides if they are contiguous
         assert!(operand_types.len() > 0);
         assert_eq!(operand_strides.len(), operand_types.len());
         for stride in &operand_strides {
@@ -159,7 +160,7 @@ fn build_operation(operand_types: &[String], operation: &str) -> String {
             ty = ty,
             i = i
         )
-            .unwrap();
+        .unwrap();
     }
     writeln!(f, "{}", operation).unwrap();
 

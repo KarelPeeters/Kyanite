@@ -5,8 +5,10 @@ use std::sync::Arc;
 use board_game::board::Board;
 use flume::Sender;
 
+use kz_core::network::dummy::{DummyNetwork, NetworkOrDummy};
+
 use crate::server::protocol::{Command, GeneratorUpdate, Settings};
-use crate::server::server::GraphSender;
+use crate::server::server::{GraphMessage, GraphSender};
 
 pub fn commander_main<B: Board, G>(
     mut reader: BufReader<impl Read>,
@@ -15,6 +17,12 @@ pub fn commander_main<B: Board, G>(
     update_sender: Sender<GeneratorUpdate<B>>,
     load_graph: impl Fn(&str) -> G,
 ) {
+    let send_graph_command = |command: GraphMessage<G>| {
+        for sender in &graph_senders {
+            sender.send(command.clone()).unwrap();
+        }
+    };
+
     loop {
         let cmd = read_command(&mut reader);
 
@@ -33,15 +41,15 @@ pub fn commander_main<B: Board, G>(
                 let fused = Arc::new(graph);
 
                 println!("Sending new network to executors");
-                for sender in &graph_senders {
-                    sender.send(Some(Arc::clone(&fused))).unwrap();
-                }
+                send_graph_command(Some(NetworkOrDummy::Left(Arc::clone(&fused))));
             }
             Command::WaitForNewNetwork => {
                 println!("Waiting for new network");
-                for sender in &graph_senders {
-                    sender.send(None).unwrap();
-                }
+                send_graph_command(None);
+            }
+            Command::UseDummyNetwork => {
+                println!("Switching to dummy network");
+                send_graph_command(Some(NetworkOrDummy::Right(DummyNetwork)));
             }
             Command::Stop => {
                 //TODO this is probably not enough any more, we need to stop the gpu executors, cpu threads and rebatchers as well

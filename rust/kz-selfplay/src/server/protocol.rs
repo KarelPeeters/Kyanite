@@ -37,17 +37,18 @@ pub enum Command {
     NewSettings(Settings),
     NewNetwork(String),
     WaitForNewNetwork,
+    UseDummyNetwork,
     Stop,
 }
 
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Evals {
     // evals that actually happened, does not include cached
-    pub real: usize,
+    pub real: u64,
     // evals that would have happened if the batch was full
-    pub potential: usize,
+    pub potential: u64,
     // evals that hit the cache
-    pub cached: usize,
+    pub cached: u64,
 }
 
 #[derive(Debug)]
@@ -138,6 +139,7 @@ pub enum Game {
     ChessHist { length: usize },
     Ataxx { size: u8 },
     ArimaaSplit,
+    Go { size: u8 },
 }
 
 impl Game {
@@ -159,6 +161,10 @@ impl Game {
             let length: usize = length.parse().ok()?;
             return Some(Game::ChessHist { length });
         }
+        if let Some(size) = str.strip_prefix("go-") {
+            let size: u8 = size.parse().ok()?;
+            return Some(Game::Go { size });
+        }
 
         None
     }
@@ -173,12 +179,13 @@ impl Display for Game {
             Game::ChessHist { length } => write!(f, "chess-hist-{}", length),
             Game::Ataxx { size } => write!(f, "ataxx-{}", size),
             Game::ArimaaSplit => write!(f, "arimaa-split"),
+            Game::Go { size } => write!(f, "go-{}", size),
         }
     }
 }
 
 impl Evals {
-    pub fn new(real: usize, potential: usize, cached: usize) -> Self {
+    pub fn new(real: u64, potential: u64, cached: u64) -> Self {
         Self {
             real,
             potential,

@@ -6,7 +6,6 @@ use flume::{Receiver, TryRecvError};
 use internal_iterator::InternalIterator;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rand_distr::Dirichlet;
 
 use cuda_nn_eval::quant::QuantizedStorage;
 use cuda_sys::wrapper::handle::Device;
@@ -21,6 +20,7 @@ use kz_core::network::common::{softmax_in_place, unsoftmax_in_place};
 use kz_core::network::muzero::{ExpandArgs, ExpandClient, RootArgs, RootClient};
 use kz_core::network::ZeroEvaluation;
 use kz_core::zero::step::{FpuMode, QMode};
+use kz_util::stable_dirichlet::StableDirichlet;
 
 use crate::move_selector::MoveSelector;
 use crate::server::protocol::{GeneratorUpdate, Settings};
@@ -258,12 +258,14 @@ fn add_dirichlet_noise<B: AltBoard, M: BoardMapper<B>>(
 
     let mv_count = board.available_moves().unwrap().count();
     if mv_count > 1 {
-        let distr = Dirichlet::new_with_size(alpha, mv_count).unwrap();
+        let distr = StableDirichlet::new(alpha, mv_count).unwrap();
         let noise = rng.sample(distr);
 
         board.available_moves().unwrap().enumerate().for_each(|(i, mv)| {
             let mi = mapper.move_to_index(board, mv);
-            policy[mi] = policy[mi] * (1.0 - eps) + noise[i] * eps;
+            let p = &mut policy[mi];
+            *p = *p * (1.0 - eps) + noise[i] * eps;
+            assert!(p.is_finite());
         });
     }
 
