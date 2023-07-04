@@ -40,7 +40,7 @@ opt-level = 3
 
 [workspace.dependencies]
 # path dependencies
-board-game = { version = "0.7.0", path = "../../board-game-rs" }
+board-game = { version = "0.8.0", path = "../../board-game-rs" }
 cuda-nn-eval = { path = "cuda-nn-eval" }
 cuda-sys = { path = "cuda-sys" }
 kz-core = { path = "kz-core" }
