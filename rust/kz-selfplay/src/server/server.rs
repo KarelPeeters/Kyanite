@@ -184,7 +184,7 @@ fn selfplay_start_dispatch_game(
                 devices,
                 startup_settings,
                 start_pos,
-                GoStdMapper::new(size),
+                GoStdMapper::new(size, true),
                 reader,
                 writer,
             )

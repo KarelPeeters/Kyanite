@@ -64,7 +64,7 @@ fn main() {
         Game::Go { size } => main_impl(
             &args,
             || GoBoard::new(size, Komi::new(15), Rules::cgos()),
-            GoStdMapper::new(size),
+            GoStdMapper::new(size, true),
         ),
     }
 }

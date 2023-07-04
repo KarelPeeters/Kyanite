@@ -9,15 +9,17 @@ pub struct GoStdMapper {
     max_size: u8,
     max_area: u16,
     policy_shape: [usize; 1],
+    territory: bool,
 }
 
 impl GoStdMapper {
-    pub fn new(max_size: u8) -> Self {
+    pub fn new(max_size: u8, territory: bool) -> Self {
         let max_area = max_size as u16 * max_size as u16;
         GoStdMapper {
             max_size,
             max_area,
             policy_shape: [1 + max_area as usize],
+            territory,
         }
     }
 
@@ -43,7 +45,12 @@ impl GoStdMapper {
 impl InputMapper<GoBoard> for GoStdMapper {
     fn input_bool_shape(&self) -> [usize; 3] {
         // stones_us, stones_them, in-board, illegal_move (ko)
-        let channels = 2 + 1 + 1;
+        let channels_basic = 2 + 1 + 1;
+
+        // optional: own_us, own_neither, own_them
+        let channels_ownership = if self.territory { 3 } else { 0 };
+
+        let channels = channels_basic + channels_ownership;
         [channels, self.max_size as usize, self.max_size as usize]
     }
 
@@ -55,12 +62,14 @@ impl InputMapper<GoBoard> for GoStdMapper {
     }
 
     fn encode_input(&self, bools: &mut BitBuffer, scalars: &mut Vec<f32>, board: &GoBoard) {
-        assert!(board.size() <= self.max_size);
-        let next = board.next_player();
         let size = board.size();
+        assert!(size <= self.max_size);
+
+        let next = board.next_player();
+        let other = next.other();
 
         // bools
-        for color in [next, next.other()] {
+        for color in [next, other] {
             for tile in Tile::all(self.max_size) {
                 bools.push(tile.exists(size) && board.stone_at(tile) == Some(color));
             }
@@ -72,6 +81,16 @@ impl InputMapper<GoBoard> for GoStdMapper {
             let exists_empty = tile.exists(size) && board.stone_at(tile).is_none();
             let is_available = board.is_available_move(Move::Place(tile)).unwrap_or(true);
             bools.push(exists_empty && !is_available);
+        }
+
+        if self.territory {
+            let territory = board.chains().territory();
+            for owner in [Some(next), None, Some(other)] {
+                for tile in Tile::all(self.max_size) {
+                    let tile_owner = territory[tile.to_flat(size).index() as usize].player();
+                    bools.push(tile_owner == owner);
+                }
+            }
         }
 
         // scalars
