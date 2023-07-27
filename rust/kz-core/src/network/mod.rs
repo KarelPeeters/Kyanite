@@ -35,6 +35,13 @@ impl ZeroEvaluation<'_> {
             policy: Cow::Borrowed(self.policy.borrow()),
         }
     }
+
+    pub fn nan(policy_size: usize) -> ZeroEvaluation<'static> {
+        ZeroEvaluation {
+            values: ZeroValuesPov::nan(),
+            policy: Cow::Owned(vec![f32::NAN; policy_size]),
+        }
+    }
 }
 
 pub type EvalClient<B> = JobClient<B, ZeroEvaluation<'static>>;
