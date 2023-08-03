@@ -14,7 +14,7 @@ use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
-    #[clap(short, long)]
+    #[clap(short, long, default_value_t = 0)]
     batch_size: i32,
     #[clap(short, long)]
     optimize: bool,
