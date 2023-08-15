@@ -1,18 +1,21 @@
-use crate::root::runner::test_all;
-use crate::root::tensor_utils::{manual_tensor, rng_tensor, rng_vec};
-use kn_graph::graph::{BinaryOp, Graph};
-use kn_graph::shape;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+
+use kn_graph::dtype::DType;
+use kn_graph::graph::{BinaryOp, Graph};
+use kn_graph::shape;
+
+use crate::root::runner::test_all;
+use crate::root::tensor_utils::{manual_tensor, rng_tensor, rng_vec};
 
 #[test]
 fn chained_scalar() {
     let mut graph = Graph::new();
 
-    let input = graph.input(shape![2, 3]);
+    let input = graph.input(shape![2, 3], DType::F32);
 
-    let w1 = graph.constant(shape![1, 3], vec![1.0, 2.0, 3.0]);
-    let w2 = graph.constant(shape![2, 1], vec![0.1, 0.2]);
+    let w1 = graph.constant::<f32>(shape![1, 3], vec![1.0, 2.0, 3.0]);
+    let w2 = graph.constant::<f32>(shape![2, 1], vec![0.1, 0.2]);
 
     let y1 = graph.mul(input, w1);
     let y2 = graph.add(y1, w2);
@@ -30,10 +33,10 @@ fn split_scalar() {
     let mut graph = Graph::new();
     let mut rng = StdRng::seed_from_u64(0);
 
-    let input = graph.input(shape![2, 3]);
+    let input = graph.input(shape![2, 3], DType::F32);
 
-    let w1 = graph.constant(shape![1, 3], rng_vec(3, &mut rng));
-    let w2 = graph.constant(shape![2, 1], rng_vec(2, &mut rng));
+    let w1 = graph.constant::<f32>(shape![1, 3], rng_vec(3, &mut rng));
+    let w2 = graph.constant::<f32>(shape![2, 1], rng_vec(2, &mut rng));
 
     let y1 = graph.mul(input, w1);
     let y2 = graph.add(input, w2);
@@ -49,10 +52,10 @@ fn rejoining_scalar() {
     let mut graph = Graph::new();
     let mut rng = StdRng::seed_from_u64(0);
 
-    let input = graph.input(shape![2, 3]);
+    let input = graph.input(shape![2, 3], DType::F32);
 
-    let w1 = graph.constant(shape![1, 3], rng_vec(3, &mut rng));
-    let w2 = graph.constant(shape![2, 1], rng_vec(2, &mut rng));
+    let w1 = graph.constant::<f32>(shape![1, 3], rng_vec(3, &mut rng));
+    let w2 = graph.constant::<f32>(shape![2, 1], rng_vec(2, &mut rng));
 
     let y1 = graph.mul(input, w1);
     let y2 = graph.add(input, w2);
@@ -69,10 +72,10 @@ fn inner_scalar_used() {
     let mut graph = Graph::new();
     let mut rng = StdRng::seed_from_u64(0);
 
-    let input = graph.input(shape![2, 3]);
+    let input = graph.input(shape![2, 3], DType::F32);
 
-    let w1 = graph.constant(shape![1, 3], rng_vec(3, &mut rng));
-    let w2 = graph.constant(shape![2, 1], rng_vec(2, &mut rng));
+    let w1 = graph.constant::<f32>(shape![1, 3], rng_vec(3, &mut rng));
+    let w2 = graph.constant::<f32>(shape![2, 1], rng_vec(2, &mut rng));
 
     let y1 = graph.mul(input, w1);
     let y2 = graph.add(input, w2);

@@ -41,6 +41,8 @@ pub mod graph;
 pub mod optimizer;
 /// The [Shape](shape::Shape) type and utilities.
 pub mod shape;
+/// The [DType](dtype::DType) enum.
+pub mod dtype;
 
 /// CPU graph execution.
 pub mod cpu;

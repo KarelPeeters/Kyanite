@@ -13,6 +13,7 @@ use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use kn_graph::dtype::DConst;
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -544,11 +545,11 @@ impl<'a> Planner<'a> {
             right,
         } = &self.graph[value].operation
         {
-            if let Some(alpha) = self.graph.as_single_const(left) {
-                return Ok((alpha, self.visit(right)?));
+            if let Some(DConst::F32(alpha)) = self.graph.as_single_const(left) {
+                return Ok((alpha.into_inner(), self.visit(right)?));
             }
-            if let Some(alpha) = self.graph.as_single_const(right) {
-                return Ok((alpha, self.visit(left)?));
+            if let Some(DConst::F32(alpha)) = self.graph.as_single_const(right) {
+                return Ok((alpha.into_inner(), self.visit(left)?));
             }
         }
 
@@ -628,9 +629,9 @@ impl<'a> Planner<'a> {
         } = &graph[curr].operation
         {
             let relu_other = if self.can_fuse(left) && self.can_fuse(right) {
-                if graph.is_const_filled_with(left, 0.0) {
+                if graph.is_const_zero(left) {
                     right
-                } else if graph.is_const_filled_with(right, 0.0) {
+                } else if graph.is_const_zero(right) {
                     left
                 } else {
                     return Ok(None);
@@ -823,8 +824,14 @@ impl<'a> Planner<'a> {
             _ => {
                 assert!(!is_root);
 
-                let y = if let Some(f) = self.graph.as_single_const(value) {
-                    block.define_y(&format!("{}", DisplayCFloat(f)))
+                let y = if let Some(c) = self.graph.as_single_const(value) {
+                    let c_str = match c {
+                        DConst::F32(c) => DisplayCFloat(c.into_inner()).to_string(),
+                        DConst::I(_, c) => c.to_string(),
+                        DConst::U(_, c) => c.to_string(),
+                    };
+
+                    block.define_y(&c_str)
                 } else {
                     block.load_operand_y(&self.visit(value)?)
                 };

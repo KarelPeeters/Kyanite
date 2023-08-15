@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::dtype::DType;
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::{zip_eq, Itertools};
 use num_traits::cast;
@@ -44,7 +45,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
         }
 
         let (shape, is_int) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?)?;
-        let value = graph.input(shape);
+        let value = graph.input(shape, DType::F32);
 
         let typed_value = if is_int {
             TypedValue::IntTensor(value)
@@ -190,7 +191,7 @@ fn visit_node(
                 (None, None) => {
                     let min = attrs.take_float("min")?;
                     let max = attrs.take_float("max")?;
-                    graph.clamp(input, min, max)
+                    graph.clamp::<f32>(input, min, max)
                 }
                 (Some(min), Some(max)) => {
                     let min = min.unwrap_float();
@@ -744,7 +745,7 @@ fn visit_node(
                 TypedValue::Shape(shape)
             } else {
                 let input_tensors = inputs.iter().map(|v| v.unwrap_tensor()).collect_vec();
-                let result = graph.concat(input_tensors, axis, None);
+                let result = graph.concat(input_tensors, axis, None, None);
 
                 if any_float {
                     assert!(
@@ -775,7 +776,7 @@ fn visit_node(
             let input_shape = &graph[input].shape.clone();
 
             let constant_value = constant_value
-                .map(|v| graph.as_single_const(v.unwrap_float()).unwrap())
+                .map(|v| graph.as_single_const(v.unwrap_float()).unwrap().unwrap_f32().unwrap())
                 .unwrap_or(0.0);
 
             let axes = match axes {
@@ -812,7 +813,7 @@ fn visit_node(
                     acc,
                     graph.broadcast(constant, acc_shape.replace(axis, shape![pad_right as usize])),
                 ];
-                graph.concat(blocks, axis, None)
+                graph.concat(blocks, axis, None, None)
             });
 
             TypedValue::FloatTensor(output)
@@ -1017,7 +1018,7 @@ fn define_tensor_data(
         _ => panic!("Unexpected data type {:?} {}", data_type, tensor.data_type),
     };
 
-    let value = graph.constant(shape, data);
+    let value = graph.constant::<f32>(shape, data);
     let typed_value = match is_int {
         false => TypedValue::FloatTensor(value),
         true => TypedValue::IntTensor(value),

@@ -1,4 +1,5 @@
 use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::dtype::DType;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -13,7 +14,8 @@ use crate::root::tensor_utils::rng_tensor;
 fn layernorm_huge() {
     let mut graph = Graph::new();
 
-    let input = graph.input(shape![1, 32, 1048576]);
+    let shape = shape![1, 32, 1048576];
+    let input = graph.input(shape, DType::F32);
     let output = graph.layernorm(input, 2, 1e-6);
     graph.output(output);
 

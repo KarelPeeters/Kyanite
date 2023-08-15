@@ -6,18 +6,19 @@ use clap::Parser;
 use image::{ImageBuffer, Rgb, RgbImage};
 use itertools::Itertools;
 use ndarray::Axis;
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use rand_distr::StandardNormal;
 
 use kn_cuda_eval::runtime::Runtime;
 use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::{ndarray, shape};
 use kn_graph::cpu::Tensor;
+use kn_graph::dtype::DType;
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::optimize_graph;
-use kn_graph::{ndarray, shape};
 
 use crate::ndarray::{Array1, IxDyn, Slice};
 use crate::scheduler::PNDMSScheduler;
@@ -276,7 +277,7 @@ fn fuse_autoencoder_graphs(graph_encoder: &Graph, graph_decoder: &Graph) -> Grap
     const LATENT_SCALAR: f32 = 5.489980697631836;
 
     let mut graph = Graph::new();
-    let input = graph.input(shape![1, 3, 512, 512]);
+    let input = graph.input(shape![1, 3, 512, 512], DType::F32);
     let moments = graph.call(&graph_encoder, &[input]).single();
     let latents_raw = graph.slice(moments, 1, SliceRange::simple(0, 4));
     let latent_scalar = graph.scalar(LATENT_SCALAR);

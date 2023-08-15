@@ -1,7 +1,9 @@
+use byteorder::{ByteOrder, LittleEndian};
 use std::cmp::min;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
+use crate::dtype::DType;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
@@ -128,14 +130,19 @@ fn try_run_cpu_operation(
             .map(|batch_size| info.shape.eval(batch_size))
             .ok_or(OperationError::NoBatchSize)?,
     };
+    let dtype = info.dtype;
+
+    // TODO support non-f32 tensors
+    assert_eq!(dtype, DType::F32, "Only f32 is supported for now");
 
     let output_shape_dyn = IxDyn(&output_shape.dims);
 
     let result: Tensor = match info.operation {
         Operation::Input { index } => input(index)?,
         Operation::Constant { ref data } => {
-            let data = data.0.clone();
-            Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
+            let mut data_f = vec![0.0; data.len() / 4];
+            LittleEndian::read_f32_into(&**data, &mut data_f);
+            Tensor::from_shape_vec(output_shape_dyn, data_f).unwrap()
         }
         Operation::View { input } => {
             let input = map(input)?;

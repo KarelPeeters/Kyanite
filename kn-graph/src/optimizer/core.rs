@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::dtype::{DConst, DType};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -79,12 +80,19 @@ impl<'a> Optimizer<'a> {
         }
         let new_operation = old_operation.clone_map_inputs(|old_input| self.visit(old_input).unwrap());
 
-        let new_value = self.new_graph.push(shape, new_operation);
+        let new_value = self.new_graph.push(shape, old_info.dtype, new_operation);
         self.new_graph.set_debug_id(new_value, old_info.debug_id.clone());
         Ok(new_value)
     }
 
     fn try_fuse(&mut self, old_start: Value) -> VisitResult<Option<Value>> {
+        // TODO support optimizing non-f32 values
+        //   (check each sub-fuse operation separately)
+        let (_, dtype) = self.old_graph.shape_dtype(old_start);
+        if dtype != DType::F32 {
+            return Ok(None);
+        }
+
         if self.settings.fuse_layernorm {
             if let Some(result) = self.try_fuse_layernorm(old_start)? {
                 return Ok(Some(result));
@@ -206,11 +214,11 @@ impl<'a> Optimizer<'a> {
         let axis = axes[0];
 
         let eps = match self.old_graph.as_single_const(old_const_eps) {
-            None => return Ok(None),
-            Some(eps) => eps,
+            Some(DConst::F32(eps)) => eps.into_inner(),
+            _ => return Ok(None),
         };
 
-        if !self.old_graph.is_const_filled_with(old_const_2, 2.0) {
+        if !self.old_graph.is_const_filled_with(old_const_2, DConst::f32(2.0)) {
             return Ok(None);
         }
 
@@ -250,7 +258,7 @@ impl<'a> Optimizer<'a> {
 
         if let Some(old_input) = old_input {
             let new_input = self.visit(old_input)?;
-            let new_output = self.new_graph.clamp(new_input, total_min, total_max);
+            let new_output = self.new_graph.clamp::<f32>(new_input, total_min, total_max);
             Ok(Some(new_output))
         } else {
             Ok(None)
@@ -282,7 +290,9 @@ impl<'a> Optimizer<'a> {
         {
             if let Some(data) = self.old_graph.as_const(right) {
                 let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
-                let new_right = self.new_graph.constant(self.old_graph[right].shape.clone(), new_data);
+                let new_right = self
+                    .new_graph
+                    .constant::<f32>(self.old_graph[right].shape.clone(), new_data);
 
                 let new_left = self.visit(left)?;
                 let result = self.new_graph.mul(new_left, new_right);

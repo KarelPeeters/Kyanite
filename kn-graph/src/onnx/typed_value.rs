@@ -87,7 +87,7 @@ impl TypedValue {
                     })
                     .collect_vec();
 
-                graph.constant(shape![shape.len()], data)
+                graph.constant::<f32>(shape![shape.len()], data)
             }
             TypedValue::FloatTensor(_) => panic!("Expected int tensor, got float"),
             &TypedValue::IntTensor(value) => value,

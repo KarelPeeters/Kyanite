@@ -4,12 +4,13 @@ use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index};
 
-use decorum::cmp::FloatEq;
 use decorum::Total;
 use itertools::{zip_eq, Itertools};
 use rand::random;
+use unwrap_match::unwrap_match;
 
 use crate::cpu::{run_cpu_const_operation, OperationError, Tensor};
+use crate::dtype::{DConst, DType, IntoDConst};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -84,14 +85,15 @@ pub struct Value {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ValueInfo {
     pub shape: Shape,
+    pub dtype: DType,
     pub operation: Operation,
     pub debug_id: String,
     non_output_uses: usize,
 }
 
 /// Wrapper type that prevents the Debug output from getting too large.
-#[derive(Clone)]
-pub struct ConstantData(pub Vec<f32>);
+#[derive(Clone, Eq, PartialEq)]
+pub struct ConstantData(pub Vec<u8>);
 
 /// The core set of graph operations.
 /// Some attempt was made to keep operations orthogonal but flexible, so they can be composed easily.
@@ -101,6 +103,8 @@ pub enum Operation {
     Input { index: usize },
     /// A constant build into the network.
     Constant { data: ConstantData },
+
+    // TODO two cast operators: BitCast and ValueCast
 
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
@@ -191,6 +195,7 @@ pub enum BinaryOp {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ReduceOp {
     Sum,
+    // TODO remove mean and rely on operator fusion instead
     Mean,
     Prod,
     Max,
@@ -360,6 +365,11 @@ impl Graph {
         assert!(value.index < self.values.len());
     }
 
+    pub fn shape_dtype(&self, value: Value) -> (&Shape, DType) {
+        let info = &self[value];
+        (&info.shape, info.dtype)
+    }
+
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
     pub fn values(&self) -> impl Iterator<Item = Value> {
@@ -410,34 +420,47 @@ impl Graph {
         run_cpu_const_operation(&self[value], |x| self.as_const(x).ok_or(OperationError::MissingOperand)).ok()
     }
 
-    /// Returns whether `value` is effectively a constant with every element equal to `f`.
-    pub fn is_const_filled_with(&self, value: Value, f: f32) -> bool {
-        self.as_single_const(value).map_or(false, |g| f.float_eq(&g))
+    /// Returns whether `value` is effectively a constant with every element equal to `expected`.
+    pub fn is_const_filled_with(&self, value: Value, expected: DConst) -> bool {
+        self.as_single_const(value).map_or(false, |actual| expected == actual)
+    }
+
+    pub fn is_const_zero(&self, value: Value) -> bool {
+        self.is_const_filled_with(value, self[value].dtype.specials().zero)
+    }
+
+    pub fn is_const_one(&self, value: Value) -> bool {
+        self.is_const_filled_with(value, self[value].dtype.specials().one)
     }
 
     /// Returns `Some(f)` if `value` is effectively a constant with every element equal to `f`.
-    pub fn as_single_const(&self, value: Value) -> Option<f32> {
-        match &self[value].operation {
+    pub fn as_single_const(&self, value: Value) -> Option<DConst> {
+        let info = &self[value];
+        let dtype = info.dtype;
+
+        match info.operation {
             Operation::Input { .. } => None,
-            Operation::Constant { data } => {
-                let f = *data.first()?;
-                data.iter().all(|&x| f.float_eq(&x)).then(|| f)
+            Operation::Constant { ref data } => {
+                let mut values = dtype.iter_bytes(&**data).unwrap();
+
+                let e = values.next()?;
+                values.all(|d| d == e).then(|| e)
             }
-            &Operation::View { input } => self.as_single_const(input),
-            &Operation::Broadcast { input } => self.as_single_const(input),
-            &Operation::Permute { input, permutation: _ } => self.as_single_const(input),
-            &Operation::Slice {
+            Operation::View { input } => self.as_single_const(input),
+            Operation::Broadcast { input } => self.as_single_const(input),
+            Operation::Permute { input, permutation: _ } => self.as_single_const(input),
+            Operation::Slice {
                 input,
                 axis: _,
                 range: _,
             } => self.as_single_const(input),
-            &Operation::Flip { input, axis: _ } => self.as_single_const(input),
-            &Operation::Gather {
+            Operation::Flip { input, axis: _ } => self.as_single_const(input),
+            Operation::Gather {
                 input,
                 axis: _,
                 indices: _,
             } => self.as_single_const(input),
-            &Operation::Concat { ref inputs, axis: _ } => {
+            Operation::Concat { ref inputs, axis: _ } => {
                 let f = self.as_single_const(*inputs.first()?)?;
                 inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
             }
@@ -457,9 +480,10 @@ impl Graph {
     }
 
     #[must_use]
-    pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
+    pub(crate) fn push(&mut self, shape: Shape, dtype: DType, operation: Operation) -> Value {
         let info = ValueInfo {
             shape,
+            dtype,
             operation,
             non_output_uses: 0,
             debug_id: String::new(),
@@ -499,33 +523,47 @@ impl Graph {
 
     /// Declare a new input value.
     #[must_use]
-    pub fn input(&mut self, shape: Shape) -> Value {
+    pub fn input(&mut self, shape: Shape, dtype: DType) -> Value {
         let index = self.inputs.len();
-        let value = self.push(shape, Operation::Input { index });
+        let value = self.push(shape, dtype, Operation::Input { index });
         self.inputs.push(value);
         value
     }
 
     #[must_use]
-    pub fn scalar(&mut self, value: f32) -> Value {
-        self.constant(Shape::SCALAR, vec![value])
+    pub fn scalar_dyn(&mut self, value: DConst) -> Value {
+        self.push(
+            Shape::SCALAR,
+            value.dtype(),
+            Operation::Constant {
+                data: ConstantData(value.to_bytes()),
+            },
+        )
     }
 
-    /// Declare a new constant.
     #[must_use]
-    pub fn constant(&mut self, shape: Shape, data: Vec<f32>) -> Value {
+    pub fn scalar<T: IntoDConst>(&mut self, value: T) -> Value {
+        self.scalar_dyn(value.to_dconst())
+    }
+
+    #[must_use]
+    pub fn constant_dyn(&mut self, shape: Shape, dtype: DType, data: Vec<u8>) -> Value {
         let expected_len = shape.unwrap_fixed("Constant shape must be fixed").size();
+        let expected_bytes = expected_len * dtype.size().bytes();
+
         assert_eq!(
-            expected_len,
+            expected_bytes,
             data.len(),
-            "{:?} has size {}, but got data with size {}",
+            "{:?} {:?} should have {} bytes, but got {} bytes",
             shape,
-            expected_len,
+            dtype,
+            expected_bytes,
             data.len()
         );
 
         self.push(
             shape,
+            dtype,
             Operation::Constant {
                 data: ConstantData(data),
             },
@@ -533,26 +571,32 @@ impl Graph {
     }
 
     #[must_use]
+    pub fn constant<T: IntoDConst>(&mut self, shape: Shape, data: Vec<T>) -> Value {
+        let bytes = data.iter().flat_map(|d| d.to_dconst().to_bytes().into_iter()).collect();
+        self.constant_dyn(shape, T::DTYPE, bytes)
+    }
+
+    #[must_use]
     pub fn constant_tensor(&mut self, tensor: Tensor) -> Value {
         let shape = Shape::fixed(tensor.shape());
         let data = tensor.iter().copied().collect();
-        self.constant(shape, data)
+        self.constant::<f32>(shape, data)
     }
 
     /// View an existing value as a new shape.
     #[must_use]
     pub fn view(&mut self, input: Value, new_shape: Shape) -> Value {
-        let old_shape = &self[input].shape;
-        if &new_shape == old_shape {
+        let (input_shape, dtype) = self.shape_dtype(input);
+        if &new_shape == input_shape {
             return input;
         }
 
         assert_eq!(
-            old_shape.size(),
+            input_shape.size(),
             new_shape.size(),
             "New shape {:?} must have the same size as old shape {:?}",
             new_shape,
-            old_shape,
+            input_shape,
         );
 
         // only keep the last view operation
@@ -562,14 +606,15 @@ impl Graph {
             input
         };
 
-        self.push(new_shape, Operation::View { input: inner_input })
+        self.push(new_shape, dtype, Operation::View { input: inner_input })
     }
 
     /// Broadcast the `input` towards `new_shape`.
     /// Additional unit axes are are inserted at the front and unit axes are repeated as necessary.
     #[must_use]
     pub fn broadcast(&mut self, input: Value, new_shape: Shape) -> Value {
-        let input_shape = &self[input].shape.clone();
+        let (input_shape, dtype) = self.shape_dtype(input);
+        let input_shape = input_shape.clone();
 
         assert!(
             input_shape.rank() <= new_shape.rank(),
@@ -600,11 +645,12 @@ impl Graph {
         }
 
         // do the actual broadcast
-        self.push(new_shape, Operation::Broadcast { input: curr })
+        self.push(new_shape, dtype, Operation::Broadcast { input: curr })
     }
 
     pub fn repeat_unary(&mut self, input: Value, axis: usize, count: Size) -> Value {
-        let input_shape = &self[input].shape;
+        let (input_shape, dtype) = self.shape_dtype(input);
+
         assert_eq!(
             input_shape[axis],
             Size::ONE,
@@ -619,7 +665,8 @@ impl Graph {
             return input;
         }
 
-        self.push(input_shape.replace(axis, shape![count]), Operation::Broadcast { input })
+        let new_shape = input_shape.replace(axis, shape![count]);
+        self.push(new_shape, dtype, Operation::Broadcast { input })
     }
 
     /// View a value with a flattened shape.
@@ -644,7 +691,8 @@ impl Graph {
     /// Change the order of axis in the shape.
     #[must_use]
     pub fn permute(&mut self, input: Value, permutation: Vec<usize>) -> Value {
-        let input_shape = &self[input].shape;
+        let input_info = &self[input];
+        let input_shape = &input_info.shape;
 
         assert_eq!(
             permutation.len(),
@@ -682,6 +730,7 @@ impl Graph {
 
         self.push(
             result_shape,
+            input_info.dtype,
             Operation::Permute {
                 input: inner_input,
                 permutation: full_permutation,
@@ -692,20 +741,22 @@ impl Graph {
     /// Slice a value along an axis.
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
-        let old_shape = &self[input].shape;
-        old_shape.assert_has_axis(axis);
+        let input_info = &self[input];
+        let input_shape = &input_info.shape;
 
-        let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
-        range.assert_in_bounds(old_size);
+        input_shape.assert_has_axis(axis);
+
+        let input_size = input_shape.dims[axis].unwrap_fixed("Slice axis length");
+        range.assert_in_bounds(input_size);
         let new_size = (range.end - range.start) / range.step;
 
         // skip trivial slice
-        if range == SliceRange::new(0, old_size, 1) {
+        if range == SliceRange::new(0, input_size, 1) {
             return input;
         }
 
-        let new_shape = old_shape.replace(axis, shape![new_size]);
-        self.push(new_shape, Operation::Slice { input, axis, range })
+        let new_shape = input_shape.replace(axis, shape![new_size]);
+        self.push(new_shape, input_info.dtype, Operation::Slice { input, axis, range })
     }
 
     /// Index along a given axis.
@@ -719,10 +770,12 @@ impl Graph {
 
     /// Flip the given `axis`.
     pub fn flip(&mut self, input: Value, axis: usize) -> Value {
-        let shape = self[input].shape.clone();
-        shape.assert_has_axis(axis);
+        let input_info = &self[input];
+        let input_shape = input_info.shape.clone();
 
-        self.push(shape, Operation::Flip { input, axis })
+        input_shape.assert_has_axis(axis);
+
+        self.push(input_shape, input_info.dtype, Operation::Flip { input, axis })
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
@@ -764,10 +817,15 @@ impl Graph {
     /// The `output` shape is the `input` shape with `axis` replaced by the shape of `indices`.
     #[must_use]
     pub fn gather(&mut self, input: Value, axis: usize, indices: Value) -> Value {
-        let input_shape = &self[input].shape;
-        let indices_shape = &self[indices].shape;
+        let (input_shape, dtype) = self.shape_dtype(input);
+        let (indices_shape, indices_dtype) = self.shape_dtype(indices);
 
         input_shape.assert_has_axis(axis);
+        assert!(
+            matches!(indices_dtype, DType::U(_)),
+            "Indices must be unsigned integers, got {:?}",
+            indices_dtype
+        );
 
         let result_shape = input_shape.replace(axis, indices_shape.clone());
         let result_shape_flat = input_shape.replace(axis, shape![indices_shape.size()]);
@@ -776,10 +834,11 @@ impl Graph {
         let flat_indices = self.flatten(indices, 0);
         let flat_size = self[flat_indices].shape.unwrap_1();
 
-        let result_flat = if let Some(index_f) = self.as_single_const(indices) {
-            // replace gather with simpler slice (+ repeat) operator
-            let index = index_f as usize;
-            assert_eq!(index as f32, index_f, "Index must be an integer, got {}", index_f);
+        let result_flat = if let Some(index) = self.as_single_const(indices) {
+            // replace gather with simpler slice + repeat operators
+
+            let index: u64 = unwrap_match!(index, DConst::U(_, index) => index);
+            let index: usize = index.try_into().unwrap();
 
             let result_flat_single = self.slice(input, axis, SliceRange::single(index));
             let result_flat = self.repeat(result_flat_single, axis, flat_size);
@@ -790,6 +849,7 @@ impl Graph {
             // do a full gather operation
             self.push(
                 result_shape_flat,
+                dtype,
                 Operation::Gather {
                     input,
                     axis,
@@ -805,23 +865,30 @@ impl Graph {
     /// Concatenate `inputs` along `axis`.
     /// `base_shape` can be provided to allow the result shape to be inferred in case `inputs` is empty.
     #[must_use]
-    pub fn concat(&mut self, inputs: Vec<Value>, axis: usize, base_shape: Option<Shape>) -> Value {
-        // skip operation if there is only a single input
+    pub fn concat(
+        &mut self,
+        inputs: Vec<Value>,
+        axis: usize,
+        base_shape: Option<Shape>,
+        dtype: Option<DType>,
+    ) -> Value {
         // TODO also remove empty inputs from the list of operands
         // TODO skip concat entirely if there is only a single nonempty input
         // TODO skip entire operation if the output is empty (generalize this to all operations?)
-        if inputs.len() == 1 {
-            let shape = &self[inputs[0]].shape;
-            shape.assert_has_axis(axis);
-            return inputs[0];
-        }
 
         let base_shape = base_shape.unwrap_or_else(|| {
             assert!(
                 !inputs.is_empty(),
-                "Cannot infer concatenation shape without any values"
+                "Cannot infer concatenation shape without any inputs"
             );
             self[inputs[0]].shape.replace(axis, shape![0])
+        });
+        let dtype = dtype.unwrap_or_else(|| {
+            assert!(
+                !inputs.is_empty(),
+                "Cannot infer concatenation dtype without any inputs"
+            );
+            self[inputs[0]].dtype
         });
 
         let size_along_axis = inputs
@@ -832,6 +899,7 @@ impl Graph {
                     base_shape,
                     "All concatenated values must match base shape on non-concatenated axes"
                 );
+                assert_eq!(self[v].dtype, dtype, "All concatenated values must have the same dtype");
                 self[v].shape.dims[axis]
             })
             .sum::<Option<Size>>()
@@ -840,8 +908,13 @@ impl Graph {
                 panic!("Could not add all concatenation sizes: {:?}", input_shapes);
             });
 
+        // skip operation if there is only a single input (only after shape and type checking)
+        if inputs.len() == 1 {
+            return inputs[0];
+        }
+
         let result_shape = base_shape.replace(axis, shape![size_along_axis]);
-        self.push(result_shape, Operation::Concat { inputs, axis })
+        self.push(result_shape, dtype, Operation::Concat { inputs, axis })
     }
 
     /// Apply 2D convolution.
@@ -855,14 +928,19 @@ impl Graph {
         padding_y: usize,
         padding_x: usize,
     ) -> Value {
-        let [batch_size, in_c, in_h, in_w]: [Size; 4] = self[input]
-            .shape
+        let (input_shape, input_dtype) = self.shape_dtype(input);
+        let (filter_shape, filter_dtype) = self.shape_dtype(filter);
+        assert_eq!(
+            input_dtype, filter_dtype,
+            "Convolution input and filter must have the same dtype"
+        );
+
+        let [batch_size, in_c, in_h, in_w]: [Size; 4] = input_shape
             .dims
             .as_slice()
             .try_into()
             .expect("Convolution input must have rank 4");
-        let [out_c, in_c_check, k_h, k_w]: [Size; 4] = self[filter]
-            .shape
+        let [out_c, in_c_check, k_h, k_w]: [Size; 4] = filter_shape
             .dims
             .as_slice()
             .try_into()
@@ -909,7 +987,7 @@ impl Graph {
             output_h,
             output_w,
         };
-        self.push(output_shape, Operation::Conv { input, details, filter })
+        self.push(output_shape, input_dtype, Operation::Conv { input, details, filter })
     }
 
     /// Apply a linear transformation.
@@ -969,37 +1047,44 @@ impl Graph {
     /// Inputs must have shapes `[b, m, n]`, `[b, n, p]` and the result has shape `[b, m, p]`.
     #[must_use]
     pub fn batched_mat_mul(&mut self, left: Value, right: Value) -> Value {
-        let [b0, m, n0] = self[left].shape.unwrap_3();
-        let [b1, n1, p] = self[right].shape.unwrap_3();
+        let (left_shape, left_dtype) = self.shape_dtype(left);
+        let (right_shape, right_dtype) = self.shape_dtype(right);
+        assert_eq!(left_dtype, right_dtype, "Matmul operands must have same dtype");
+
+        let [b0, m, n0] = left_shape.unwrap_3();
+        let [b1, n1, p] = right_shape.unwrap_3();
 
         assert!(
             b0 == b1 && n0 == n1,
             "Batched matmul dimension mismatch, got shapes {} and {}",
-            self[left].shape,
-            self[right].shape
+            left_shape,
+            right_shape
         );
 
         let result_shape = shape![b0, m, p];
-        self.push(result_shape, Operation::MatMul { left, right })
+        self.push(result_shape, left_dtype, Operation::MatMul { left, right })
     }
 
     #[must_use]
     pub fn softmax(&mut self, input: Value, axis: usize) -> Value {
-        let input_shape = &self[input].shape;
+        let (input_shape, input_dtype) = self.shape_dtype(input);
+        assert_eq!(input_dtype, DType::F32, "Softmax input must be f32");
         input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
-        self.push(new_shape, Operation::Softmax { input, axis })
+        self.push(new_shape, input_dtype, Operation::Softmax { input, axis })
     }
 
     #[must_use]
     pub fn layernorm(&mut self, input: Value, axis: usize, eps: f32) -> Value {
-        let input_shape = &self[input].shape;
+        let (input_shape, input_dtype) = self.shape_dtype(input);
+        assert_eq!(input_dtype, DType::F32, "Softmax input must be f32");
         input_shape.assert_has_axis(axis);
 
         let new_shape = input_shape.clone();
         self.push(
             new_shape,
+            input_dtype,
             Operation::Layernorm {
                 input,
                 axis,
@@ -1012,59 +1097,73 @@ impl Graph {
     /// The result shape is the same as the input shape but without the reduces axes.
     #[must_use]
     pub fn reduce(&mut self, input: Value, axes: Vec<usize>, op: ReduceOp) -> Value {
+        let (input_shape, dtype) = self.shape_dtype(input);
+
+        // check shape and dtype
+        for &axis in &axes {
+            input_shape.assert_has_axis(axis);
+        }
+        match op {
+            ReduceOp::Mean => assert_eq!(dtype, DType::F32, "Softmax input must be f32"),
+            ReduceOp::Sum | ReduceOp::Prod | ReduceOp::Max | ReduceOp::Min => {}
+        }
+
+        // skip reduction
         if axes.is_empty() {
             return input;
         }
 
-        let input_shape = &self[input].shape;
-
-        // check that the axes are in bounds
-        for &axis in &axes {
-            input_shape.assert_has_axis(axis);
-        }
-
         let new_shape = input_shape.replace_all(&axes, shape![]);
-        self.push(new_shape, Operation::Reduce { input, axes, op })
+        self.push(new_shape, dtype, Operation::Reduce { input, axes, op })
     }
 
     /// Elementwise sigmoid.
     #[must_use]
     pub fn sigmoid(&mut self, input: Value) -> Value {
-        self.push(
-            self[input].shape.clone(),
-            Operation::Unary {
-                input,
-                op: UnaryOp::Sigmoid,
-            },
-        )
+        self.unary(UnaryOp::Sigmoid, input)
     }
 
     /// Elementwise relu.
     #[must_use]
     pub fn relu(&mut self, input: Value) -> Value {
-        self.clamp(input, 0.0, f32::INFINITY)
+        let (_, dtype) = self.shape_dtype(input);
+        let specials = dtype.specials();
+        self.clamp_dyn(input, specials.zero, specials.max)
     }
 
     /// Elementwise clamp.
     #[must_use]
-    pub fn clamp(&mut self, input: Value, min: f32, max: f32) -> Value {
+    pub fn clamp_dyn(&mut self, input: Value, min: DConst, max: DConst) -> Value {
+        let (_, dtype) = self.shape_dtype(input);
+        assert!(
+            dtype == min.dtype() && dtype == max.dtype(),
+            "Clamp bounds must match value type, got min={:?} and max={:?} for {:?}",
+            min,
+            max,
+            dtype
+        );
+
         // careful, min/max are intentionally flipped to yield MAX(MIN(x, max), min)
-        let right_shape = Shape::ones(self[input].shape.rank());
-
+        // these checks are redundant with the checks in binary, but we can skip constant allocation
         let mut curr = input;
+        let specials = dtype.specials();
 
-        // these checks are kind of tedious but it prevents the value allocations if they're not necessary
-        if max != f32::INFINITY {
-            let max_value = self.constant(right_shape.clone(), vec![max]);
+        if max != specials.max {
+            let max_value = self.scalar_dyn(max);
             curr = self.binary(BinaryOp::Min, curr, max_value);
         }
 
-        if min != f32::NEG_INFINITY {
-            let min_value = self.constant(right_shape, vec![min]);
+        if min != specials.min {
+            let min_value = self.scalar_dyn(min);
             curr = self.binary(BinaryOp::Max, curr, min_value);
         }
 
         curr
+    }
+
+    #[must_use]
+    pub fn clamp<T: IntoDConst>(&mut self, input: Value, min: T, max: T) -> Value {
+        self.clamp_dyn(input, min.to_dconst(), max.to_dconst())
     }
 
     #[must_use]
@@ -1090,18 +1189,47 @@ impl Graph {
     // Elementwise binary operation.
     #[must_use]
     pub fn unary(&mut self, op: UnaryOp, input: Value) -> Value {
-        self.push(self[input].shape.clone(), Operation::Unary { op, input })
+        let (shape, dtype) = self.shape_dtype(input);
+
+        match op {
+            UnaryOp::Abs | UnaryOp::Neg => {
+                assert!(dtype.is_signed(), "{:?} only work on signed types, got {:?}", op, dtype)
+            }
+            UnaryOp::Sin
+            | UnaryOp::Cos
+            | UnaryOp::Exp
+            | UnaryOp::Log
+            | UnaryOp::Sqrt
+            | UnaryOp::Sigmoid
+            | UnaryOp::Tanh
+            | UnaryOp::Erf
+            | UnaryOp::Mish => assert!(dtype.is_float(), "{:?} only work on float types, got {:?}", op, dtype),
+        }
+
+        self.push(shape.clone(), dtype, Operation::Unary { op, input })
     }
 
     /// Compute elementwise binary operation.
     /// Both inputs must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn binary(&mut self, op: BinaryOp, left: Value, right: Value) -> Value {
+        let (left_shape, left_dtype) = self.shape_dtype(left);
+        let (right_shape, right_dtype) = self.shape_dtype(right);
+
+        let result_shape = broadcast_shape_symmetric(left_shape, right_shape);
+        assert_eq!(
+            left_dtype, right_dtype,
+            "Binary operation {:?} requires matching dtypes, got {:?} and {:?}",
+            op, left_dtype, right_dtype
+        );
+        let dtype = left_dtype;
+
+        // TODO expand this skipping to be symmetric (and to do const eval if both are known?)
         let skip = match op {
-            BinaryOp::Sub | BinaryOp::Add => self.is_const_filled_with(right, 0.0),
-            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => self.is_const_filled_with(right, 1.0),
-            BinaryOp::Min => self.is_const_filled_with(right, f32::INFINITY),
-            BinaryOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
+            BinaryOp::Sub | BinaryOp::Add => self.is_const_zero(right),
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => self.is_const_one(right),
+            BinaryOp::Min => self.is_const_filled_with(right, dtype.specials().max),
+            BinaryOp::Max => self.is_const_filled_with(right, dtype.specials().min),
         };
         // TODO only skip after shape checking
         //   also check other functions
@@ -1109,11 +1237,10 @@ impl Graph {
             return left;
         }
 
-        let result_shape = broadcast_shape_symmetric(&self[left].shape, &self[right].shape);
         let left = self.broadcast(left, result_shape.clone());
         let right = self.broadcast(right, result_shape.clone());
 
-        self.push(result_shape, Operation::Binary { left, right, op })
+        self.push(result_shape, dtype, Operation::Binary { left, right, op })
     }
 
     /// Computes the operations described by `graph` on the given inputs.
@@ -1140,7 +1267,7 @@ impl Graph {
                 inputs[index]
             } else {
                 let operation = graph_info.operation.clone_map_inputs(|p| *map.get(&p).unwrap());
-                self.push(shape, operation)
+                self.push(shape, graph_info.dtype, operation)
             };
 
             map.insert(graph_value, value);
@@ -1246,16 +1373,8 @@ impl Debug for ConstantData {
     }
 }
 
-impl PartialEq for ConstantData {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.float_eq(&other.0)
-    }
-}
-
-impl Eq for ConstantData {}
-
 impl Deref for ConstantData {
-    type Target = Vec<f32>;
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         &self.0

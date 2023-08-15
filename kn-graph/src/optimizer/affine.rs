@@ -226,8 +226,9 @@ fn apply_fused_conv(
             }
 
             // put everything into the graph
-            let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
-            let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
+            let value_filter = graph.constant::<f32>(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
+            let value_bias =
+                graph.constant::<f32>(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
 
             let mut curr = input;
             curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
@@ -240,8 +241,8 @@ fn apply_fused_conv(
                 scale: before.scale,
                 bias: bias_before,
             };
-            let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
-            let value_bias_after = graph.constant(
+            let value_filter = graph.constant::<f32>(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
+            let value_bias_after = graph.constant::<f32>(
                 Shape::fixed(bias_after_shaped.shape()),
                 bias_after_shaped.into_raw_vec(),
             );
@@ -300,8 +301,8 @@ struct ScaleBias {
 impl ScaleBias {
     fn apply(self, graph: &mut Graph, input: Value) -> Value {
         let const_shape = shape![1, self.scale.len(), 1, 1];
-        let scale = graph.constant(const_shape.clone(), self.scale.to_vec());
-        let bias = graph.constant(const_shape, self.bias.to_vec());
+        let scale = graph.constant::<f32>(const_shape.clone(), self.scale.to_vec());
+        let bias = graph.constant::<f32>(const_shape, self.bias.to_vec());
 
         let mut curr = input;
         curr = graph.binary(BinaryOp::Mul, curr, scale);

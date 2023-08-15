@@ -1,5 +1,6 @@
 use kn_cuda_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
 use kn_graph::cpu::{cpu_eval_graph, Tensor};
+use kn_graph::dtype::DType;
 use kn_graph::graph::{Graph, Value};
 use kn_graph::ndarray::ArcArray;
 use kn_graph::onnx::load_graph_from_onnx_bytes;
@@ -64,8 +65,8 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
     let values = ELEMENTWISE_TEST_VALUES;
     let pair_count = values.len() * values.len();
 
-    let left = graph.input(shape![pair_count]);
-    let right = graph.input(shape![pair_count]);
+    let left = graph.input(shape![pair_count], DType::F32);
+    let right = graph.input(shape![pair_count], DType::F32);
 
     let output = graph_op(&mut graph, left, right);
     graph.output(output);
@@ -83,7 +84,7 @@ pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, V
 
     let values = ELEMENTWISE_TEST_VALUES;
 
-    let input = graph.input(shape![values.len()]);
+    let input = graph.input(shape![values.len()], DType::F32);
     let output = graph_op(&mut graph, input);
     graph.output(output);
 

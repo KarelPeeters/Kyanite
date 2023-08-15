@@ -31,8 +31,8 @@ pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
 
     // ensure all inputs are copied over in the same order
     for &old_input in graph.inputs() {
-        let shape = graph[old_input].shape.clone();
-        let new_input = optimizer.new_graph.input(shape);
+        let (shape, dtype) = graph.shape_dtype(old_input);
+        let new_input = optimizer.new_graph.input(shape.clone(), dtype);
         optimizer.insert_mapping(old_input, new_input);
     }
 
