@@ -1,9 +1,13 @@
 use std::cell::RefCell;
 use std::cmp::{max, min, Reverse};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 
 use board_game::board::{Board, Outcome, Player};
 use board_game::games::ataxx::AtaxxBoard;
+use board_game::games::chess::{ChessBoard, Rules};
+use board_game::games::go;
+use board_game::games::go::{GoBoard, Komi};
 use clap::Parser;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
@@ -11,7 +15,7 @@ use crossterm::event::{
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use decorum::N32;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
 use tui::backend::CrosstermBackend;
@@ -21,8 +25,12 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::Widget;
 use tui::Terminal;
 
-use cuda_nn_eval::Device;
+use cuda_sys::wrapper::handle::Device;
 use kz_core::mapping::ataxx::AtaxxStdMapper;
+use kz_core::mapping::chess::ChessStdMapper;
+use kz_core::mapping::go::GoStdMapper;
+use kz_core::mapping::BoardMapper;
+use kz_core::network::cpu::CPUNetwork;
 use kz_core::network::cudnn::CudaNetwork;
 use kz_core::network::symmetry::RandomSymmetryNetwork;
 use kz_core::network::Network;
@@ -31,22 +39,37 @@ use kz_core::zero::step::{zero_step_apply, zero_step_gather, FpuMode, QMode, Zer
 use kz_core::zero::tree::Tree;
 use kz_core::zero::values::ZeroValuesAbs;
 use kz_core::zero::wrapper::ZeroSettings;
+use kz_selfplay::server::protocol::Game;
 use kz_util::display::display_option_empty;
 use nn_graph::onnx::load_graph_from_onnx_path;
 use nn_graph::optimizer::optimize_graph;
 
 #[derive(clap::Parser)]
 struct Args {
+    // game
+    #[clap(long)]
+    game: String,
     #[clap(long)]
     fen: Option<String>,
-    #[clap(long, default_value_t = 1.0)]
-    virtual_loss_weight: f32,
-    #[clap(long, default_value_t = 0)]
-    visits: u64,
+
+    // network
     #[clap(long)]
-    no_random_symmetries: bool,
+    network: PathBuf,
+    #[clap(long)]
+    cpu: bool,
+    #[clap(long)]
+    random_symmetries: bool,
+
+    // search
     #[clap(long, default_value_t = 1)]
     batch_size: usize,
+    #[clap(long, default_value_t = 1.0)]
+    virtual_loss_weight: f32,
+    #[clap(long, default_value_t = 1.0)]
+    policy_temperature: f32,
+
+    #[clap(long, default_value_t = 0)]
+    visits: u64,
 }
 
 #[derive(Debug)]
@@ -74,37 +97,68 @@ struct RenderNode {
 fn main() -> std::io::Result<()> {
     let args: Args = Args::parse();
 
-    let board = match &args.fen {
-        Some(fen) => AtaxxBoard::from_fen(fen).unwrap(),
-        None => AtaxxBoard::default(),
-    };
+    let game = Game::parse(&args.game).expect("Invalid game");
 
+    match game {
+        Game::Chess => {
+            let board = args.fen.as_ref().map_or(ChessBoard::default(), |fen| {
+                ChessBoard::new_without_history_fen(fen, Rules::default())
+            });
+            main_game(&args, board, ChessStdMapper)
+        }
+        Game::Ataxx { size } => {
+            let board = args.fen.as_ref().map_or(AtaxxBoard::diagonal(size), |fen| {
+                AtaxxBoard::from_fen(fen).expect("Invalid fen")
+            });
+            assert_eq!(board.size(), size, "Fen has wrong size");
+            main_game(&args, board, AtaxxStdMapper::new(size))
+        }
+        Game::Go { size } => {
+            let komi = Komi::try_from(7.5).unwrap();
+            let rules = go::Rules::tromp_taylor();
+            let board = args.fen.as_ref().map_or(GoBoard::new(size, komi, rules), |fen| {
+                GoBoard::from_fen(fen, rules).expect("Invalid fen")
+            });
+            assert_eq!(board.size(), size, "Fen has wrong size");
+            main_game(&args, board, GoStdMapper::new(size, false))
+        }
+
+        _ => panic!("Game {game:?} not implemented yet"),
+    }
+}
+
+fn main_game<B: Board, M: BoardMapper<B>>(args: &Args, board: B, mapper: M) -> std::io::Result<()> {
     println!("Using board:");
     println!("{}", board);
+    println!("Using mapper: {:?}", mapper);
 
-    // let path = r#"C:\Documents\Programming\STTT\kZero\data\networks\chess_16x128_gen3634.onnx"#;
-    // let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\network_503.onnx"#;
-    let path = r#"\\192.168.0.10\Documents\Karel A0\loop\ataxx-7\16x128_gaps\training\gen_6732\network.onnx"#;
-    // let settings = ZeroSettings::new(
-    //     args.batch_size,
-    //     UctWeights::default(),
-    //     QMode::wdl(),
-    //     FpuMode::Fixed(1.0),
-    //     FpuMode::Relative(0.0),
-    //     args.virtual_loss_weight,
-    //     1.0,
-    // );
-    let settings = ZeroSettings::simple(
+    println!("Loading graph...");
+    let graph = load_graph_from_onnx_path(&args.network, true).unwrap();
+    println!("Optimizing graph...");
+    let graph = optimize_graph(&graph, Default::default());
+
+    println!("Building network...");
+    let network_inner = if args.cpu {
+        println!("Using CPU");
+        Either::Left(CPUNetwork::new(mapper, graph))
+    } else {
+        println!("Using Cuda");
+        Either::Right(CudaNetwork::new(mapper, &graph, args.batch_size, Device::new(0)))
+    };
+
+    let mut network = RandomSymmetryNetwork::new(network_inner, thread_rng(), args.random_symmetries);
+
+    // TODO expose as params?
+    let settings = ZeroSettings::new(
         args.batch_size,
         UctWeights::default(),
         QMode::wdl(),
-        FpuMode::Relative(0.0),
+        FpuMode::Fixed(1.0),
+        FpuMode::Fixed(0.0),
+        args.virtual_loss_weight,
+        args.policy_temperature,
     );
 
-    let graph = optimize_graph(&load_graph_from_onnx_path(path, false).unwrap(), Default::default());
-    let mapper = AtaxxStdMapper::new(board.size());
-    let network_inner = CudaNetwork::new(mapper, &graph, settings.batch_size, Device::new(0));
-    let mut network = RandomSymmetryNetwork::new(network_inner, thread_rng(), !args.no_random_symmetries);
     main_impl(&mut network, board, settings, args.visits)
 }
 
@@ -474,11 +528,13 @@ impl<B: Board> State<B> {
             };
 
             let values = [
+                zero.value_abs.value_a,
                 zero.wdl_abs.win_a,
                 zero.wdl_abs.draw,
                 zero.wdl_abs.win_b,
                 zero.moves_left,
                 zero_policy,
+                net.value_abs.value_a,
                 net.wdl_abs.win_a,
                 net.wdl_abs.draw,
                 net.wdl_abs.win_b,
@@ -508,11 +564,13 @@ const COLUMN_INFO: &[(&str, &str, bool, Color)] = &[
     ("T", "", false, Color::Gray),
     ("Visits", "", false, Color::Gray),
     ("Depth", "", false, Color::Gray),
+    ("Zero", "V", true, Color::Magenta),
     ("Zero", "A", true, Color::Green),
     ("Zero", "D", true, Color::DarkGray),
     ("Zero", "B", true, Color::Red),
     ("Zero", "M", true, Color::Yellow),
     ("Zero", "P", true, Color::LightBlue),
+    ("Net", "V", true, Color::Magenta),
     ("Net", "A", true, Color::Green),
     ("Net", "D", true, Color::DarkGray),
     ("Net", "B", true, Color::Red),
