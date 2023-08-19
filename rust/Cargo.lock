@@ -250,6 +250,8 @@ dependencies = [
 [[package]]
 name = "board-game"
 version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "647fc8459363368aae04df3d21da37094430c57dd993d09be2792133d5365e3e"
 dependencies = [
  "arimaa_engine_step",
  "cast_trait",
