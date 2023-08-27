@@ -28,7 +28,7 @@ unsafe fn main_inner() {
     println!("Using data type {:?}", data_type);
     println!("IO shape: {}x{}x{}x{}", b, c, s, s);
 
-    let io_desc = TensorDescriptor::new_with_type(vec![b, c, s, s], vec![c * s * s, s * s, s, 1], data_type);
+    let io_desc = TensorDescriptor::new(vec![b, c, s, s], vec![c * s * s, s * s, s, 1], data_type);
     let f_desc = FilterDescriptor::new_with_type_format(c, c, 3, 3, data_type, weight_format);
     let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1);
 

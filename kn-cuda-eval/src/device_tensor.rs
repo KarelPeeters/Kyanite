@@ -6,6 +6,7 @@ use kn_cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
 use kn_cuda_sys::wrapper::group::TensorOpArgs;
 use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_graph::dtype::DType;
 
 use crate::shape::StridedShape;
 
@@ -18,10 +19,10 @@ impl OffsetPtr for DevicePtr {
 }
 
 impl DeviceTensor {
-    pub fn alloc_simple(device: Device, shape: Vec<usize>) -> Self {
+    pub fn alloc_simple(device: Device, shape: Vec<usize>, dtype: DType) -> Self {
         let shape = StridedShape::new_simple(shape);
-        let ptr = DevicePtr::alloc(device, shape.size() * 4);
-        DeviceTensor::from_parts(ptr, shape)
+        let ptr = DevicePtr::alloc(device, shape.size() * dtype.size().bytes());
+        DeviceTensor::from_parts(ptr, shape, dtype)
     }
 
     pub fn device(&self) -> Device {
@@ -29,7 +30,7 @@ impl DeviceTensor {
     }
 
     pub fn deep_clone(&self) -> DeviceTensor {
-        let new = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
+        let new = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec(), self.dtype());
         unsafe {
             new.copy_from(self);
         }
@@ -75,6 +76,9 @@ impl DeviceTensor {
     }
 
     pub fn copy_from_as_tensor_op(&self, other: &DeviceTensor) -> TensorOpArgs {
+        assert_eq!(self.dtype(), other.dtype(), "Tensors must have the same dtype");
+        let dtype = self.dtype();
+
         assert_eq!(
             self.strided_shape().shape(),
             other.strided_shape().shape(),
@@ -104,6 +108,9 @@ impl DeviceTensor {
     }
 
     pub unsafe fn copy_from(&self, other: &DeviceTensor) {
+        assert_eq!(self.dtype(), other.dtype(), "Tensors must have the same dtype");
+        let dtype = self.dtype();
+
         assert_eq!(
             self.strided_shape().shape(),
             other.strided_shape().shape(),
@@ -115,7 +122,7 @@ impl DeviceTensor {
         if self.strided_shape() == other.strided_shape() && self.strided_shape().has_dense_strides() {
             // if strides are dense and match we can just do a simple memcpy
             self.ptr()
-                .copy_linear_from_device(&other.ptr(), self.strided_shape().size() * 4)
+                .copy_linear_from_device(&other.ptr(), self.strided_shape().size() * dtype.size().bytes())
         } else {
             // otherwise use the TensorOp restride trick
             let handle = CudnnHandle::new(self.device());
@@ -127,6 +134,8 @@ impl DeviceTensor {
     /// A (potentially) slower version of [Self::copy_from_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_from_host_staged(&self, buffer: &[f32]) {
+        assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");
+
         assert_eq!(
             self.strided_shape().size(),
             buffer.len(),
@@ -137,7 +146,7 @@ impl DeviceTensor {
         if self.strided_shape().has_simple_strides() {
             self.copy_simple_from_host(buffer);
         } else {
-            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
+            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec(), self.dtype());
             stage.copy_simple_from_host(buffer);
             self.copy_from(&stage);
         }
@@ -146,6 +155,8 @@ impl DeviceTensor {
     /// A (potentially) slower version of [Self::copy_to_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_to_host_staged(&self, buffer: &mut [f32]) {
+        assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");
+
         assert_eq!(
             self.strided_shape().size(),
             buffer.len(),
@@ -156,7 +167,7 @@ impl DeviceTensor {
         if self.strided_shape().has_simple_strides() {
             self.copy_simple_to_host(buffer);
         } else {
-            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec());
+            let stage = DeviceTensor::alloc_simple(self.device(), self.strided_shape().shape().to_vec(), self.dtype());
             stage.copy_from(self);
             stage.copy_simple_to_host(buffer);
         }

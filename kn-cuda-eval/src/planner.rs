@@ -228,6 +228,7 @@ impl<'a> Planner<'a> {
             .collect_vec();
 
         // allocate (single) zero tensor
+        // TODO use dtype size
         let zero_bytes = 4 * planner.max_zero_size;
         let zero_allocation = device.alloc(zero_bytes);
         unsafe {
@@ -879,6 +880,7 @@ impl<'a> Planner<'a> {
     }
 
     fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {
+        // TODO use dtype size
         self.dedicated_bytes += 4 * shape.size();
         DeviceTensor::alloc_simple(self.device(), shape.dims)
     }
@@ -895,6 +897,7 @@ impl<'a> Planner<'a> {
     }
 
     fn alloc_tensor_shared(&mut self, shape: ConcreteShape, debug_value: Option<Value>) -> PlanTensor {
+        // TODO use dtype size
         let buffer = self.alloc_buffer_shared(4 * shape.size(), debug_value);
         let shape = StridedShape::new_simple(shape.dims);
         PlanTensor::from_parts(buffer, shape)

@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use kn_cuda_sys::bindings::cublasOperation_t;
 use kn_cuda_sys::wrapper::group::MatMulOperand;
+use kn_graph::dtype::DType;
 use kn_graph::graph::SliceRange;
 
 use crate::shape::{StridedShape, ViewError};
@@ -13,13 +14,14 @@ pub trait OffsetPtr: Debug + Clone {
 /// A generic Tensor representation.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PtrTensor<P> {
-    shape: StridedShape,
     ptr: P,
+    dtype: DType,
+    shape: StridedShape,
 }
 
 impl<P> PtrTensor<P> {
-    pub fn from_parts(ptr: P, shape: StridedShape) -> Self {
-        PtrTensor { ptr, shape }
+    pub fn from_parts(ptr: P, shape: StridedShape, dtype: DType) -> Self {
+        PtrTensor { ptr, shape, dtype }
     }
 
     pub fn into_ptr(self) -> P {
@@ -34,14 +36,19 @@ impl<P> PtrTensor<P> {
         &self.shape
     }
 
+    pub fn dtype(&self) -> DType {
+        self.dtype
+    }
+
     pub fn map_ptr<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
-        PtrTensor::from_parts(f(self.ptr), self.shape)
+        PtrTensor::from_parts(f(self.ptr), self.shape, self.dtype)
     }
 }
 
 impl<P: OffsetPtr> PtrTensor<P> {
-    fn offset(&self, offset: isize, shape: StridedShape) -> Self {
-        Self::from_parts(self.ptr.clone().offset_bytes(4 * offset), shape)
+    fn offset(&self, offset_elem: isize, shape: StridedShape) -> Self {
+        let offset_bytes = self.dtype.size().bytes() as isize * offset_elem;
+        Self::from_parts(self.ptr.clone().offset_bytes(offset_bytes), shape, self.dtype)
     }
 
     pub fn permute(&self, permutation: &[usize]) -> Self {

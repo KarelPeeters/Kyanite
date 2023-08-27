@@ -40,11 +40,7 @@ impl Drop for TensorDescriptor {
 }
 
 impl TensorDescriptor {
-    pub fn new(shape: Vec<i32>, strides: Vec<i32>) -> Self {
-        Self::new_with_type(shape, strides, cudnnDataType_t::CUDNN_DATA_FLOAT)
-    }
-
-    pub fn new_with_type(shape: Vec<i32>, strides: Vec<i32>, data_type: cudnnDataType_t) -> Self {
+    pub fn new(shape: Vec<i32>, strides: Vec<i32>, data_type: cudnnDataType_t) -> Self {
         assert!(
             shape.len() >= 4,
             "Tensors must be at least 4d, got shape {:?} strides {:?}",
@@ -390,18 +386,12 @@ impl Drop for TensorOpDescriptor {
 }
 
 impl TensorOpDescriptor {
-    pub fn new(operation: cudnnOpTensorOp_t) -> Self {
+    pub fn new(operation: cudnnOpTensorOp_t, dtype: cudnnDataType_t) -> Self {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateOpTensorDescriptor(&mut inner as *mut _).unwrap();
 
-            cudnnSetOpTensorDescriptor(
-                inner,
-                operation,
-                cudnnDataType_t::CUDNN_DATA_FLOAT,
-                cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN,
-            )
-            .unwrap();
+            cudnnSetOpTensorDescriptor(inner, operation, dtype, cudnnNanPropagation_t::CUDNN_PROPAGATE_NAN).unwrap();
 
             TensorOpDescriptor { inner, operation }
         }
