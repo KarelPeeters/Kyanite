@@ -13,8 +13,7 @@ use rand_distr::StandardNormal;
 use kn_cuda_eval::runtime::Runtime;
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::{ndarray, shape};
-use kn_graph::cpu::Tensor;
-use kn_graph::dtype::DType;
+use kn_graph::dtype::{DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
@@ -108,9 +107,15 @@ fn main() -> std::io::Result<()> {
     let tokens_prompt = tokens_to_tensor(&tokens_prompt);
     let tokens_uncond = tokens_to_tensor(&tokens_prompt_avoid);
 
-    let emb_prompt = runtime.eval(runtime_text_encoder, &[tokens_prompt]).single();
-    let emb_uncond = runtime.eval(runtime_text_encoder, &[tokens_uncond]).single();
-    let emb_all = ndarray::concatenate![Axis(0), emb_uncond, emb_prompt].into_shared();
+    let emb_prompt = runtime
+        .eval(runtime_text_encoder, &[DTensor::F32(tokens_prompt)])
+        .single();
+    let emb_prompt = emb_prompt.unwrap_f32().unwrap();
+    let emb_uncond = runtime
+        .eval(runtime_text_encoder, &[DTensor::F32(tokens_uncond)])
+        .single();
+    let emb_uncond = emb_uncond.unwrap_f32().unwrap();
+    let emb_all = ndarray::concatenate![Axis(0), emb_uncond.clone(), emb_prompt.clone()].into_shared();
 
     println!("Initializing latents");
     let latent_shape = (1, LATENT_CHANNELS, LATENT_SIZE, LATENT_SIZE);
@@ -156,20 +161,26 @@ fn main() -> std::io::Result<()> {
 
         if !args.no_save_intermediate {
             println!("    Decoding intermediate image");
-            let image = runtime.eval(runtime_decoder, &[latent.clone()]).single();
+            let image = runtime.eval(runtime_decoder, &[DTensor::F32(latent.clone())]).single();
+            let image = image.unwrap_f32().unwrap();
 
             println!("    Saving intermediate image");
-            tensor_to_image(&image)
+            tensor_to_image(image)
                 .save(args.output_folder.join(format!("image_{i}.png")))
                 .unwrap();
         }
 
         let t_tensor = Array::from_shape_fn((), |()| t as f32).into_dyn().into_shared();
         let latent_input = ndarray::concatenate![Axis(0), latent, latent].into_shared();
-        let unet_inputs = [latent_input, t_tensor, emb_all.clone()];
+        let unet_inputs = [
+            DTensor::F32(latent_input),
+            DTensor::F32(t_tensor),
+            DTensor::F32(emb_all.clone()),
+        ];
 
         println!("    Running unet");
         let noise_pred_all = runtime.eval(runtime_unet, &unet_inputs).single();
+        let noise_pred_all = noise_pred_all.unwrap_f32().unwrap();
 
         println!("    Shuffling outputs");
         let noise_pred_uncond = noise_pred_all.slice_axis(Axis(0), Slice::from(0..1));
@@ -188,10 +199,11 @@ fn main() -> std::io::Result<()> {
         .unwrap();
 
     println!("Decoding final image");
-    let image = runtime.eval(runtime_decoder, &[latent.clone()]).single();
+    let image = runtime.eval(runtime_decoder, &[DTensor::F32(latent.clone())]).single();
+    let image = image.unwrap_f32().unwrap();
 
     println!("Saving final image");
-    tensor_to_image(&image)
+    tensor_to_image(image)
         .save(args.output_folder.join("image_final.png"))
         .unwrap();
 
@@ -202,7 +214,7 @@ fn str_to_tokens(s: &str) -> Vec<u32> {
     s.split(',').map(|x| x.parse::<u32>().unwrap()).collect_vec()
 }
 
-fn tokens_to_tensor(tokens: &[u32]) -> Tensor {
+fn tokens_to_tensor(tokens: &[u32]) -> Tensor<f32> {
     assert!(tokens.len() + 2 < EMBED_LENGTH);
 
     Array::from_shape_fn((1, EMBED_LENGTH), |(_, i)| {
@@ -215,11 +227,11 @@ fn tokens_to_tensor(tokens: &[u32]) -> Tensor {
         };
         x as f32
     })
-    .into_dyn()
-    .into_shared()
+        .into_dyn()
+        .into_shared()
 }
 
-fn latent_to_image(latent: &Tensor) -> RgbImage {
+fn latent_to_image(latent: &Tensor<f32>) -> RgbImage {
     let latent_image = latent
         .clone()
         .permuted_axes(IxDyn(&[0, 2, 1, 3]))
@@ -232,7 +244,7 @@ fn latent_to_image(latent: &Tensor) -> RgbImage {
     tensor_to_image(&(latent_image / 3.0 + 0.5))
 }
 
-fn tensor_to_image(tensor: &Tensor) -> RgbImage {
+fn tensor_to_image(tensor: &Tensor<f32>) -> RgbImage {
     let shape = tensor.shape();
 
     let shape = if shape.len() == 4 {
@@ -260,7 +272,7 @@ fn tensor_to_image(tensor: &Tensor) -> RgbImage {
 }
 
 #[allow(dead_code)]
-fn tensor_from_image(image: &RgbImage) -> Tensor {
+fn tensor_from_image(image: &RgbImage) -> Tensor<f32> {
     Array::from_shape_fn(
         (1, 3, image.height() as usize, image.width() as usize),
         |(_, c, y, x)| {
@@ -268,8 +280,8 @@ fn tensor_from_image(image: &RgbImage) -> Tensor {
             p as f32 / 255.0 * 2.0 - 1.0
         },
     )
-    .into_shared()
-    .into_dyn()
+        .into_shared()
+        .into_dyn()
 }
 
 #[allow(dead_code)]
@@ -292,7 +304,7 @@ mod scheduler {
 
     use itertools::Itertools;
 
-    use kn_graph::cpu::Tensor;
+    use kn_graph::dtype::Tensor;
 
     use crate::{Array1, Axis, VecExt};
 
@@ -315,9 +327,9 @@ mod scheduler {
         timesteps: Vec<usize>,
 
         // step
-        ets: Vec<Tensor>,
+        ets: Vec<Tensor<f32>>,
         counter: usize,
-        cur_sample: Option<Tensor>,
+        cur_sample: Option<Tensor<f32>>,
     }
 
     impl PNDMSScheduler {
@@ -363,7 +375,12 @@ mod scheduler {
             self.timesteps.clone()
         }
 
-        pub fn step_plms(&mut self, mut model_output: Tensor, mut timestep: usize, mut sample: Tensor) -> Tensor {
+        pub fn step_plms(
+            &mut self,
+            mut model_output: Tensor<f32>,
+            mut timestep: usize,
+            mut sample: Tensor<f32>,
+        ) -> Tensor<f32> {
             let mut prev_timestep = max(
                 timestep as isize - (self.num_train_timesteps / self.num_inference_steps) as isize,
                 0,
@@ -392,9 +409,9 @@ mod scheduler {
             } else {
                 model_output = ((1.0 / 24.0)
                     * (55.0 * self.ets.signed_index(-1) - 59.0 * self.ets.signed_index(-2)
-                        + 37.0 * self.ets.signed_index(-3)
-                        - 9.0 * self.ets.signed_index(-4)))
-                .into_shared();
+                    + 37.0 * self.ets.signed_index(-3)
+                    - 9.0 * self.ets.signed_index(-4)))
+                    .into_shared();
             }
 
             let prev_sample = self.get_prev_sample(sample, timestep, prev_timestep, model_output);
@@ -405,11 +422,11 @@ mod scheduler {
 
         fn get_prev_sample(
             &mut self,
-            sample: Tensor,
+            sample: Tensor<f32>,
             timestep: usize,
             timestep_prev: usize,
-            model_output: Tensor,
-        ) -> Tensor {
+            model_output: Tensor<f32>,
+        ) -> Tensor<f32> {
             let alpha_prod_t = self.alphas_cumprod[timestep + 1 - self._offset];
             let alpha_prod_t_prev = self.alphas_cumprod[timestep_prev + 1 - self._offset];
 

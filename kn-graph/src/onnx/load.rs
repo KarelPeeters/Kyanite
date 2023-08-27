@@ -1,20 +1,20 @@
 use std::path::PathBuf;
 
-use crate::dtype::DType;
 use byteorder::{ByteOrder, LittleEndian};
-use itertools::{zip_eq, Itertools};
+use itertools::{Itertools, zip_eq};
 use num_traits::cast;
 use prost::Message;
 
+use crate::dtype::DType;
+use crate::graph::{BinaryOp, broadcast_shape_symmetric, ReduceOp, SliceRange, UnaryOp};
 pub use crate::graph::Graph;
-use crate::graph::{broadcast_shape_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp};
 use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
+use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
-use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{float_to_i64_exact, SignedSize, TypedValue};
@@ -267,9 +267,16 @@ fn visit_node(
                 assert_eq!(graph[*right].shape, Shape::SCALAR);
 
                 let left_value = left[0].as_size().unwrap().unwrap_fixed("ele left hand size") as f32;
-                let right_value = *graph.as_const(*right).unwrap().iter().next().unwrap();
+                let right_value = *graph
+                    .as_const(*right)
+                    .unwrap()
+                    .unwrap_f32()
+                    .unwrap()
+                    .iter()
+                    .next()
+                    .unwrap();
 
-                let result_value = op.map(left_value, right_value);
+                let result_value = op.map_t(left_value, right_value);
 
                 let result = graph.scalar(result_value);
                 TypedValue::FloatTensor(result)
@@ -632,6 +639,8 @@ fn visit_node(
                     let indices = graph
                         .as_const(indices)
                         .expect("Shape gather only supported for const index")
+                        .unwrap_f32()
+                        .unwrap()
                         .mapv(float_to_i64_exact);
 
                     let result = indices
@@ -917,11 +926,16 @@ fn visit_node(
                 "Scales must be a vector with length the input rank"
             );
 
-            let result = scales.iter().enumerate().fold(input_tensor, |acc, (axis, &scale_f)| {
-                let scale = scale_f as usize;
-                assert_eq!(scale as f32, scale_f, "Only integer scales supported, got {:?}", scales);
-                graph.repeat_interleave(acc, axis, Size::fixed(scale))
-            });
+            let result = scales
+                .unwrap_f32()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .fold(input_tensor, |acc, (axis, &scale_f)| {
+                    let scale = scale_f as usize;
+                    assert_eq!(scale as f32, scale_f, "Only integer scales supported, got {:?}", scales);
+                    graph.repeat_interleave(acc, axis, Size::fixed(scale))
+                });
 
             TypedValue::with_same_type(result, input)
         }

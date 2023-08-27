@@ -7,7 +7,7 @@ use itertools::{enumerate, multizip, zip_eq, Itertools};
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
-use kn_graph::cpu::Tensor;
+use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
@@ -58,6 +58,14 @@ pub struct Profile {
 
 impl CudaExecutor {
     pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
+        // assert that inputs and outputs are all f32 tensors
+        for &input in graph.inputs() {
+            assert_eq!(graph[input].dtype, DType::F32);
+        }
+        for &output in graph.outputs() {
+            assert_eq!(graph[output].dtype, DType::F32);
+        }
+
         let handles = Handles {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
@@ -97,12 +105,15 @@ impl CudaExecutor {
         self.handles.stream()
     }
 
-    pub fn evaluate_tensors(&mut self, inputs: &[Tensor]) -> Vec<Tensor> {
+    pub fn evaluate_tensors(&mut self, inputs: &[DTensor]) -> Vec<DTensor> {
         // map the inputs to slices
         let inputs = enumerate(inputs)
             .map(|(i, x)| {
                 assert_eq!(x.shape(), self.inputs[i].strided_shape().shape());
-                x.as_slice().expect("Only sliceable inputs supported")
+                x.unwrap_f32()
+                    .expect("Only f32 tensors supported for now")
+                    .as_slice()
+                    .expect("Only sliceable inputs supported")
             })
             .collect_vec();
 
@@ -112,8 +123,9 @@ impl CudaExecutor {
         // map the outputs to tensors
         let outputs = (0..self.outputs.len())
             .map(|i| {
+                // TODO support non-f32 tensors
                 let buffer = unsafe { cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned() };
-                Tensor::from_shape_vec(self.outputs[i].strided_shape().shape(), buffer).unwrap()
+                DTensor::F32(Tensor::from_shape_vec(self.outputs[i].strided_shape().shape(), buffer).unwrap())
             })
             .collect_vec();
 
@@ -122,6 +134,7 @@ impl CudaExecutor {
 
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> Vec<&[f32]> {
         assert_eq!(inputs.len(), self.inputs.len());
+        // TODO support different input/output tensor types
 
         unsafe {
             // make sure there is no other leftover memcpy running

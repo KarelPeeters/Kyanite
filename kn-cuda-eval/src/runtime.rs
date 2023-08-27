@@ -1,9 +1,10 @@
 use std::fmt::{Debug, Formatter};
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use kn_cuda_sys::wrapper::handle::Device;
-use kn_graph::cpu::{cpu_eval_graph, Tensor};
+use kn_graph::cpu::cpu_eval_graph;
+use kn_graph::dtype::DTensor;
 use kn_graph::graph::Graph;
 
 use crate::executor::CudaExecutor;
@@ -62,7 +63,7 @@ impl Runtime {
         }
     }
 
-    pub fn eval(&mut self, token: GraphToken, inputs: &[Tensor]) -> Vec<Tensor> {
+    pub fn eval(&mut self, token: GraphToken, inputs: &[DTensor]) -> Vec<DTensor> {
         let GraphToken { check, index } = token;
         assert_eq!(self.check, check);
 

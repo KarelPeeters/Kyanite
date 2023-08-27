@@ -5,14 +5,14 @@ use crate::root::runner::{test_elementwise, test_elementwise_pair};
 #[test]
 fn unary() {
     for &op in UnaryOp::ALL {
-        test_elementwise(|x| op.map(x), |g, a| g.unary(op, a));
+        test_elementwise(|x| op.map_t(x), |g, a| g.unary(op, a));
     }
 }
 
 #[test]
 fn binary() {
     for &op in BinaryOp::ALL {
-        test_elementwise_pair(|a, b| op.map(a, b), |g, a, b| g.binary(op, a, b))
+        test_elementwise_pair(|a, b| op.map_t(a, b), |g, a, b| g.binary(op, a, b))
     }
 }
 

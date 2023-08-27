@@ -6,18 +6,18 @@ use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
-use crate::autokernel::common::DisplayCFloat;
 use kn_cuda_sys::bindings::cudnnActivationMode_t;
 use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
 use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use kn_graph::dtype::DConst;
+use kn_graph::dtype::{DScalar, T32};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::common::DisplayCFloat;
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
@@ -320,10 +320,12 @@ impl<'a> Planner<'a> {
 
         let result: PlanTensor = match &result_info.operation {
             &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, Some(value)),
-            Operation::Constant { data } => {
+            Operation::Constant { tensor } => {
                 let result = self.alloc_tensor_dedicated(result_shape);
+                let tensor = tensor.unwrap_f32().unwrap().as_standard_layout();
+                let data = tensor.as_slice().unwrap();
                 unsafe {
-                    result.copy_simple_from_host(cast_slice(&**data));
+                    result.copy_simple_from_host(cast_slice(data));
                 }
                 result.map_ptr(|device_ptr| PlanPtr::from_device_ptr(Some(value), device_ptr))
             }
@@ -545,11 +547,11 @@ impl<'a> Planner<'a> {
             right,
         } = &self.graph[value].operation
         {
-            if let Some(DConst::F32(alpha)) = self.graph.as_single_const(left) {
-                return Ok((alpha.into_inner(), self.visit(right)?));
+            if let Some(DScalar::F32(T32(alpha))) = self.graph.as_single_const(left) {
+                return Ok((alpha, self.visit(right)?));
             }
-            if let Some(DConst::F32(alpha)) = self.graph.as_single_const(right) {
-                return Ok((alpha.into_inner(), self.visit(left)?));
+            if let Some(DScalar::F32(T32(alpha))) = self.graph.as_single_const(right) {
+                return Ok((alpha, self.visit(left)?));
             }
         }
 
@@ -826,9 +828,15 @@ impl<'a> Planner<'a> {
 
                 let y = if let Some(c) = self.graph.as_single_const(value) {
                     let c_str = match c {
-                        DConst::F32(c) => DisplayCFloat(c.into_inner()).to_string(),
-                        DConst::I(_, c) => c.to_string(),
-                        DConst::U(_, c) => c.to_string(),
+                        DScalar::F32(c) => DisplayCFloat(*c).to_string(),
+                        DScalar::U8(c) => format!("{}", c),
+                        DScalar::U16(c) => format!("{}", c),
+                        DScalar::U32(c) => format!("{}", c),
+                        DScalar::U64(c) => format!("{}", c),
+                        DScalar::I8(c) => format!("{}", c),
+                        DScalar::I16(c) => format!("{}", c),
+                        DScalar::I32(c) => format!("{}", c),
+                        DScalar::I64(c) => format!("{}", c),
                     };
 
                     block.define_y(&c_str)

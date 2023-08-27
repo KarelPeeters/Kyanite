@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use crate::dtype::{DConst, DType};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
+use crate::dtype::{DScalar, DTensor, DType};
 use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
-use crate::optimizer::recurse::heap_recurse;
 use crate::optimizer::OptimizerSettings;
+use crate::optimizer::recurse::heap_recurse;
 
 #[derive(Debug)]
 pub struct Optimizer<'a> {
@@ -214,11 +214,11 @@ impl<'a> Optimizer<'a> {
         let axis = axes[0];
 
         let eps = match self.old_graph.as_single_const(old_const_eps) {
-            Some(DConst::F32(eps)) => eps.into_inner(),
+            Some(DScalar::F32(eps)) => *eps,
             _ => return Ok(None),
         };
 
-        if !self.old_graph.is_const_filled_with(old_const_2, DConst::f32(2.0)) {
+        if !self.old_graph.is_const_filled_with(old_const_2, DScalar::f32(2.0)) {
             return Ok(None);
         }
 
@@ -240,17 +240,13 @@ impl<'a> Optimizer<'a> {
             } = operation
             {
                 // if right is a single constant value we can fuse it
-                if let Some(value) = self.old_graph.as_const(old_right) {
-                    if value.len() == 1 {
-                        let &f = value.iter().next().unwrap();
-
-                        match op {
-                            BinaryOp::Min => total_max = f32::min(total_max, f),
-                            BinaryOp::Max => total_min = f32::max(total_min, f),
-                            _ => unreachable!(),
-                        }
-                        return Ok(Some(old_left));
+                if let Some(DScalar::F32(value)) = self.old_graph.as_single_const(old_right) {
+                    match op {
+                        BinaryOp::Min => total_max = f32::min(total_max, *value),
+                        BinaryOp::Max => total_min = f32::max(total_min, *value),
+                        _ => unreachable!(),
                     }
+                    return Ok(Some(old_left));
                 }
             }
             Ok(None)
@@ -288,7 +284,7 @@ impl<'a> Optimizer<'a> {
             op: BinaryOp::Div,
         } = &self.old_graph[old_start].operation
         {
-            if let Some(data) = self.old_graph.as_const(right) {
+            if let Some(DTensor::F32(data)) = self.old_graph.as_const(right) {
                 let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
                 let new_right = self
                     .new_graph

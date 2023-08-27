@@ -45,10 +45,10 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids
 
         let (color, op, attrs_operation) = match info.operation {
             Operation::Input { index } => ("gray", "Input", vec![("index", format!("{}", index))]),
-            Operation::Constant { ref data } => {
+            Operation::Constant { ref tensor } => {
                 let mut attrs = vec![];
-                if data.len() == 1 {
-                    attrs.push(("value", format!("{}", data[0])));
+                if tensor.len() == 1 {
+                    attrs.push(("value", format!("{:?}", tensor)));
                 }
                 ("gray", "Constant", attrs)
             }

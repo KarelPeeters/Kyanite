@@ -6,7 +6,8 @@ use kn_graph::graph::{BinaryOp, Graph};
 use kn_graph::shape;
 
 use crate::root::runner::test_all;
-use crate::root::tensor_utils::{manual_tensor, rng_tensor, rng_vec};
+use crate::root::tensor_utils::{manual_tensor, rng_tensor_f32, rng_vec};
+
 
 #[test]
 fn chained_scalar() {
@@ -43,7 +44,7 @@ fn split_scalar() {
 
     graph.output_all(&[y1, y2]);
 
-    let input_tensor = rng_tensor((2, 3), &mut rng);
+    let input_tensor = rng_tensor_f32((2, 3), &mut rng);
     test_all(&graph, 0, &[input_tensor], None)
 }
 
@@ -63,7 +64,7 @@ fn rejoining_scalar() {
 
     graph.output(y3);
 
-    let input_tensor = rng_tensor((2, 3), &mut rng);
+    let input_tensor = rng_tensor_f32((2, 3), &mut rng);
     test_all(&graph, 0, &[input_tensor], None)
 }
 
@@ -83,6 +84,6 @@ fn inner_scalar_used() {
 
     graph.output_all(&[y1, y3]);
 
-    let input_tensor = rng_tensor((2, 3), &mut rng);
+    let input_tensor = rng_tensor_f32((2, 3), &mut rng);
     test_all(&graph, 0, &[input_tensor], None)
 }

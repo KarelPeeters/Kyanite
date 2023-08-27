@@ -1,26 +1,20 @@
-use byteorder::{ByteOrder, LittleEndian};
 use std::cmp::min;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use crate::dtype::DType;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
-    s, ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, IxDyn, SliceInfo, SliceInfoElem, Zip,
+    ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, Ix4, IxDyn, LinalgScalar, s, SliceInfo,
+    SliceInfoElem, Zip,
 };
 
+use crate::dtype::{DTensor, DType, map_dtensor, map_dtensor_pair};
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
 
-/// The core tensor type of this crate.
-///
-/// We're using an ArcArray so reshaping is free.
-pub type Tensor = ArcArray<f32, IxDyn>;
-
-/// Evaluate the given graph on the CPU, with the given batch size and inputs, returning the outputs.
-pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Tensor> {
+pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[DTensor]) -> Vec<DTensor> {
     let exec = cpu_eval_graph_exec(graph, batch_size, inputs, false);
     exec.output_tensors()
 }
@@ -32,7 +26,7 @@ pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Ve
 ///
 /// `keep_all` controls whether all intermediate tensors are kept in memory,
 /// or freed as soon as they are no longer necessary.
-pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], keep_all: bool) -> ExecutionInfo {
+pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[DTensor], keep_all: bool) -> ExecutionInfo {
     assert_eq!(
         graph.inputs().len(),
         inputs.len(),
@@ -97,21 +91,21 @@ pub(crate) enum OperationError {
     MissingInput,
 }
 
-pub(crate) type OperationResult = Result<Tensor, OperationError>;
+pub(crate) type OperationResult = Result<DTensor, OperationError>;
 
 fn run_cpu_operation(
     info: &ValueInfo,
     map: &IndexMap<Value, CalculatedValue>,
-    inputs: &[Tensor],
+    inputs: &[DTensor],
     batch_size: usize,
-) -> Tensor {
+) -> DTensor {
     try_run_cpu_operation(
         info,
         |value| Ok(map.get(&value).unwrap().tensor.as_ref().unwrap().clone()),
         |index| Ok(inputs[index].clone()),
         Some(batch_size),
     )
-    .unwrap()
+        .unwrap()
 }
 
 pub(crate) fn run_cpu_const_operation(info: &ValueInfo, map: impl Fn(Value) -> OperationResult) -> OperationResult {
@@ -130,31 +124,26 @@ fn try_run_cpu_operation(
             .map(|batch_size| info.shape.eval(batch_size))
             .ok_or(OperationError::NoBatchSize)?,
     };
+    let output_shape_dyn = IxDyn(&output_shape.dims);
     let dtype = info.dtype;
 
-    // TODO support non-f32 tensors
-    assert_eq!(dtype, DType::F32, "Only f32 is supported for now");
-
-    let output_shape_dyn = IxDyn(&output_shape.dims);
-
-    let result: Tensor = match info.operation {
+    let result: DTensor = match info.operation {
         Operation::Input { index } => input(index)?,
-        Operation::Constant { ref data } => {
-            let mut data_f = vec![0.0; data.len() / 4];
-            LittleEndian::read_f32_into(&**data, &mut data_f);
-            Tensor::from_shape_vec(output_shape_dyn, data_f).unwrap()
-        }
+        Operation::Constant { ref tensor } => tensor.clone(),
         Operation::View { input } => {
             let input = map(input)?;
             input.reshape(output_shape_dyn)
         }
         Operation::Broadcast { input } => {
             let input = map(input)?;
-            input.broadcast(output_shape_dyn).unwrap().to_shared()
+            map_dtensor!(input, |input| input.broadcast(output_shape_dyn).unwrap().to_shared())
         }
         Operation::Permute { input, ref permutation } => {
             let input = map(input)?;
-            input.view().permuted_axes(permutation.clone()).to_shared()
+            map_dtensor!(input, |input| input
+                .view()
+                .permuted_axes(permutation.clone())
+                .to_shared())
         }
         Operation::Slice { input, axis, range } => {
             let input = map(input)?;
@@ -166,43 +155,69 @@ fn try_run_cpu_operation(
             let clamped_end = min(range.end, axis_len);
 
             let info = slice_info(
-                input.ndim(),
+                input.rank(),
                 axis,
                 range.start as isize,
                 Some(clamped_end as isize),
                 range.step as isize,
             );
-            input.slice(info).to_shared()
+            map_dtensor!(input, |input| input.slice(info).to_shared())
         }
         Operation::Flip { input, axis } => {
             let input = map(input)?;
 
             // slice with negative step (ndarray convention is different from python)
-            let info = slice_info(input.ndim(), axis, 0, None, -1);
-            input.slice(info).to_shared()
+            let info = slice_info(input.rank(), axis, 0, None, -1);
+            map_dtensor!(input, |input| input.slice(info).to_shared())
         }
         Operation::Gather { input, axis, indices } => {
             let input = map(input)?;
             let indices = map(indices)?;
 
-            assert_eq!(indices.ndim(), 1);
-            let slices = indices
-                .iter()
-                .map(|&f| {
-                    let i = f as usize;
-                    assert_eq!(i as f32, f);
+            assert_eq!(indices.rank(), 1);
 
-                    input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
-                })
-                .collect_vec();
+            let indices = match indices {
+                DTensor::F32(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
+                    unreachable!("gather indices should be unsigned integers")
+                }
+                DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
+                DTensor::U16(indices) => indices.mapv(|x| x as u64).into_shared(),
+                DTensor::U32(indices) => indices.mapv(|x| x as u64).into_shared(),
+                DTensor::U64(indices) => indices,
+            };
 
-            concatenate(output_shape_dyn, axis, &slices)
+            map_dtensor!(input, |input| {
+                let slices = indices
+                    .iter()
+                    .map(|&f| {
+                        let i: isize = f.try_into().expect("Index out of bounds");
+                        input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
+                    })
+                    .collect_vec();
+
+                concatenate(output_shape_dyn, axis, slices.as_slice())
+            })
         }
         Operation::Concat { ref inputs, axis } => {
-            let inputs: Vec<_> = inputs.iter().map(|&x| map(x)).try_collect()?;
-            let inputs_viewed = inputs.iter().map(|x| x.view()).collect_vec();
+            macro_rules! concat {
+                ($dtype:path) => {{
+                    let inputs: Vec<_> = inputs.iter().map(|&x| map(x)).try_collect()?;
+                    let inputs_viewed = inputs.iter().map(|x| unwrap_match::unwrap_match!(x, $dtype(x) => x).view()).collect_vec();
+                    $dtype(concatenate(output_shape_dyn, axis, &inputs_viewed))
+                }}
+            }
 
-            concatenate(output_shape_dyn, axis, &inputs_viewed)
+            match dtype {
+                DType::F32 => concat!(DTensor::F32),
+                DType::I8 => concat!(DTensor::I8),
+                DType::I16 => concat!(DTensor::I16),
+                DType::I32 => concat!(DTensor::I32),
+                DType::I64 => concat!(DTensor::I64),
+                DType::U8 => concat!(DTensor::U8),
+                DType::U16 => concat!(DTensor::U16),
+                DType::U32 => concat!(DTensor::U32),
+                DType::U64 => concat!(DTensor::U64),
+            }
         }
         Operation::Conv {
             input,
@@ -211,56 +226,68 @@ fn try_run_cpu_operation(
         } => {
             let input = map(input)?;
             let filter = map(filter)?;
-            let result = convolution(
-                conv_shape,
-                input.view().into_dimensionality().unwrap(),
-                filter.view().into_dimensionality().unwrap(),
-            );
-            result.into_dyn().into_shared()
+
+            map_dtensor_pair!(input, filter, |input, filter| {
+                convolution(
+                    conv_shape,
+                    input.view().into_dimensionality::<Ix4>().unwrap(),
+                    filter.view().into_dimensionality::<Ix4>().unwrap(),
+                )
+                .into_dyn()
+                .into_shared()
+            })
         }
         Operation::MatMul { left, right } => {
             let left = map(left)?;
             let right = map(right)?;
 
-            batched_mat_mul(
-                left.view().into_dimensionality::<Ix3>().unwrap(),
-                right.view().into_dimensionality::<Ix3>().unwrap(),
-            )
-            .into_dyn()
-            .into_shared()
+            map_dtensor_pair!(left, right, |left, right| {
+                batched_mat_mul(
+                    left.view().into_dimensionality::<Ix3>().unwrap(),
+                    right.view().into_dimensionality::<Ix3>().unwrap(),
+                )
+                .into_dyn()
+                .into_shared()
+            })
         }
         Operation::Unary { input, op } => {
             let input = map(input)?;
-            input.map(|&x| op.map(x)).into_shared()
+            map_dtensor!(input, |input| input.map(|&x| op.map_t(x)).into_shared())
         }
         Operation::Binary { left, right, op } => {
             let left = map(left)?;
             let right = map(right)?;
 
-            Zip::from(&left)
-                .and(&right)
-                .map_collect(|&l, &r| op.map(l, r))
-                .into_shared()
+            map_dtensor_pair!(left, right, |left, right| {
+                Zip::from(&left)
+                    .and(&right)
+                    .map_collect(|&l, &r| op.map_t(l, r))
+                    .into_shared()
+            })
         }
         Operation::Softmax { input, axis } => {
             let input = map(input)?;
-            softmax(input.view(), Axis(axis)).into_shared()
+            let input = input.unwrap_f32().unwrap();
+            DTensor::F32(softmax(input.view(), Axis(axis)).into_shared())
         }
         Operation::Layernorm { input, axis, eps } => {
             let input = map(input)?;
-            layernorm(input.view(), Axis(axis), eps.into_inner()).into_shared()
+            let input = input.unwrap_f32().unwrap();
+            DTensor::F32(layernorm(input.view(), Axis(axis), eps.into_inner()).into_shared())
         }
         Operation::Reduce { input, ref axes, op } => {
             let input = map(input)?;
 
-            let result = axes.iter().fold(input.to_shared(), |curr, &axis| {
-                Zip::from(curr.lanes(Axis(axis)))
-                    .map_collect(|lane| op.reduce(lane.iter().copied()))
-                    .into_shared()
-                    .insert_axis(Axis(axis))
-            });
-
-            result.reshape(output_shape_dyn)
+            map_dtensor!(input, |input| {
+                axes.iter()
+                    .fold(input.to_shared(), |curr, &axis| {
+                        Zip::from(curr.lanes(Axis(axis)))
+                            .map_collect(|lane| op.reduce_t(lane.iter().copied()))
+                            .into_shared()
+                            .insert_axis(Axis(axis))
+                    })
+                    .reshape(output_shape_dyn)
+            })
         }
     };
 
@@ -269,9 +296,13 @@ fn try_run_cpu_operation(
 }
 
 /// Wrapper around [ndarray::concatenate] that can handle an empty input list.
-fn concatenate(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<f32, IxDyn>]) -> Tensor {
+fn concatenate<T: Clone + num_traits::Zero>(
+    output_shape: IxDyn,
+    axis: usize,
+    inputs: &[ArrayView<T, IxDyn>],
+) -> ArcArray<T, IxDyn> {
     if inputs.is_empty() {
-        Tensor::zeros(output_shape)
+        ArcArray::zeros(output_shape)
     } else {
         let result = ndarray::concatenate(Axis(axis), inputs).unwrap().into_shared();
         assert_eq!(result.dim(), output_shape);
@@ -279,7 +310,7 @@ fn concatenate(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<f32, IxDyn>
     }
 }
 
-pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayView4<f32>) -> Array4<f32> {
+pub fn convolution<T: LinalgScalar>(details: ConvDetails, input: ArrayView4<T>, kernel: ArrayView4<T>) -> Array4<T> {
     let ConvDetails {
         batch_size: _,
         input_channels,
@@ -351,7 +382,7 @@ pub fn convolution(details: ConvDetails, input: ArrayView4<f32>, kernel: ArrayVi
     result
 }
 
-pub fn batched_mat_mul(left: ArrayView3<f32>, right: ArrayView3<f32>) -> Array3<f32> {
+pub fn batched_mat_mul<T: LinalgScalar>(left: ArrayView3<T>, right: ArrayView3<T>) -> Array3<T> {
     let (n0, p, q0) = left.dim();
     let (n1, q1, r) = right.dim();
     assert!(
@@ -374,9 +405,9 @@ pub fn batched_mat_mul(left: ArrayView3<f32>, right: ArrayView3<f32>) -> Array3<
 /// Softmax along the given axis of the tensor.
 /// Implementation (and more importantly, the generic bounds) based on softmax within the onnxruntime crate
 pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
-where
-    D: ndarray::RemoveAxis,
-    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
+    where
+        D: ndarray::RemoveAxis,
+        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
 {
     let mut result = array.to_owned();
 
@@ -392,9 +423,9 @@ where
 
 /// Layernorm along the given axis of the tensor.
 pub fn layernorm<S, D>(array: ArrayBase<S, D>, axis: Axis, eps: f32) -> Array<f32, D>
-where
-    D: ndarray::RemoveAxis,
-    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
+    where
+        D: ndarray::RemoveAxis,
+        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
 {
     let mut result = array.to_owned();
 
@@ -449,26 +480,20 @@ pub struct ExecutionInfo {
 
 pub struct CalculatedValue {
     pub value: Value,
-    pub tensor: Option<Tensor>,
+    pub tensor: Option<DTensor>,
     pub tensor_shape: ConcreteShape,
     pub uses_seen: usize,
     pub time_spent: f32,
 }
 
 impl ExecutionInfo {
-    pub fn output_tensors(self) -> Vec<Tensor> {
+    pub fn output_tensors(self) -> Vec<DTensor> {
         self.outputs
             .iter()
             .map(|v| {
-                // convert to standard layout so users get easily get &[f32] slices
-                self.values
-                    .get(v)
-                    .unwrap()
-                    .tensor
-                    .as_ref()
-                    .unwrap()
-                    .as_standard_layout()
-                    .to_shared()
+                // convert to standard layout so users get easily get slices if they want
+                let tensor = self.values.get(v).unwrap().tensor.as_ref().unwrap();
+                map_dtensor!(tensor, |tensor| tensor.as_standard_layout().to_shared())
             })
             .collect_vec()
     }

@@ -3,7 +3,7 @@ use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
-use kn_graph::dtype::DType;
+use kn_graph::dtype::{DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
 use kn_graph::ndarray::{Array, Array1};
 use kn_graph::optimizer::optimize_graph;
@@ -11,7 +11,7 @@ use kn_graph::shape;
 use kn_graph::shape::{Shape, Size};
 
 use crate::root::runner::test_all;
-use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor, rng_vec};
+use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor_f32, rng_vec};
 
 #[test]
 fn empty() {
@@ -29,13 +29,13 @@ fn copy() {
     let batch = graph.input(shape![Size::BATCH], DType::F32);
     graph.output_all(&[fixed, batch]);
 
-    let fixed_tensor = linspace_tensor(fixed_size).into_dyn();
-    let batch_tensor = linspace_tensor(batch_size).into_dyn();
+    let fixed_tensor = linspace_tensor(fixed_size);
+    let batch_tensor = linspace_tensor(batch_size);
 
     test_all(
         &graph,
         batch_size,
-        &[fixed_tensor.to_shared(), batch_tensor.to_shared()],
+        &[fixed_tensor.clone(), batch_tensor.clone()],
         Some(&[fixed_tensor, batch_tensor]),
     )
 }
@@ -57,7 +57,7 @@ fn slice() {
 
     graph.output_all(&outputs);
 
-    test_all(&graph, 0, &[input_tensor.into_dyn()], None)
+    test_all(&graph, 0, &[input_tensor], None)
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn flip_conv() {
     let result = graph.conv(flipped, weight, 1, 1, 1, 1);
 
     graph.output(result);
-    test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+    test_all(&graph, 0, &[linspace_tensor((2, 4, 8, 8))], None);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn repeat() {
     ];
     graph.output_all(&outputs);
 
-    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
+    test_all(&graph, 0, &[rng_tensor_f32((2, 3), &mut rng)], None);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn repeat_interleave() {
     ];
     graph.output_all(&outputs);
 
-    test_all(&graph, 0, &[rng_tensor((2, 3), &mut rng)], None);
+    test_all(&graph, 0, &[rng_tensor_f32((2, 3), &mut rng)], None);
 }
 
 #[test]
@@ -148,10 +148,10 @@ fn repeat_manual() {
     ];
     graph.output_all(&outputs);
 
-    let input_tensor = manual_tensor((3, ), vec![1.0, 2.0, 3.0]);
+    let input_tensor = manual_tensor((3,), vec![1.0, 2.0, 3.0]);
     let output_tensors = [
-        manual_tensor((6, ), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
-        manual_tensor((6, ), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
+        manual_tensor((6,), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
+        manual_tensor((6,), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
     ];
 
     test_all(&graph, 0, &[input_tensor], Some(&output_tensors))
@@ -216,7 +216,7 @@ fn gather_size_0() {
     let mut graph = Graph::new();
 
     let input = graph.input(shape![8, 4], DType::F32);
-    let input_tensor = linspace_tensor((8, 4)).into_dyn();
+    let input_tensor = linspace_tensor((8, 4));
 
     let indices = graph.constant::<u32>(shape![0], vec![]);
     let output0 = graph.gather(input, 0, indices);
@@ -254,7 +254,7 @@ fn gather_as_index() {
         );
     }
 
-    test_all(&graph, 0, &[rng_tensor((16, 8, 4), &mut rng)], None);
+    test_all(&graph, 0, &[rng_tensor_f32((16, 8, 4), &mut rng)], None);
 }
 
 #[test]
@@ -292,12 +292,7 @@ fn linear_sliced() {
     let result = graph.mat_mul(left_sliced, right);
     graph.output(result);
 
-    test_all(
-        &graph,
-        0,
-        &[linspace_tensor((8, 4)).into_dyn(), linspace_tensor((4, 3)).into_dyn()],
-        None,
-    );
+    test_all(&graph, 0, &[linspace_tensor((8, 4)), linspace_tensor((4, 3))], None);
 }
 
 #[test]
@@ -318,8 +313,14 @@ fn mat_mul_broadcast() {
     for (left_shape, right_shape, result_shape) in shapes {
         println!("Testing {} @ {} => {}", left_shape, right_shape, result_shape);
 
-        inputs.push(rng_tensor(left_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
-        inputs.push(rng_tensor(right_shape.unwrap_fixed("shape").dims.as_slice(), &mut rng));
+        inputs.push(rng_tensor_f32(
+            left_shape.unwrap_fixed("shape").dims.as_slice(),
+            &mut rng,
+        ));
+        inputs.push(rng_tensor_f32(
+            right_shape.unwrap_fixed("shape").dims.as_slice(),
+            &mut rng,
+        ));
 
         let left = graph.input(left_shape.clone(), DType::F32);
         let right = graph.input(right_shape.clone(), DType::F32);
@@ -473,7 +474,11 @@ fn add_broadcast() {
 #[test]
 fn affine_single_element() {
     let input_data = manual_tensor((8, 1, 1, 1), range_vec(8));
-    let output_data = input_data.map(|&x| ((x + 1.0) * 2.0 * 10.0 + 3.0) * 4.0).to_shared();
+    let output_data = input_data
+        .unwrap_f32()
+        .unwrap()
+        .map(|&x| ((x + 1.0) * 2.0 * 10.0 + 3.0) * 4.0)
+        .to_shared();
 
     let mut graph = Graph::new();
 
@@ -492,7 +497,7 @@ fn affine_single_element() {
     let curr = graph.mul(curr, scale_1);
     graph.output(curr);
 
-    test_all(&graph, 0, &[input_data], Some(&[output_data]))
+    test_all(&graph, 0, &[input_data], Some(&[DTensor::F32(output_data)]))
 }
 
 #[test]
@@ -575,22 +580,22 @@ fn conv_padding() {
     test_all(
         &graph,
         0,
-        &[
-            manual_tensor((1, 1, 1, 1), vec![1.0]),
-            linspace_tensor((1, 1, 8, 8)).into_dyn(),
-        ],
+        &[manual_tensor((1, 1, 1, 1), vec![1.0]), linspace_tensor((1, 1, 8, 8))],
         None,
     );
 }
 
 #[test]
 fn affine_padding() {
-    let input_data = linspace_tensor((8, 3, 8, 8)).into_dyn();
+    let input_data = linspace_tensor((8, 3, 8, 8));
     let filter_data = linspace_tensor((5, 3, 3, 3));
 
     let mut graph = Graph::new();
 
-    let filter = graph.constant::<f32>(Shape::fixed(filter_data.shape()), filter_data.to_owned().into_raw_vec());
+    let filter = graph.constant::<f32>(
+        Shape::fixed(filter_data.shape()),
+        filter_data.unwrap_f32().unwrap().to_owned().into_raw_vec(),
+    );
     let bias_0 = graph.constant::<f32>(shape![1, 3, 1, 1], linspace_vec(3));
     let bias_1 = graph.constant::<f32>(shape![1, 5, 1, 1], linspace_vec(5));
 
@@ -607,7 +612,7 @@ fn affine_padding() {
 fn pre_act_resnet() {
     let mut graph = Graph::new();
 
-    let input_data = linspace_tensor((8, 3, 8, 8)).into_dyn();
+    let input_data = linspace_tensor((8, 3, 8, 8));
     let input = graph.input(Shape::fixed(input_data.shape()), DType::F32);
 
     let filter_initial = graph.constant::<f32>(shape![5, 3, 3, 3], linspace_vec(5 * 3 * 3 * 3));
@@ -654,6 +659,7 @@ fn channel_batchnorm(graph: &mut Graph, input: Value) -> Value {
 #[test]
 fn fuse_res() {
     let mut graph = Graph::new();
+    let mut rng = StdRng::seed_from_u64(0);
 
     let input = graph.input(shape![10, 4, 8, 8], DType::F32);
     let other = graph.input(shape![10, 4, 8, 8], DType::F32);
@@ -669,8 +675,8 @@ fn fuse_res() {
         &graph,
         0,
         &[
-            linspace_tensor((10, 4, 8, 8)).into_dyn(),
-            linspace_tensor((10, 4, 8, 8)).into_dyn() + 1.0,
+            rng_tensor_f32((10, 4, 8, 8), &mut rng),
+            rng_tensor_f32((10, 4, 8, 8), &mut rng),
         ],
         None,
     );
@@ -756,7 +762,7 @@ fn repeated_conv() {
 
     graph.output_all(&[x4, y4]);
 
-    test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8)).into_dyn()], None);
+    test_all(&graph, 2, &[linspace_tensor((2, 4, 8, 8))], None);
 }
 
 #[test]
@@ -770,7 +776,7 @@ fn strided_conv() {
     assert_eq!(graph[output].shape, shape![Size::BATCH, 16, 4, 2]);
 
     let batch_size = 4;
-    let input = rng_tensor(graph[input].shape.eval(batch_size).dims.as_slice(), &mut rng);
+    let input = rng_tensor_f32(graph[input].shape.eval(batch_size).dims.as_slice(), &mut rng);
     test_all(&graph, batch_size, &[input], None);
 }
 
@@ -819,7 +825,7 @@ fn reduce_mixed() {
     let output = graph.reduce(mixed, vec![1, 2, 4], ReduceOp::Sum);
     graph.output(output);
 
-    test_all(&graph, 0, &[linspace_tensor((12, 3, 7, 9, 13)).into_dyn()], None);
+    test_all(&graph, 0, &[linspace_tensor((12, 3, 7, 9, 13))], None);
 }
 
 #[test]
@@ -830,7 +836,7 @@ fn reduce_single() {
     let output = graph.reduce(input, vec![0], ReduceOp::Sum);
     graph.output(output);
 
-    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+    test_all(&graph, 0, &[linspace_tensor(4)], None);
 }
 
 #[test]
@@ -841,7 +847,7 @@ fn softmax_single() {
     let output = graph.softmax(input, 0);
     graph.output(output);
 
-    test_all(&graph, 0, &[linspace_tensor(4).into_dyn()], None);
+    test_all(&graph, 0, &[linspace_tensor(4)], None);
 }
 
 #[test]
@@ -900,7 +906,7 @@ fn layernorm_fused() {
         );
     }
 
-    test_all(&graph, 2, &[linspace_tensor((2, 8, 32)).into_dyn()], None);
+    test_all(&graph, 2, &[linspace_tensor((2, 8, 32))], None);
 }
 
 #[test]
@@ -927,8 +933,8 @@ fn split_stride() {
     graph.output(y2);
 
     let mut rng = StdRng::seed_from_u64(0);
-    let input = rng_tensor(2 * len, &mut rng);
-    println!("{}", input);
+    let input = rng_tensor_f32(2 * len, &mut rng);
+    println!("{:?}", input);
     test_all(&graph, 0, &[input], None);
 }
 
@@ -1030,7 +1036,10 @@ fn complex_multiply(new_axis: bool) {
     test_all(
         &graph,
         0,
-        &[input_a.into_shared().into_dyn(), input_b.into_shared().into_dyn()],
-        Some(&[output.into_shared().into_dyn()]),
+        &[
+            DTensor::F32(input_a.into_shared().into_dyn()),
+            DTensor::F32(input_b.into_shared().into_dyn()),
+        ],
+        Some(&[DTensor::F32(output.into_shared().into_dyn())]),
     );
 }
