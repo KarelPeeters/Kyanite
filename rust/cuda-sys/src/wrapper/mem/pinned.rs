@@ -20,6 +20,7 @@ impl Drop for PinnedMem {
 }
 
 impl PinnedMem {
+    // TODO should we take a device param here?
     pub fn alloc(len_bytes: usize, write_combined: bool) -> Self {
         //TODO should we set cudaHostAllocPortable/Mapped here?
         let flags = if write_combined {
