@@ -6,14 +6,14 @@ use std::process::Command;
 
 use crate::graph::{Graph, Operation};
 
-pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool) -> std::io::Result<()> {
+pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool, show_ids: bool) -> std::io::Result<()> {
     let path = path.as_ref();
 
     let path_gv = path.with_extension("gv");
     let path_svg = path.with_extension("svg");
 
     let output = BufWriter::new(File::create(&path_gv)?);
-    graph_to_dot(output, graph, hide_const)?;
+    graph_to_dot(output, graph, hide_const, show_ids)?;
 
     let result = Command::new("dot")
         .arg("-Tsvg")
@@ -26,7 +26,7 @@ pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool) -> 
     Ok(())
 }
 
-pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::io::Result<()> {
+pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids: bool) -> std::io::Result<()> {
     writeln!(f, "digraph {{")?;
     writeln!(f)?;
 
@@ -99,9 +99,12 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool) -> std::
         if let Some(output_index) = graph.outputs().iter().position(|&v| v == value) {
             attrs_general.push(("output", format!("{}", output_index)));
         }
-        let debug_id = &graph[value].debug_id;
-        if !debug_id.is_empty() {
-            attrs_general.push(("debug_id", format!("{:?}", debug_id)));
+
+        if show_ids {
+            let debug_id = &graph[value].debug_id;
+            if !debug_id.is_empty() {
+                attrs_general.push(("debug_id", format!("{:?}", debug_id)));
+            }
         }
 
         let mut attrs = attrs_general;
