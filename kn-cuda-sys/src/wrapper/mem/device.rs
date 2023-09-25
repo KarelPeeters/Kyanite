@@ -18,9 +18,11 @@ pub struct DevicePtr {
     offset: isize,
 }
 
+// TODO it's a bit weird that this is public without being able to construct it,
+// but it's useful to let the user know it exists in docs.
 /// A device allocation as returned by cudaMalloc.
 #[derive(Debug, Eq, PartialEq, Hash)]
-struct DeviceBuffer {
+pub struct DeviceBuffer {
     device: Device,
     base_ptr: *mut c_void,
     len_bytes: isize,

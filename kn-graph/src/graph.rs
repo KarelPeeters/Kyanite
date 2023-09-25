@@ -1388,7 +1388,8 @@ impl ReduceOp {
     }
 }
 
-/// Formula and coefficients from https://en.wikipedia.org/wiki/Error_function#Numerical_approximations (Abramowitz and Stegun),
+/// Formula and coefficients from <https://en.wikipedia.org/wiki/Error_function#Numerical_approximations>
+/// (Abramowitz and Stegun),
 /// Max error `3e-7`. We use f64 internally to ensure there are no additional errors introduced.
 pub fn erf(x: f32) -> f32 {
     let sign = x.signum();
