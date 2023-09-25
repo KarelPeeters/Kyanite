@@ -1,9 +1,0 @@
-[package]
-name = "pgn-reader"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-buffered-reader.workspace = true
-internal-iterator.workspace = true
-memchr.workspace = true
