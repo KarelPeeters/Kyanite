@@ -1,5 +1,6 @@
 #![warn(missing_debug_implementations)]
 #![allow(clippy::new_without_default)]
+#![warn(missing_docs)]
 
 pub use ndarray;
 

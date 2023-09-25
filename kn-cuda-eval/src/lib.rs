@@ -1,4 +1,5 @@
 #![warn(missing_debug_implementations)]
+#![warn(missing_docs)]
 
 pub use kn_cuda_sys::wrapper::handle::Device;
 
