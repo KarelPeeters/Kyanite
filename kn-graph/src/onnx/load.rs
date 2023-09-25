@@ -505,7 +505,7 @@ fn visit_node(
         }
         "Cast" => {
             let input = inputs.required(0)?;
-            let to_type = DataType::from_i32(attrs.take_int("to")? as i32).expect("Invalid data type");
+            let to_type = DataType::try_from(attrs.take_int("to")? as i32).expect("Invalid data type");
 
             match input {
                 // ignore casting for shapes
@@ -937,13 +937,13 @@ fn define_tensor_data(
     tensor: &TensorProto,
     external: &dyn ExternalDataLoader,
 ) -> OnnxResult<TypedValue> {
-    let data_location = DataLocation::from_i32(tensor.data_location).expect("Illegal data_location");
+    let data_location = DataLocation::try_from(tensor.data_location).expect("Illegal data_location");
 
     // figure out the shape and type
     let dims = tensor.dims.iter().map(|&d| Size::fixed(d as usize)).collect_vec();
     let shape = Shape::new(dims);
     let size = shape.size().unwrap_fixed("Data tensor shape must be fixed");
-    let data_type = DataType::from_i32(tensor.data_type).expect("Illegal data type");
+    let data_type = DataType::try_from(tensor.data_type).expect("Illegal data type");
 
     // load the data
     let raw_data_storage;
@@ -1029,7 +1029,7 @@ fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, bool)> {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
     let result = match value {
         ProtoTypeValue::TensorType(tensor) => {
-            let data_type = DataType::from_i32(tensor.elem_type).expect("Invalid data type");
+            let data_type = DataType::try_from(tensor.elem_type).expect("Invalid data type");
 
             let is_int = match data_type {
                 DataType::Float | DataType::Double => false,
