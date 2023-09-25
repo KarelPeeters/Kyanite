@@ -1,7 +1,10 @@
-use crate::onnx::proto::attribute_proto::AttributeType;
-use crate::onnx::proto::tensor_proto::DataType;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::{Path, PathBuf};
+
+use crate::onnx::proto::attribute_proto::AttributeType;
+use crate::onnx::proto::tensor_proto::DataType;
 
 pub type OnnxResult<T> = Result<T, OnnxError>;
 
@@ -76,3 +79,11 @@ impl<S: AsRef<str>> Node<S> {
         }
     }
 }
+
+impl Display for OnnxError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for OnnxError {}

@@ -1,6 +1,7 @@
 use crate::wrapper::handle::Device;
 use crate::wrapper::mem::device::DevicePtr;
 
+/// A device memory pool, allocated once up front and then uses a bump allocator to return sub-allocations.
 #[derive(Debug)]
 pub struct DevicePool {
     total_size_bytes: usize,
@@ -18,6 +19,7 @@ impl DevicePool {
     }
 
     pub fn alloc(&mut self, size_bytes: usize) -> DevicePtr {
+        // TODO return error instead of panicking
         assert!(
             self.next_offset + size_bytes <= self.total_size_bytes,
             "Not enough space left, used {}/{} and requested {}",
@@ -32,6 +34,7 @@ impl DevicePool {
     }
 
     pub fn clear(&mut self) {
+        // TODO return error instead of panicking
         assert_eq!(
             self.buffer.shared_count(),
             1,

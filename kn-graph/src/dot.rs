@@ -6,6 +6,9 @@ use std::process::Command;
 
 use crate::graph::{Graph, Operation};
 
+/// Render the given graph as an svg file.
+///
+/// This assumes that graphviz is installed and available on the path as `dot`.
 pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool, show_ids: bool) -> std::io::Result<()> {
     let path = path.as_ref();
 
@@ -26,6 +29,9 @@ pub fn graph_to_svg(path: impl AsRef<Path>, graph: &Graph, hide_const: bool, sho
     Ok(())
 }
 
+/// Render the given graph as a graphviz string.
+///
+/// This makes no assumptions about the environment.
 pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids: bool) -> std::io::Result<()> {
     writeln!(f, "digraph {{")?;
     writeln!(f)?;

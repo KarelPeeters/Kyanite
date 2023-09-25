@@ -1,16 +1,19 @@
+/// Device, Stream, cuDNN, cuBLAS, ... handles.
 pub mod handle;
-/// This crate tries to eliminate the global "current device" cuda state.
-/// Every cuda/cudnn call that depends on the device is preceded by a cudaSetDevice call.
+/// Error status handling.
 pub mod status;
-
-pub mod event;
-pub mod graph;
-
+/// Memory management.
 pub mod mem;
-
-pub mod descriptor;
-pub mod operation;
-
-pub mod group;
-
+/// Cuda event type.
+pub mod event;
+/// Cuda graph recording.
+pub mod graph;
+/// Cuda Runtime Compilation.
 pub mod rtc;
+
+/// Descriptor wrappers.
+pub mod descriptor;
+/// Operation wrappers.
+pub mod operation;
+/// Fused operation wrappers.
+pub mod group;

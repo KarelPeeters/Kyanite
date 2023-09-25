@@ -5,14 +5,23 @@ mod affine;
 mod core;
 pub mod recurse;
 
+/// Settings for the optimizer.
+///
+/// Use `Default::default()` to get reasonable defaults.
 #[derive(Debug, Copy, Clone)]
 pub struct OptimizerSettings {
+    /// If `false`, don't do any optimization at all.
     pub optimize: bool,
+    /// If `true`, convert a bias operation followed by a convolution _through_ the convolution,
+    /// even in cases where this requires switching to a non-spatially-broadcasted bias constant.
     pub force_bias_through_conv: bool,
+    /// If `true`, try fusing the right sequence of operations into a single LayerNorm operation.
     pub fuse_layernorm: bool,
+    /// If `true`, convert a division by a constant into multiplication by the inverse consent.
     pub div_to_mul: bool,
 }
 
+/// Optimize the given graph according to the given settings. Returns a new, fully independent graph.
 pub fn optimize_graph(graph: &Graph, settings: OptimizerSettings) -> Graph {
     if !settings.optimize {
         return graph.clone();

@@ -3,6 +3,16 @@ use std::slice;
 
 pub unsafe trait KernelArg {}
 
+/// A cuda kernel argument builder.
+///
+/// ```
+/// # use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
+/// let mut args = KernelArgs::new();
+/// args.push(std::ptr::null());
+/// args.push(16);
+/// args.push(32);
+/// args.push(1.0f32);
+/// let arg_bytes = args.finish();
 #[derive(Debug)]
 pub struct KernelArgs {
     buffer: Vec<u8>,

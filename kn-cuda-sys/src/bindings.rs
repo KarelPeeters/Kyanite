@@ -8,6 +8,7 @@
 
 // Ignore documentation warnings, we can't fix them anyway since they come from bindgen.
 #![allow(rustdoc::all)]
+#![allow(missing_docs)]
 
 use std::ffi::c_void;
 

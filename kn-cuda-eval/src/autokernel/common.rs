@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::fmt::{Display, Formatter};
 use std::num::FpCategory;
 use std::sync::Mutex;
@@ -34,37 +33,14 @@ pub fn compile_cached_kernel(key: KernelKey) -> CuFunction {
         let module = CuModule::from_source(key.device, &key.source, None, &[&key.func_name], &HEADERS);
 
         if !module.log.is_empty() {
-            let source_numbered = prefix_line_numbers(&key.source);
+            let source_numbered = module.source_with_line_numbers();
             eprintln!("Kernel source:\n{}\nLog:\n{}\n", source_numbered, module.log);
         }
 
-        let lowered_names = module.lowered_names;
-
-        let module = module.module.unwrap();
-        let lowered_name = lowered_names.get(&key.func_name).unwrap();
-        let func = module.get_function(lowered_name).unwrap();
-
-        func
+        module.get_function_by_name(&key.func_name).unwrap().unwrap()
     });
 
     func.clone()
-}
-
-fn prefix_line_numbers(s: &str) -> String {
-    let line_count = s.lines().count();
-    let max_number_size = (line_count + 1).to_string().len();
-
-    let mut result = String::new();
-
-    for (i, line) in s.lines().enumerate() {
-        let line_number = i + 1;
-        let line_number = format!("{}", line_number);
-
-        result.extend(std::iter::repeat(' ').take(max_number_size - line_number.len()));
-        writeln!(&mut result, "{}| {}", line_number, line).unwrap();
-    }
-
-    result
 }
 
 pub fn fill_replacements(src: &str, replacements: &[(&str, String)]) -> String {

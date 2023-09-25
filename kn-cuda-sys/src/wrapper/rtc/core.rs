@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
+use std::fmt::Write;
 use std::ptr::{null, null_mut};
 use std::sync::Arc;
 
 use itertools::Itertools;
 
 use crate::bindings::{
-    cuLaunchKernel, cuModuleGetFunction, cuModuleLoadDataEx, cuModuleUnload, nvrtcAddNameExpression,
-    nvrtcCompileProgram, nvrtcCreateProgram, nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetPTX, nvrtcGetPTXSize,
-    nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
-    CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
+    CU_LAUNCH_PARAM_BUFFER_POINTER, CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END, cuLaunchKernel, cuModuleGetFunction,
+    cuModuleLoadDataEx, cuModuleUnload, CUresult, nvrtcAddNameExpression, nvrtcCompileProgram, nvrtcCreateProgram,
+    nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcGetPTX,
+    nvrtcGetPTXSize, nvrtcResult,
 };
 use crate::wrapper::handle::{CudaStream, Device};
 use crate::wrapper::status::Status;
@@ -40,6 +41,7 @@ unsafe impl Send for CuFunction {}
 #[must_use]
 #[derive(Debug)]
 pub struct CompileResult {
+    pub source: String,
     pub log: String,
     pub module: Result<CuModule, nvrtcResult>,
     pub lowered_names: HashMap<String, String>,
@@ -70,7 +72,7 @@ impl CuModule {
             null_mut(),
             null_mut(),
         )
-        .unwrap();
+            .unwrap();
         CuModule {
             inner: Arc::new(CuModuleInner { device, inner }),
         }
@@ -111,7 +113,7 @@ impl CuModule {
                 header_sources_ptr.as_ptr(),
                 header_names_ptr.as_ptr(),
             )
-            .unwrap();
+                .unwrap();
 
             // add requested names
             for &expected_name in expected_names {
@@ -151,6 +153,7 @@ impl CuModule {
 
             if result != nvrtcResult::NVRTC_SUCCESS {
                 return CompileResult {
+                    source: src.to_owned(),
                     log,
                     module: Err(result),
                     lowered_names: Default::default(),
@@ -183,6 +186,7 @@ impl CuModule {
             let module = CuModule::from_ptx(device, &ptx);
 
             CompileResult {
+                source: src.to_owned(),
                 log,
                 module: Ok(module),
                 lowered_names,
@@ -190,7 +194,8 @@ impl CuModule {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> Option<CuFunction> {
+    /// It's probably easier to use [CompileResult::get_function_by_name] if possible.
+    pub fn get_function_by_lower_name(&self, name: &str) -> Option<CuFunction> {
         unsafe {
             let name_c = CString::new(name.as_bytes()).unwrap();
             let mut function = null_mut();
@@ -240,7 +245,7 @@ impl CuFunction {
             args.as_ptr() as *mut _,
             null_mut(),
         )
-        .unwrap()
+            .unwrap()
     }
 
     pub unsafe fn launch_kernel(
@@ -297,4 +302,35 @@ impl From<u32> for Dim3 {
     fn from(x: u32) -> Self {
         Dim3::single(x)
     }
+}
+
+impl CompileResult {
+    pub fn get_function_by_name(&self, name: &str) -> Result<Option<CuFunction>, nvrtcResult> {
+        let module = self.module.as_ref().map_err(|&e| e)?;
+        let function = self.lowered_names.get(name).and_then(|lower_name| {
+            module.get_function_by_lower_name(lower_name)
+        });
+        Ok(function)
+    }
+
+    pub fn source_with_line_numbers(&self) -> String {
+        prefix_line_numbers(&self.source)
+    }
+}
+
+pub fn prefix_line_numbers(s: &str) -> String {
+    let line_count = s.lines().count();
+    let max_number_size = (line_count + 1).to_string().len();
+
+    let mut result = String::new();
+
+    for (i, line) in s.lines().enumerate() {
+        let line_number = i + 1;
+        let line_number = format!("{}", line_number);
+
+        result.extend(std::iter::repeat(' ').take(max_number_size - line_number.len()));
+        writeln!(&mut result, "{}| {}", line_number, line).unwrap();
+    }
+
+    result
 }

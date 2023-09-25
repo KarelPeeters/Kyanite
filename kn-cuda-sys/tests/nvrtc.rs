@@ -38,7 +38,7 @@ fn saxpy() {
 
             let module = result.module.unwrap();
 
-            let fun_saxpy2 = module.get_function("saxpy").unwrap();
+            let fun_saxpy2 = module.get_function_by_lower_name("saxpy").unwrap();
 
             let a = 1.0f32;
             let x_mem = device.alloc(4);

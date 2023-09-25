@@ -12,14 +12,24 @@ use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
 
+/// The core tensor type of this crate.
+///
 /// We're using an ArcArray so reshaping is free.
 pub type Tensor = ArcArray<f32, IxDyn>;
 
+/// Evaluate the given graph on the CPU, with the given batch size and inputs, returning the outputs.
 pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[Tensor]) -> Vec<Tensor> {
     let exec = cpu_eval_graph_exec(graph, batch_size, inputs, false);
     exec.output_tensors()
 }
 
+/// Evaluate the given graph on the CPU, with the given batch size and inputs,
+/// returning the full execution state including profiling information.
+///
+/// Prefer using [cpu_eval_graph] if only the output are necessary.
+///
+/// `keep_all` controls whether all intermediate tensors are kept in memory,
+/// or freed as soon as they are no longer necessary.
 pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], keep_all: bool) -> ExecutionInfo {
     assert_eq!(
         graph.inputs().len(),
@@ -79,13 +89,13 @@ pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[Tensor], 
 }
 
 #[derive(Debug)]
-pub enum OperationError {
+pub(crate) enum OperationError {
     NoBatchSize,
     MissingOperand,
     MissingInput,
 }
 
-pub type OperationResult = Result<Tensor, OperationError>;
+pub(crate) type OperationResult = Result<Tensor, OperationError>;
 
 fn run_cpu_operation(
     info: &ValueInfo,
@@ -102,7 +112,7 @@ fn run_cpu_operation(
     .unwrap()
 }
 
-pub fn run_cpu_const_operation(info: &ValueInfo, map: impl Fn(Value) -> OperationResult) -> OperationResult {
+pub(crate) fn run_cpu_const_operation(info: &ValueInfo, map: impl Fn(Value) -> OperationResult) -> OperationResult {
     try_run_cpu_operation(info, map, |_| Err(OperationError::MissingInput), None)
 }
 

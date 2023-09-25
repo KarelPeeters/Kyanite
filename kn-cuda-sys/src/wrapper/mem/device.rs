@@ -7,11 +7,13 @@ use crate::wrapper::handle::{CudaStream, Device};
 use crate::wrapper::mem::pinned::PinnedMem;
 use crate::wrapper::status::Status;
 
-/// A pointer pointing somewhere inside of a [DeviceBuffer].
+/// A reference-counted pointer into a [DeviceBuffer]. The buffer cannot be constructed directly,
+/// instead it can only be created by allocating a new [DevicePtr] with [DevicePtr::alloc].
+///
 /// The inner [DeviceBuffer] is automatically freed when there are no [DevicePtr] any more that refer to it.
 /// Since the memory may be shared all accessor methods are marked unsafe.
 ///
-/// Cloning this type does not copy the underlying memory.
+/// Cloning this type does not copy the underlying memory, but only increases the reference count.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DevicePtr {
     buffer: Arc<DeviceBuffer>,

@@ -5,6 +5,9 @@ use std::slice;
 use crate::bindings::{cudaFreeHost, cudaHostAlloc, cudaHostAllocDefault, cudaHostAllocWriteCombined};
 use crate::wrapper::status::Status;
 
+/// A CPU-side pinned memory allocation.
+///
+/// **Warning**: this type is still experimental and not well integrated with the rest of the crate.
 #[derive(Debug)]
 pub struct PinnedMem {
     ptr: *mut c_void,

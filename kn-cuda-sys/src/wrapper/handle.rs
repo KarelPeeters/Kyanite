@@ -15,6 +15,11 @@ use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
 
+/// A cuda device index.
+///
+/// This crate tries to eliminate the global "current device" cuda state:
+/// Every cuda call that depends on the device should be preceded by `device.switch_to()`,
+/// which corresponds to [cudaSetDevice].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Device(i32);
 

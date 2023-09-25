@@ -11,17 +11,33 @@ macro_rules! shape {
     };
 }
 
+/// A shape with each dimension corresponding to [Size].
+///
+/// Use one of the constructor [Shape::new], one of the utilities [Shape::single], [Shape::fixed], [Shape::ones] or
+/// the the `shape!` macro to conveniently construct one:
+/// ```
+/// # use kn_graph::shape;
+/// # use kn_graph::shape::{Shape, Size};
+/// // these are all equivalent
+/// shape![Size::BATCH, 16, 8, 8];
+/// Shape::new(vec![Size::BATCH, 16.into(), 8.into(), 8.into()]);
+/// Shape::new(vec![Size::BATCH, Size::fixed(16), Size::fixed(8), Size::fixed(8)]);
+/// ```
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Shape {
     pub dims: Vec<Size>,
 }
 
+/// A size expression of the form `F * pow(batch_size, N)`.
+///
+/// Can represent fixed sizes, sizes proportional to the batch size or any other higher power of the batch size.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Size {
     batch_exp: u32,
     fixed_factor: usize,
 }
 
+/// A shape with each dimension being a fixed `usize`.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ConcreteShape {
     pub dims: Vec<usize>,

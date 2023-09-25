@@ -19,6 +19,11 @@ pub mod result;
 mod store;
 mod typed_value;
 
+/// Load an [ONNX](https://github.com/onnx/onnx/blob/main/docs/IR.md) file from the given path.
+///
+/// If `allow_external` is true, the onnx will be allowed to load external data files,
+/// see [the spec](https://github.com/onnx/onnx/blob/main/docs/IR.md#external-tensor-data).
+/// If `allow_external` is false and the ONNX file does reference external data, an error is returned.
 pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -> OnnxResult<Graph> {
     let path = path.as_ref();
     let buf = std::fs::read(path).to_onnx_result(path)?;
@@ -35,6 +40,9 @@ pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -
     graph_from_onnx_bytes(&buf, &*external)
 }
 
+/// Load an [ONNX](https://github.com/onnx/onnx/blob/main/docs/IR.md) file from the given bytes.
+///
+/// The file is not allowed to reference external data files.
 pub fn load_graph_from_onnx_bytes(buffer: &[u8]) -> OnnxResult<Graph> {
     graph_from_onnx_bytes(buffer, &NoExternalData)
 }

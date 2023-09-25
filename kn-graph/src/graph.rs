@@ -6,13 +6,64 @@ use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
 use decorum::Total;
-use itertools::{zip_eq, Itertools};
-use rand::{thread_rng, Rng};
+use itertools::{Itertools, zip_eq};
+use rand::random;
 
-use crate::cpu::{run_cpu_const_operation, OperationError, Tensor};
+use crate::cpu::{OperationError, run_cpu_const_operation, Tensor};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
+/// The core graph datastructure.
+///
+/// This is a Directed Acyclic Graph (DAG) with values and their creating operations as nodes,
+/// and input operands as edges. The data structure is append-only, values cannot be removed
+/// and so will never become invalid.
+///
+/// This type implements `Index<Value>` trait, so you can use `graph[value]` to get information about the given value.
+///
+/// ```
+/// # use kn_graph::graph::*;
+/// # use kn_graph::shape;
+/// # use kn_graph::shape::*;
+/// // create a new graph
+/// let mut graph = Graph::new();
+///
+/// // define the inputs
+/// let x = graph.input(shape![Size::BATCH, 4, 8, 8]);
+///
+/// // define constants
+/// let w_data = vec![0.5; 4 * 4 * 3 * 3];
+/// let w = graph.constant(shape![4, 4, 3, 3], w_data);
+/// let b_data = vec![0.5; 4];
+/// let b = graph.constant(shape![4, 1, 1], b_data);
+///
+/// // build operation graph
+/// let y0 = graph.conv(x, w, 1, 1, 1, 1);
+/// let y = graph.add(y0, b);
+///
+/// graph.output(y);
+///
+/// println!("{}", graph);
+/// ```
+/// Results in the following output:
+/// ```text
+/// Graph {
+///   check: 1504812640,
+///   input_shapes: [Shape(B x 4 x 8 x 8)],
+///   output_shapes: [Shape(B x 4 x 8 x 8)],
+///   inputs: [Value(0)],
+///   outputs: [Value(6)],
+///   values: [
+///     Value(0) = ValueInfo { shape: Shape(B x 4 x 8 x 8), operation: Input { index: 0 }, debug_id: "", non_output_uses: 1 },
+///     Value(1) = ValueInfo { shape: Shape(4 x 4 x 3 x 3), operation: Constant { data: [..; 144] }, debug_id: "", non_output_uses: 1 },
+///     Value(2) = ValueInfo { shape: Shape(4 x 1 x 1), operation: Constant { data: [0.5, 0.5, 0.5, 0.5] }, debug_id: "", non_output_uses: 1 },
+///     Value(3) = ValueInfo { shape: Shape(B x 4 x 8 x 8), operation: Conv { input: Value(0), filter: Value(1), details: ConvDetails { batch_size: Size(B), input_channels: 4, output_channels: 4, input_h: 8, input_w: 8, kernel_h: 3, kernel_w: 3, stride_y: 1, stride_x: 1, padding_y: 1, padding_x: 1, output_h: 8, output_w: 8 } }, debug_id: "", non_output_uses: 1 },
+///     Value(4) = ValueInfo { shape: Shape(1 x 4 x 1 x 1), operation: View { input: Value(2) }, debug_id: "", non_output_uses: 1 },
+///     Value(5) = ValueInfo { shape: Shape(B x 4 x 8 x 8), operation: Broadcast { input: Value(4) }, debug_id: "", non_output_uses: 1 },
+///     Value(6) = ValueInfo { shape: Shape(B x 4 x 8 x 8), operation: Binary { left: Value(3), right: Value(5), op: Add }, debug_id: "", non_output_uses: 0 },
+///   ],
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Graph {
     check: u32,
@@ -22,12 +73,14 @@ pub struct Graph {
     outputs: Vec<Value>,
 }
 
+/// A value in a [Graph].
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Value {
     index: usize,
     check: u32,
 }
 
+/// Information about a [Value], most importantly its shape and creating operation.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ValueInfo {
     pub shape: Shape,
@@ -290,7 +343,7 @@ impl Index<Value> for Graph {
 impl Graph {
     pub fn new() -> Self {
         Graph {
-            check: thread_rng().gen(),
+            check: random(),
             values: vec![],
             new_values: vec![],
             inputs: vec![],
@@ -309,7 +362,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item = Value> {
+    pub fn values(&self) -> impl Iterator<Item=Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -464,7 +517,7 @@ impl Graph {
         let expected_len = shape.unwrap_fixed("Constant shape must be fixed").size();
         assert_eq!(
             expected_len,
-            data.len() as usize,
+            data.len(),
             "{:?} has size {}, but got data with size {}",
             shape,
             expected_len,
@@ -1050,6 +1103,8 @@ impl Graph {
             BinaryOp::Min => self.is_const_filled_with(right, f32::INFINITY),
             BinaryOp::Max => self.is_const_filled_with(right, f32::NEG_INFINITY),
         };
+        // TODO only skip after shape checking
+        //   also check other functions
         if skip {
             return left;
         }
@@ -1062,15 +1117,17 @@ impl Graph {
     }
 
     /// Computes the operations described by `graph` on the given inputs.
+    ///
+    /// This can be used to cleanly compose multiple graphs together.
     #[must_use]
     pub fn call(&mut self, graph: &Graph, inputs: &[Value]) -> Vec<Value> {
-        let mut map = HashMap::new();
-
         // check inputs
         assert_eq!(inputs.len(), graph.inputs.len(), "Wrong number of inputs");
         for (&input, &graph_input) in zip_eq(inputs, &graph.inputs) {
             assert_eq!(self[input].shape, graph[graph_input].shape, "Wrong input shape");
         }
+
+        let mut map = HashMap::new();
 
         // map operations
         for graph_value in graph.values() {
@@ -1371,7 +1428,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
+    pub fn reduce(self, seq: impl IntoIterator<Item=f32>) -> f32 {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;
