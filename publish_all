@@ -1,0 +1,4 @@
+set -e
+cargo publish -p kn-graph
+cargo publish -p kn-cuda-sys
+cargo publish -p kn-cuda-eval
