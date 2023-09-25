@@ -1,11 +1,11 @@
 use bytemuck::cast_slice;
 use itertools::Itertools;
 
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_nn_eval::kernels;
-use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::status::Status;
+use kn_cuda_eval::device_tensor::DeviceTensor;
+use kn_cuda_eval::kernels;
+use kn_cuda_eval::quant::QuantizedStorage;
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::status::Status;
 
 fn main() {
     unsafe { main_inner() }

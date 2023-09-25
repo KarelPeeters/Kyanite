@@ -1,8 +1,8 @@
 use itertools::Itertools;
 use rand::Rng;
 
-use nn_graph::cpu::Tensor;
-use nn_graph::ndarray::{ArcArray, Array1, Dimension, IntoDimension};
+use kn_graph::cpu::Tensor;
+use kn_graph::ndarray::{ArcArray, Array1, Dimension, IntoDimension};
 
 pub fn rng_tensor<I: IntoDimension + Copy>(shape: I, rng: &mut impl Rng) -> Tensor {
     let size = shape.into_dimension().size();

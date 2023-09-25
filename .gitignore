@@ -1,5 +1,6 @@
 /ignored/
 /.idea/
+/target/
 
 /*/src/bin/exp_*.rs
 /*/examples/exp_*.rs

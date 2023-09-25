@@ -29,5 +29,5 @@ fn main() {
         .files(files)
         .compile("libkernels.a")
 
-    // we're not linking anything extra here since cuda stuff should already be linked by cuda-sys
+    // we're not linking anything extra here since cuda stuff should already be linked by kn-cuda-sys
 }

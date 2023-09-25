@@ -1,6 +1,6 @@
 #![warn(missing_debug_implementations)]
 
-pub use cuda_sys::wrapper::handle::Device;
+pub use kn_cuda_sys::wrapper::handle::Device;
 
 pub mod autokernel;
 pub mod device_tensor;

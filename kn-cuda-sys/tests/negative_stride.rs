@@ -1,10 +1,10 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 use itertools::Itertools;
 
-use cuda_sys::bindings::cudnnOpTensorOp_t;
-use cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::operation::run_tensor_op;
+use kn_cuda_sys::bindings::cudnnOpTensorOp_t;
+use kn_cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
+use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::operation::run_tensor_op;
 
 #[test]
 fn test_negative_stride() {

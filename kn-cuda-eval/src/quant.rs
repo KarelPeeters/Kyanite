@@ -1,9 +1,9 @@
 use bytemuck::cast_slice;
 
-use cuda_sys::wrapper::event::CudaEvent;
-use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::mem::device::DevicePtr;
-use cuda_sys::wrapper::status::Status;
+use kn_cuda_sys::wrapper::event::CudaEvent;
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_cuda_sys::wrapper::status::Status;
 
 use crate::device_tensor::DeviceTensor;
 use crate::kernels;

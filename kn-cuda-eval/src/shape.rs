@@ -4,8 +4,8 @@ use std::iter::zip;
 
 use itertools::{zip_eq, Itertools};
 
-use cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
-use nn_graph::graph::SliceRange;
+use kn_cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
+use kn_graph::graph::SliceRange;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct StridedShape {
@@ -344,7 +344,7 @@ impl Debug for ViewError {
 
 #[cfg(test)]
 mod test {
-    use nn_graph::graph::SliceRange;
+    use kn_graph::graph::SliceRange;
 
     use crate::shape::StridedShape;
 

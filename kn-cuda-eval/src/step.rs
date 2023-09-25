@@ -2,8 +2,8 @@ use std::ops::ControlFlow;
 
 use internal_iterator::InternalIterator;
 
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
-use nn_graph::graph::Value;
+use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
+use kn_graph::graph::Value;
 
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;

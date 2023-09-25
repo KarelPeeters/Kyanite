@@ -1,9 +1,9 @@
 use itertools::Itertools;
 
-use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::rtc::args::KernelArgs;
-use cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
-use cuda_sys::wrapper::status::Status;
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
+use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
+use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,

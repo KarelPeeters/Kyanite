@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use cuda_sys::bindings::{cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
-use cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::status::Status;
+use kn_cuda_sys::bindings::{cudnnConvolutionForward, cudnnConvolutionFwdAlgo_t, cudnnDataType_t, cudnnTensorFormat_t};
+use kn_cuda_sys::wrapper::descriptor::{ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::status::Status;
 
 // baseline: 100k evals/s
 // NHWC: could not get working, maybe because of the algo?

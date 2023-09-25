@@ -1,8 +1,8 @@
-use cuda_sys::bindings::cudnnActivationMode_t;
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
-use cuda_sys::wrapper::group::FusedConvolutionArgs;
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use kn_cuda_sys::bindings::cudnnActivationMode_t;
+use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use kn_cuda_sys::wrapper::group::FusedConvolutionArgs;
+use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 
 fn main() {
     let device = Device::new(0);

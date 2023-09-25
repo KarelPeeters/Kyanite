@@ -7,15 +7,15 @@ use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
 use crate::autokernel::common::DisplayCFloat;
-use cuda_sys::bindings::cudnnActivationMode_t;
-use cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
-use cuda_sys::wrapper::handle::Device;
-use cuda_sys::wrapper::mem::device::DevicePtr;
-use cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use nn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
-use nn_graph::optimizer::recurse::heap_recurse;
-use nn_graph::shape::{ConcreteShape, Size};
+use kn_cuda_sys::bindings::cudnnActivationMode_t;
+use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
+use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
+use kn_graph::optimizer::recurse::heap_recurse;
+use kn_graph::shape::{ConcreteShape, Size};
 
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;

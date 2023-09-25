@@ -1,32 +1,13 @@
 [workspace]
 
 members = [
-    # general crates
-    "nn-graph",
-    "cuda-sys",
-    "cuda-nn-eval",
-    "pgn-reader",
-    "licorice",
-    # kZero-specific crates
-    "kz-util",
-    "kz-core",
-    "kz-selfplay",
-    "kz-lichess",
-    "kz-misc",
+    "kn-graph",
+    "kn-cuda-sys",
+    "kn-cuda-eval",
 ]
 
-[profile.release]
-# lto = true
-debug = true
-
-# temporary fix until https://github.com/jordanbray/chess/pull/67 is merged
-[profile.dev.build-override]
-opt-level = 3
-[profile.release.build-override]
-opt-level = 3
-[profile.test.build-override]
-opt-level = 3
-
+# TODO re-check all deps
+# TODO feature for onnx parsing?
 
 # TODO try turning off default features
 # TODO require features per-subcrate instead of here for all of them
@@ -40,14 +21,9 @@ opt-level = 3
 
 [workspace.dependencies]
 # path dependencies
-cuda-nn-eval = { path = "cuda-nn-eval" }
-cuda-sys = { path = "cuda-sys" }
-kz-core = { path = "kz-core" }
-kz-selfplay = { path = "kz-selfplay" }
-kz-util = { path = "kz-util" }
-licorice = { path = "licorice" }
-nn-graph = { path = "nn-graph" }
-pgn-reader = { path = "pgn-reader" }
+kn-graph = { path = "kn-graph" }
+kn-cuda-sys = { path = "kn-cuda-sys" }
+kn-cuda-eval = { path = "kn-cuda-eval" }
 
 # crates.io dependencies
 anyhow = "1.0.70"

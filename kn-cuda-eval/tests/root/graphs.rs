@@ -3,11 +3,11 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use nn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
-use nn_graph::ndarray::{Array, Array1};
-use nn_graph::optimizer::optimize_graph;
-use nn_graph::shape;
-use nn_graph::shape::{Shape, Size};
+use kn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
+use kn_graph::ndarray::{Array, Array1};
+use kn_graph::optimizer::optimize_graph;
+use kn_graph::shape;
+use kn_graph::shape::{Shape, Size};
 
 use crate::root::runner::test_all;
 use crate::root::tensor_utils::{linspace_tensor, linspace_vec, manual_tensor, range_vec, rng_tensor, rng_vec};

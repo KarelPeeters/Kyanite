@@ -2,9 +2,9 @@ use std::fmt::{Debug, Formatter};
 
 use rand::{thread_rng, Rng};
 
-use cuda_sys::wrapper::handle::Device;
-use nn_graph::cpu::{cpu_eval_graph, Tensor};
-use nn_graph::graph::Graph;
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::cpu::{cpu_eval_graph, Tensor};
+use kn_graph::graph::Graph;
 
 use crate::executor::CudaExecutor;
 

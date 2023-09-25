@@ -1,8 +1,8 @@
-use cuda_nn_eval::executor::CudaExecutor;
-use cuda_sys::wrapper::handle::Device;
-use nn_graph::graph::Graph;
-use nn_graph::shape;
-use nn_graph::shape::Size;
+use kn_cuda_eval::executor::CudaExecutor;
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::graph::Graph;
+use kn_graph::shape;
+use kn_graph::shape::Size;
 
 fn main() {
     for io_size in [8, 9, 10] {

@@ -1,4 +1,4 @@
-use cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::Device;
 
 fn main() {
     for device in Device::all() {

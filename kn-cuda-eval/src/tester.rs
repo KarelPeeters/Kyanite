@@ -1,10 +1,10 @@
 use bytemuck::cast_slice_mut;
 use itertools::{enumerate, zip_eq, Itertools};
 
-use cuda_sys::wrapper::handle::Device;
-use nn_graph::cpu::Tensor;
-use nn_graph::graph::{Graph, Value};
-use nn_graph::ndarray::{Dimension, IxDyn};
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::cpu::Tensor;
+use kn_graph::graph::{Graph, Value};
+use kn_graph::ndarray::{Dimension, IxDyn};
 
 use crate::executor::CudaExecutor;
 

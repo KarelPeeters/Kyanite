@@ -1,9 +1,9 @@
-use cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::Device;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use nn_graph::graph::Graph;
-use nn_graph::shape;
+use kn_graph::graph::Graph;
+use kn_graph::shape;
 
 use crate::root::runner::test_all_exact_graph;
 use crate::root::tensor_utils::rng_tensor;

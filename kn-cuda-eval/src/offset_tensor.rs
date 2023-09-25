@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
-use cuda_sys::bindings::cublasOperation_t;
-use cuda_sys::wrapper::group::MatMulOperand;
-use nn_graph::graph::SliceRange;
+use kn_cuda_sys::bindings::cublasOperation_t;
+use kn_cuda_sys::wrapper::group::MatMulOperand;
+use kn_graph::graph::SliceRange;
 
 use crate::shape::{StridedShape, ViewError};
 

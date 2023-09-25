@@ -1,7 +1,7 @@
 use crate::root::runner::test_all;
 use crate::root::tensor_utils::{manual_tensor, rng_tensor, rng_vec};
-use nn_graph::graph::{BinaryOp, Graph};
-use nn_graph::shape;
+use kn_graph::graph::{BinaryOp, Graph};
+use kn_graph::shape;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 

@@ -10,14 +10,14 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 
-use cuda_nn_eval::runtime::Runtime;
-use cuda_sys::wrapper::handle::Device;
-use nn_graph::cpu::Tensor;
-use nn_graph::graph::{BinaryOp, Graph, SliceRange};
-use nn_graph::ndarray::Array;
-use nn_graph::onnx::load_graph_from_onnx_path;
-use nn_graph::optimizer::optimize_graph;
-use nn_graph::{ndarray, shape};
+use kn_cuda_eval::runtime::Runtime;
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_graph::cpu::Tensor;
+use kn_graph::graph::{BinaryOp, Graph, SliceRange};
+use kn_graph::ndarray::Array;
+use kn_graph::onnx::load_graph_from_onnx_path;
+use kn_graph::optimizer::optimize_graph;
+use kn_graph::{ndarray, shape};
 
 use crate::ndarray::{Array1, IxDyn, Slice};
 use crate::scheduler::PNDMSScheduler;
@@ -291,7 +291,7 @@ mod scheduler {
 
     use itertools::Itertools;
 
-    use nn_graph::cpu::Tensor;
+    use kn_graph::cpu::Tensor;
 
     use crate::{Array1, Axis, VecExt};
 

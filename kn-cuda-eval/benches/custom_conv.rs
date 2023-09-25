@@ -2,13 +2,13 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use rand::rngs::StdRng;
 use rand::{Fill, SeedableRng};
 
-use cuda_nn_eval::kernels;
-use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::status::Status;
-use nn_graph::cpu::convolution;
-use nn_graph::graph::ConvDetails;
-use nn_graph::ndarray::{azip, Array4, ArrayView4};
-use nn_graph::shape::Size;
+use kn_cuda_eval::kernels;
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::status::Status;
+use kn_graph::cpu::convolution;
+use kn_graph::graph::ConvDetails;
+use kn_graph::ndarray::{azip, Array4, ArrayView4};
+use kn_graph::shape::Size;
 
 fn main() {
     let batch_size = 1024;

@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use cuda_nn_eval::executor::CudaExecutor;
-use cuda_nn_eval::Device;
-use nn_graph::graph::Graph;
-use nn_graph::shape::Shape;
+use kn_cuda_eval::executor::CudaExecutor;
+use kn_cuda_eval::Device;
+use kn_graph::graph::Graph;
+use kn_graph::shape::Shape;
 
 fn bench_copy(c: &mut Criterion) {
     let sizes = [

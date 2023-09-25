@@ -1,5 +1,5 @@
 use crate::root::runner::{test_elementwise, test_elementwise_pair};
-use nn_graph::graph::{BinaryOp, UnaryOp};
+use kn_graph::graph::{BinaryOp, UnaryOp};
 
 #[test]
 fn unary() {

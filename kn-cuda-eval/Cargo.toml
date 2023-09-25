@@ -1,11 +1,11 @@
 [package]
-name = "cuda-nn-eval"
+name = "kn-cuda-eval"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cuda-sys.workspace = true
-nn-graph.workspace = true
+kn-graph.workspace = true
+kn-cuda-sys.workspace = true
 
 bytemuck.workspace = true
 internal-iterator.workspace = true

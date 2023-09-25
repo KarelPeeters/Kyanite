@@ -1,4 +1,4 @@
-use cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::Device;
 
 #[test]
 fn mem_slice() {

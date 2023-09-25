@@ -4,11 +4,11 @@ use std::time::Instant;
 use bytemuck::cast_slice;
 use itertools::{enumerate, multizip, zip_eq, Itertools};
 
-use cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
-use cuda_sys::wrapper::mem::device::DevicePtr;
-use cuda_sys::wrapper::mem::pinned::PinnedMem;
-use nn_graph::cpu::Tensor;
-use nn_graph::graph::Graph;
+use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
+use kn_cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
+use kn_graph::cpu::Tensor;
+use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::planner::{MemoryUsage, Plan, Planner};

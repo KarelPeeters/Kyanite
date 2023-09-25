@@ -1,10 +1,10 @@
-use cuda_nn_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
-use nn_graph::cpu::{cpu_eval_graph, Tensor};
-use nn_graph::graph::{Graph, Value};
-use nn_graph::ndarray::ArcArray;
-use nn_graph::onnx::load_graph_from_onnx_bytes;
-use nn_graph::optimizer::{optimize_graph, OptimizerSettings};
-use nn_graph::shape;
+use kn_cuda_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
+use kn_graph::cpu::{cpu_eval_graph, Tensor};
+use kn_graph::graph::{Graph, Value};
+use kn_graph::ndarray::ArcArray;
+use kn_graph::onnx::load_graph_from_onnx_bytes;
+use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
+use kn_graph::shape;
 
 pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
     if expected_outputs.is_none() {

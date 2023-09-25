@@ -1,4 +1,4 @@
-use cuda_sys::bindings::{cudaError, cudaStream_t};
+use kn_cuda_sys::bindings::{cudaError, cudaStream_t};
 
 // don't warn about cudaError return type
 //TODO find a proper solution here

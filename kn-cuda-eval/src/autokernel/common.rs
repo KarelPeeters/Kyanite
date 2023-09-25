@@ -7,8 +7,8 @@ use std::sync::Mutex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
-use cuda_sys::wrapper::handle::Device;
-use cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
+use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
 lazy_static! {
     static ref KERNEL_CACHE: Mutex<HashMap<KernelKey, CuFunction>> = Mutex::new(HashMap::new());

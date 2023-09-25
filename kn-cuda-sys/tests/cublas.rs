@@ -1,8 +1,8 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use cuda_sys::bindings::cublasOperation_t;
-use cuda_sys::wrapper::group::{BatchedMatMulArgs, MatMulOperand};
-use cuda_sys::wrapper::handle::{CublasHandle, Device};
+use kn_cuda_sys::bindings::cublasOperation_t;
+use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, MatMulOperand};
+use kn_cuda_sys::wrapper::handle::{CublasHandle, Device};
 
 #[test]
 fn simple() {

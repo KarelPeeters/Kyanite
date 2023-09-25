@@ -2,10 +2,10 @@ use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use cuda_sys::wrapper::handle::{CudaStream, Device};
-use cuda_sys::wrapper::rtc::args::KernelArgs;
-use cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
-use cuda_sys::wrapper::status::Status;
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
+use kn_cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
+use kn_cuda_sys::wrapper::status::Status;
 
 const SAXPY_SOURCE: &str = r#"
 

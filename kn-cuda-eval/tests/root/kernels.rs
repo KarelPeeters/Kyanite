@@ -1,6 +1,6 @@
-use cuda_nn_eval::device_tensor::DeviceTensor;
-use cuda_nn_eval::quant::QuantizedStorage;
-use cuda_nn_eval::Device;
+use kn_cuda_eval::device_tensor::DeviceTensor;
+use kn_cuda_eval::quant::QuantizedStorage;
+use kn_cuda_eval::Device;
 
 #[test]
 fn quantize() {

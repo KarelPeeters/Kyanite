@@ -1,11 +1,11 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
-use cuda_sys::bindings::cudnnOpTensorOp_t;
-use cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use cuda_sys::wrapper::group::TensorOpArgs;
-use cuda_sys::wrapper::handle::{CudnnHandle, Device};
-use cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_cuda_sys::bindings::cudnnOpTensorOp_t;
+use kn_cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
+use kn_cuda_sys::wrapper::group::TensorOpArgs;
+use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 
 use crate::shape::StridedShape;
 
