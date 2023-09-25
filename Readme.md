@@ -8,6 +8,32 @@ Crates.io published versions:
 
 Docs.rs: https://docs.rs/releases/search?query=kyanite+kn-
 
+## Quick demo
+
+```rust
+// Load on onnx file into a graph
+let graph = load_graph_from_onnx_path("test.onnx", false)?;
+// Optimize the graph
+let graph =optimize_graph(&graph, Default::default());
+// Render the graph as an svg file
+graph_to_svg("test.svg", &graph, false, false)?;
+
+// Build the inputs
+let batch_size = 8;
+let inputs = [Tensor::zeros(IxDyn(&[batch_size, 16]))];
+
+// CPU:
+// just evaluate the graph
+let outputs = cpu_eval_graph(&graph, batch_size, &inputs);
+
+// GPU:
+// Build an executor
+let device = Device::new(0);
+let mut executor = CudaExecutor::new(device, &graph, batch_size);
+// Run the executor on the inputs
+let outputs: Vec<Tensor> = executor.evaluate_tensors(&inputs);
+```
+
 ## Overview
 
 A neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on GPUs using cuda/cudnn/cublas/nvrtc.
