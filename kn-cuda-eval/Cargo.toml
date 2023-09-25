@@ -1,7 +1,14 @@
 [package]
 name = "kn-cuda-eval"
-version = "0.1.0"
-edition = "2021"
+description = "A CUDA executor for neural network graphs"
+
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+categories.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
 
 [dependencies]
 kn-graph.workspace = true

@@ -1,8 +1,12 @@
 # Kyanite
 
-[![Crates.io kn-graph](https://img.shields.io/crates/v/kn-graph?label=crates.io%20kn-graph)](https://crates.io/crates/kn-graph)
-[![Crates.io kn-cuda-sys](https://img.shields.io/crates/v/kn-cuda-sys?label=crates.io%20kn-cuda-sys)](https://crates.io/crates/kn-cuda-sys)
-[![Crates.io kn-cuda-eval](https://img.shields.io/crates/v/kn-cuda-eval?label=crates.io%20kn-cuda-eval)](https://crates.io/crates/kn-cuda-eval)
+Crates.io published versions:
+
+[![Crates.io kn-graph](https://img.shields.io/crates/v/kn-graph?label=kn-graph)](https://crates.io/crates/kn-graph)
+[![Crates.io kn-cuda-sys](https://img.shields.io/crates/v/kn-cuda-sys?label=kn-cuda-sys)](https://crates.io/crates/kn-cuda-sys)
+[![Crates.io kn-cuda-eval](https://img.shields.io/crates/v/kn-cuda-eval?label=kn-cuda-eval)](https://crates.io/crates/kn-cuda-eval)
+
+Docs.rs: https://docs.rs/releases/search?query=kyanite+kn-
 
 ## Overview
 

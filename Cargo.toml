@@ -1,10 +1,19 @@
 [workspace]
-
 members = [
     "kn-graph",
     "kn-cuda-sys",
     "kn-cuda-eval",
 ]
+
+[workspace.package]
+edition = "2021"
+version = "0.2.0"
+license = "Apache-2.0 OR MIT"
+categories = ["science", "compilers"]
+keywords = ["inference", "neural-network", "gpu", "cuda", "kyanite"]
+repository = "https://github.com/KarelPeeters/Kyanite"
+authors = ["Karel Peeters <karel.peeters.leuven@gmail.com>"]
+readme = "Readme.md"
 
 # TODO feature for onnx parsing?
 # TODO feature for visualization?
@@ -16,9 +25,9 @@ members = [
 
 [workspace.dependencies]
 # path dependencies
-kn-graph = { path = "kn-graph" }
-kn-cuda-sys = { path = "kn-cuda-sys" }
-kn-cuda-eval = { path = "kn-cuda-eval" }
+kn-graph = { path = "kn-graph", version = "0.2.0" }
+kn-cuda-sys = { path = "kn-cuda-sys", version = "0.2.0" }
+kn-cuda-eval = { path = "kn-cuda-eval", version = "0.2.0" }
 
 # crates.io dependencies
 bindgen = "0.68.1"
