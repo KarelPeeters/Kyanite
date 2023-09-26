@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 #[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {

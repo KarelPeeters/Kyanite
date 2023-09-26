@@ -37,17 +37,17 @@ pub use ndarray;
 
 /// The core graph datastructure.
 pub mod graph;
-/// The [Shape](shape::Shape) type and utilities.
-pub mod shape;
 /// Graph optimization.
 pub mod optimizer;
+/// The [Shape](shape::Shape) type and utilities.
+pub mod shape;
 
-/// Onnx file loading.
-pub mod onnx;
 /// CPU graph execution.
 pub mod cpu;
 /// Graph visualization as a `dot` or `svg` file.
 pub mod dot;
+/// Onnx file loading.
+pub mod onnx;
 /// Hidden activations visualization.
 pub mod visualize;
 

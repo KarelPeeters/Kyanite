@@ -6,10 +6,10 @@ use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
 use decorum::Total;
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 use rand::random;
 
-use crate::cpu::{OperationError, run_cpu_const_operation, Tensor};
+use crate::cpu::{run_cpu_const_operation, OperationError, Tensor};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -362,7 +362,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item=Value> {
+    pub fn values(&self) -> impl Iterator<Item = Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -1428,7 +1428,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce(self, seq: impl IntoIterator<Item=f32>) -> f32 {
+    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;

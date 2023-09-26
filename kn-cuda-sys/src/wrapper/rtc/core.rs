@@ -7,10 +7,10 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use crate::bindings::{
-    CU_LAUNCH_PARAM_BUFFER_POINTER, CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END, cuLaunchKernel, cuModuleGetFunction,
-    cuModuleLoadDataEx, cuModuleUnload, CUresult, nvrtcAddNameExpression, nvrtcCompileProgram, nvrtcCreateProgram,
-    nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcGetPTX,
-    nvrtcGetPTXSize, nvrtcResult,
+    cuLaunchKernel, cuModuleGetFunction, cuModuleLoadDataEx, cuModuleUnload, nvrtcAddNameExpression,
+    nvrtcCompileProgram, nvrtcCreateProgram, nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetPTX, nvrtcGetPTXSize,
+    nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
+    CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
 };
 use crate::wrapper::handle::{CudaStream, Device};
 use crate::wrapper::status::Status;
@@ -72,7 +72,7 @@ impl CuModule {
             null_mut(),
             null_mut(),
         )
-            .unwrap();
+        .unwrap();
         CuModule {
             inner: Arc::new(CuModuleInner { device, inner }),
         }
@@ -113,7 +113,7 @@ impl CuModule {
                 header_sources_ptr.as_ptr(),
                 header_names_ptr.as_ptr(),
             )
-                .unwrap();
+            .unwrap();
 
             // add requested names
             for &expected_name in expected_names {
@@ -245,7 +245,7 @@ impl CuFunction {
             args.as_ptr() as *mut _,
             null_mut(),
         )
-            .unwrap()
+        .unwrap()
     }
 
     pub unsafe fn launch_kernel(
@@ -307,9 +307,10 @@ impl From<u32> for Dim3 {
 impl CompileResult {
     pub fn get_function_by_name(&self, name: &str) -> Result<Option<CuFunction>, nvrtcResult> {
         let module = self.module.as_ref().map_err(|&e| e)?;
-        let function = self.lowered_names.get(name).and_then(|lower_name| {
-            module.get_function_by_lower_name(lower_name)
-        });
+        let function = self
+            .lowered_names
+            .get(name)
+            .and_then(|lower_name| module.get_function_by_lower_name(lower_name));
         Ok(function)
     }
 

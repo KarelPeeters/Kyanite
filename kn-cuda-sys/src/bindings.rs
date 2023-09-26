@@ -5,13 +5,11 @@
 #![allow(deref_nullptr)]
 #![allow(missing_debug_implementations)]
 #![allow(improper_ctypes)]
-
 // Ignore documentation warnings, we can't fix them anyway since they come from bindgen.
 #![allow(rustdoc::all)]
 #![allow(missing_docs)]
 
 use std::ffi::c_void;
-
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 

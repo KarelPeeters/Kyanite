@@ -1,7 +1,9 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use kn_cuda_sys::bindings::cudnnActivationMode_t;
-use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use kn_cuda_sys::wrapper::descriptor::{
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor,
+};
 use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use kn_cuda_sys::wrapper::operation::{run_conv_bias_res_activation, STANDARD_CONV_ALGO};
 

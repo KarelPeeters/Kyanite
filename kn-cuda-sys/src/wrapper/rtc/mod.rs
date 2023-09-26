@@ -60,7 +60,7 @@
 //!
 //! Modules and functions are reference counted to enable automatic memory management.
 
-/// Core abstractions and utilities.
-pub mod core;
 /// Kernel argument builder.
 pub mod args;
+/// Core abstractions and utilities.
+pub mod core;

@@ -1,5 +1,7 @@
 use kn_cuda_sys::bindings::cudnnActivationMode_t;
-use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor};
+use kn_cuda_sys::wrapper::descriptor::{
+    ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor,
+};
 use kn_cuda_sys::wrapper::group::FusedConvolutionArgs;
 use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;

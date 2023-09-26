@@ -6,7 +6,7 @@ use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, DisplayCFloat, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, DisplayCFloat, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
