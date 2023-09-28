@@ -1,5 +1,8 @@
 # Kyanite
 
+[//]: # (TODO write separate main page doc per each crate)
+[//]: # (TODO   it doesn't need to be a readme, just a lib.rs doc is fine)
+
 Crates.io published versions:
 
 [![Crates.io kn-graph](https://img.shields.io/crates/v/kn-graph?label=kn-graph)](https://crates.io/crates/kn-graph)
@@ -66,6 +69,8 @@ The graph can be constructed directly in code, but for convenience an ONNX loade
 
 * ONNX binary operations implicitly broadcast their operands, but this step is a separate operation in the IR.
 * ONNX convolution and matmul have a built-in optional bias operand, this also becomes separate broadcast plus binary addition operation.
+
+To figure out if a ONNX operation is supported, check the branches of the top-level match statement in the `visit_node` function in [`load.rs`](https://github.com/KarelPeeters/Kyanite/blob/master/kn-graph/src/onnx/load.rs). 
 
 ### Optimizer
 
