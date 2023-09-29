@@ -3,16 +3,17 @@
 //! A Cuda CPU executor for neural network graphs from the `kn_graph` crate. The core type is [CudaExecutor](executor::CudaExecutor).
 //!
 //! The typical workflow:
-//! ```
+//! ```no_run
 //! # use kn_cuda_eval::executor::CudaExecutor;
 //! # use kn_cuda_sys::wrapper::handle::Device;
-//! # use kn_graph::cpu::Tensor;
-//! # use kn_graph::ndarray::IxDyn;
+//! # use kn_graph::dtype::{DTensor, Tensor};
+//! # use kn_graph::ndarray::{Array, IxDyn};
 //! # use kn_graph::onnx::load_graph_from_onnx_path;
 //! # use kn_graph::optimizer::optimize_graph;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // load and optimize the graph
 //! let graph = load_graph_from_onnx_path("test.onnx", false)?;
-//! let graph =optimize_graph(&graph, Default::default());
+//! let graph = optimize_graph(&graph, Default::default());
 //!
 //! // select a device
 //! let device = Device::new(0);
@@ -21,9 +22,11 @@
 //! let batch_size = 8;
 //! let mut executor = CudaExecutor::new(device, &graph, batch_size);
 //!
-//! // evaluate the graph with some inputs:
-//! let inputs = [Tensor::zeros(IxDyn(&[batch_size, 16]))];
-//! let outputs: Vec<Tensor> = executor.evaluate_tensors(&inputs);
+//! // evaluate the graph with some inputs, get the outputs back
+//! let inputs = [DTensor::F32(Tensor::zeros(vec![batch_size, 16]))];
+//! let outputs: Vec<DTensor> = executor.evaluate_tensors(&inputs);
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! This crate is part of the [Kyanite](https://github.com/KarelPeeters/Kyanite) project, see its readme for more information.

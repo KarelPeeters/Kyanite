@@ -940,6 +940,7 @@ fn split_stride() {
     test_all(&graph, 0, &[input], None);
 }
 
+// TODO debug failing scalar fusion? did this never fuse or did we break something?
 #[test]
 fn complex_multiply_stride() {
     complex_multiply(false);

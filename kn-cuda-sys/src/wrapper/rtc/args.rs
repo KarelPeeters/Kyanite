@@ -8,7 +8,7 @@ pub unsafe trait KernelArg {}
 /// ```
 /// # use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 /// let mut args = KernelArgs::new();
-/// args.push(std::ptr::null());
+/// args.push(std::ptr::null::<f32>());
 /// args.push(16);
 /// args.push(32);
 /// args.push(1.0f32);

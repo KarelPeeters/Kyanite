@@ -366,6 +366,11 @@ impl<'a> Planner<'a> {
                 let indices = self.visit(indices)?;
                 let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
+                // TODO proper integer gathering
+                assert_eq!(input.dtype(), DType::F32);
+                assert_eq!(indices.dtype(), DType::F32);
+                assert_eq!(output.dtype(), DType::F32);
+
                 let kernel = GatherKernel::new(
                     self.device(),
                     input.strided_shape(),
