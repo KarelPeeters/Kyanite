@@ -40,7 +40,11 @@ impl Drop for TensorDescriptor {
 }
 
 impl TensorDescriptor {
-    pub fn new(shape: Vec<i32>, strides: Vec<i32>, data_type: cudnnDataType_t) -> Self {
+    pub fn new_f32(shape: Vec<i32>, strides: Vec<i32>) -> Self {
+        Self::new(shape, strides, cudnnDataType_t::CUDNN_DATA_FLOAT)
+    }
+
+    pub fn new(shape: Vec<i32>, strides: Vec<i32>, dtype: cudnnDataType_t) -> Self {
         assert!(
             shape.len() >= 4,
             "Tensors must be at least 4d, got shape {:?} strides {:?}",
@@ -67,7 +71,7 @@ impl TensorDescriptor {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateTensorDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetTensorNdDescriptor(inner, data_type, rank as i32, shape.as_ptr(), strides.as_ptr()).unwrap();
+            cudnnSetTensorNdDescriptor(inner, dtype, rank as i32, shape.as_ptr(), strides.as_ptr()).unwrap();
 
             TensorDescriptor { inner, shape, strides }
         }
@@ -120,13 +124,13 @@ impl FilterDescriptor {
         c: i32,
         h: i32,
         w: i32,
-        data_type: cudnnDataType_t,
+        dtype: cudnnDataType_t,
         format: cudnnTensorFormat_t,
     ) -> Self {
         unsafe {
             let mut inner = null_mut();
             cudnnCreateFilterDescriptor(&mut inner as *mut _).unwrap();
-            cudnnSetFilter4dDescriptor(inner, data_type, format, k, c, h, w).unwrap();
+            cudnnSetFilter4dDescriptor(inner, dtype, format, k, c, h, w).unwrap();
             FilterDescriptor {
                 inner,
                 shape: [k, c, h, w],
@@ -137,15 +141,19 @@ impl FilterDescriptor {
     /// * `k`: output channels
     /// * `c`: input channels
     /// * `(h, w)`: kernel size
-    pub fn new(k: i32, c: i32, h: i32, w: i32) -> Self {
+    pub fn new(k: i32, c: i32, h: i32, w: i32, dtype: cudnnDataType_t) -> Self {
         Self::new_with_type_format(
             k,
             c,
             h,
             w,
-            cudnnDataType_t::CUDNN_DATA_FLOAT,
+            dtype,
             cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
         )
+    }
+
+    pub fn new_f32(k: i32, c: i32, h: i32, w: i32) -> Self {
+        Self::new(k, c, h, w, cudnnDataType_t::CUDNN_DATA_FLOAT)
     }
 
     pub unsafe fn inner(&self) -> cudnnFilterDescriptor_t {
@@ -175,7 +183,7 @@ impl Drop for ConvolutionDescriptor {
 }
 
 impl ConvolutionDescriptor {
-    pub fn new(pad_y: i32, pad_x: i32, stride_y: i32, stride_x: i32, dilation_y: i32, dilation_x: i32) -> Self {
+    pub fn new(pad_y: i32, pad_x: i32, stride_y: i32, stride_x: i32, dilation_y: i32, dilation_x: i32, dtype: cudnnDataType_t) -> Self {
         assert!(
             pad_y >= 0 && pad_x >= 0,
             "Padding cannot be negative, got ({}, {})",
@@ -202,7 +210,7 @@ impl ConvolutionDescriptor {
                 dilation_y,
                 dilation_x,
                 cudnnConvolutionMode_t::CUDNN_CROSS_CORRELATION,
-                cudnnDataType_t::CUDNN_DATA_FLOAT,
+                dtype,
             )
             .unwrap();
             ConvolutionDescriptor(inner)

@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
 use bytemuck::cast_slice;
-use itertools::{enumerate, multizip, zip_eq, Itertools};
+use itertools::{enumerate, Itertools, multizip, zip_eq};
 
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
@@ -12,7 +12,7 @@ use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{Handles, Step, StepInfo};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -31,12 +31,6 @@ pub struct CudaExecutor {
     // TODO maybe these could just be one buffer each?
     input_buffers: Vec<PinnedMem>,
     output_buffers: Vec<PinnedMem>,
-}
-
-#[derive(Debug)]
-pub struct Handles {
-    pub cudnn: CudnnHandle,
-    pub cublas: CublasHandle,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -235,57 +229,6 @@ impl CudaExecutor {
 
     pub fn last_profile(&self) -> Option<&Profile> {
         self.last_profile.as_ref()
-    }
-}
-
-impl Step<DevicePtr> {
-    unsafe fn run(&self, handles: &Handles) {
-        match self {
-            Step::Conv(args) => {
-                args.run(&handles.cudnn);
-            }
-            Step::MatMul(args) => {
-                // schedule blas wait for cudnn
-                let cuda_event = handles.cudnn.stream().record_event();
-                handles.cublas.stream().wait_for_event(&cuda_event);
-
-                // schedule operation on blas
-                args.run(&handles.cublas);
-
-                // schedule cudnn wait for blas
-                let blas_event = handles.cublas.stream().record_event();
-                handles.cudnn.stream().wait_for_event(&blas_event);
-            }
-            Step::ScalarOp(ScalarOpArgs { kernel, operands }) => {
-                kernel.run(handles.cudnn.stream(), operands);
-            }
-            Step::ReduceOp(ReduceOpArgs { kernel, input, output }) => kernel.run(handles.cudnn.stream(), input, output),
-            Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
-                kernel.run(handles.cudnn.stream(), input, output)
-            }
-            Step::LayernormOp(LayernormOpArgs {
-                kernel,
-                input0,
-                input1,
-                output,
-            }) => kernel.run(handles.cudnn.stream(), input0, input1.as_ref(), output),
-            Step::GatherOp(GatherOpArgs {
-                kernel,
-                input,
-                indices,
-                output,
-            }) => kernel.run(handles.cudnn.stream(), input, indices, output),
-        }
-    }
-}
-
-impl Handles {
-    pub fn device(&self) -> Device {
-        self.stream().device()
-    }
-
-    pub fn stream(&self) -> &CudaStream {
-        self.cudnn.stream()
     }
 }
 

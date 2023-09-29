@@ -696,6 +696,8 @@ fn concat() {
     test_all(&graph, 0, &[], None);
 }
 
+// TODO permute with different data types
+// TODO all operations with different data types!
 #[test]
 fn permute() {
     let mut graph = Graph::new();

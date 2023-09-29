@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::iter::zip;
 
 use itertools::{zip_eq, Itertools};
+use kn_cuda_sys::bindings::cudnnDataType_t;
 
 use kn_cuda_sys::wrapper::descriptor::{FilterDescriptor, MatrixLayout, TensorDescriptor};
 use kn_graph::graph::SliceRange;
@@ -239,7 +240,7 @@ impl StridedShape {
         StridedShape::new(new_shape, new_strides)
     }
 
-    pub fn descriptor(&self) -> TensorDescriptor {
+    pub fn descriptor(&self, dtype: cudnnDataType_t) -> TensorDescriptor {
         let mut shape = self.shape.iter().map(|&x| x as i32).collect_vec();
         let mut strides = self.strides.iter().map(|&x| x as i32).collect_vec();
 
@@ -250,15 +251,15 @@ impl StridedShape {
             strides.push(1);
         }
 
-        TensorDescriptor::new(shape, strides)
+        TensorDescriptor::new(shape, strides, dtype)
     }
 
-    pub fn filter_descriptor(&self) -> FilterDescriptor {
+    pub fn filter_descriptor(&self, dtype: cudnnDataType_t) -> FilterDescriptor {
         assert_eq!(4, self.rank(), "Filter must have rank 4");
         assert!(self.has_simple_strides(), "Filter must have simple strides");
 
         let dims = self.shape();
-        FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32)
+        FilterDescriptor::new(dims[0] as i32, dims[1] as i32, dims[2] as i32, dims[3] as i32, dtype)
     }
 
     pub fn matrix_layout(&self) -> MatrixLayout {

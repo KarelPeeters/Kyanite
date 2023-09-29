@@ -17,7 +17,7 @@ unsafe fn main_inner() {
     let handle = CudnnHandle::new(device);
 
     //TODO also try different strides for input/output and filter
-    let data_type = cudnnDataType_t::CUDNN_DATA_INT8;
+    let dtype = cudnnDataType_t::CUDNN_DATA_INT8;
     let weight_format = cudnnTensorFormat_t::CUDNN_TENSOR_NCHW;
     let algo = cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_GEMM;
 
@@ -25,12 +25,12 @@ unsafe fn main_inner() {
     let c: i32 = 32;
     let s = 8;
 
-    println!("Using data type {:?}", data_type);
+    println!("Using data type {:?}", dtype);
     println!("IO shape: {}x{}x{}x{}", b, c, s, s);
 
-    let io_desc = TensorDescriptor::new(vec![b, c, s, s], vec![c * s * s, s * s, s, 1], data_type);
-    let f_desc = FilterDescriptor::new_with_type_format(c, c, 3, 3, data_type, weight_format);
-    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1);
+    let io_desc = TensorDescriptor::new(vec![b, c, s, s], vec![c * s * s, s * s, s, 1], dtype);
+    let f_desc = FilterDescriptor::new_with_type_format(c, c, 3, 3, dtype, weight_format);
+    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, dtype);
 
     println!("IO size: {}", io_desc.size_bytes());
     let workspace_size = conv_desc.workspace_size(&handle, algo, &io_desc, &f_desc, &io_desc);

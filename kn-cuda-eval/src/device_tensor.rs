@@ -1,14 +1,13 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use crate::offset_tensor::{OffsetPtr, PtrTensor};
-use kn_cuda_sys::bindings::cudnnOpTensorOp_t;
-use kn_cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use kn_cuda_sys::wrapper::group::TensorOpArgs;
-use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_graph::dtype::DType;
 
+use crate::autokernel::scalar::ScalarKernel;
+use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
+use crate::step::ScalarOpArgs;
 
 pub type DeviceTensor = PtrTensor<DevicePtr>;
 
@@ -37,46 +36,44 @@ impl DeviceTensor {
         new
     }
 
-    pub unsafe fn copy_simple_from_host(&self, buffer: &[f32]) {
-        assert_eq!(
-            buffer.len(),
-            self.strided_shape().size(),
-            "Wrong buffer size {} for {:?}",
-            buffer.len(),
-            self.strided_shape()
-        );
+    pub unsafe fn copy_simple_from_host(&self, buffer: &[u8]) {
         assert!(
             self.strided_shape().has_simple_strides(),
-            "Tensor must have simple strides for now, got {:?}",
-            self.strided_shape()
+            "Tensor must have simple strides, got {:?}",
+            self,
         );
         assert_eq!(
             buffer.len(),
-            self.strided_shape().size(),
-            "Wrong buffer size for {:?}",
-            self.strided_shape()
+            self.dense_size_bytes(),
+            "Wrong buffer size {} for {:?}",
+            buffer.len(),
+            self,
         );
         self.ptr().copy_linear_from_host(cast_slice(buffer));
     }
 
-    pub unsafe fn copy_simple_to_host(&self, buffer: &mut [f32]) {
-        assert_eq!(
-            self.strided_shape().size(),
-            buffer.len(),
-            "Wrong buffer size {} for {:?}",
-            buffer.len(),
-            self.strided_shape()
-        );
+    pub unsafe fn copy_simple_to_host(&self, buffer: &mut [u8]) {
         assert!(
             self.strided_shape().has_simple_strides(),
             "Tensor must have simple strides, got {:?}",
-            self.strided_shape()
+            self,
+        );
+        assert_eq!(
+            self.dense_size_bytes(),
+            buffer.len(),
+            "Wrong buffer size {} for {:?}",
+            buffer.len(),
+            self,
         );
         self.ptr().copy_linear_to_host(cast_slice_mut(buffer));
     }
 
-    pub fn copy_from_as_tensor_op(&self, other: &DeviceTensor) -> TensorOpArgs {
+    // TODO ideally we would decay to memcpy if possible
+    //   but callers can already do that, this is this fallback!
+    pub fn copy_from_as_scalar_op(&self, other: &DeviceTensor) -> ScalarOpArgs<DevicePtr> {
+        assert_eq!(self.device(), other.device(), "Tensors must be on the same device");
         assert_eq!(self.dtype(), other.dtype(), "Tensors must have the same dtype");
+        let device = self.device();
         let dtype = self.dtype();
 
         assert_eq!(
@@ -87,29 +84,25 @@ impl DeviceTensor {
             other
         );
 
-        let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD);
+        let dtype_str = dtype.as_c_str();
+        let kernel = ScalarKernel::new_for_shapes(
+            device,
+            "*x0 = *x1",
+            &[self.strided_shape().clone(), other.strided_shape().clone()],
+            vec![dtype_str.to_owned(), dtype_str.to_owned()],
+        );
 
-        // the value of the RHS tensor does not matter (alpha_2 = 0), so we reuse the input to avoid an allocation
-        // (this should also work if both input and output are empty)
-        let rhs_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
-
-        TensorOpArgs {
-            op_desc,
-            alpha_1: 1.0,
-            input_1_desc: other.strided_shape().descriptor(),
-            input_1_ptr: other.ptr().clone(),
-            alpha_2: 0.0,
-            input_2_desc: rhs_desc,
-            input_2_ptr: other.ptr().clone(),
-            beta: 0.0,
-            output_desc: self.strided_shape().descriptor(),
-            output_ptr: self.ptr().clone(),
+        ScalarOpArgs {
+            kernel,
+            operands: vec![self.clone(), other.clone()],
         }
     }
 
     pub unsafe fn copy_from(&self, other: &DeviceTensor) {
         assert_eq!(self.dtype(), other.dtype(), "Tensors must have the same dtype");
         let dtype = self.dtype();
+        assert_eq!(self.device(), other.device(), "Tensors must be on the same device");
+        let device = self.device();
 
         assert_eq!(
             self.strided_shape().shape(),
@@ -118,6 +111,7 @@ impl DeviceTensor {
             self,
             other
         );
+
 
         if self.strided_shape() == other.strided_shape() && self.strided_shape().has_dense_strides() {
             // if strides are dense and match we can just do a simple memcpy
@@ -125,15 +119,15 @@ impl DeviceTensor {
                 .copy_linear_from_device(&other.ptr(), self.strided_shape().size() * dtype.size().bytes())
         } else {
             // otherwise use the TensorOp restride trick
-            let handle = CudnnHandle::new(self.device());
-            self.copy_from_as_tensor_op(&other).run(&handle);
-            handle.stream().synchronize();
+            let stream = CudaStream::new(device);
+            self.copy_from_as_scalar_op(&other).run(&stream);
+            stream.synchronize();
         }
     }
 
     /// A (potentially) slower version of [Self::copy_from_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
-    pub unsafe fn copy_from_host_staged(&self, buffer: &[f32]) {
+    pub unsafe fn copy_from_host_staged(&self, buffer: &[u8]) {
         assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");
 
         assert_eq!(
@@ -154,7 +148,7 @@ impl DeviceTensor {
 
     /// A (potentially) slower version of [Self::copy_to_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
-    pub unsafe fn copy_to_host_staged(&self, buffer: &mut [f32]) {
+    pub unsafe fn copy_to_host_staged(&self, buffer: &mut [u8]) {
         assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");
 
         assert_eq!(

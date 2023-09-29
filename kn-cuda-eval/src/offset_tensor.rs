@@ -40,6 +40,10 @@ impl<P> PtrTensor<P> {
         self.dtype
     }
 
+    pub fn dense_size_bytes(&self) -> usize {
+        self.strided_shape().size() * self.dtype().size().bytes()
+    }
+
     pub fn map_ptr<K>(self, f: impl FnOnce(P) -> K) -> PtrTensor<K> {
         PtrTensor::from_parts(f(self.ptr), self.shape, self.dtype)
     }

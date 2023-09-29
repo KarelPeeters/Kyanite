@@ -9,7 +9,7 @@ use ndarray::{
     SliceInfoElem, Zip,
 };
 
-use crate::dtype::{DTensor, DType, map_dtensor, map_dtensor_pair};
+use crate::dtype::{DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair};
 use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
@@ -310,8 +310,9 @@ fn concatenate<T: Clone + num_traits::Zero>(
     }
 }
 
-pub fn convolution<T: LinalgScalar>(details: ConvDetails, input: ArrayView4<T>, kernel: ArrayView4<T>) -> Array4<T> {
+pub fn convolution<T: IntoDScalar>(details: ConvDetails, input: ArrayView4<T>, kernel: ArrayView4<T>) -> Array4<T> {
     let ConvDetails {
+        dtype,
         batch_size: _,
         input_channels,
         output_channels,
@@ -326,6 +327,7 @@ pub fn convolution<T: LinalgScalar>(details: ConvDetails, input: ArrayView4<T>, 
         output_h,
         output_w,
     } = details;
+    assert_eq!(T::DTYPE, dtype);
 
     assert!(
         kernel_h % 2 == 1 && kernel_w % 2 == 1,

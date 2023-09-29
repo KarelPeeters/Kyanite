@@ -1,4 +1,6 @@
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::num::FpCategory;
 use std::ops::Deref;
 
 use decorum::cmp::FloatEq;
@@ -114,6 +116,20 @@ impl DType {
             DType::U64 => Specials::new(u64::MIN, u64::MAX),
         }
     }
+
+    pub fn as_c_str(self) -> &'static str {
+        match self {
+            DType::F32 => "float",
+            DType::I8 => "int8_t",
+            DType::I16 => "int16_t",
+            DType::I32 => "int32_t",
+            DType::I64 => "int64_t",
+            DType::U8 => "uint8_t",
+            DType::U16 => "uint16_t",
+            DType::U32 => "uint32_t",
+            DType::U64 => "uint64_t",
+        }
+    }
 }
 
 impl DSize {
@@ -176,6 +192,20 @@ impl DScalar {
             _ => None,
         }
     }
+
+    pub fn to_c_str(self) -> String {
+        match self {
+            DScalar::F32(c) => DisplayCFloat(*c).to_string(),
+            DScalar::U8(c) => format!("{}", c),
+            DScalar::U16(c) => format!("{}", c),
+            DScalar::U32(c) => format!("{}", c),
+            DScalar::U64(c) => format!("{}", c),
+            DScalar::I8(c) => format!("{}", c),
+            DScalar::I16(c) => format!("{}", c),
+            DScalar::I32(c) => format!("{}", c),
+            DScalar::I64(c) => format!("{}", c),
+        }
+    }
 }
 
 pub trait IntoDScalar: LinalgScalar + PartialEq {
@@ -222,7 +252,8 @@ impl_into_dscalar!(u64, DType::U64, U64, |x| DScalar::U64(x), DScalar::U64(x) =>
 #[rustfmt::skip]
 #[macro_export]
 macro_rules! dispatch_dtensor {
-    ($outer:expr, |$ty:ident, $f:ident, $inner:ident| $expr:expr) => {
+    ($outer:expr, |$ty:ident, $f:ident, $inner:ident| $expr:expr) => {{
+        use $crate::dtype::DTensor;
         match $outer {
             DTensor::F32($inner) => { type $ty=f32; let $f=DTensor::F32; { $expr } },
             DTensor::I8($inner) => { type $ty=i8; let $f=DTensor::I8; { $expr } },
@@ -234,13 +265,15 @@ macro_rules! dispatch_dtensor {
             DTensor::U32($inner) => { type $ty=u32; let $f=DTensor::U32; { $expr } },
             DTensor::U64($inner) => { type $ty=u64; let $f=DTensor::U64; { $expr } },
         }
-    };
+    }};
 }
 
 #[rustfmt::skip]
 #[macro_export]
 macro_rules! dispatch_dtensor_pair {
     ($out_left:expr, $out_right:expr, |$ty:ident, $f:ident, $in_left:ident, $in_right:ident| $expr:expr) => {{
+        use $crate::dtype::DTensor;
+
         let out_left = $out_left;
         let out_right = $out_right;
         let dtype_left = out_left.dtype();
@@ -279,7 +312,7 @@ macro_rules! map_dtensor_pair {
 #[macro_export]
 macro_rules! map_dscalar_pair {
     ($out_left:expr, $out_right:expr, |$in_left:ident, $in_right:ident| $expr:expr) => {{
-        use crate::dtype::T32;
+        use crate::dtype::{DScalar, T32};
         
         let out_left = $out_left;
         let out_right = $out_right;
@@ -390,6 +423,22 @@ impl Specials {
             one: T::one().to_dscalar(),
             min: min.to_dscalar(),
             max: max.to_dscalar(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DisplayCFloat(pub f32);
+
+impl Display for DisplayCFloat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = if self.0.is_sign_negative() { "-" } else { "" };
+
+        match self.0.classify() {
+            FpCategory::Nan => write!(f, "({s}(0.0/0.0))"),
+            FpCategory::Infinite => write!(f, "({s}(1.0/0.0))"),
+            FpCategory::Zero => write!(f, "({s}0.0)"),
+            FpCategory::Subnormal | FpCategory::Normal => write!(f, "{}", self.0),
         }
     }
 }

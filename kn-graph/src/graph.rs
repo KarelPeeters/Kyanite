@@ -22,14 +22,15 @@ use crate::shape::{Shape, Size};
 /// This type implements `Index<Value>` trait, so you can use `graph[value]` to get information about the given value.
 ///
 /// ```
-/// # use kn_graph::graph::*;
+/// # use kn_graph::dtype::DType;
+/// use kn_graph::graph::*;
 /// # use kn_graph::shape;
 /// # use kn_graph::shape::*;
 /// // create a new graph
 /// let mut graph = Graph::new();
 ///
 /// // define the inputs
-/// let x = graph.input(shape![Size::BATCH, 4, 8, 8]);
+/// let x = graph.input(shape![Size::BATCH, 4, 8, 8], DType::F32);
 ///
 /// // define constants
 /// let w_data = vec![0.5; 4 * 4 * 3 * 3];
@@ -292,6 +293,7 @@ impl Operation {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ConvDetails {
+    pub dtype: DType,
     pub batch_size: Size,
 
     pub input_channels: usize,
@@ -895,6 +897,7 @@ impl Graph {
             input_dtype, filter_dtype,
             "Convolution input and filter must have the same dtype"
         );
+        let dtype = input_dtype;
 
         let [batch_size, in_c, in_h, in_w]: [Size; 4] = input_shape
             .dims
@@ -934,6 +937,7 @@ impl Graph {
         let output_shape = shape![batch_size, output_channels, output_h, output_w];
 
         let details = ConvDetails {
+            dtype,
             batch_size,
             input_channels,
             output_channels,

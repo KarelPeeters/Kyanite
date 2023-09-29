@@ -1,4 +1,4 @@
-use kn_cuda_sys::bindings::cudnnActivationMode_t;
+use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t};
 use kn_cuda_sys::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor,
 };
@@ -15,11 +15,11 @@ fn main() {
     let algo = STANDARD_CONV_ALGO;
 
     let channels: i32 = 16;
-    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1);
-    let input_desc = TensorDescriptor::new(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
-    let filter_desc = FilterDescriptor::new(channels, channels, 3, 3);
-    let output_desc = TensorDescriptor::new(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
-    let bias_desc = TensorDescriptor::new(vec![1, channels, 1, 1], vec![channels, 1, 1, 1]);
+    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);
+    let input_desc = TensorDescriptor::new_f32(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
+    let filter_desc = FilterDescriptor::new_f32(channels, channels, 3, 3);
+    let output_desc = TensorDescriptor::new_f32(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
+    let bias_desc = TensorDescriptor::new_f32(vec![1, channels, 1, 1], vec![channels, 1, 1, 1]);
 
     let work_size = conv_desc.workspace_size(&handle0, algo, &input_desc, &filter_desc, &output_desc);
     dbg!(work_size);
@@ -43,11 +43,11 @@ fn main() {
     };
 
     let channels = channels as i32;
-    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1);
-    let input_desc = TensorDescriptor::new(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
-    let filter_desc = FilterDescriptor::new(channels, channels, 3, 3);
-    let output_desc = TensorDescriptor::new(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
-    let bias_desc = TensorDescriptor::new(vec![1, channels, 1, 1], vec![channels, 1, 1, 1]);
+    let conv_desc = ConvolutionDescriptor::new(1, 1, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);
+    let input_desc = TensorDescriptor::new_f32(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
+    let filter_desc = FilterDescriptor::new_f32(channels, channels, 3, 3);
+    let output_desc = TensorDescriptor::new_f32(vec![128, channels, 8, 8], vec![channels * 8 * 8, 8 * 8, 8, 1]);
+    let bias_desc = TensorDescriptor::new_f32(vec![1, channels, 1, 1], vec![channels, 1, 1, 1]);
 
     let channels = channels as usize;
     let conv1 = FusedConvolutionArgs {

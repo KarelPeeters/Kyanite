@@ -13,7 +13,7 @@ use rand_distr::StandardNormal;
 use kn_cuda_eval::runtime::Runtime;
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::{ndarray, shape};
-use kn_graph::dtype::{DTensor, DType};
+use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
@@ -108,11 +108,11 @@ fn main() -> std::io::Result<()> {
     let tokens_uncond = tokens_to_tensor(&tokens_prompt_avoid);
 
     let emb_prompt = runtime
-        .eval(runtime_text_encoder, &[DTensor::F32(tokens_prompt)])
+        .eval(runtime_text_encoder, &[tokens_prompt])
         .single();
     let emb_prompt = emb_prompt.unwrap_f32().unwrap();
     let emb_uncond = runtime
-        .eval(runtime_text_encoder, &[DTensor::F32(tokens_uncond)])
+        .eval(runtime_text_encoder, &[tokens_uncond])
         .single();
     let emb_uncond = emb_uncond.unwrap_f32().unwrap();
     let emb_all = ndarray::concatenate![Axis(0), emb_uncond.clone(), emb_prompt.clone()].into_shared();
@@ -124,10 +124,8 @@ fn main() -> std::io::Result<()> {
         println!("  Loading from disk");
         let data = std::fs::read(seed_latents_path)?;
         let data_float = cast_slice::<u8, f32>(&data).to_vec();
-        Array::from_shape_vec(latent_shape, data_float)
-            .unwrap()
-            .into_dyn()
-            .into_shared()
+        Array::from_shape_vec(latent_shape, data_float).unwrap()
+            .into_dyn().into_shared()
     } else {
         println!("  Generating random");
 
@@ -138,8 +136,7 @@ fn main() -> std::io::Result<()> {
         };
 
         Array::from_shape_simple_fn(latent_shape, || rng.sample::<f32, _>(StandardNormal))
-            .into_dyn()
-            .into_shared()
+            .into_dyn().into_shared()
     };
 
     println!("Initializing schedule");
@@ -214,21 +211,20 @@ fn str_to_tokens(s: &str) -> Vec<u32> {
     s.split(',').map(|x| x.parse::<u32>().unwrap()).collect_vec()
 }
 
-fn tokens_to_tensor(tokens: &[u32]) -> Tensor<f32> {
+fn tokens_to_tensor(tokens: &[u32]) -> DTensor {
     assert!(tokens.len() + 2 < EMBED_LENGTH);
 
-    Array::from_shape_fn((1, EMBED_LENGTH), |(_, i)| {
-        let x = if i == 0 {
+    let array = Array::from_shape_fn((1, EMBED_LENGTH), |(_, i)| {
+        if i == 0 {
             START_TOKEN
         } else if i - 1 < tokens.len() {
             tokens[i - 1]
         } else {
             END_TOKEN
-        };
-        x as f32
-    })
-        .into_dyn()
-        .into_shared()
+        }
+    });
+
+    DTensor::U32(array.into_dyn().into_shared())
 }
 
 fn latent_to_image(latent: &Tensor<f32>) -> RgbImage {

@@ -4,9 +4,10 @@ use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
+use kn_graph::dtype::DisplayCFloat;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, DisplayCFloat, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
