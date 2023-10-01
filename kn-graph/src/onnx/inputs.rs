@@ -6,12 +6,12 @@ use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::{AttributeProto, TensorProto};
 use crate::onnx::result::{Node, OnnxError, OnnxResult};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::TypedValue;
+use crate::onnx::typed_value::OnnxValue;
 
 #[derive(Debug)]
 pub struct Inputs<'a> {
     node: Node<&'a str>,
-    inner: Vec<Storage<&'a TypedValue>>,
+    inner: Vec<Storage<&'a OnnxValue>>,
 }
 
 #[derive(Debug)]
@@ -22,7 +22,7 @@ enum Storage<T> {
 }
 
 impl<'a> Inputs<'a> {
-    pub fn from(node: Node<&'a str>, inputs: &'a [String], nodes: &'a Store<TypedValue>) -> OnnxResult<Self> {
+    pub fn from(node: Node<&'a str>, inputs: &'a [String], nodes: &'a Store<OnnxValue>) -> OnnxResult<Self> {
         let inner = inputs
             .iter()
             .enumerate()
@@ -42,14 +42,14 @@ impl<'a> Inputs<'a> {
         Ok(Inputs { node, inner })
     }
 
-    pub fn required(&mut self, index: usize) -> OnnxResult<&'a TypedValue> {
+    pub fn required(&mut self, index: usize) -> OnnxResult<&'a OnnxValue> {
         match self.optional(index) {
             Some(input) => Ok(input),
             None => Err(OnnxError::MissingInput(self.node.to_owned(), index, self.inner.len())),
         }
     }
 
-    pub fn optional(&mut self, index: usize) -> Option<&'a TypedValue> {
+    pub fn optional(&mut self, index: usize) -> Option<&'a OnnxValue> {
         match self.take(index) {
             Storage::Present(value) => Some(value),
             Storage::Missing => None,
@@ -60,7 +60,7 @@ impl<'a> Inputs<'a> {
         }
     }
 
-    pub fn take_all_variadic(&mut self) -> Vec<&'a TypedValue> {
+    pub fn take_all_variadic(&mut self) -> Vec<&'a OnnxValue> {
         (0..self.inner.len())
             .map(|i| match self.take(i) {
                 Storage::Present(value) => value,
@@ -81,7 +81,7 @@ impl<'a> Inputs<'a> {
             .collect()
     }
 
-    fn take(&mut self, index: usize) -> Storage<&'a TypedValue> {
+    fn take(&mut self, index: usize) -> Storage<&'a OnnxValue> {
         match self.inner.get(index) {
             None => Storage::Missing,
             Some(Storage::Missing) => Storage::Missing,

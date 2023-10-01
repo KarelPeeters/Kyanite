@@ -6,10 +6,11 @@ use std::ops::Index;
 
 use decorum::Total;
 use itertools::{Itertools, zip_eq};
+use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
 use crate::cpu::{OperationError, run_cpu_const_operation};
-use crate::dtype::{dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair};
+use crate::dtype::{dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -100,7 +101,13 @@ pub enum Operation {
     /// A constant built into the network.
     Constant { tensor: DTensor },
 
-    // TODO two cast operators: BitCast and ValueCast
+    /// Cast to a different type.
+    /// When possible the value is preserved or at least approximated.
+    ValueCast { input: Value, to: DType },
+    /// Cast to a different type.
+    /// The bit pattern is kept, so the value is not necessarily preserved.
+    /// The type before and after the cast must have the same size.
+    BitCast { input: Value, to: DType },
 
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
@@ -175,6 +182,8 @@ pub enum UnaryOp {
     Tanh,
     Erf,
     Mish,
+    ValueCast(DType),
+    BitCast(DType),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -236,6 +245,8 @@ impl Operation {
         match self {
             &Operation::Input { index } => Operation::Input { index },
             &Operation::Constant { ref tensor } => Operation::Constant { tensor: tensor.clone() },
+            &Operation::ValueCast { input, to } => Operation::ValueCast { input: f(input), to },
+            &Operation::BitCast { input, to } => Operation::BitCast { input: f(input), to },
             &Operation::View { input } => Operation::View { input: f(input) },
             &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
             &Operation::Permute { input, ref permutation } => Operation::Permute {
@@ -440,6 +451,8 @@ impl Graph {
                 let &e = tensor.iter().next()?;
                 tensor.iter().all(|&d| d == e).then(|| e.to_dscalar())
             }),
+            Operation::ValueCast { input, to } => self.as_single_const(input).map(|s| s.value_cast(to)),
+            Operation::BitCast { input, to } => self.as_single_const(input).map(|s| s.bit_cast(to).unwrap()),
             Operation::View { input } => self.as_single_const(input),
             Operation::Broadcast { input } => self.as_single_const(input),
             Operation::Permute { input, permutation: _ } => self.as_single_const(input),
@@ -1153,9 +1166,10 @@ impl Graph {
 
     // Elementwise binary operation.
     #[must_use]
-    pub fn unary(&mut self, op: UnaryOp, input: Value) -> Value {
+    pub fn unary(&mut self, op: UnaryOp, mut input: Value) -> Value {
         let (shape, dtype) = self.shape_dtype(input);
 
+        // check type validness
         match op {
             UnaryOp::Abs | UnaryOp::Neg => {
                 assert!(dtype.is_signed(), "{:?} only work on signed types, got {:?}", op, dtype)
@@ -1168,7 +1182,20 @@ impl Graph {
             | UnaryOp::Sigmoid
             | UnaryOp::Tanh
             | UnaryOp::Erf
-            | UnaryOp::Mish => assert!(dtype.is_float(), "{:?} only work on float types, got {:?}", op, dtype),
+            | UnaryOp::Mish => {
+                assert!(dtype.is_float(), "{:?} only works on float types, got {:?}", op, dtype)
+            },
+            UnaryOp::ValueCast(_) => {
+                // always valid
+            },
+            UnaryOp::BitCast(to) => {
+                assert_eq!(dtype.size(), to.size(), "Bitcast requires matching input/output sizes");
+
+                // skip to innermost bitcast value
+                while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
+                    input = inner;
+                }
+            },
         }
 
         self.push(shape.clone(), dtype, Operation::Unary { op, input })
@@ -1259,6 +1286,7 @@ impl Graph {
     }
 }
 
+/// This corresponds to [_multidimensional broadcasting_ in the ONNX spec](https://github.com/onnx/onnx/blob/main/docs/Broadcasting.md#multidirectional-broadcasting).
 pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
     let rank = max(left.rank(), right.rank());
 
@@ -1276,6 +1304,16 @@ pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
         .collect_vec();
 
     Shape::new(result)
+}
+
+pub fn broadcast_tensors_symmetric<'l, 'r, L, R>(left: &Tensor<L>, right: &Tensor<R>) -> (ArrayView<'l, L, IxDyn>, ArrayView<'r, R, IxDyn>) {
+    let result_shape = broadcast_shape_symmetric(&Shape::fixed(left.shape()), &Shape::fixed(right.shape()));
+    let result_shape = result_shape.as_fixed().unwrap().dims;
+
+    let left = left.broadcast(result_shape.clone()).unwrap();
+    let right = right.broadcast(result_shape).unwrap();
+
+    (left, right)
 }
 
 impl Debug for Graph {
@@ -1465,6 +1503,12 @@ impl UnaryOp {
                 let x = x.unwrap_f32().unwrap();
                 let y = x * (x.exp().ln_1p().tanh());
                 DScalar::f32(y)
+            }
+            UnaryOp::ValueCast(to) => {
+                todo!()
+            }
+            UnaryOp::BitCast(to) => {
+                todo!()
             }
         }
     }

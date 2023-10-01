@@ -22,6 +22,7 @@ pub enum DType {
     U16,
     U32,
     U64,
+    Bool,
 }
 
 pub type Tensor<T> = ArcArray<T, IxDyn>;
@@ -205,6 +206,14 @@ impl DScalar {
             DScalar::I32(c) => format!("{}", c),
             DScalar::I64(c) => format!("{}", c),
         }
+    }
+
+    pub fn value_cast(self, to: DType) -> DScalar {
+        todo!()
+    }
+
+    pub fn bit_cast(self, to: DType) -> Option<DScalar> {
+        todo!()
     }
 }
 

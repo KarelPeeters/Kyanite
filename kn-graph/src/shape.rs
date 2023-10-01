@@ -260,6 +260,10 @@ impl Size {
         )
     }
 
+    pub const fn components_factor_exp(self) -> (usize, u32) {
+        (self.fixed_factor, self.batch_exp)
+    }
+
     pub fn eval(self, batch_size: usize) -> usize {
         batch_size.pow(self.batch_exp) * self.fixed_factor
     }
