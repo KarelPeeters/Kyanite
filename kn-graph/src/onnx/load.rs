@@ -21,7 +21,7 @@ use crate::shape;
 use crate::shape::{Shape, Size};
 
 // we use &dyn to avoid duplicate codegen of this large and non-critical function
-pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> OnnxResult<Graph> {
+pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) -> OnnxResult<Graph> {
     let model = load_model_proto(buf);
     let model_graph = model.graph.as_ref().unwrap_proto("model.graph")?;
 
@@ -102,7 +102,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
 
 fn visit_node(
     graph: &mut Graph,
-    external: &dyn ExternalDataLoader,
+    external: &mut dyn ExternalDataLoader,
     node: Node<&str>,
     inputs: &mut Inputs,
     attrs: &mut Attributes,
@@ -935,7 +935,7 @@ fn visit_node(
 fn define_tensor_data(
     graph: &mut Graph,
     tensor: &TensorProto,
-    external: &dyn ExternalDataLoader,
+    external: &mut dyn ExternalDataLoader,
 ) -> OnnxResult<TypedValue> {
     let data_location = DataLocation::try_from(tensor.data_location).expect("Illegal data_location");
 
@@ -944,6 +944,13 @@ fn define_tensor_data(
     let shape = Shape::new(dims);
     let size = shape.size().unwrap_fixed("Data tensor shape must be fixed");
     let data_type = DataType::try_from(tensor.data_type).expect("Illegal data type");
+
+    let dtype_size = match data_type {
+        DataType::Float | DataType::Int32 => 4,
+        DataType::Double | DataType::Int64 => 8,
+        _ => todo!(),
+    };
+    let length_guess = size * dtype_size;
 
     // load the data
     let raw_data_storage;
@@ -966,9 +973,13 @@ fn define_tensor_data(
             }
         }
 
+        if let Some(length) = length {
+            assert_eq!(length, length_guess, "External data length mismatch");
+        }
+
         // try loading from external source
         let location = location.expect("External data must have a location");
-        raw_data_storage = external.load_external_data(&PathBuf::from(location), offset, length)?;
+        raw_data_storage = external.load_external_data(&PathBuf::from(location), offset, length, length_guess)?;
 
         if let Some(length) = length {
             assert_eq!(raw_data_storage.len(), length, "Raw data length mismatch");

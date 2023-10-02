@@ -2,19 +2,24 @@ use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
+use itertools::Itertools;
+use rand::Rng;
 
 pub trait ExternalDataLoader {
-    fn load_external_data(&self, location: &Path, offset: usize, length: Option<usize>) -> OnnxResult<Vec<u8>>;
+    fn load_external_data(&mut self, location: &Path, offset: usize, length: Option<usize>, length_guess: usize) -> OnnxResult<Vec<u8>>;
 }
 
 #[derive(Debug)]
 pub struct NoExternalData;
 
 #[derive(Debug)]
+pub struct DummyExternalData<R: Rng>(pub R);
+
+#[derive(Debug)]
 pub struct PathExternalData(pub PathBuf);
 
 impl ExternalDataLoader for NoExternalData {
-    fn load_external_data(&self, location: &Path, _: usize, _: Option<usize>) -> OnnxResult<Vec<u8>> {
+    fn load_external_data(&mut self, location: &Path, _: usize, _: Option<usize>, _: usize) -> OnnxResult<Vec<u8>> {
         panic!(
             "External data not allowed, trying to read from '{}'",
             location.display()
@@ -22,8 +27,14 @@ impl ExternalDataLoader for NoExternalData {
     }
 }
 
+impl<R: Rng> ExternalDataLoader for DummyExternalData<R> {
+    fn load_external_data(&mut self, _: &Path, _: usize, _: Option<usize>, length_guess: usize) -> OnnxResult<Vec<u8>> {
+        Ok((0..length_guess).map(|_| self.0.gen()).collect_vec())
+    }
+}
+
 impl ExternalDataLoader for PathExternalData {
-    fn load_external_data(&self, location: &Path, offset: usize, length: Option<usize>) -> OnnxResult<Vec<u8>> {
+    fn load_external_data(&mut self, location: &Path, offset: usize, length: Option<usize>, _: usize) -> OnnxResult<Vec<u8>> {
         if !path_is_normal(location) {
             return Err(OnnxError::NonNormalExternalDataPath(location.to_owned()));
         }

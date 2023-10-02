@@ -12,7 +12,7 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/onnx.rs"));
 }
 
-mod external_data;
+pub mod external_data;
 mod inputs;
 mod load;
 pub mod result;
@@ -28,7 +28,7 @@ pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -
     let path = path.as_ref();
     let buf = std::fs::read(path).to_onnx_result(path)?;
 
-    let external: Box<dyn ExternalDataLoader> = if allow_external {
+    let mut external: Box<dyn ExternalDataLoader> = if allow_external {
         let parent = path
             .parent()
             .ok_or_else(|| OnnxError::MustHaveParentPath(path.to_owned()))?;
@@ -37,12 +37,16 @@ pub fn load_graph_from_onnx_path(path: impl AsRef<Path>, allow_external: bool) -
         Box::new(NoExternalData)
     };
 
-    graph_from_onnx_bytes(&buf, &*external)
+    graph_from_onnx_bytes(&buf, &mut *external)
 }
 
 /// Load an [ONNX](https://github.com/onnx/onnx/blob/main/docs/IR.md) file from the given bytes.
 ///
 /// The file is not allowed to reference external data files.
 pub fn load_graph_from_onnx_bytes(buffer: &[u8]) -> OnnxResult<Graph> {
-    graph_from_onnx_bytes(buffer, &NoExternalData)
+    graph_from_onnx_bytes(buffer, &mut NoExternalData)
+}
+
+pub fn load_graph_from_onnx_bytes_custom(buffer: &[u8], external: &mut dyn ExternalDataLoader) -> OnnxResult<Graph> {
+    graph_from_onnx_bytes(buffer, external)
 }
