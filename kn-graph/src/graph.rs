@@ -65,6 +65,7 @@ use crate::shape::{Shape, Size};
 /// }
 /// ```
 #[derive(Clone)]
+// TODO override clone manually, replace check value
 pub struct Graph {
     check: u32,
     values: Vec<ValueInfo>,
@@ -1097,6 +1098,8 @@ impl Graph {
     /// Both inputs must have the same rank (or right must have rank 0), the right shape is broadcasted to the left shape.
     #[must_use]
     pub fn binary(&mut self, op: BinaryOp, left: Value, right: Value) -> Value {
+        // TODO move constants to the right hand side for binary operations add/mul/min/max
+        //   normalizations!
         let skip = match op {
             BinaryOp::Sub | BinaryOp::Add => self.is_const_filled_with(right, 0.0),
             BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => self.is_const_filled_with(right, 1.0),
@@ -1164,6 +1167,45 @@ impl Graph {
         for &value in values {
             self.output(value)
         }
+    }
+
+    // TODO variant that extracts the entire subgraph up to a given set of values, keeping the exact same inputs?
+    /// Extract a small subgraph consisting of all values that go into `value`, up to a given `depth`.
+    /// Values that exceed the depth are added as inputs.
+    pub fn extract_subgraph(&self, value: Value, depth: u32) -> Graph {
+        fn extract_impl(graph: &Graph, sub: &mut Graph, map: &mut HashMap<Value, Value>, old: Value, depth: u32) -> Value {
+            // luckily we don't have to worry about cycles
+            if let Some(&new) = map.get(&old) {
+                return new;
+            }
+
+            let ValueInfo { shape, operation: old_op, debug_id, non_output_uses: _ } = &graph[old];
+
+            let new = if depth == 0 {
+                // insert input
+                sub.input(shape.clone())
+            } else {
+                // insert operation and map operands
+                let new_op = old_op.clone_map_inputs(|p| {
+                    extract_impl(graph, sub, map, p, depth - 1)
+                });
+                sub.push(shape.clone(), new_op)
+            };
+
+            sub.set_debug_id(new, debug_id.clone());
+            let prev = map.insert(old, new);
+            assert_eq!(prev, None);
+
+            new
+        }
+
+        let mut sub = Graph::new();
+        let mut map = HashMap::new();
+
+        let new = extract_impl(self, &mut sub, &mut map, value, depth);
+        sub.output(new);
+
+        sub
     }
 }
 
