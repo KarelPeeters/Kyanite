@@ -167,9 +167,8 @@ impl CudaExecutor {
         } else {
             let mut timers = vec![];
 
+            self.stream().synchronize();
             let start_gpu = self.stream().record_event();
-            start_gpu.synchronize();
-
             let start_cpu = Instant::now();
 
             for step_info in &self.steps {
