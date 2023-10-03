@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
@@ -137,43 +136,44 @@ fn try_run_cpu_operation(
             let data = data.0.clone();
             Tensor::from_shape_vec(output_shape_dyn, data).unwrap()
         }
-        Operation::View { input } => {
-            let input = map(input)?;
-            input.reshape(output_shape_dyn)
-        }
-        Operation::Broadcast { input } => {
-            let input = map(input)?;
-            input.broadcast(output_shape_dyn).unwrap().to_shared()
-        }
-        Operation::Permute { input, ref permutation } => {
-            let input = map(input)?;
-            input.view().permuted_axes(permutation.clone()).to_shared()
-        }
-        Operation::Slice { input, axis, range } => {
-            let input = map(input)?;
-
-            // We have to clamp the end:
-            // * SliceRange requires that `(end - start) % step == 0`
-            // * SliceInfo instead requires that `end <= len`.
-            let axis_len = input.shape()[axis];
-            let clamped_end = min(range.end, axis_len);
-
-            let info = slice_info(
-                input.ndim(),
-                axis,
-                range.start as isize,
-                Some(clamped_end as isize),
-                range.step as isize,
-            );
-            input.slice(info).to_shared()
-        }
-        Operation::Flip { input, axis } => {
-            let input = map(input)?;
-
-            // slice with negative step (ndarray convention is different from python)
-            let info = slice_info(input.ndim(), axis, 0, None, -1);
-            input.slice(info).to_shared()
-        }
+        Operation::Restride { input: _, restride: _  } => todo!(),
+        // Operation::View { input } => {
+        //     let input = map(input)?;
+        //     input.reshape(output_shape_dyn)
+        // }
+        // Operation::Broadcast { input } => {
+        //     let input = map(input)?;
+        //     input.broadcast(output_shape_dyn).unwrap().to_shared()
+        // }
+        // Operation::Permute { input, ref permutation } => {
+        //     let input = map(input)?;
+        //     input.view().permuted_axes(permutation.clone()).to_shared()
+        // }
+        // Operation::Slice { input, axis, range } => {
+        //     let input = map(input)?;
+        //
+        //     // We have to clamp the end:
+        //     // * SliceRange requires that `(end - start) % step == 0`
+        //     // * SliceInfo instead requires that `end <= len`.
+        //     let axis_len = input.shape()[axis];
+        //     let clamped_end = min(range.end, axis_len);
+        //
+        //     let info = slice_info(
+        //         input.ndim(),
+        //         axis,
+        //         range.start as isize,
+        //         Some(clamped_end as isize),
+        //         range.step as isize,
+        //     );
+        //     input.slice(info).to_shared()
+        // }
+        // Operation::Flip { input, axis } => {
+        //     let input = map(input)?;
+        //
+        //     // slice with negative step (ndarray convention is different from python)
+        //     let info = slice_info(input.ndim(), axis, 0, None, -1);
+        //     input.slice(info).to_shared()
+        // }
         Operation::Gather { input, axis, indices } => {
             let input = map(input)?;
             let indices = map(indices)?;

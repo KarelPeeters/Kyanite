@@ -349,26 +349,27 @@ impl<'a> Planner<'a> {
                 }
                 result.map_ptr(|device_ptr| PlanPtr::from_device_ptr(Some(value), device_ptr))
             }
-            &Operation::View { input } => {
-                let input_tensor = self.visit(input)?;
-
-                // try simple view operation, otherwise restride to dense and then copy
-                // TODO if we want the output to be simple strided immediately we need separate input/output shapes
-                //    in the scalar kernel
-                input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
-                    let input_shape = ConcreteShape::new(input_tensor.strided_shape().shape().to_vec());
-                    let result = self.alloc_tensor_shared(input_shape, Some(value));
-                    self.plan_copy_tensor(&input_tensor, &result, value);
-                    result.view(result_shape.dims.clone()).unwrap()
-                })
-            }
-            &Operation::Broadcast { input } => {
-                let input_tensor = self.visit(input)?;
-                input_tensor.broadcast(result_shape.dims.clone())
-            }
-            &Operation::Permute { input, ref permutation } => self.visit_permute(input, permutation)?,
-            &Operation::Slice { input, axis, range } => self.visit(input)?.slice(axis, range),
-            &Operation::Flip { input, axis } => self.visit(input)?.flip(axis),
+            Operation::Restride { input: _, restride: _ } => todo!(),
+            // &Operation::View { input } => {
+            //     let input_tensor = self.visit(input)?;
+            //
+            //     // try simple view operation, otherwise restride to dense and then copy
+            //     // TODO if we want the output to be simple strided immediately we need separate input/output shapes
+            //     //    in the scalar kernel
+            //     input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
+            //         let input_shape = ConcreteShape::new(input_tensor.strided_shape().shape().to_vec());
+            //         let result = self.alloc_tensor_shared(input_shape, Some(value));
+            //         self.plan_copy_tensor(&input_tensor, &result, value);
+            //         result.view(result_shape.dims.clone()).unwrap()
+            //     })
+            // }
+            // &Operation::Broadcast { input } => {
+            //     let input_tensor = self.visit(input)?;
+            //     input_tensor.broadcast(result_shape.dims.clone())
+            // }
+            // &Operation::Permute { input, ref permutation } => self.visit_permute(input, permutation)?,
+            // &Operation::Slice { input, axis, range } => self.visit(input)?.slice(axis, range),
+            // &Operation::Flip { input, axis } => self.visit(input)?.flip(axis),
             &Operation::Gather { input, axis, indices } => {
                 let input = self.visit(input)?;
                 let indices = self.visit(indices)?;
@@ -688,11 +689,12 @@ impl<'a> Planner<'a> {
 
             let mut bias_inner = None;
 
-            if let Operation::Broadcast { input: right_inner } = graph[right].operation {
-                if graph[left].shape.keep(1, Size::ONE) == graph[right_inner].shape {
-                    bias_inner = Some(right_inner);
-                }
-            }
+            todo!();
+            // if let Operation::Broadcast { input: right_inner } = graph[right].operation {
+            //     if graph[left].shape.keep(1, Size::ONE) == graph[right_inner].shape {
+            //         bias_inner = Some(right_inner);
+            //     }
+            // }
 
             if let Some(bias_inner) = bias_inner {
                 // has to be bias

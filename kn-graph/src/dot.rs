@@ -5,6 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::graph::{Graph, Operation};
+use crate::restride::Restride;
 
 /// Render the given graph as an svg file.
 ///
@@ -52,20 +53,32 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids
                 }
                 ("gray", "Constant", attrs)
             }
-            Operation::View { input: _ } => ("brown", "View", vec![]),
-            Operation::Broadcast { input: _ } => ("brown", "Broadcast", vec![]),
-            Operation::Permute {
-                input: _,
-                ref permutation,
-            } => {
-                let attrs = vec![("Permute", format!("{:?}", permutation))];
-                ("brown", "permute", attrs)
+            Operation::Restride { input: _, ref restride } => {
+                let Restride { old_shape, new_shape, offset, strides } = restride;
+
+                let attrs = vec![
+                    ("old_shape", format!("{:?}", old_shape)),
+                    ("new_shape", format!("{:?}", new_shape)),
+                    ("offset", format!("{:?}", offset)),
+                    ("strides", format!("{:?}", strides)),
+                ];
+
+                ("brown", "Restride", attrs)
             }
-            Operation::Slice { input: _, axis, range } => {
-                let attrs = vec![("axis", format!("{}", axis)), ("range", format!("{}", range))];
-                ("brown", "Slice", attrs)
-            }
-            Operation::Flip { input: _, axis } => ("brown", "Flip", vec![("axis", format!("{}", axis))]),
+            // Operation::View { input: _ } => ("brown", "View", vec![]),
+            // Operation::Broadcast { input: _ } => ("brown", "Broadcast", vec![]),
+            // Operation::Permute {
+            //     input: _,
+            //     ref permutation,
+            // } => {
+            //     let attrs = vec![("Permute", format!("{:?}", permutation))];
+            //     ("brown", "permute", attrs)
+            // }
+            // Operation::Slice { input: _, axis, range } => {
+            //     let attrs = vec![("axis", format!("{}", axis)), ("range", format!("{}", range))];
+            //     ("brown", "Slice", attrs)
+            // }
+            // Operation::Flip { input: _, axis } => ("brown", "Flip", vec![("axis", format!("{}", axis))]),
             Operation::Gather {
                 input: _,
                 axis,

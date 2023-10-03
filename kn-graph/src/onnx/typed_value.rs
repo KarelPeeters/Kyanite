@@ -132,7 +132,7 @@ impl SignedSize {
     pub const ZERO: SignedSize = SignedSize::from_int(0);
     pub const ONE: SignedSize = SignedSize::from_int(1);
     pub const NEG_ONE: SignedSize = SignedSize::from_int(-1);
-    pub const BATCH: SignedSize = SignedSize::from_size(Size::BATCH);
+    pub const BATCH: SignedSize = SignedSize::new(false, Size::BATCH);
 }
 
 impl SignedSize {
@@ -146,10 +146,6 @@ impl SignedSize {
 
     pub const fn from_int(i: i64) -> SignedSize {
         SignedSize::new(i < 0, Size::fixed(i.abs_diff(0) as usize))
-    }
-
-    pub const fn from_size(size: Size) -> SignedSize {
-        SignedSize::from( size)
     }
 
     pub const fn as_size(self) -> Option<Size> {

@@ -408,18 +408,20 @@ impl Graph {
 
     /// Returns `Some(f)` if `value` is effectively a constant with every element equal to `f`.
     pub fn as_single_const(&self, value: Value) -> Option<f32> {
-        match &self[value].operation {
+        match self[value].operation {
             Operation::Input { .. } => None,
-            Operation::Constant { data } => {
+            Operation::Constant { ref data } => {
                 let f = *data.first()?;
                 data.iter().all(|&x| f.float_eq(&x)).then(|| f)
             }
-            &Operation::Gather {
+            // TODO we can do better here, we only need to check the elements that will actually be sliced
+            Operation::Restride { input, restride: _ } => self.as_single_const(input),
+            Operation::Gather {
                 input,
                 axis: _,
                 indices: _,
             } => self.as_single_const(input),
-            &Operation::Concat { ref inputs, axis: _ } => {
+            Operation::Concat { ref inputs, axis: _ } => {
                 let f = self.as_single_const(*inputs.first()?)?;
                 inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
             }

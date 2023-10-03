@@ -184,8 +184,14 @@ pub struct RestrideFlip {
 
 #[cfg(test)]
 mod tests {
+    use crate::restride::Restride;
+    use crate::shape;
+
     #[test]
-    fn trivial_restride() {
-        // TODO
+    fn attention_piece() {
+        let r0 = Restride::view(shape![2, 4096, 8*40], shape![2, 8, 40, 4096]);
+        let r1 = Restride::permute(shape![2, 8, 40, 4096], vec![0, 2, 1, 3]);
+        let r2 = Restride::view(shape![2, 8, 4096, 40], shape![2*8, 4096, 40]);
+        let r3 = Restride::permute(shape![2*8, 4096, 40], vec![0, 2, 1]);
     }
 }

@@ -820,7 +820,7 @@ fn visit_node(
         "Shape" => {
             let input = inputs.required(0)?.unwrap_tensor();
             let shape = graph[input].shape.clone();
-            let dims = shape.dims.iter().copied().map(SignedSize::from_size).collect_vec();
+            let dims = shape.dims.iter().copied().map(SignedSize::from).collect_vec();
             TypedValue::Shape(dims)
         }
         "Identity" => {
