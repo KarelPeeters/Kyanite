@@ -30,6 +30,8 @@ pub fn compile_cached_kernel(key: KernelKey) -> CuFunction {
     let mut cache = KERNEL_CACHE.lock().unwrap();
 
     let func = cache.entry(key).or_insert_with_key(|key| {
+        println!("Compiling kernel: \n===================================\n{}\n===================================\n", key.source);
+
         let module = CuModule::from_source(key.device, &key.source, None, &[&key.func_name], &HEADERS);
 
         if !module.log.is_empty() {

@@ -232,7 +232,8 @@ impl Operation {
         }
     }
 
-    pub(crate) fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
+    // TODO make private again
+    pub fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
         match self {
             &Operation::Input { index } => Operation::Input { index },
             &Operation::Constant { ref data } => Operation::Constant { data: data.clone() },
@@ -457,8 +458,9 @@ impl Graph {
         std::mem::take(&mut self.new_values)
     }
 
+    // TODO make private again
     #[must_use]
-    pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
+    pub fn push(&mut self, shape: Shape, operation: Operation) -> Value {
         let info = ValueInfo {
             shape,
             operation,

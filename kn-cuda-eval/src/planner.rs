@@ -174,6 +174,11 @@ impl<'a> Planner<'a> {
         let mut hypo_shared_bytes_peak = 0;
         let mut hypo_shared_bytes_total = 0;
 
+        // TODO properly record plan memory usage
+        //   split into two steps so people can plan without committing?
+        //      ideally even split out dedicated and zero allocations
+        //      maybe even skip autokernel compilation, although that's going to be tricky
+        //   put a python utility to plot this stuff into the repository?
         let mut step_mem = vec![];
 
         println!("Step/memory info:");
@@ -195,14 +200,14 @@ impl<'a> Planner<'a> {
 
                         curr_alloc_bytes += size_bytes;
                         shared_bytes += size_bytes;
-                        device.alloc(0*size_bytes)
+                        device.alloc(size_bytes)
                     });
                     assert!(shared_allocations[ti].is_none());
                     shared_allocations[ti] = Some(ptr);
                 }
             }
 
-            step_mem.push((curr_shared_bytes, curr_alloc_bytes));
+            step_mem.push((planner.dedicated_bytes, curr_shared_bytes, curr_alloc_bytes));
 
             println!("step {}: {:?}",si, planner.steps[si]);
 
@@ -262,7 +267,7 @@ impl<'a> Planner<'a> {
         std::fs::write("step_mem.txt", format!("{:?}", step_mem)).unwrap();
 
         println!("{:?}", mem_usage);
-        std::process::exit(0);
+        // std::process::exit(0);
 
         // realize planned tensors and steps
         let ctx = RealizationContext {
