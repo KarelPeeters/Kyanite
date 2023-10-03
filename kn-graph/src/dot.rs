@@ -137,12 +137,20 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids
     writeln!(f)?;
 
     for value in graph.values() {
-        for operand in graph[value].operation.inputs() {
+        let operands = graph[value].operation.inputs();
+        for (operand_index, &operand) in operands.iter().enumerate() {
             if hide_const && graph.is_const(operand) {
                 continue;
             }
 
-            writeln!(f, "{} -> {}", operand.index(), value.index())?;
+            // TODO use named edge labels instead of just operand indices?
+            let label = if operands.len() > 1 {
+                format!(" [headlabel={}]", operand_index)
+            } else {
+                "".to_string()
+            };
+
+            writeln!(f, "{} -> {}{}", operand.index(), value.index(), label)?;
         }
     }
 
