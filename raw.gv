@@ -1,0 +1,1141 @@
+digraph {
+
+0 [label=<<TABLE BORDER="0">
+<TR><TD>Value(0)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+1 [label=<<TABLE BORDER="0">
+<TR><TD>Value(1)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+2 [label=<<TABLE BORDER="0">
+<TR><TD>Value(2)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+3 [label=<<TABLE BORDER="0">
+<TR><TD>Value(3)</TD><TD><B>Input</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4 x 64 x 64)</TD></TR>
+<TR><TD>index</TD><TD>0</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+4 [label=<<TABLE BORDER="0">
+<TR><TD>Value(4)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 4 x 3 x 3)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+5 [label=<<TABLE BORDER="0">
+<TR><TD>Value(5)</TD><TD><B>Conv</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>kernel</TD><TD>3x3</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+6 [label=<<TABLE BORDER="0">
+<TR><TD>Value(6)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+7 [label=<<TABLE BORDER="0">
+<TR><TD>Value(7)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+8 [label=<<TABLE BORDER="0">
+<TR><TD>Value(8)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+9 [label=<<TABLE BORDER="0">
+<TR><TD>Value(9)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+10 [label=<<TABLE BORDER="0">
+<TR><TD>Value(10)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+11 [label=<<TABLE BORDER="0">
+<TR><TD>Value(11)</TD><TD><B>Layernorm</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+<TR><TD>axis</TD><TD>2</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+12 [label=<<TABLE BORDER="0">
+<TR><TD>Value(12)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+13 [label=<<TABLE BORDER="0">
+<TR><TD>Value(13)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+14 [label=<<TABLE BORDER="0">
+<TR><TD>Value(14)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+15 [label=<<TABLE BORDER="0">
+<TR><TD>Value(15)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+16 [label=<<TABLE BORDER="0">
+<TR><TD>Value(16)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+17 [label=<<TABLE BORDER="0">
+<TR><TD>Value(17)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+18 [label=<<TABLE BORDER="0">
+<TR><TD>Value(18)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+19 [label=<<TABLE BORDER="0">
+<TR><TD>Value(19)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+20 [label=<<TABLE BORDER="0">
+<TR><TD>Value(20)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+21 [label=<<TABLE BORDER="0">
+<TR><TD>Value(21)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Sigmoid</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+22 [label=<<TABLE BORDER="0">
+<TR><TD>Value(22)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+23 [label=<<TABLE BORDER="0">
+<TR><TD>Value(23)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320 x 3 x 3)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+24 [label=<<TABLE BORDER="0">
+<TR><TD>Value(24)</TD><TD><B>Conv</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>kernel</TD><TD>3x3</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+25 [label=<<TABLE BORDER="0">
+<TR><TD>Value(25)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+26 [label=<<TABLE BORDER="0">
+<TR><TD>Value(26)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+27 [label=<<TABLE BORDER="0">
+<TR><TD>Value(27)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+28 [label=<<TABLE BORDER="0">
+<TR><TD>Value(28)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+29 [label=<<TABLE BORDER="0">
+<TR><TD>Value(29)</TD><TD><B>Input</B></TD></TR>
+<TR><TD>shape</TD><TD>()</TD></TR>
+<TR><TD>index</TD><TD>1</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+30 [label=<<TABLE BORDER="0">
+<TR><TD>Value(30)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+31 [label=<<TABLE BORDER="0">
+<TR><TD>Value(31)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+32 [label=<<TABLE BORDER="0">
+<TR><TD>Value(32)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+33 [label=<<TABLE BORDER="0">
+<TR><TD>Value(33)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+34 [label=<<TABLE BORDER="0">
+<TR><TD>Value(34)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+<TR><TD>op</TD><TD>Sin</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+35 [label=<<TABLE BORDER="0">
+<TR><TD>Value(35)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+<TR><TD>op</TD><TD>Cos</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+36 [label=<<TABLE BORDER="0">
+<TR><TD>Value(36)</TD><TD><B>Concat</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320)</TD></TR>
+<TR><TD>axis</TD><TD>1</TD></TR>
+</TABLE>
+>, color="yellow", shape=box, width=2]
+37 [label=<<TABLE BORDER="0">
+<TR><TD>Value(37)</TD><TD><B>Slice</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+<TR><TD>axis</TD><TD>1</TD></TR>
+<TR><TD>range</TD><TD>160:320</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+38 [label=<<TABLE BORDER="0">
+<TR><TD>Value(38)</TD><TD><B>Slice</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 160)</TD></TR>
+<TR><TD>axis</TD><TD>1</TD></TR>
+<TR><TD>range</TD><TD>0:160</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+39 [label=<<TABLE BORDER="0">
+<TR><TD>Value(39)</TD><TD><B>Concat</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320)</TD></TR>
+<TR><TD>axis</TD><TD>1</TD></TR>
+</TABLE>
+>, color="yellow", shape=box, width=2]
+40 [label=<<TABLE BORDER="0">
+<TR><TD>Value(40)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+41 [label=<<TABLE BORDER="0">
+<TR><TD>Value(41)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280 x 320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+42 [label=<<TABLE BORDER="0">
+<TR><TD>Value(42)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1280)</TD></TR>
+<TR><TD>Permute</TD><TD>[1, 0]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+43 [label=<<TABLE BORDER="0">
+<TR><TD>Value(43)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+44 [label=<<TABLE BORDER="0">
+<TR><TD>Value(44)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1280)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+45 [label=<<TABLE BORDER="0">
+<TR><TD>Value(45)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+46 [label=<<TABLE BORDER="0">
+<TR><TD>Value(46)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+47 [label=<<TABLE BORDER="0">
+<TR><TD>Value(47)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+48 [label=<<TABLE BORDER="0">
+<TR><TD>Value(48)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+49 [label=<<TABLE BORDER="0">
+<TR><TD>Value(49)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Sigmoid</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+50 [label=<<TABLE BORDER="0">
+<TR><TD>Value(50)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+51 [label=<<TABLE BORDER="0">
+<TR><TD>Value(51)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+52 [label=<<TABLE BORDER="0">
+<TR><TD>Value(52)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280 x 1280)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+53 [label=<<TABLE BORDER="0">
+<TR><TD>Value(53)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280 x 1280)</TD></TR>
+<TR><TD>Permute</TD><TD>[1, 0]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+54 [label=<<TABLE BORDER="0">
+<TR><TD>Value(54)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+55 [label=<<TABLE BORDER="0">
+<TR><TD>Value(55)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1280)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+56 [label=<<TABLE BORDER="0">
+<TR><TD>Value(56)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+57 [label=<<TABLE BORDER="0">
+<TR><TD>Value(57)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+58 [label=<<TABLE BORDER="0">
+<TR><TD>Value(58)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+59 [label=<<TABLE BORDER="0">
+<TR><TD>Value(59)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+60 [label=<<TABLE BORDER="0">
+<TR><TD>Value(60)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Sigmoid</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+61 [label=<<TABLE BORDER="0">
+<TR><TD>Value(61)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+62 [label=<<TABLE BORDER="0">
+<TR><TD>Value(62)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1280)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+63 [label=<<TABLE BORDER="0">
+<TR><TD>Value(63)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1280)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+64 [label=<<TABLE BORDER="0">
+<TR><TD>Value(64)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(1280 x 320)</TD></TR>
+<TR><TD>Permute</TD><TD>[1, 0]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+65 [label=<<TABLE BORDER="0">
+<TR><TD>Value(65)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1280 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+66 [label=<<TABLE BORDER="0">
+<TR><TD>Value(66)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 320)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+67 [label=<<TABLE BORDER="0">
+<TR><TD>Value(67)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+68 [label=<<TABLE BORDER="0">
+<TR><TD>Value(68)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+69 [label=<<TABLE BORDER="0">
+<TR><TD>Value(69)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+70 [label=<<TABLE BORDER="0">
+<TR><TD>Value(70)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+71 [label=<<TABLE BORDER="0">
+<TR><TD>Value(71)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+72 [label=<<TABLE BORDER="0">
+<TR><TD>Value(72)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+73 [label=<<TABLE BORDER="0">
+<TR><TD>Value(73)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+74 [label=<<TABLE BORDER="0">
+<TR><TD>Value(74)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+75 [label=<<TABLE BORDER="0">
+<TR><TD>Value(75)</TD><TD><B>Layernorm</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+<TR><TD>axis</TD><TD>2</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+76 [label=<<TABLE BORDER="0">
+<TR><TD>Value(76)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+77 [label=<<TABLE BORDER="0">
+<TR><TD>Value(77)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+78 [label=<<TABLE BORDER="0">
+<TR><TD>Value(78)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+79 [label=<<TABLE BORDER="0">
+<TR><TD>Value(79)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+80 [label=<<TABLE BORDER="0">
+<TR><TD>Value(80)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+81 [label=<<TABLE BORDER="0">
+<TR><TD>Value(81)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+82 [label=<<TABLE BORDER="0">
+<TR><TD>Value(82)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+83 [label=<<TABLE BORDER="0">
+<TR><TD>Value(83)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+84 [label=<<TABLE BORDER="0">
+<TR><TD>Value(84)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+85 [label=<<TABLE BORDER="0">
+<TR><TD>Value(85)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Sigmoid</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+86 [label=<<TABLE BORDER="0">
+<TR><TD>Value(86)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+87 [label=<<TABLE BORDER="0">
+<TR><TD>Value(87)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320 x 3 x 3)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+88 [label=<<TABLE BORDER="0">
+<TR><TD>Value(88)</TD><TD><B>Conv</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>kernel</TD><TD>3x3</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+89 [label=<<TABLE BORDER="0">
+<TR><TD>Value(89)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+90 [label=<<TABLE BORDER="0">
+<TR><TD>Value(90)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+91 [label=<<TABLE BORDER="0">
+<TR><TD>Value(91)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+92 [label=<<TABLE BORDER="0">
+<TR><TD>Value(92)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+93 [label=<<TABLE BORDER="0">
+<TR><TD>Value(93)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+94 [label=<<TABLE BORDER="0">
+<TR><TD>Value(94)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+95 [label=<<TABLE BORDER="0">
+<TR><TD>Value(95)</TD><TD><B>Layernorm</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 32 x 40960)</TD></TR>
+<TR><TD>axis</TD><TD>2</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+96 [label=<<TABLE BORDER="0">
+<TR><TD>Value(96)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+97 [label=<<TABLE BORDER="0">
+<TR><TD>Value(97)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+98 [label=<<TABLE BORDER="0">
+<TR><TD>Value(98)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+99 [label=<<TABLE BORDER="0">
+<TR><TD>Value(99)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+100 [label=<<TABLE BORDER="0">
+<TR><TD>Value(100)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+101 [label=<<TABLE BORDER="0">
+<TR><TD>Value(101)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+102 [label=<<TABLE BORDER="0">
+<TR><TD>Value(102)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+103 [label=<<TABLE BORDER="0">
+<TR><TD>Value(103)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+104 [label=<<TABLE BORDER="0">
+<TR><TD>Value(104)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+105 [label=<<TABLE BORDER="0">
+<TR><TD>Value(105)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+106 [label=<<TABLE BORDER="0">
+<TR><TD>Value(106)</TD><TD><B>Conv</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>kernel</TD><TD>1x1</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+107 [label=<<TABLE BORDER="0">
+<TR><TD>Value(107)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+108 [label=<<TABLE BORDER="0">
+<TR><TD>Value(108)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+109 [label=<<TABLE BORDER="0">
+<TR><TD>Value(109)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+110 [label=<<TABLE BORDER="0">
+<TR><TD>Value(110)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 64 x 64)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+111 [label=<<TABLE BORDER="0">
+<TR><TD>Value(111)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 64 x 64 x 320)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 3, 1]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+112 [label=<<TABLE BORDER="0">
+<TR><TD>Value(112)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+113 [label=<<TABLE BORDER="0">
+<TR><TD>Value(113)</TD><TD><B>Reduce</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096)</TD></TR>
+<TR><TD>op</TD><TD>Mean</TD></TR>
+<TR><TD>axes</TD><TD>[2]</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+114 [label=<<TABLE BORDER="0">
+<TR><TD>Value(114)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+115 [label=<<TABLE BORDER="0">
+<TR><TD>Value(115)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+116 [label=<<TABLE BORDER="0">
+<TR><TD>Value(116)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Sub</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+117 [label=<<TABLE BORDER="0">
+<TR><TD>Value(117)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>()</TD></TR>
+<TR><TD>value</TD><TD>2</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+118 [label=<<TABLE BORDER="0">
+<TR><TD>Value(118)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+119 [label=<<TABLE BORDER="0">
+<TR><TD>Value(119)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+120 [label=<<TABLE BORDER="0">
+<TR><TD>Value(120)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Pow</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+121 [label=<<TABLE BORDER="0">
+<TR><TD>Value(121)</TD><TD><B>Reduce</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096)</TD></TR>
+<TR><TD>op</TD><TD>Mean</TD></TR>
+<TR><TD>axes</TD><TD>[2]</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+122 [label=<<TABLE BORDER="0">
+<TR><TD>Value(122)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+123 [label=<<TABLE BORDER="0">
+<TR><TD>Value(123)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>()</TD></TR>
+<TR><TD>value</TD><TD>0.00001</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+124 [label=<<TABLE BORDER="0">
+<TR><TD>Value(124)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+125 [label=<<TABLE BORDER="0">
+<TR><TD>Value(125)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+126 [label=<<TABLE BORDER="0">
+<TR><TD>Value(126)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 1)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+127 [label=<<TABLE BORDER="0">
+<TR><TD>Value(127)</TD><TD><B>Unary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 1)</TD></TR>
+<TR><TD>op</TD><TD>Sqrt</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+128 [label=<<TABLE BORDER="0">
+<TR><TD>Value(128)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+129 [label=<<TABLE BORDER="0">
+<TR><TD>Value(129)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Div</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+130 [label=<<TABLE BORDER="0">
+<TR><TD>Value(130)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+131 [label=<<TABLE BORDER="0">
+<TR><TD>Value(131)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+132 [label=<<TABLE BORDER="0">
+<TR><TD>Value(132)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+133 [label=<<TABLE BORDER="0">
+<TR><TD>Value(133)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+134 [label=<<TABLE BORDER="0">
+<TR><TD>Value(134)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+135 [label=<<TABLE BORDER="0">
+<TR><TD>Value(135)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+136 [label=<<TABLE BORDER="0">
+<TR><TD>Value(136)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+137 [label=<<TABLE BORDER="0">
+<TR><TD>Value(137)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+138 [label=<<TABLE BORDER="0">
+<TR><TD>Value(138)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+139 [label=<<TABLE BORDER="0">
+<TR><TD>Value(139)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+140 [label=<<TABLE BORDER="0">
+<TR><TD>Value(140)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+141 [label=<<TABLE BORDER="0">
+<TR><TD>Value(141)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+142 [label=<<TABLE BORDER="0">
+<TR><TD>Value(142)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 8 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+143 [label=<<TABLE BORDER="0">
+<TR><TD>Value(143)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 8 x 4096 x 40)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 1, 3]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+144 [label=<<TABLE BORDER="0">
+<TR><TD>Value(144)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+145 [label=<<TABLE BORDER="0">
+<TR><TD>Value(145)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+146 [label=<<TABLE BORDER="0">
+<TR><TD>Value(146)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+147 [label=<<TABLE BORDER="0">
+<TR><TD>Value(147)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+148 [label=<<TABLE BORDER="0">
+<TR><TD>Value(148)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+149 [label=<<TABLE BORDER="0">
+<TR><TD>Value(149)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 8 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+150 [label=<<TABLE BORDER="0">
+<TR><TD>Value(150)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 8 x 4096 x 40)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 1, 3]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+151 [label=<<TABLE BORDER="0">
+<TR><TD>Value(151)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+152 [label=<<TABLE BORDER="0">
+<TR><TD>Value(152)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 40 x 4096)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 1]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+153 [label=<<TABLE BORDER="0">
+<TR><TD>Value(153)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 4096)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+154 [label=<<TABLE BORDER="0">
+<TR><TD>Value(154)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>()</TD></TR>
+<TR><TD>value</TD><TD>0.15811388</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+155 [label=<<TABLE BORDER="0">
+<TR><TD>Value(155)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 1 x 1)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+156 [label=<<TABLE BORDER="0">
+<TR><TD>Value(156)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 4096)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+157 [label=<<TABLE BORDER="0">
+<TR><TD>Value(157)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 4096)</TD></TR>
+<TR><TD>op</TD><TD>Mul</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+158 [label=<<TABLE BORDER="0">
+<TR><TD>Value(158)</TD><TD><B>Softmax</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 4096)</TD></TR>
+<TR><TD>axis</TD><TD>2</TD></TR>
+</TABLE>
+>, color="purple", shape=box, width=2]
+159 [label=<<TABLE BORDER="0">
+<TR><TD>Value(159)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+160 [label=<<TABLE BORDER="0">
+<TR><TD>Value(160)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+161 [label=<<TABLE BORDER="0">
+<TR><TD>Value(161)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+162 [label=<<TABLE BORDER="0">
+<TR><TD>Value(162)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+163 [label=<<TABLE BORDER="0">
+<TR><TD>Value(163)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 8 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+164 [label=<<TABLE BORDER="0">
+<TR><TD>Value(164)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 8 x 4096 x 40)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 1, 3]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+165 [label=<<TABLE BORDER="0">
+<TR><TD>Value(165)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+166 [label=<<TABLE BORDER="0">
+<TR><TD>Value(166)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(16 x 4096 x 40)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+167 [label=<<TABLE BORDER="0">
+<TR><TD>Value(167)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 8 x 4096 x 40)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+168 [label=<<TABLE BORDER="0">
+<TR><TD>Value(168)</TD><TD><B>permute</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 8 x 40)</TD></TR>
+<TR><TD>Permute</TD><TD>[0, 2, 1, 3]</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+169 [label=<<TABLE BORDER="0">
+<TR><TD>Value(169)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+170 [label=<<TABLE BORDER="0">
+<TR><TD>Value(170)</TD><TD><B>Constant</B></TD></TR>
+<TR><TD>shape</TD><TD>(320 x 320)</TD></TR>
+</TABLE>
+>, color="gray", shape=box, width=2]
+171 [label=<<TABLE BORDER="0">
+<TR><TD>Value(171)</TD><TD><B>View</B></TD></TR>
+<TR><TD>shape</TD><TD>(1 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+172 [label=<<TABLE BORDER="0">
+<TR><TD>Value(172)</TD><TD><B>Broadcast</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 320 x 320)</TD></TR>
+</TABLE>
+>, color="brown", shape=box, width=2]
+173 [label=<<TABLE BORDER="0">
+<TR><TD>Value(173)</TD><TD><B>MatMul</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+</TABLE>
+>, color="blue", shape=box, width=2]
+174 [label=<<TABLE BORDER="0">
+<TR><TD>Value(174)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+175 [label=<<TABLE BORDER="0">
+<TR><TD>Value(175)</TD><TD><B>Binary</B></TD></TR>
+<TR><TD>shape</TD><TD>(2 x 4096 x 320)</TD></TR>
+<TR><TD>output</TD><TD>0</TD></TR>
+<TR><TD>op</TD><TD>Add</TD></TR>
+</TABLE>
+>, color="green", shape=box, width=2]
+
+0 -> 1
+1 -> 2
+3 -> 5
+4 -> 5
+6 -> 7
+7 -> 8
+5 -> 9
+8 -> 9
+9 -> 10
+10 -> 11
+11 -> 12
+13 -> 14
+14 -> 15
+12 -> 16
+15 -> 16
+17 -> 18
+18 -> 19
+16 -> 20
+19 -> 20
+20 -> 21
+20 -> 22
+21 -> 22
+22 -> 24
+23 -> 24
+25 -> 26
+26 -> 27
+24 -> 28
+27 -> 28
+29 -> 30
+30 -> 31
+31 -> 33
+32 -> 33
+33 -> 34
+33 -> 35
+34 -> 36
+35 -> 36
+36 -> 37
+36 -> 38
+37 -> 39
+38 -> 39
+39 -> 40
+41 -> 42
+42 -> 43
+40 -> 44
+43 -> 44
+44 -> 45
+46 -> 47
+45 -> 48
+47 -> 48
+48 -> 49
+48 -> 50
+49 -> 50
+50 -> 51
+52 -> 53
+53 -> 54
+51 -> 55
+54 -> 55
+55 -> 56
+57 -> 58
+56 -> 59
+58 -> 59
+59 -> 60
+59 -> 61
+60 -> 61
+61 -> 62
+63 -> 64
+64 -> 65
+62 -> 66
+65 -> 66
+66 -> 67
+68 -> 69
+67 -> 70
+69 -> 70
+70 -> 71
+71 -> 72
+28 -> 73
+72 -> 73
+73 -> 74
+74 -> 75
+75 -> 76
+77 -> 78
+78 -> 79
+76 -> 80
+79 -> 80
+81 -> 82
+82 -> 83
+80 -> 84
+83 -> 84
+84 -> 85
+84 -> 86
+85 -> 86
+86 -> 88
+87 -> 88
+89 -> 90
+90 -> 91
+88 -> 92
+91 -> 92
+9 -> 93
+92 -> 93
+93 -> 94
+94 -> 95
+95 -> 96
+97 -> 98
+98 -> 99
+96 -> 100
+99 -> 100
+101 -> 102
+102 -> 103
+100 -> 104
+103 -> 104
+104 -> 106
+105 -> 106
+107 -> 108
+108 -> 109
+106 -> 110
+109 -> 110
+110 -> 111
+111 -> 112
+112 -> 113
+113 -> 114
+114 -> 115
+112 -> 116
+115 -> 116
+117 -> 118
+118 -> 119
+116 -> 120
+119 -> 120
+120 -> 121
+121 -> 122
+123 -> 124
+124 -> 125
+122 -> 126
+125 -> 126
+126 -> 127
+127 -> 128
+116 -> 129
+128 -> 129
+130 -> 131
+131 -> 132
+129 -> 133
+132 -> 133
+134 -> 135
+135 -> 136
+133 -> 137
+136 -> 137
+138 -> 139
+139 -> 140
+137 -> 141
+140 -> 141
+141 -> 142
+142 -> 143
+143 -> 144
+145 -> 146
+146 -> 147
+137 -> 148
+147 -> 148
+148 -> 149
+149 -> 150
+150 -> 151
+151 -> 152
+144 -> 153
+152 -> 153
+154 -> 155
+155 -> 156
+153 -> 157
+156 -> 157
+157 -> 158
+159 -> 160
+160 -> 161
+137 -> 162
+161 -> 162
+162 -> 163
+163 -> 164
+164 -> 165
+158 -> 166
+165 -> 166
+166 -> 167
+167 -> 168
+168 -> 169
+170 -> 171
+171 -> 172
+169 -> 173
+172 -> 173
+2 -> 174
+173 -> 174
+174 -> 175
+112 -> 175
+
+}

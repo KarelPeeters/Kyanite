@@ -170,8 +170,13 @@ impl<'a> Planner<'a> {
 
         let mut shared_bytes = 0;
         let mut curr_shared_bytes = 0;
+        let mut curr_alloc_bytes = 0;
         let mut hypo_shared_bytes_peak = 0;
         let mut hypo_shared_bytes_total = 0;
+
+        let mut step_mem = vec![];
+
+        println!("Step/memory info:");
 
         for si in 0..step_count {
             for (ti, &(start, _)) in live_ranges.iter().enumerate() {
@@ -182,21 +187,32 @@ impl<'a> Planner<'a> {
                     hypo_shared_bytes_peak = max(hypo_shared_bytes_peak, curr_shared_bytes);
                     hypo_shared_bytes_total += size_bytes;
 
+                    println!("  new buffer, size={}", size_bytes);
+
                     let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
                     let ptr = vec.pop().unwrap_or_else(|| {
+                        println!("  allocating, size={}", size_bytes);
+
+                        curr_alloc_bytes += size_bytes;
                         shared_bytes += size_bytes;
-                        device.alloc(size_bytes)
+                        device.alloc(0*size_bytes)
                     });
                     assert!(shared_allocations[ti].is_none());
                     shared_allocations[ti] = Some(ptr);
                 }
             }
 
+            step_mem.push((curr_shared_bytes, curr_alloc_bytes));
+
+            println!("step {}: {:?}",si, planner.steps[si]);
+
             for (ti, &(start, end)) in live_ranges.iter().enumerate() {
                 if start <= si && end == si {
                     // free the given tensor
                     let size_bytes = planner.shared_buffers[ti].size_bytes;
                     curr_shared_bytes -= size_bytes;
+
+                    println!("  free buffer, size={}", size_bytes);
 
                     let ptr = shared_allocations[ti].as_ref().unwrap().clone();
                     let vec = free_allocations.get_mut(&size_bytes).unwrap();
@@ -240,6 +256,13 @@ impl<'a> Planner<'a> {
             hypo_shared_bytes_peak,
             hypo_shared_bytes_total,
         };
+
+        std::fs::write("live_ranges.txt", format!("{:?}", live_ranges)).unwrap();
+        std::fs::write("buffer_sizes.txt", format!("{:?}", planner.shared_buffers.iter().map(|b| b.size_bytes).collect_vec())).unwrap();
+        std::fs::write("step_mem.txt", format!("{:?}", step_mem)).unwrap();
+
+        println!("{:?}", mem_usage);
+        std::process::exit(0);
 
         // realize planned tensors and steps
         let ctx = RealizationContext {
