@@ -149,7 +149,7 @@ impl SignedSize {
     }
 
     pub const fn from_size(size: Size) -> SignedSize {
-        SignedSize::new(false, size)
+        SignedSize::from( size)
     }
 
     pub const fn as_size(self) -> Option<Size> {
@@ -165,6 +165,10 @@ impl SignedSize {
             self.negative ^ rhs.negative,
             self.size.floor_div(rhs.size)?,
         ))
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.size.is_zero()
     }
 }
 
@@ -184,12 +188,18 @@ impl std::ops::Neg for SignedSize {
     }
 }
 
+impl From<Size> for SignedSize {
+    fn from(value: Size) -> Self {
+        SignedSize::new(false,  value)
+    }
+}
+
 impl std::ops::Add for SignedSize {
     type Output = Option<Self>;
 
     fn add(self, rhs: Self) -> Self::Output {
         match (self.negative, rhs.negative) {
-            (false, false) => Some(SignedSize::new(false, (self.size + rhs.size)?)),
+            (false, false) => Some(SignedSize::from( (self.size + rhs.size)?)),
             (true, true) => Some(SignedSize::new(true, (self.size + rhs.size)?)),
             (false, true) | (true, false) => {
                 let flip0 = self.negative ^ rhs.negative;

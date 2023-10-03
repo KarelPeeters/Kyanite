@@ -50,5 +50,7 @@ pub mod dot;
 pub mod onnx;
 /// Hidden activations visualization.
 pub mod visualize;
+/// The restride operation representation.
+pub mod restride;
 
 pub mod wrap_debug;

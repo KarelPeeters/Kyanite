@@ -6,10 +6,11 @@ use std::ops::{Deref, Index};
 
 use decorum::cmp::FloatEq;
 use decorum::Total;
-use itertools::{zip_eq, Itertools};
+use itertools::{Itertools, zip_eq};
 use rand::random;
 
-use crate::cpu::{run_cpu_const_operation, OperationError, Tensor};
+use crate::cpu::{OperationError, run_cpu_const_operation, Tensor};
+use crate::restride::Restride;
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -103,21 +104,15 @@ pub enum Operation {
     /// A constant build into the network.
     Constant { data: ConstantData },
 
-    //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
-    /// View a value as a different shape.
-    View { input: Value },
-    /// Repeat along all axes with size 1 that don't match the output shape.
-    Broadcast { input: Value },
-    /// Change the order of axis in the shape.
-    Permute { input: Value, permutation: Vec<usize> },
-    /// Slice along the given `axis` with range `start..end`.
-    Slice {
+    // TODO add "black box" identity operation
+
+    /// A combined view/reshape/broadcast/permute/slice/flip operation.
+    /// The semantics are that the input tensor is flatted into a list,
+    /// and then the new data is extracted according to the new shape, starting at `offset` and following `strides`.
+    Restride {
         input: Value,
-        axis: usize,
-        range: SliceRange,
+        restride: Restride,
     },
-    /// Flip the given axis.
-    Flip { input: Value, axis: usize },
 
     /// Gather values from `input` at the indices in `index` on the given `axis`.
     /// `indices` is a rank-1 tensor.
@@ -203,15 +198,7 @@ impl Operation {
         match self {
             Operation::Input { index: _ } => vec![],
             Operation::Constant { data: _ } => vec![],
-            &Operation::View { input } => vec![input],
-            &Operation::Broadcast { input } => vec![input],
-            &Operation::Permute { input, permutation: _ } => vec![input],
-            &Operation::Slice {
-                input,
-                axis: _,
-                range: _,
-            } => vec![input],
-            &Operation::Flip { input, axis: _ } => vec![input],
+            &Operation::Restride { input, restride: _ } => vec![input],
             &Operation::Gather {
                 input,
                 axis: _,
@@ -236,18 +223,7 @@ impl Operation {
         match self {
             &Operation::Input { index } => Operation::Input { index },
             &Operation::Constant { ref data } => Operation::Constant { data: data.clone() },
-            &Operation::View { input } => Operation::View { input: f(input) },
-            &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
-            &Operation::Permute { input, ref permutation } => Operation::Permute {
-                input: f(input),
-                permutation: permutation.clone(),
-            },
-            &Operation::Slice { input, axis, range } => Operation::Slice {
-                input: f(input),
-                axis,
-                range,
-            },
-            &Operation::Flip { input, axis } => Operation::Flip { input: f(input), axis },
+            &Operation::Restride { input, ref restride } => Operation::Restride { input: f(input), restride: restride.clone() },
             &Operation::Gather { input, axis, indices } => Operation::Gather {
                 input: f(input),
                 axis,
@@ -287,6 +263,20 @@ impl Operation {
                 axes: axes.clone(),
                 op,
             },
+        }
+    }
+
+    pub fn unwrap_view(&self) -> Option<Value> {
+        match self {
+            &Operation::Restride { input, ref restride } if restride.is_view() => Some(input),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_broadcast(&self) -> Option<Value> {
+        match self {
+            &Operation::Restride { input, ref restride } if restride.is_broadcast() => Some(input),
+            _ => None,
         }
     }
 }
@@ -363,7 +353,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item = Value> {
+    pub fn values(&self) -> impl Iterator<Item=Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -424,15 +414,6 @@ impl Graph {
                 let f = *data.first()?;
                 data.iter().all(|&x| f.float_eq(&x)).then(|| f)
             }
-            &Operation::View { input } => self.as_single_const(input),
-            &Operation::Broadcast { input } => self.as_single_const(input),
-            &Operation::Permute { input, permutation: _ } => self.as_single_const(input),
-            &Operation::Slice {
-                input,
-                axis: _,
-                range: _,
-            } => self.as_single_const(input),
-            &Operation::Flip { input, axis: _ } => self.as_single_const(input),
             &Operation::Gather {
                 input,
                 axis: _,
@@ -458,7 +439,13 @@ impl Graph {
     }
 
     #[must_use]
-    pub(crate) fn push(&mut self, shape: Shape, operation: Operation) -> Value {
+    pub(crate) fn push(&mut self, shape: Shape, mut operation: Operation) -> Value {
+        // replace empty values with empty constants
+        if shape.size().is_zero() {
+            operation = Operation::Constant { data: ConstantData(vec![]) }
+        }
+
+        // build info
         let info = ValueInfo {
             shape,
             operation,
@@ -468,6 +455,7 @@ impl Graph {
 
         let check = self.check;
 
+        // TODO switch to hashmap? this is O(n^2) and might be the cause of slow optimization
         match self.values.iter().position(|cand| cand == &info) {
             Some(index) => {
                 // found duplicate, reuse existing value
@@ -540,30 +528,32 @@ impl Graph {
         self.constant(shape, data)
     }
 
-    /// View an existing value as a new shape.
     #[must_use]
-    pub fn view(&mut self, input: Value, new_shape: Shape) -> Value {
-        let old_shape = &self[input].shape;
-        if &new_shape == old_shape {
+    pub fn restride(&mut self, mut input: Value, mut restride: Restride) -> Value {
+        restride.assert_valid();
+        assert_eq!(self[input].shape, restride.old_shape);
+
+        // skip identity restride
+        if restride.is_identity() {
             return input;
         }
 
-        assert_eq!(
-            old_shape.size(),
-            new_shape.size(),
-            "New shape {:?} must have the same size as old shape {:?}",
-            new_shape,
-            old_shape,
-        );
+        // try fusing consecutive restrides
+        // TODO slightly annoying: maybe we overfuse at some point and miss potential operand reuse in executors
+        if let &Operation::Restride { input: inner_input, restride: ref inner_restride } = &self[input].operation {
+            if let Some(combined) = Restride::combine(inner_restride, &restride) {
+                input = inner_input;
+                restride = combined;
+            }
+        }
 
-        // only keep the last view operation
-        let inner_input = if let &Operation::View { input: inner_input } = &self[input].operation {
-            inner_input
-        } else {
-            input
-        };
+        self.push(restride.new_shape.clone(), Operation::Restride { input, restride })
+    }
 
-        self.push(new_shape, Operation::View { input: inner_input })
+    /// View an existing value as a new shape.
+    #[must_use]
+    pub fn view(&mut self, input: Value, new_shape: Shape) -> Value {
+        self.restride(input, Restride::view(self[input].shape.clone(), new_shape))
     }
 
     /// Broadcast the `input` towards `new_shape`.
@@ -583,25 +573,8 @@ impl Graph {
         let view_shape = Shape::ones(new_shape.rank() - input_shape.rank()).concat(&input_shape);
         let curr = self.view(input, view_shape.clone());
 
-        // check that broadcasting is valid)
-        for (&v, &n) in zip_eq(&view_shape.dims, &new_shape.dims) {
-            assert!(
-                v == n || v == Size::ONE,
-                "Cannot broadcast from {:?} to {:?} because of axis ({}, {})",
-                input_shape,
-                new_shape,
-                v,
-                n
-            );
-        }
-
-        // don't need to actually broadcast
-        if view_shape == new_shape {
-            return curr;
-        }
-
-        // do the actual broadcast
-        self.push(new_shape, Operation::Broadcast { input: curr })
+        // actual operation
+        self.restride(curr, Restride::broadcast(view_shape, new_shape))
     }
 
     pub fn repeat_unary(&mut self, input: Value, axis: usize, count: Size) -> Value {
@@ -614,13 +587,8 @@ impl Graph {
             axis
         );
 
-        // TODO fuse consecutive broadcast operations, maybe even view/broadcast/view if the axes are independent
-        // skip broadcast operation
-        if count == Size::ONE {
-            return input;
-        }
-
-        self.push(input_shape.replace(axis, shape![count]), Operation::Broadcast { input })
+        let broadcast_shape = input_shape.replace(axis, shape![count]);
+        self.restride(input, Restride::broadcast(input_shape.clone(), broadcast_shape))
     }
 
     /// View a value with a flattened shape.
@@ -643,70 +611,20 @@ impl Graph {
     }
 
     /// Change the order of axis in the shape.
+    ///
+    /// The output shape dim `i` is `before_shape[permutation[i]]`.
     #[must_use]
     pub fn permute(&mut self, input: Value, permutation: Vec<usize>) -> Value {
         let input_shape = &self[input].shape;
 
-        assert_eq!(
-            permutation.len(),
-            input_shape.rank(),
-            "Permutation rank must match input shape, got {:?} and {:?}",
-            permutation,
-            input_shape
-        );
-        assert!(
-            permutation.iter().all_unique(),
-            "Permutation cannot contain repeated axis, got {:?}",
-            permutation
-        );
-        assert!(
-            permutation.iter().all(|&i| i < input_shape.rank()),
-            "Permutation axis out of bounds, got {:?}",
-            permutation
-        );
-
-        // fuse consecutive permute operations
-        let (inner_input, full_permutation) = if let &Operation::Permute {
-            input: inner_input,
-            permutation: ref inner_permutation,
-        } = &self[input].operation
-        {
-            let combined = permutation.iter().map(|&i| inner_permutation[i]).collect();
-            (inner_input, combined)
-        } else {
-            (input, permutation)
-        };
-
-        let inner_input_shape = &self[inner_input].shape;
-        let result_dims = full_permutation.iter().map(|&i| inner_input_shape[i]).collect_vec();
-        let result_shape = Shape::new(result_dims);
-
-        self.push(
-            result_shape,
-            Operation::Permute {
-                input: inner_input,
-                permutation: full_permutation,
-            },
-        )
+        self.restride(input, Restride::permute(input_shape.clone(), permutation))
     }
 
     /// Slice a value along an axis.
     #[must_use]
     pub fn slice(&mut self, input: Value, axis: usize, range: SliceRange) -> Value {
         let old_shape = &self[input].shape;
-        old_shape.assert_has_axis(axis);
-
-        let old_size = old_shape.dims[axis].unwrap_fixed("Slice axis length");
-        range.assert_in_bounds(old_size);
-        let new_size = (range.end - range.start) / range.step;
-
-        // skip trivial slice
-        if range == SliceRange::new(0, old_size, 1) {
-            return input;
-        }
-
-        let new_shape = old_shape.replace(axis, shape![new_size]);
-        self.push(new_shape, Operation::Slice { input, axis, range })
+        self.restride(input, Restride::slice(old_shape.clone(), axis, range))
     }
 
     /// Index along a given axis.
@@ -721,9 +639,7 @@ impl Graph {
     /// Flip the given `axis`.
     pub fn flip(&mut self, input: Value, axis: usize) -> Value {
         let shape = self[input].shape.clone();
-        shape.assert_has_axis(axis);
-
-        self.push(shape, Operation::Flip { input, axis })
+        self.restride(input, Restride::flip(shape, axis))
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
@@ -1470,7 +1386,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce(self, seq: impl IntoIterator<Item = f32>) -> f32 {
+    pub fn reduce(self, seq: impl IntoIterator<Item=f32>) -> f32 {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;

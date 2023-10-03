@@ -17,7 +17,7 @@ mod inputs;
 mod load;
 pub mod result;
 mod store;
-mod typed_value;
+pub(crate) mod typed_value;
 
 /// Load an [ONNX](https://github.com/onnx/onnx/blob/main/docs/IR.md) file from the given path.
 ///

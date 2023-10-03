@@ -64,7 +64,7 @@ impl Optimizer<'_> {
                 right,
                 op: op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div),
             } => {
-                if let &Operation::Broadcast { input: right_inner } = &self.old_graph[right].operation {
+                if let Some(right_inner) = self.old_graph[right].operation.unwrap_broadcast() {
                     if let &[Size::ONE, actual_channels, Size::ONE, Size::ONE] =
                         self.old_graph[right_inner].shape.dims.as_slice()
                     {

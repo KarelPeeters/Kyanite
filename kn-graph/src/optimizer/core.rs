@@ -127,15 +127,15 @@ impl<'a> Optimizer<'a> {
                 op: BinaryOp::Sub,
             } = op(zeroed0)
             {
-                if let &Operation::Broadcast { input: mean_view } = op(mean_broadcast) {
-                    if let &Operation::View { input: mean } = op(mean_view) {
+                if let Some(mean_view) = op(mean_broadcast).unwrap_broadcast() {
+                    if let Some(mean) = op(mean_view).unwrap_view() {
                         if let &Operation::Reduce {
                             input: input1,
                             axes: ref axes0,
                             op: ReduceOp::Mean,
                         } = op(mean)
                         {
-                            if let &Operation::Broadcast { input: std } = op(std_broadcast) {
+                            if let Some(std) = op(std_broadcast).unwrap_broadcast() {
                                 if let &Operation::Unary {
                                     input: stable_var,
                                     op: UnaryOp::Sqrt,
@@ -147,7 +147,7 @@ impl<'a> Optimizer<'a> {
                                         op: BinaryOp::Add,
                                     } = op(stable_var)
                                     {
-                                        if let &Operation::View { input: var } = op(var_view) {
+                                        if let Some(var) = op(var_view).unwrap_view() {
                                             if let &Operation::Reduce {
                                                 input: pow,
                                                 axes: ref axes1,
