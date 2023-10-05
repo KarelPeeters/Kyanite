@@ -22,7 +22,9 @@ pub enum DType {
     U16,
     U32,
     U64,
-    Bool,
+    // TODO add bool and f64
+    // Bool,
+    // F64
 }
 
 pub type Tensor<T> = ArcArray<T, IxDyn>;
@@ -209,11 +211,65 @@ impl DScalar {
     }
 
     pub fn value_cast(self, to: DType) -> DScalar {
-        todo!()
+        // cast to big general value
+        let (yf, yi) = match self {
+            DScalar::F32(T32(x)) => (x as f64, x as i128),
+            DScalar::I8(x) => (x as f64, x as i128),
+            DScalar::I16(x) => (x as f64, x as i128),
+            DScalar::I32(x) => (x as f64, x as i128),
+            DScalar::I64(x) => (x as f64, x as i128),
+            DScalar::U8(x) => (x as f64, x as i128),
+            DScalar::U16(x) => (x as f64, x as i128),
+            DScalar::U32(x) => (x as f64, x as i128),
+            DScalar::U64(x) => (x as f64, x as i128),
+        };
+
+        // convert to target
+        match to {
+            DType::F32 => DScalar::f32(yf as f32),
+            DType::I8 => DScalar::I8(yi as i8),
+            DType::I16 => DScalar::I16(yi as i16),
+            DType::I32 => DScalar::I32(yi as i32),
+            DType::I64 => DScalar::I64(yi as i64),
+            DType::U8 => DScalar::U8(yi as u8),
+            DType::U16 => DScalar::U16(yi as u16),
+            DType::U32 => DScalar::U32(yi as u32),
+            DType::U64 => DScalar::U64(yi as u64),
+        }
     }
 
     pub fn bit_cast(self, to: DType) -> Option<DScalar> {
-        todo!()
+        if self.dtype().size() != to.size() {
+            return None;
+        }
+
+        // convert to bits, zero-extend just to be safe
+        let bits = match self {
+            DScalar::F32(T32(x)) => x.to_bits() as u64,
+            DScalar::I8(x) => x as u8 as u64,
+            DScalar::I16(x) => x as u16 as u64,
+            DScalar::I32(x) => x as u32 as u64,
+            DScalar::I64(x) => x as u64,
+            DScalar::U8(x) => x as u64,
+            DScalar::U16(x) => x as u64,
+            DScalar::U32(x) => x as u64,
+            DScalar::U64(x) => x,
+        };
+
+        // convert to target
+        let y = match to {
+            DType::F32 => DScalar::f32(f32::from_bits(bits as u32)),
+            DType::I8 => DScalar::I8(bits as i8),
+            DType::I16 => DScalar::I16(bits as i16),
+            DType::I32 => DScalar::I32(bits as i32),
+            DType::I64 => DScalar::I64(bits as i64),
+            DType::U8 => DScalar::U8(bits as u8),
+            DType::U16 => DScalar::U16(bits as u16),
+            DType::U32 => DScalar::U32(bits as u32),
+            DType::U64 => DScalar::U64(bits),
+        };
+
+        Some(y)
     }
 }
 
@@ -369,9 +425,17 @@ impl DTensor {
         map_dtensor!(self, |inner| inner.reshape(shape).into_dyn())
     }
 
+    // TODO generic unwrap function?
     pub fn unwrap_f32(&self) -> Option<&Tensor<f32>> {
         match self {
             DTensor::F32(tensor) => Some(tensor),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_i64(&self) -> Option<&Tensor<i64>> {
+        match self {
+            DTensor::I64(tensor) => Some(tensor),
             _ => None,
         }
     }

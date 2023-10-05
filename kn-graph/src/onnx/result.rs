@@ -1,9 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io;
-use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use crate::dtype::DType;
 
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;

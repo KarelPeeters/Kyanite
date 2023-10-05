@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use itertools::Itertools;
-use num_traits::Signed;
 
 use crate::dtype::{DTensor, DType, Tensor};
 use crate::graph::{Graph, Value};
@@ -45,6 +44,12 @@ impl OnnxValue {
         }
     }
 
+    pub fn assert_valid(&self) {
+        if let OnnxValue::Size(tensor) = self {
+            assert!(tensor.iter().any(|x| x.batch_exp != 0))
+        }
+    }
+
     pub fn unwrap_value(&self) -> Option<Value> {
         match self {
             &OnnxValue::Value(value) => Some(value),
@@ -85,7 +90,7 @@ impl OnnxValue {
         Ok(Shape::new(unsigned))
     }
 
-
+    #[allow(dead_code)]
     pub fn dtype(&self, graph: &Graph) -> DType {
         match self {
             &OnnxValue::Value(value) => graph[value].dtype,
@@ -101,6 +106,7 @@ impl OnnxValue {
     }
 }
 
+#[allow(dead_code)]
 pub fn float_to_i64_exact(f: f32) -> i64 {
     assert_eq!(f as i64 as f32, f, "Float must be an integer, got {}", f);
     f as i64
@@ -184,11 +190,16 @@ impl std::ops::Add for SignedSize {
     type Output = Option<Self>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        if self.batch_exp == rhs.batch_exp {
-            Some(SignedSize::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor))
-        } else {
-            None
+        if self == SignedSize::ZERO {
+            return Some(rhs);
         }
+        if rhs == SignedSize::ZERO {
+            return Some(self);
+        }
+        if self.batch_exp == rhs.batch_exp {
+            return Some(SignedSize::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor));
+        }
+        None
     }
 }
 

@@ -26,7 +26,7 @@ impl<'a> Inputs<'a> {
         let inner = inputs
             .iter()
             .enumerate()
-            .map(|(i, name)| {
+            .map(|(i, name)| -> OnnxResult<_> {
                 // an empty attribute name means the input is missing (which is only allowed for optional inputs)
                 if name.is_empty() {
                     Ok(Storage::Missing)

@@ -9,8 +9,8 @@ use ndarray::{
     SliceInfoElem, Zip,
 };
 
-use crate::dtype::{DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair};
-use crate::graph::{ConvDetails, Graph, Operation, Value, ValueInfo};
+use crate::dtype::{DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor};
+use crate::graph::{ConvDetails, Graph, Operation, SliceRange, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
 
@@ -147,56 +147,16 @@ fn try_run_cpu_operation(
         }
         Operation::Slice { input, axis, range } => {
             let input = map(input)?;
-
-            // We have to clamp the end:
-            // * SliceRange requires that `(end - start) % step == 0`
-            // * SliceInfo instead requires that `end <= len`.
-            let axis_len = input.shape()[axis];
-            let clamped_end = min(range.end, axis_len);
-
-            let info = slice_info(
-                input.rank(),
-                axis,
-                range.start as isize,
-                Some(clamped_end as isize),
-                range.step as isize,
-            );
-            map_dtensor!(input, |input| input.slice(info).to_shared())
+            map_dtensor!(input, |input| cpu_slice(&input, axis, range))
         }
         Operation::Flip { input, axis } => {
             let input = map(input)?;
-
-            // slice with negative step (ndarray convention is different from python)
-            let info = slice_info(input.rank(), axis, 0, None, -1);
-            map_dtensor!(input, |input| input.slice(info).to_shared())
+            map_dtensor!(input, |input| cpu_flip(&input, axis))
         }
         Operation::Gather { input, axis, indices } => {
             let input = map(input)?;
             let indices = map(indices)?;
-
-            assert_eq!(indices.rank(), 1);
-
-            let indices = match indices {
-                DTensor::F32(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
-                    unreachable!("gather indices should be unsigned integers")
-                }
-                DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
-                DTensor::U16(indices) => indices.mapv(|x| x as u64).into_shared(),
-                DTensor::U32(indices) => indices.mapv(|x| x as u64).into_shared(),
-                DTensor::U64(indices) => indices,
-            };
-
-            map_dtensor!(input, |input| {
-                let slices = indices
-                    .iter()
-                    .map(|&f| {
-                        let i: isize = f.try_into().expect("Index out of bounds");
-                        input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
-                    })
-                    .collect_vec();
-
-                concatenate(output_shape_dyn, axis, slices.as_slice())
-            })
+            map_dtensor!(input, |input| cpu_gather(&input, axis, indices))
         }
         Operation::Concat { ref inputs, axis } => {
             macro_rules! concat {
@@ -295,19 +255,71 @@ fn try_run_cpu_operation(
     Ok(result)
 }
 
+pub fn cpu_flip<T: Clone>(input: &Tensor<T>, axis: usize) -> Tensor<T> {
+    // slice with negative step (ndarray convention is different from python)
+    let info = slice_info(input.ndim(), axis, 0, None, -1);
+
+    input.slice(info).to_shared()
+}
+
+pub fn cpu_slice<T: Clone>(input: &Tensor<T>, axis: usize, range: SliceRange) -> Tensor<T> {
+    // We have to clamp the end:
+    // * SliceRange requires that `(end - start) % step == 0`
+    // * SliceInfo instead requires that `end <= len`.
+    let axis_len = input.shape()[axis];
+    let clamped_end = min(range.end, axis_len);
+
+    let info = slice_info(
+        input.ndim(),
+        axis,
+        range.start as isize,
+        Some(clamped_end as isize),
+        range.step as isize,
+    );
+
+    input.slice(info).to_shared()
+}
+
+pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) -> Tensor<T> {
+    assert_eq!(indices.rank(), 1);
+    let mut output_shape = input.shape().to_vec();
+    output_shape[axis] = indices.len();
+
+    let indices = match indices {
+        DTensor::F32(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
+            unreachable!("gather indices should be unsigned integers")
+        }
+        DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
+        DTensor::U16(indices) => indices.mapv(|x| x as u64).into_shared(),
+        DTensor::U32(indices) => indices.mapv(|x| x as u64).into_shared(),
+        DTensor::U64(indices) => indices,
+    };
+
+    let slices = indices
+        .iter()
+        .map(|&f| {
+            let i: isize = f.try_into().expect("Index out of bounds");
+            input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
+        })
+        .collect_vec();
+
+    concatenate(IxDyn(&output_shape), axis, slices.as_slice())
+}
+
 /// Wrapper around [ndarray::concatenate] that can handle an empty input list.
-fn concatenate<T: Clone + num_traits::Zero>(
+pub fn concatenate<T: Clone>(
     output_shape: IxDyn,
     axis: usize,
     inputs: &[ArrayView<T, IxDyn>],
 ) -> ArcArray<T, IxDyn> {
-    if inputs.is_empty() {
-        ArcArray::zeros(output_shape)
+    let result = if inputs.is_empty() {
+        ArcArray::from_shape_fn(output_shape.clone(), |_| unreachable!("empty array has no elements"))
     } else {
-        let result = ndarray::concatenate(Axis(axis), inputs).unwrap().into_shared();
-        assert_eq!(result.dim(), output_shape);
-        result
-    }
+        ndarray::concatenate(Axis(axis), inputs).unwrap().into_shared()
+    };
+
+    assert_eq!(result.dim(), output_shape);
+    result
 }
 
 pub fn convolution<T: IntoDScalar>(details: ConvDetails, input: ArrayView4<T>, kernel: ArrayView4<T>) -> Array4<T> {

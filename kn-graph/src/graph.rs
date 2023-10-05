@@ -101,14 +101,6 @@ pub enum Operation {
     /// A constant built into the network.
     Constant { tensor: DTensor },
 
-    /// Cast to a different type.
-    /// When possible the value is preserved or at least approximated.
-    ValueCast { input: Value, to: DType },
-    /// Cast to a different type.
-    /// The bit pattern is kept, so the value is not necessarily preserved.
-    /// The type before and after the cast must have the same size.
-    BitCast { input: Value, to: DType },
-
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
     View { input: Value },
@@ -182,7 +174,13 @@ pub enum UnaryOp {
     Tanh,
     Erf,
     Mish,
+
+    /// Cast to a different type.
+    /// When possible the value is preserved or at least approximated.
     ValueCast(DType),
+    /// Cast to a different type.
+    /// The bit pattern is kept, so the value is not necessarily preserved.
+    /// The type before and after the cast must have the same size.
     BitCast(DType),
 }
 
@@ -245,8 +243,6 @@ impl Operation {
         match self {
             &Operation::Input { index } => Operation::Input { index },
             &Operation::Constant { ref tensor } => Operation::Constant { tensor: tensor.clone() },
-            &Operation::ValueCast { input, to } => Operation::ValueCast { input: f(input), to },
-            &Operation::BitCast { input, to } => Operation::BitCast { input: f(input), to },
             &Operation::View { input } => Operation::View { input: f(input) },
             &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
             &Operation::Permute { input, ref permutation } => Operation::Permute {
@@ -451,8 +447,6 @@ impl Graph {
                 let &e = tensor.iter().next()?;
                 tensor.iter().all(|&d| d == e).then(|| e.to_dscalar())
             }),
-            Operation::ValueCast { input, to } => self.as_single_const(input).map(|s| s.value_cast(to)),
-            Operation::BitCast { input, to } => self.as_single_const(input).map(|s| s.bit_cast(to).unwrap()),
             Operation::View { input } => self.as_single_const(input),
             Operation::Broadcast { input } => self.as_single_const(input),
             Operation::Permute { input, permutation: _ } => self.as_single_const(input),
@@ -757,15 +751,19 @@ impl Graph {
     }
 
     /// Repeat `input` along a given `axis`, `count` times.
+    ///
     /// This starts by emitting the entire tensor before repeating elements,
     /// similar to `torch.repeat` or `numpy.tile`.
+    /// See also [repeat_interleave](Self::repeat_interleave).
     pub fn repeat(&mut self, input: Value, axis: usize, count: Size) -> Value {
         self.repeat_impl(input, axis, count, false)
     }
 
     /// Repeat elements of `input` along a given `axis`, `count` times.
+    ///
     /// This starts by repeat each element before going to the next one,
     /// similar to `torch.repeat_interleave` or `numpy.repeat`.
+    /// See also [repeat](Self::repeat).
     pub fn repeat_interleave(&mut self, input: Value, axis: usize, count: Size) -> Value {
         self.repeat_impl(input, axis, count, true)
     }
@@ -775,6 +773,7 @@ impl Graph {
         input_shape.assert_has_axis(axis);
 
         // do simpler repeat operation instead
+        // TODO would this not fuse away automatically?
         if input_shape[axis] == Size::ONE {
             return self.repeat_unary(input, axis, count);
         }
@@ -1169,7 +1168,6 @@ impl Graph {
     pub fn unary(&mut self, op: UnaryOp, mut input: Value) -> Value {
         let (shape, dtype) = self.shape_dtype(input);
 
-        // check type validness
         match op {
             UnaryOp::Abs | UnaryOp::Neg => {
                 assert!(dtype.is_signed(), "{:?} only work on signed types, got {:?}", op, dtype)
@@ -1187,6 +1185,7 @@ impl Graph {
             },
             UnaryOp::ValueCast(_) => {
                 // always valid
+                // TODO skip to innermost value if exact, eg. successive truncating int cast?
             },
             UnaryOp::BitCast(to) => {
                 assert_eq!(dtype.size(), to.size(), "Bitcast requires matching input/output sizes");
@@ -1306,7 +1305,7 @@ pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
     Shape::new(result)
 }
 
-pub fn broadcast_tensors_symmetric<'l, 'r, L, R>(left: &Tensor<L>, right: &Tensor<R>) -> (ArrayView<'l, L, IxDyn>, ArrayView<'r, R, IxDyn>) {
+pub fn broadcast_tensors_symmetric<'l, 'r, L, R>(left: &'l Tensor<L>, right: &'r Tensor<R>) -> (ArrayView<'l, L, IxDyn>, ArrayView<'r, R, IxDyn>) {
     let result_shape = broadcast_shape_symmetric(&Shape::fixed(left.shape()), &Shape::fixed(right.shape()));
     let result_shape = result_shape.as_fixed().unwrap().dims;
 
@@ -1400,6 +1399,7 @@ impl From<std::ops::Range<usize>> for SliceRange {
     }
 }
 
+// TODO switch to u64? no reason to stay stuck at u32 randomly
 impl SliceRange {
     pub fn new(start: usize, end: usize, step: usize) -> Self {
         let result = Self { start, end, step };
@@ -1504,12 +1504,8 @@ impl UnaryOp {
                 let y = x * (x.exp().ln_1p().tanh());
                 DScalar::f32(y)
             }
-            UnaryOp::ValueCast(to) => {
-                todo!()
-            }
-            UnaryOp::BitCast(to) => {
-                todo!()
-            }
+            UnaryOp::ValueCast(to) => x.value_cast(to),
+            UnaryOp::BitCast(to) => x.bit_cast(to).unwrap(),
         }
     }
 
