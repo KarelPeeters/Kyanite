@@ -5,6 +5,7 @@ use itertools::Itertools;
 use ndarray::{Axis, azip};
 use prost::Message;
 
+use crate::shape;
 use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
 use crate::dtype::{DTensor, DType, Tensor};
 use crate::graph::{BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value};
@@ -19,7 +20,6 @@ use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{OnnxValue, SignedSize};
-use crate::shape;
 use crate::shape::{Shape, Size};
 
 // TODO convert every possible panic to an error (even in the shape classes if possible)
@@ -595,7 +595,14 @@ fn visit_node(
                 }
                 OnnxValue::Size(input) => {
                     let indices = graph.as_const(indices.unwrap_value().unwrap()).unwrap();
-                    let result = cpu_gather(input, axis, indices);
+
+                    // shape trickery to support multi-dim gathers
+                    let indices_flat = indices.reshape(vec![indices.len()]);
+                    let result_flat = cpu_gather(input, axis, indices_flat);
+                    let mut result_shape = input.shape().to_owned();
+                    result_shape.splice(axis..axis + 1, indices.shape().iter().copied());
+                    let result = result_flat.reshape(result_shape);
+
                     OnnxValue::new_size(result, graph)
                 }
             }

@@ -35,9 +35,9 @@ use crate::shape::{Shape, Size};
 ///
 /// // define constants
 /// let w_data = vec![0.5; 4 * 4 * 3 * 3];
-/// let w = graph.constant(shape![4, 4, 3, 3], w_data);
+/// let w = graph.constant::<f32>(shape![4, 4, 3, 3], w_data);
 /// let b_data = vec![0.5; 4];
-/// let b = graph.constant(shape![4, 1, 1], b_data);
+/// let b = graph.constant::<f32>(shape![4, 1, 1], b_data);
 ///
 /// // build operation graph
 /// let y0 = graph.conv(x, w, 1, 1, 1, 1);
@@ -466,6 +466,7 @@ impl Graph {
                 let f = self.as_single_const(*inputs.first()?)?;
                 inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
             }
+            // TODO simple scalar/binary calculations?
             Operation::Conv { .. }
             | Operation::MatMul { .. }
             | Operation::Unary { .. }
@@ -483,6 +484,8 @@ impl Graph {
 
     #[must_use]
     pub(crate) fn push(&mut self, shape: Shape, dtype: DType, operation: Operation) -> Value {
+        // TODO replace const computations, especially for simple ops like unary and binary?
+
         let info = ValueInfo {
             shape,
             dtype,
@@ -800,8 +803,8 @@ impl Graph {
 
         input_shape.assert_has_axis(axis);
         assert!(
-            !indices_dtype.is_signed() && indices_dtype.is_int(),
-            "Indices must be unsigned integers, got {:?}",
+            indices_dtype.is_int(),
+            "Indices must be integers, got {:?}",
             indices_dtype
         );
 
@@ -814,7 +817,7 @@ impl Graph {
 
         let result_flat = if let Some(index) = self.as_single_const(indices) {
             // replace gather with simpler slice + repeat operators
-            let index: usize = index.unwrap_uint().unwrap().try_into().unwrap();
+            let index: usize = index.unwrap_int().unwrap().try_into().unwrap();
 
             let result_flat_single = self.slice(input, axis, SliceRange::single(index));
             let result_flat = self.repeat(result_flat_single, axis, flat_size);

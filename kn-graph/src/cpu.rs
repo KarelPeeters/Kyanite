@@ -297,13 +297,18 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
     output_shape[axis] = indices.len();
 
     let indices = match indices {
-        DTensor::F32(_) | DTensor::F64(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
+        DTensor::F32(_) | DTensor::F64(_) => {
             unreachable!("gather indices should be unsigned integers")
         }
         DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
         DTensor::U16(indices) => indices.mapv(|x| x as u64).into_shared(),
         DTensor::U32(indices) => indices.mapv(|x| x as u64).into_shared(),
         DTensor::U64(indices) => indices,
+        // ensure no underflow
+        DTensor::I8(indices) => indices.mapv(|x| x.try_into().unwrap()).into_shared(),
+        DTensor::I16(indices) => indices.mapv(|x| x.try_into().unwrap()).into_shared(),
+        DTensor::I32(indices) => indices.mapv(|x| x.try_into().unwrap()).into_shared(),
+        DTensor::I64(indices) => indices.mapv(|x| x.try_into().unwrap()).into_shared(),
     };
 
     let slices = indices

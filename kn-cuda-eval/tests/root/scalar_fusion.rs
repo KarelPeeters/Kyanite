@@ -23,8 +23,8 @@ fn chained_scalar() {
 
     graph.output(y2);
 
-    let input_tensor = manual_tensor((2, 3), vec![1.0; 6]);
-    let output_tensor = manual_tensor((2, 3), vec![1.1, 2.1, 3.1, 1.2, 2.2, 3.2]);
+    let input_tensor = manual_tensor::<f32, _>((2, 3), vec![1.0; 6]);
+    let output_tensor = manual_tensor::<f32, _>((2, 3), vec![1.1, 2.1, 3.1, 1.2, 2.2, 3.2]);
 
     test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]))
 }

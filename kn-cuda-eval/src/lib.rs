@@ -24,7 +24,7 @@
 //!
 //! // evaluate the graph with some inputs, get the outputs back
 //! let inputs = [DTensor::F32(Tensor::zeros(vec![batch_size, 16]))];
-//! let outputs: Vec<DTensor> = executor.evaluate_tensors(&inputs);
+//! let outputs: &[DTensor] = executor.evaluate(&inputs);
 //! # Ok(())
 //! # }
 //! ```

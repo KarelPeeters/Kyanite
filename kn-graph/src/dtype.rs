@@ -230,6 +230,20 @@ impl DScalar {
         }
     }
 
+    pub fn unwrap_int(self) -> Option<i128> {
+        match self {
+            DScalar::U8(x) => Some(x as i128),
+            DScalar::U16(x) => Some(x as i128),
+            DScalar::U32(x) => Some(x as i128),
+            DScalar::U64(x) => Some(x as i128),
+            DScalar::I8(x) => Some(x as i128),
+            DScalar::I16(x) => Some(x as i128),
+            DScalar::I32(x) => Some(x as i128),
+            DScalar::I64(x) => Some(x as i128),
+            _ => None,
+        }
+    }
+
     pub fn to_c_str(self) -> String {
         match self {
             DScalar::F32(c) => DisplayCFloat(*c as f64).to_string(),

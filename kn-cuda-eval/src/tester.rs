@@ -22,7 +22,7 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[DTensor], print_ex
     if print_executor {
         println!("{:?}", executor);
     }
-    executor.evaluate_tensors(inputs)
+    executor.evaluate(inputs).to_owned()
 }
 
 const TOLERANCE_ABS_DIFF: f64 = 0.001;

@@ -74,7 +74,7 @@ impl Runtime {
             }
             RuntimeCore::Gpu { device: _, executors } => {
                 let executor = &mut executors[index];
-                executor.evaluate_tensors(inputs)
+                executor.evaluate(inputs).to_owned()
             }
         }
     }

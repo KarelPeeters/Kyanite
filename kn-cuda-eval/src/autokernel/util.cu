@@ -127,3 +127,12 @@ __device__ T warp_reduce(T value, F f) {
 
     return result;
 }
+
+template<typename T, typename U>
+__device__ T bit_cast(U value) {
+    // don't use a union, that would be UB
+    static_assert(sizeof(T) == sizeof(U), "bit_cast requires types of equal size");
+    T result;
+    memcpy(&result, &value, sizeof(T));
+    return result;
+}

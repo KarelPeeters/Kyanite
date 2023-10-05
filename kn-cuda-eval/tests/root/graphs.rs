@@ -80,11 +80,11 @@ fn flip() {
         0,
         &[],
         Some(&[
-            manual_tensor((2, 3), vec![3.0, 4.0, 5.0, 0.0, 1.0, 2.0]),
-            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
-            manual_tensor((2, 3), vec![2.0, 1.0, 0.0, 5.0, 4.0, 3.0]),
-            manual_tensor((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
-            manual_tensor((2, 3), vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0]),
+            manual_tensor::<f32, _>((2, 3), vec![3.0, 4.0, 5.0, 0.0, 1.0, 2.0]),
+            manual_tensor::<f32, _>((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor::<f32, _>((2, 3), vec![2.0, 1.0, 0.0, 5.0, 4.0, 3.0]),
+            manual_tensor::<f32, _>((2, 3), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+            manual_tensor::<f32, _>((2, 3), vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0]),
         ]),
     );
 }
@@ -148,10 +148,10 @@ fn repeat_manual() {
     ];
     graph.output_all(&outputs);
 
-    let input_tensor = manual_tensor((3,), vec![1.0, 2.0, 3.0]);
+    let input_tensor = manual_tensor::<f32, _>((3,), vec![1.0, 2.0, 3.0]);
     let output_tensors = [
-        manual_tensor((6,), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
-        manual_tensor((6,), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
+        manual_tensor::<f32, _>((6,), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0]),
+        manual_tensor::<f32, _>((6,), vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
     ];
 
     test_all(&graph, 0, &[input_tensor], Some(&output_tensors))
@@ -164,7 +164,7 @@ fn gather_simple_axis_0() {
     let input = graph.constant::<f32>(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
     let index = graph.constant::<u32>(shape![4], vec![0, 1, 1, 0]);
     let output = graph.gather(input, 0, index);
-    let output_tensor = manual_tensor((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
+    let output_tensor = manual_tensor::<f32, _>((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
     graph.output(output);
 
     test_all(&graph, 0, &[], Some(&[output_tensor]))
@@ -177,7 +177,7 @@ fn gather_simple_axis_1() {
     let input = graph.constant::<f32>(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
     let index = graph.constant::<u32>(shape![4], vec![0, 2, 1, 0]);
     let output = graph.gather(input, 1, index);
-    let output_tensor = manual_tensor((2, 4), vec![7.0, 7.2, 7.1, 7.0, 7.3, 7.5, 7.4, 7.3]);
+    let output_tensor = manual_tensor::<f32, _>((2, 4), vec![7.0, 7.2, 7.1, 7.0, 7.3, 7.5, 7.4, 7.3]);
     graph.output(output);
 
     test_all(&graph, 0, &[], Some(&[output_tensor]))
@@ -188,10 +188,10 @@ fn gather_complex_axis_0() {
     let mut graph = Graph::new();
 
     let input = graph.input(shape![3, 2], DType::F32);
-    let input_tensor = manual_tensor((3, 2), vec![1.0, 1.2, 2.3, 3.4, 4.5, 5.7]);
+    let input_tensor = manual_tensor::<f32, _>((3, 2), vec![1.0, 1.2, 2.3, 3.4, 4.5, 5.7]);
     let indices = graph.constant::<u32>(shape![2, 2], vec![0, 1, 1, 2]);
     let output = graph.gather(input, 0, indices);
-    let output_tensor = manual_tensor((2, 2, 2), vec![1.0, 1.2, 2.3, 3.4, 2.3, 3.4, 4.5, 5.7]);
+    let output_tensor = manual_tensor::<f32, _>((2, 2, 2), vec![1.0, 1.2, 2.3, 3.4, 2.3, 3.4, 4.5, 5.7]);
     graph.output(output);
 
     test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
@@ -202,10 +202,10 @@ fn gather_complex_axis_1() {
     let mut graph = Graph::new();
 
     let input = graph.input(shape![3, 3], DType::F32);
-    let input_tensor = manual_tensor((3, 3), vec![1.0, 1.2, 1.9, 2.3, 3.4, 3.9, 4.5, 5.7, 5.9]);
+    let input_tensor = manual_tensor::<f32, _>((3, 3), vec![1.0, 1.2, 1.9, 2.3, 3.4, 3.9, 4.5, 5.7, 5.9]);
     let indices = graph.constant::<u32>(shape![1, 2], vec![0, 2]);
     let output = graph.gather(input, 1, indices);
-    let output_tensor = manual_tensor((3, 1, 2), vec![1.0, 1.9, 2.3, 3.9, 4.5, 5.9]);
+    let output_tensor = manual_tensor::<f32, _>((3, 1, 2), vec![1.0, 1.9, 2.3, 3.9, 4.5, 5.9]);
     graph.output(output);
 
     test_all(&graph, 0, &[input_tensor], Some(&[output_tensor]));
@@ -273,10 +273,10 @@ fn linear() {
     test_all(
         &graph,
         0,
-        &[manual_tensor((1, 4), vec![0.0, 1.0, 2.0, 3.0])],
+        &[manual_tensor::<f32, _>((1, 4), vec![0.0, 1.0, 2.0, 3.0])],
         Some(&[
-            manual_tensor((1, 2), vec![14.0, 38.0]),
-            manual_tensor((1, 2), vec![4.0, 48.0]),
+            manual_tensor::<f32, _>((1, 2), vec![14.0, 38.0]),
+            manual_tensor::<f32, _>((1, 2), vec![4.0, 48.0]),
         ]),
     )
 }
@@ -418,8 +418,8 @@ fn fuse_clamp() {
     test_all(
         &graph,
         5,
-        &[manual_tensor(5, vec![-2.0, 0.0, 0.5, 1.0, 2.0])],
-        Some(&[manual_tensor(5, vec![0.0, 0.0, 0.5, 1.0, 1.0])]),
+        &[manual_tensor::<f32, _>(5, vec![-2.0, 0.0, 0.5, 1.0, 2.0])],
+        Some(&[manual_tensor::<f32, _>(5, vec![0.0, 0.0, 0.5, 1.0, 1.0])]),
     )
 }
 
@@ -464,8 +464,8 @@ fn add_broadcast() {
 
     graph.output_all(&[output0, output1, output2]);
 
-    let expected_output_01 = manual_tensor((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0]);
-    let expected_output2 = manual_tensor((1, 2, 2), vec![10.0, 11.0, 12.0, 13.0]);
+    let expected_output_01 = manual_tensor::<f32, _>((2, 2, 2), vec![0.0, 2.0, 4.0, 6.0, 4.0, 6.0, 8.0, 10.0]);
+    let expected_output2 = manual_tensor::<f32, _>((1, 2, 2), vec![10.0, 11.0, 12.0, 13.0]);
     let expected_outputs = [expected_output_01.clone(), expected_output_01, expected_output2];
 
     test_all(&graph, 0, &[], Some(&expected_outputs))
@@ -473,7 +473,7 @@ fn add_broadcast() {
 
 #[test]
 fn affine_single_element() {
-    let input_data = manual_tensor((8, 1, 1, 1), range_vec(8));
+    let input_data = manual_tensor::<f32, _>((8, 1, 1, 1), range_vec(8));
     let output_data = input_data
         .unwrap_f32()
         .unwrap()
@@ -516,8 +516,8 @@ fn affine_add_twice() {
     test_all(
         &graph,
         2,
-        &[manual_tensor((2, 1, 1, 1), vec![0.0, 1.0])],
-        Some(&[manual_tensor((2, 1, 1, 1), vec![3.0, 4.0])]),
+        &[manual_tensor::<f32, _>((2, 1, 1, 1), vec![0.0, 1.0])],
+        Some(&[manual_tensor::<f32, _>((2, 1, 1, 1), vec![3.0, 4.0])]),
     )
 }
 
@@ -526,17 +526,17 @@ fn affine_single_div() {
     let mut graph = Graph::new();
 
     let left = graph.constant::<f32>(shape![2, 3], range_vec(2 * 3));
-    let right = graph.scalar(2.0);
+    let right = graph.scalar::<f32>(2.0);
     let result = graph.binary(BinaryOp::Div, left, right);
     graph.output(result);
 
     let expected = vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
-    test_all(&graph, 0, &[], Some(&[manual_tensor((2, 3), expected)]));
+    test_all(&graph, 0, &[], Some(&[manual_tensor::<f32, _>((2, 3), expected)]));
 }
 
 #[test]
 fn affine_multiple_channels() {
-    let input_data = manual_tensor((8, 3, 1, 1), range_vec(8 * 3));
+    let input_data = manual_tensor::<f32, _>((8, 3, 1, 1), range_vec(8 * 3));
 
     let mut graph = Graph::new();
 
@@ -580,7 +580,7 @@ fn conv_padding() {
     test_all(
         &graph,
         0,
-        &[manual_tensor((1, 1, 1, 1), vec![1.0]), linspace_tensor((1, 1, 8, 8))],
+        &[manual_tensor::<f32, _>((1, 1, 1, 1), vec![1.0]), linspace_tensor((1, 1, 8, 8))],
         None,
     );
 }
@@ -737,8 +737,8 @@ fn chain() {
     test_all(
         &parent,
         0,
-        &[manual_tensor(2, vec![1.0, 2.0])],
-        Some(&[manual_tensor(2, vec![8.0, 10.0])]),
+        &[manual_tensor::<f32, _>(2, vec![1.0, 2.0])],
+        Some(&[manual_tensor::<f32, _>(2, vec![8.0, 10.0])]),
     )
 }
 
@@ -791,14 +791,14 @@ fn softmax() {
     let result0 = graph.softmax(input, 0);
     let result1 = graph.softmax(input, 1);
 
-    let scale = graph.scalar(2.0);
+    let scale = graph.scalar::<f32>(2.0);
     let input_scaled = graph.mul(input, scale);
     let result2 = graph.softmax(input_scaled, 0);
 
     graph.output_all(&[result0, result1, result2]);
 
     let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, f32::NEG_INFINITY];
-    test_all(&graph, 0, &[manual_tensor((3, 3), input_data)], None);
+    test_all(&graph, 0, &[manual_tensor::<f32, _>((3, 3), input_data)], None);
 }
 
 #[test]
@@ -815,7 +815,7 @@ fn reduce_easy() {
     }
 
     let input_data = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, -1.0 / 0.0, 0.0, 1.0, 2.0];
-    test_all(&graph, 0, &[manual_tensor((4, 3), input_data)], None);
+    test_all(&graph, 0, &[manual_tensor::<f32, _>((4, 3), input_data)], None);
 }
 
 #[test]
@@ -864,8 +864,8 @@ fn layernorm_fused() {
         let input = graph.input(input_shape.clone(), DType::F32);
         let reduced_shape = shape![Size::BATCH, 8, 1];
 
-        let const_2 = graph.scalar(2.0);
-        let const_eps = graph.scalar(eps);
+        let const_2 = graph.scalar::<f32>(2.0);
+        let const_eps = graph.scalar::<f32>(eps);
 
         let mean = graph.reduce(input, vec![axis], ReduceOp::Mean);
         let mean = graph.view(mean, reduced_shape.clone());
@@ -919,7 +919,7 @@ fn scalar_scalar() {
     let result = graph.unary(UnaryOp::Exp, input);
     graph.output(result);
 
-    test_all(&graph, 0, &[manual_tensor((), vec![2.0])], None);
+    test_all(&graph, 0, &[manual_tensor::<f32, _>((), vec![2.0])], None);
 }
 
 #[test]

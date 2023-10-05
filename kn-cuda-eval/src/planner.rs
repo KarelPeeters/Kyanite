@@ -886,8 +886,10 @@ impl<'a> Planner<'a> {
             _ => {
                 assert!(!is_root);
 
+                // TODO implement some support for tiny multi-consts?
+                //   that could be implement with `? :` or small lookup tables
                 let y = if let Some(c) = self.graph.as_single_const(value) {
-                    block.define_y(&c.to_c_str())
+                    block.define_y(c.dtype(), &c.to_c_str())
                 } else {
                     block.load_operand_y(&self.visit(value)?)
                 };
@@ -1006,14 +1008,14 @@ impl ScalarBlock {
         } else {
             let y = self.alloc_y();
             self.loaded_operands[x] = Some(y);
-            writeln!(&mut self.operation, "float y{} = *x{};", y, x).unwrap();
+            writeln!(&mut self.operation, "{} y{} = *x{};", operand.dtype().as_c_str(), y, x).unwrap();
             y
         }
     }
 
-    fn define_y(&mut self, value: &str) -> usize {
+    fn define_y(&mut self, dtype: DType, value: &str) -> usize {
         let y = self.alloc_y();
-        writeln!(&mut self.operation, "float y{} = {};", y, value).unwrap();
+        writeln!(&mut self.operation, "{} y{} = {};", dtype.as_c_str(), y, value).unwrap();
         y
     }
 
@@ -1104,7 +1106,7 @@ fn unary_op_str(op: UnaryOp, x: &str) -> String {
         UnaryOp::Tanh => format!("tanh({})", x),
         UnaryOp::Erf => format!("erff({})", x),
         UnaryOp::Mish => format!("({}) * tanh(log(1.0 + exp({})))", x, x),
-        UnaryOp::ValueCast(_to) => todo!(),
-        UnaryOp::BitCast(_to) => todo!(),
+        UnaryOp::ValueCast(to) => format!("(({}) {})", to.as_c_str(), x),
+        UnaryOp::BitCast(to) => format!("bit_cast<{}>({})", to.as_c_str(), x),
     }
 }
