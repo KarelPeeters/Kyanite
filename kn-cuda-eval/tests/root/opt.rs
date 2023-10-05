@@ -2,12 +2,12 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use kn_graph::dtype::DType;
-use kn_graph::graph::{BinaryOp, Graph};
+use kn_graph::graph::{Graph, Operation, SliceRange, UnaryOp, BinaryOp};
+use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use kn_graph::shape;
 
 use crate::root::runner::test_all;
 use crate::root::tensor_utils::{manual_tensor, rng_tensor_f32, rng_vec};
-
 
 #[test]
 fn chained_scalar() {
@@ -86,4 +86,36 @@ fn inner_scalar_used() {
 
     let input_tensor = rng_tensor_f32((2, 3), &mut rng);
     test_all(&graph, 0, &[input_tensor], None)
+}
+
+#[test]
+fn gather_cast() {
+    let mut graph = Graph::new();
+
+    let x = graph.input(shape![4], DType::F32);
+
+    let i_float = graph.constant(shape![1], vec![0f32]);
+    let i = graph.unary(UnaryOp::ValueCast(DType::U32), i_float);
+
+    let y = graph.gather(x, 0, i);
+    graph.output(y);
+
+    println!("Raw graph:");
+    println!("{}", graph);
+
+    let opt_graph = optimize_graph(&graph, OptimizerSettings::default());
+    println!("Optimized graph:");
+    println!("{}", opt_graph);
+
+    let opt_x = opt_graph.inputs()[0];
+    let opt_y = opt_graph.outputs()[0];
+
+    // make sure that everything collapses to a single slice operation
+    // (either during graph construction or during optimization, that's not important)
+    let expected = Operation::Slice {
+        input: opt_x,
+        axis: 0,
+        range: SliceRange::single(0),
+    };
+    assert_eq!(opt_graph[opt_y].operation, expected);
 }

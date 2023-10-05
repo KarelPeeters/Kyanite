@@ -466,11 +466,14 @@ impl Graph {
                 let f = self.as_single_const(*inputs.first()?)?;
                 inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
             }
-            // TODO simple scalar/binary calculations?
+            Operation::Unary { input, op } => {
+                Some(op.map(self.as_single_const(input)?))
+            }
+            Operation::Binary { left, right, op } => {
+                Some(op.map(self.as_single_const(left)?, self.as_single_const(right)?))
+            }
             Operation::Conv { .. }
             | Operation::MatMul { .. }
-            | Operation::Unary { .. }
-            | Operation::Binary { .. }
             | Operation::Softmax { .. }
             | Operation::Layernorm { .. }
             | Operation::Reduce { .. } => None,
