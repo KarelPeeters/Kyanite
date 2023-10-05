@@ -9,7 +9,7 @@ use ndarray::{
     SliceInfoElem, Zip,
 };
 
-use crate::dtype::{DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor};
+use crate::dtype::{dispatch_dtensor, DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor};
 use crate::graph::{ConvDetails, Graph, Operation, SliceRange, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
@@ -160,7 +160,7 @@ fn try_run_cpu_operation(
         }
         Operation::Concat { ref inputs, axis } => {
             macro_rules! concat {
-                ($dtype:path) => {{
+                (inputs, axis, $dtype:path) => {{
                     let inputs: Vec<_> = inputs.iter().map(|&x| map(x)).try_collect()?;
                     let inputs_viewed = inputs.iter().map(|x| unwrap_match::unwrap_match!(x, $dtype(x) => x).view()).collect_vec();
                     $dtype(concatenate(output_shape_dyn, axis, &inputs_viewed))
@@ -168,15 +168,15 @@ fn try_run_cpu_operation(
             }
 
             match dtype {
-                DType::F32 => concat!(DTensor::F32),
-                DType::I8 => concat!(DTensor::I8),
-                DType::I16 => concat!(DTensor::I16),
-                DType::I32 => concat!(DTensor::I32),
-                DType::I64 => concat!(DTensor::I64),
-                DType::U8 => concat!(DTensor::U8),
-                DType::U16 => concat!(DTensor::U16),
-                DType::U32 => concat!(DTensor::U32),
-                DType::U64 => concat!(DTensor::U64),
+                DType::F32 => concat!(inputs, axis, DTensor::F32),
+                DType::I8 => concat!(inputs, axis, DTensor::I8),
+                DType::I16 => concat!(inputs, axis, DTensor::I16),
+                DType::I32 => concat!(inputs, axis, DTensor::I32),
+                DType::I64 => concat!(inputs, axis, DTensor::I64),
+                DType::U8 => concat!(inputs, axis, DTensor::U8),
+                DType::U16 => concat!(inputs, axis, DTensor::U16),
+                DType::U32 => concat!(inputs, axis, DTensor::U32),
+                DType::U64 => concat!(inputs, axis, DTensor::U64),
             }
         }
         Operation::Conv {
@@ -212,7 +212,27 @@ fn try_run_cpu_operation(
         }
         Operation::Unary { input, op } => {
             let input = map(input)?;
-            map_dtensor!(input, |input| input.map(|&x| op.map_t(x)).into_shared())
+
+            // TODO this is really slow (since we're boxing), is there no faster way?
+            //   worst case just fully write out all possible type and unary op combinations
+            let general = dispatch_dtensor!(input, |_T, _f, input| input.map(|x| op.map(x.to_dscalar())));
+
+            if let Some(y) = general.iter().next() {
+                let y_dtype = y.dtype();
+                assert_eq!(dtype, y_dtype, "Unary operation wrong dtype: expected {:?}: {:?} -> {:?}, got {:?}", op, dtype, dtype, y_dtype);
+            }
+
+            match dtype {
+                DType::F32 => DTensor::F32(general.mapv(|x| f32::from_dscalar(x).unwrap()).into_shared()),
+                DType::I8 => DTensor::I8(general.mapv(|x| i8::from_dscalar(x).unwrap()).into_shared()),
+                DType::I16 => DTensor::I16(general.mapv(|x| i16::from_dscalar(x).unwrap()).into_shared()),
+                DType::I32 => DTensor::I32(general.mapv(|x| i32::from_dscalar(x).unwrap()).into_shared()),
+                DType::I64 => DTensor::I64(general.mapv(|x| i64::from_dscalar(x).unwrap()).into_shared()),
+                DType::U8 => DTensor::U8(general.mapv(|x| u8::from_dscalar(x).unwrap()).into_shared()),
+                DType::U16 => DTensor::U16(general.mapv(|x| u16::from_dscalar(x).unwrap()).into_shared()),
+                DType::U32 => DTensor::U32(general.mapv(|x| u32::from_dscalar(x).unwrap()).into_shared()),
+                DType::U64 => DTensor::U64(general.mapv(|x| u64::from_dscalar(x).unwrap()).into_shared()),
+            }
         }
         Operation::Binary { left, right, op } => {
             let left = map(left)?;
@@ -299,7 +319,7 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
         .iter()
         .map(|&f| {
             let i: isize = f.try_into().expect("Index out of bounds");
-            input.slice(slice_info(input.ndim(), axis, i as isize, Some(i as isize + 1), 1))
+            input.slice(slice_info(input.ndim(), axis, i, Some(i + 1), 1))
         })
         .collect_vec();
 

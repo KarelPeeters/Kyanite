@@ -1,18 +1,22 @@
-use kn_graph::dtype::{DScalar, IntoDScalar};
+use kn_graph::dtype::{DTensor, IntoDScalar};
 use kn_graph::graph::{BinaryOp, Graph, UnaryOp};
 use kn_graph::shape::Shape;
 
-use crate::root::runner::{test_elementwise, test_elementwise_pair};
+use crate::root::runner::{test_all, test_elementwise, test_elementwise_pair};
 
 #[test]
 fn unary() {
+    // TODO build single graph for all cases
+    // TODO other dtypes
     for &op in UnaryOp::ALL {
-        test_elementwise(|x| op.map_t(x), |g, a| g.unary(op, a));
+        test_elementwise(|x| f32::from_dscalar(op.map(x.to_dscalar())).unwrap(), |g, a| g.unary(op, a));
     }
 }
 
 #[test]
 fn binary() {
+    // TODO build single graph for all cases
+    // TODO other dtypes
     for &op in BinaryOp::ALL {
         test_elementwise_pair(|a, b| op.map_t(a, b), |g, a, b| g.binary(op, a, b))
     }
@@ -20,6 +24,7 @@ fn binary() {
 
 #[test]
 fn clamp() {
+    // TODO build single graph for all cases
     for min in [f32::NEG_INFINITY, 0.0] {
         for max in [f32::INFINITY, 6.0] {
             println!("Testing clamp({}, {})", min, max);
@@ -31,7 +36,7 @@ fn clamp() {
 // TODO test proper tensors too? or just assume unary ops work right?
 #[test]
 fn value_cast() {
-    let mut state = CastState { graph: Graph::new(), cases: vec![] };
+    let mut state = CastState::new();
 
     // identity
     state.value(5u8, 5u8);
@@ -52,11 +57,13 @@ fn value_cast() {
     state.value(-1f32, -1i32);
     state.value(-1f32, -1i64);
     state.value(-1f32, -1i8);
+
+    state.run();
 }
 
 #[test]
 fn bit_cast() {
-    let mut state = CastState { graph: Graph::new(), cases: vec![] };
+    let mut state = CastState::new();
 
     // identity
     state.bit(5u8, 5u8);
@@ -67,27 +74,50 @@ fn bit_cast() {
     // float <-> int
     state.bit(1f32, 1f32.to_bits());
     state.bit(-1f32, (-1f32).to_bits());
+
+    state.run();
 }
 
 struct CastState {
     graph: Graph,
-    cases: Vec<(DScalar, DScalar)>,
+    inputs: Vec<DTensor>,
+    outputs: Vec<DTensor>,
+    ran: bool,
 }
 
 impl CastState {
-    fn value<X: IntoDScalar, Y: IntoDScalar>(&mut self, x: X, y: Y) {
-        let xv = self.graph.input(Shape::SCALAR, X::DTYPE);
-        let yv = self.graph.unary(UnaryOp::BitCast(Y::DTYPE), xv);
-        self.graph.output(yv);
-
-        self.cases.push((x.to_dscalar(), y.to_dscalar()));
+    pub fn new() -> Self {
+        Self { graph: Graph::new(), inputs: vec![], outputs: vec![], ran: false }
     }
 
-    fn bit<X: IntoDScalar, Y: IntoDScalar>(&mut self, x: X, y: Y) {
+    fn value<X: IntoDScalar, Y: IntoDScalar>(&mut self, x: X, y: Y) {
         let xv = self.graph.input(Shape::SCALAR, X::DTYPE);
         let yv = self.graph.unary(UnaryOp::ValueCast(Y::DTYPE), xv);
         self.graph.output(yv);
 
-        self.cases.push((x.to_dscalar(), y.to_dscalar()));
+        self.inputs.push(x.to_dscalar().to_tensor());
+        self.outputs.push(y.to_dscalar().to_tensor());
+    }
+
+    fn bit<X: IntoDScalar, Y: IntoDScalar>(&mut self, x: X, y: Y) {
+        let xv = self.graph.input(Shape::SCALAR, X::DTYPE);
+        let yv = self.graph.unary(UnaryOp::BitCast(Y::DTYPE), xv);
+        self.graph.output(yv);
+
+        self.inputs.push(x.to_dscalar().to_tensor());
+        self.outputs.push(y.to_dscalar().to_tensor());
+    }
+
+    fn run(&mut self) {
+        self.ran = true;
+        test_all(&self.graph, 0, &self.inputs, Some(&self.outputs));
+    }
+}
+
+impl Drop for CastState {
+    fn drop(&mut self) {
+        if !self.ran {
+            panic!("CastState didn't run");
+        }
     }
 }

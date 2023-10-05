@@ -1166,38 +1166,21 @@ impl Graph {
     // Elementwise binary operation.
     #[must_use]
     pub fn unary(&mut self, op: UnaryOp, mut input: Value) -> Value {
-        let (shape, dtype) = self.shape_dtype(input);
+        let (shape, input_dtype) = self.shape_dtype(input);
 
-        match op {
-            UnaryOp::Abs | UnaryOp::Neg => {
-                assert!(dtype.is_signed(), "{:?} only work on signed types, got {:?}", op, dtype)
-            }
-            UnaryOp::Sin
-            | UnaryOp::Cos
-            | UnaryOp::Exp
-            | UnaryOp::Log
-            | UnaryOp::Sqrt
-            | UnaryOp::Sigmoid
-            | UnaryOp::Tanh
-            | UnaryOp::Erf
-            | UnaryOp::Mish => {
-                assert!(dtype.is_float(), "{:?} only works on float types, got {:?}", op, dtype)
-            },
-            UnaryOp::ValueCast(_) => {
-                // always valid
-                // TODO skip to innermost value if exact, eg. successive truncating int cast?
-            },
-            UnaryOp::BitCast(to) => {
-                assert_eq!(dtype.size(), to.size(), "Bitcast requires matching input/output sizes");
+        let output_dtype = match op.output_dtype(input_dtype) {
+            Some(d) => d,
+            None => panic!("Operation {:?} not supported on dtype {:?}", op, input_dtype),
+        };
 
-                // skip to innermost bitcast value
-                while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
-                    input = inner;
-                }
-            },
+        // skip to innermost bitcast value
+        // TODO skip to innermost value for exact value casts, eg. for successive truncating int casts
+        //    but be careful, this is tricky stuff!
+        while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
+            input = inner;
         }
 
-        self.push(shape.clone(), dtype, Operation::Unary { op, input })
+        self.push(shape.clone(), output_dtype, Operation::Unary { op, input })
     }
 
     /// Compute elementwise binary operation.
@@ -1463,8 +1446,23 @@ impl UnaryOp {
         UnaryOp::Mish,
     ];
 
-    pub fn map(self, x: DScalar) -> DScalar {
+    pub fn output_dtype(self, x: DType) -> Option<DType> {
         match self {
+            UnaryOp::Abs | UnaryOp::Neg => {
+                if x.is_signed() { Some(x) } else { None }
+            }
+            UnaryOp::Sin | UnaryOp::Cos | UnaryOp::Exp | UnaryOp::Log | UnaryOp::Sqrt | UnaryOp::Sigmoid | UnaryOp::Tanh | UnaryOp::Erf | UnaryOp::Mish => {
+                if x.is_float() { Some(x) } else { None }
+            }
+            UnaryOp::ValueCast(y) => Some(y),
+            UnaryOp::BitCast(y) => {
+                if x.size() == y.size() { Some(y) } else { None }
+            }
+        }
+    }
+
+    pub fn map(self, x: DScalar) -> DScalar {
+        let y = match self {
             UnaryOp::Abs => {
                 assert!(x.dtype().is_signed(), "Cannot take abs of unsigned scalar");
                 match x {
@@ -1506,11 +1504,10 @@ impl UnaryOp {
             }
             UnaryOp::ValueCast(to) => x.value_cast(to),
             UnaryOp::BitCast(to) => x.bit_cast(to).unwrap(),
-        }
-    }
+        };
 
-    pub fn map_t<T: IntoDScalar>(self, x: T) -> T {
-        T::from_dscalar(self.map(x.to_dscalar())).unwrap()
+        debug_assert_eq!(self.output_dtype(x.dtype()), Some(y.dtype()));
+        y
     }
 }
 
