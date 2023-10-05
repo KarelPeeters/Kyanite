@@ -1090,5 +1090,7 @@ fn unary_op_str(op: UnaryOp, x: &str) -> String {
         UnaryOp::Tanh => format!("tanh({})", x),
         UnaryOp::Erf => format!("erff({})", x),
         UnaryOp::Mish => format!("({}) * tanh(log(1.0 + exp({})))", x, x),
+        UnaryOp::ValueCast(_to) => todo!(),
+        UnaryOp::BitCast(_to) => todo!(),
     }
 }
