@@ -59,7 +59,7 @@ impl SoftmaxKernel {
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$STATIC_SIZE$", format!("{}", static_size)),
             ("$SOFTMAX_SIZE$", format!("{}", softmax_size)),
-            ("$INPUT_SCALE$", format!("{}", DisplayCFloat(input_scale))),
+            ("$INPUT_SCALE$", format!("{}", DisplayCFloat(input_scale as f64))),
             ("$STATIC_DENSE_STRIDES$", c_array_string(&static_dense_strides)),
             ("$STATIC_STRIDES$", c_nested_array_string(&static_strides)),
             ("$SOFTMAX_STRIDES$", c_array_string(&softmax_strides)),

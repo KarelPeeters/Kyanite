@@ -486,7 +486,7 @@ impl<'a> Planner<'a> {
                 let post_process = if is_mean {
                     assert_eq!(dtype, DType::F32);
                     let scale = (result_size as f64 / input.strided_shape().size() as f64) as f32;
-                    format!("curr * {}", DisplayCFloat(scale))
+                    format!("curr * {}", DisplayCFloat(scale as f64))
                 } else {
                     "curr".to_owned()
                 };

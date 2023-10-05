@@ -4,8 +4,8 @@ use byteorder::{ByteOrder, LittleEndian};
 use itertools::Itertools;
 use ndarray::{Axis, azip};
 use prost::Message;
-use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
 
+use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
 use crate::dtype::{DTensor, DType, Tensor};
 use crate::graph::{BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value};
 pub use crate::graph::Graph;
@@ -18,7 +18,7 @@ use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
-use crate::onnx::typed_value::{SignedSize, OnnxValue};
+use crate::onnx::typed_value::{OnnxValue, SignedSize};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -33,7 +33,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &dyn ExternalDataLoader) -> O
 
     // load initializer values (similar to constants but defined separately)
     for tensor in &model_graph.initializer {
-        let value = define_tensor_data(&mut graph, tensor, external)?;
+        let value = define_tensor_data(&mut graph, &tensor.name, tensor, external)?;
         nodes.define(&tensor.name, OnnxValue::Value(value))
     }
 
@@ -442,7 +442,7 @@ fn visit_node(
         }
         "Constant" => {
             let tensor = attrs.take_tensor("value")?;
-            let value = define_tensor_data(graph, tensor, external)?;
+            let value = define_tensor_data(graph, node.name, tensor, external)?;
             OnnxValue::Value(value)
         }
         "ConstantOfShape" => {
@@ -455,7 +455,7 @@ fn visit_node(
 
             let value = match attrs.maybe_take_tensor("value")? {
                 None => graph.scalar(0f32),
-                Some(tensor) => define_tensor_data(graph, tensor, external)?,
+                Some(tensor) => define_tensor_data(graph, node.name, tensor, external)?,
             };
 
             // TODO force scalar value? spec is unclear
@@ -498,7 +498,7 @@ fn visit_node(
                 OnnxValue::Size(input) => {
                     let result = input.reshape(output_shape.unwrap_fixed("reshape shape").dims.clone());
                     OnnxValue::new_size(result, graph)
-                },
+                }
             }
         }
         "Expand" => {
@@ -514,7 +514,7 @@ fn visit_node(
                     let result_shape = result_shape.unwrap_fixed("expand shape").dims.clone();
                     let result = input.broadcast(result_shape).unwrap().to_shared();
                     OnnxValue::new_size(result, graph)
-                },
+                }
             }
         }
         "Unsqueeze" => {
@@ -524,7 +524,7 @@ fn visit_node(
                 Some(rel_axes) => {
                     let shape = rel_axes.as_signed_shape(graph)?;
                     shape.iter().map(|d| d.unwrap_fixed().unwrap()).collect_vec()
-                },
+                }
                 None => attrs.take_ints("axes")?.to_vec(),
             };
 
@@ -562,7 +562,7 @@ fn visit_node(
                     let result_shape = output_shape.unwrap_fixed("unsqueeze shape").dims;
                     let result = input.reshape(result_shape);
                     OnnxValue::new_size(result, graph)
-                },
+                }
             }
         }
         "Transpose" => {
@@ -576,7 +576,7 @@ fn visit_node(
                 OnnxValue::Size(input) => {
                     let result = input.to_shared().permuted_axes(permutation);
                     OnnxValue::new_size(result, graph)
-                },
+                }
             }
         }
         "Gather" => {
@@ -874,6 +874,7 @@ fn visit_node(
 
 fn define_tensor_data(
     graph: &mut Graph,
+    name: &str,
     tensor: &TensorProto,
     external: &dyn ExternalDataLoader,
 ) -> OnnxResult<Value> {
@@ -947,6 +948,7 @@ fn define_tensor_data(
     // careful, this stuff is pretty weirdly mapped
     let value = match dtype {
         DataType::Float => read_type!(graph, f32, float_data, read_f32_into),
+        DataType::Double => read_type!(graph, f64, double_data, read_f64_into),
         DataType::Uint8 => read_type!(graph, i8, int32_data, None),
         DataType::Int8 => read_type!(graph, u8, int32_data, None),
         DataType::Uint16 => read_type!(graph, i16, int32_data, read_i16_into),
@@ -955,7 +957,7 @@ fn define_tensor_data(
         DataType::Int64 => read_type!(graph, i64, int64_data, read_i64_into),
         DataType::Uint32 => read_type!(graph, u32, uint64_data, read_u32_into),
         DataType::Uint64 => read_type!(graph, u64, uint64_data, read_u64_into),
-        _ => panic!("Unsupported constant type {:?} {}", dtype, tensor.data_type),
+        _ => panic!("Unsupported constant type {:?} {} in {}", dtype, tensor.data_type, name),
     };
 
     Ok(value)

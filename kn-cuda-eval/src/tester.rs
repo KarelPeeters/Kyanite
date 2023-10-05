@@ -25,8 +25,8 @@ pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[DTensor], print_ex
     executor.evaluate_tensors(inputs)
 }
 
-const TOLERANCE_ABS_DIFF: f32 = 0.001;
-const TOLERANCE_REL_DIFF: f32 = 0.001;
+const TOLERANCE_ABS_DIFF: f64 = 0.001;
+const TOLERANCE_REL_DIFF: f64 = 0.001;
 const MAX_LOGGED_ERRORS: usize = 8;
 
 pub fn assert_tensors_match(expected: &[DTensor], actual: &[DTensor], print_match: bool) {
@@ -37,7 +37,7 @@ pub fn assert_tensors_match(expected: &[DTensor], actual: &[DTensor], print_matc
             if print_match {
                 for (i, diff) in enumerate(diff_per_output) {
                     match diff {
-                        Difference::F32(DifferenceF32 {
+                        Difference::Float(DifferenceFloat {
                             max_abs_diff,
                             max_rel_diff,
                         }) => {
@@ -104,15 +104,15 @@ pub struct Match {
 
 #[derive(Debug, Clone)]
 pub enum Difference {
-    F32(DifferenceF32),
+    Float(DifferenceFloat),
     IntMatch,
 }
 
 // TODO int/float enum? or just float/dscalar?
 #[derive(Debug, Copy, Clone)]
-pub struct DifferenceF32 {
-    pub max_rel_diff: f32,
-    pub max_abs_diff: f32,
+pub struct DifferenceFloat {
+    pub max_rel_diff: f64,
+    pub max_abs_diff: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -183,10 +183,17 @@ fn check_tensor_match(
     let dtype = expected_output.dtype();
 
     match dtype {
-        DType::F32 => Difference::F32(check_tensor_match_approx_f32(
+        DType::F32 => Difference::Float(check_tensor_match_approx(
             i,
-            expected_output.unwrap_f32().unwrap(),
-            output.unwrap_f32().unwrap(),
+            &expected_output.unwrap_f32().unwrap().mapv(|x| x as f64).into_shared(),
+            &output.unwrap_f32().unwrap().mapv(|x| x as f64).into_shared(),
+            counts,
+            first_errors,
+        )),
+        DType::F64 => Difference::Float(check_tensor_match_approx(
+            i,
+            expected_output.unwrap_f64().unwrap(),
+            output.unwrap_f64().unwrap(),
             counts,
             first_errors,
         )),
@@ -233,13 +240,13 @@ fn check_tensor_match_exact<T: IntoDScalar>(
     Difference::IntMatch
 }
 
-fn check_tensor_match_approx_f32(
+fn check_tensor_match_approx(
     i: usize,
-    expected_output: &Tensor<f32>,
-    output: &Tensor<f32>,
+    expected_output: &Tensor<f64>,
+    output: &Tensor<f64>,
     counts: &mut Counts,
     first_errors: &mut Vec<Error>,
-) -> DifferenceF32 {
+) -> DifferenceFloat {
     let mut max_abs_diff = 0.0;
     let mut max_rel_diff = 0.0;
 
@@ -254,8 +261,8 @@ fn check_tensor_match_approx_f32(
             (abs_diff, rel_diff)
         };
 
-        max_abs_diff = f32::max(max_abs_diff, abs_diff);
-        max_rel_diff = f32::max(max_rel_diff, rel_diff);
+        max_abs_diff = f64::max(max_abs_diff, abs_diff);
+        max_rel_diff = f64::max(max_rel_diff, rel_diff);
 
         counts.total_element_count += 1;
 
@@ -280,7 +287,7 @@ fn check_tensor_match_approx_f32(
         }
     }
 
-    DifferenceF32 {
+    DifferenceFloat {
         max_rel_diff,
         max_abs_diff,
     }

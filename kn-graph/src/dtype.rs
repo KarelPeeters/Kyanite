@@ -11,9 +11,13 @@ use ndarray::{ArcArray, IntoDimension, IxDyn, LinalgScalar};
 #[derive(Debug, Copy, Clone)]
 pub struct T32(pub f32);
 
+#[derive(Debug, Copy, Clone)]
+pub struct T64(pub f64);
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum DType {
     F32,
+    F64,
     I8,
     I16,
     I32,
@@ -22,9 +26,8 @@ pub enum DType {
     U16,
     U32,
     U64,
-    // TODO add bool and f64
+    // TODO add bool
     // Bool,
-    // F64
 }
 
 pub type Tensor<T> = ArcArray<T, IxDyn>;
@@ -32,6 +35,7 @@ pub type Tensor<T> = ArcArray<T, IxDyn>;
 #[derive(Debug, Clone)]
 pub enum DTensor {
     F32(Tensor<f32>),
+    F64(Tensor<f64>),
     I8(Tensor<i8>),
     I16(Tensor<i16>),
     I32(Tensor<i32>),
@@ -45,6 +49,7 @@ pub enum DTensor {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum DScalar {
     F32(T32),
+    F64(T64),
     I8(i8),
     I16(i16),
     I32(i32),
@@ -75,6 +80,7 @@ impl DType {
     pub fn size(self) -> DSize {
         match self {
             DType::F32 => DSize::S32,
+            DType::F64 => DSize::S64,
             DType::U8 | DType::I8 => DSize::S8,
             DType::U16 | DType::I16 => DSize::S16,
             DType::U32 | DType::I32 => DSize::S32,
@@ -84,7 +90,7 @@ impl DType {
 
     pub fn is_signed(self) -> bool {
         match self {
-            DType::F32 => true,
+            DType::F32 | DType::F64 => true,
             DType::I8 | DType::I16 | DType::I32 | DType::I64 => true,
             DType::U8 | DType::U16 | DType::U32 | DType::U64 => false,
         }
@@ -92,7 +98,7 @@ impl DType {
 
     pub fn is_float(self) -> bool {
         match self {
-            DType::F32 => true,
+            DType::F32 | DType::F64 => true,
             DType::I8 | DType::I16 | DType::I32 | DType::I64 => false,
             DType::U8 | DType::U16 | DType::U32 | DType::U64 => false,
         }
@@ -100,7 +106,7 @@ impl DType {
 
     pub fn is_int(self) -> bool {
         match self {
-            DType::F32 => false,
+            DType::F32 | DType::F64 => false,
             DType::I8 | DType::I16 | DType::I32 | DType::I64 => true,
             DType::U8 | DType::U16 | DType::U32 | DType::U64 => true,
         }
@@ -109,6 +115,7 @@ impl DType {
     pub fn specials(self) -> Specials {
         match self {
             DType::F32 => Specials::new(f32::NEG_INFINITY, f32::INFINITY),
+            DType::F64 => Specials::new(f64::NEG_INFINITY, f64::INFINITY),
             DType::I8 => Specials::new(i8::MIN, i8::MAX),
             DType::I16 => Specials::new(i16::MIN, i16::MAX),
             DType::I32 => Specials::new(i32::MIN, i32::MAX),
@@ -123,6 +130,7 @@ impl DType {
     pub fn as_c_str(self) -> &'static str {
         match self {
             DType::F32 => "float",
+            DType::F64 => "double",
             DType::I8 => "int8_t",
             DType::I16 => "int16_t",
             DType::I32 => "int32_t",
@@ -153,6 +161,7 @@ macro_rules! dispatch_dtype {
         use $crate::dtype::{DType, DScalar, DTensor};
         match $outer {
             DType::F32 => { type $ty=f32; let $fs=DScalar::F32; let $ft=DTensor::F32; { $expr } },
+            DType::F64 => { type $ty=f64; let $fs=DScalar::F64; let $ft=DTensor::F64; { $expr } },
             DType::I8 => { type $ty=i8; let $fs=DScalar::I8; let $ft=DTensor::I8; { $expr } },
             DType::I16 => { type $ty=i16; let $fs=DScalar::I16; let $ft=DTensor::I16; { $expr } },
             DType::I32 => { type $ty=i32; let $fs=DScalar::I32; let $ft=DTensor::I32; { $expr } },
@@ -170,9 +179,14 @@ impl DScalar {
         DScalar::F32(T32(x))
     }
 
+    pub fn f64(x: f64) -> Self {
+        DScalar::F64(T64(x))
+    }
+
     pub fn dtype(self) -> DType {
         match self {
             DScalar::F32(_) => DType::F32,
+            DScalar::F64(_) => DType::F64,
             DScalar::I8(_) => DType::I8,
             DScalar::I16(_) => DType::I16,
             DScalar::I32(_) => DType::I32,
@@ -194,6 +208,7 @@ impl DScalar {
     pub fn to_tensor(self) -> DTensor {
         match self {
             DScalar::F32(T32(s)) => DTensor::F32(ArcArray::from_shape_vec(IxDyn(&[]), vec![s]).unwrap()),
+            DScalar::F64(T64(s)) => DTensor::F64(ArcArray::from_shape_vec(IxDyn(&[]), vec![s]).unwrap()),
             DScalar::I8(x) => DTensor::I8(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
             DScalar::I16(x) => DTensor::I16(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
             DScalar::I32(x) => DTensor::I32(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
@@ -217,7 +232,8 @@ impl DScalar {
 
     pub fn to_c_str(self) -> String {
         match self {
-            DScalar::F32(c) => DisplayCFloat(*c).to_string(),
+            DScalar::F32(c) => DisplayCFloat(*c as f64).to_string(),
+            DScalar::F64(c) => DisplayCFloat(*c).to_string(),
             DScalar::U8(c) => format!("{}", c),
             DScalar::U16(c) => format!("{}", c),
             DScalar::U32(c) => format!("{}", c),
@@ -233,6 +249,7 @@ impl DScalar {
         // cast to big general value
         let (yf, yi) = match self {
             DScalar::F32(T32(x)) => (x as f64, x as i128),
+            DScalar::F64(T64(x)) => (x, x as i128),
             DScalar::I8(x) => (x as f64, x as i128),
             DScalar::I16(x) => (x as f64, x as i128),
             DScalar::I32(x) => (x as f64, x as i128),
@@ -246,6 +263,7 @@ impl DScalar {
         // convert to target
         match to {
             DType::F32 => DScalar::f32(yf as f32),
+            DType::F64 => DScalar::f64(yf),
             DType::I8 => DScalar::I8(yi as i8),
             DType::I16 => DScalar::I16(yi as i16),
             DType::I32 => DScalar::I32(yi as i32),
@@ -265,6 +283,7 @@ impl DScalar {
         // convert to bits, zero-extend just to be safe
         let bits = match self {
             DScalar::F32(T32(x)) => x.to_bits() as u64,
+            DScalar::F64(T64(x)) => x.to_bits(),
             DScalar::I8(x) => x as u8 as u64,
             DScalar::I16(x) => x as u16 as u64,
             DScalar::I32(x) => x as u32 as u64,
@@ -278,6 +297,7 @@ impl DScalar {
         // convert to target
         let y = match to {
             DType::F32 => DScalar::f32(f32::from_bits(bits as u32)),
+            DType::F64 => DScalar::f64(f64::from_bits(bits)),
             DType::I8 => DScalar::I8(bits as i8),
             DType::I16 => DScalar::I16(bits as i16),
             DType::I32 => DScalar::I32(bits as i32),
@@ -324,6 +344,7 @@ macro_rules! impl_into_dscalar {
 }
 
 impl_into_dscalar!(f32, DType::F32, F32, |x| DScalar::f32(x), DScalar::F32(T32(x)) => x);
+impl_into_dscalar!(f64, DType::F64, F64, |x| DScalar::f64(x), DScalar::F64(T64(x)) => x);
 impl_into_dscalar!(i8, DType::I8, I8, |x| DScalar::I8(x), DScalar::I8(x) => x);
 impl_into_dscalar!(i16, DType::I16, I16, |x| DScalar::I16(x), DScalar::I16(x) => x);
 impl_into_dscalar!(i32, DType::I32, I32, |x| DScalar::I32(x), DScalar::I32(x) => x);
@@ -340,6 +361,7 @@ macro_rules! dispatch_dtensor {
         use $crate::dtype::DTensor;
         match $outer {
             DTensor::F32($inner) => { type $ty=f32; let $f=DTensor::F32; { $expr } },
+            DTensor::F64($inner) => { type $ty=f64; let $f=DTensor::F64; { $expr } },
             DTensor::I8($inner) => { type $ty=i8; let $f=DTensor::I8; { $expr } },
             DTensor::I16($inner) => { type $ty=i16; let $f=DTensor::I16; { $expr } },
             DTensor::I32($inner) => { type $ty=i32; let $f=DTensor::I32; { $expr } },
@@ -453,6 +475,13 @@ impl DTensor {
         }
     }
 
+    pub fn unwrap_f64(&self) -> Option<&Tensor<f64>> {
+        match self {
+            DTensor::F64(tensor) => Some(tensor),
+            _ => None,
+        }
+    }
+
     pub fn unwrap_i64(&self) -> Option<&Tensor<i64>> {
         match self {
             DTensor::I64(tensor) => Some(tensor),
@@ -509,6 +538,28 @@ impl Hash for T32 {
     }
 }
 
+impl Deref for T64 {
+    type Target = f64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq<Self> for T64 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.float_eq(&other.0)
+    }
+}
+
+impl Eq for T64 {}
+
+impl Hash for T64 {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.float_hash(state)
+    }
+}
+
 impl Specials {
     pub fn new<T: IntoDScalar + num_traits::Zero + num_traits::One>(min: T, max: T) -> Self {
         Self {
@@ -521,7 +572,7 @@ impl Specials {
 }
 
 #[derive(Debug)]
-pub struct DisplayCFloat(pub f32);
+pub struct DisplayCFloat(pub f64);
 
 impl Display for DisplayCFloat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

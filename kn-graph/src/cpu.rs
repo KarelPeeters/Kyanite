@@ -169,6 +169,7 @@ fn try_run_cpu_operation(
 
             match dtype {
                 DType::F32 => concat!(inputs, axis, DTensor::F32),
+                DType::F64 => concat!(inputs, axis, DTensor::F64),
                 DType::I8 => concat!(inputs, axis, DTensor::I8),
                 DType::I16 => concat!(inputs, axis, DTensor::I16),
                 DType::I32 => concat!(inputs, axis, DTensor::I32),
@@ -296,7 +297,7 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
     output_shape[axis] = indices.len();
 
     let indices = match indices {
-        DTensor::F32(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
+        DTensor::F32(_) | DTensor::F64(_) | DTensor::I8(_) | DTensor::I16(_) | DTensor::I32(_) | DTensor::I64(_) => {
             unreachable!("gather indices should be unsigned integers")
         }
         DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),

@@ -1463,11 +1463,22 @@ impl UnaryOp {
     }
 
     pub fn map(self, x: DScalar) -> DScalar {
+        macro_rules! map_float {
+            ($x:expr, |$inner:ident| $result:expr) => {{
+                use $crate::dtype::{DScalar, T32, T64};
+                match $x {
+                    DScalar::F32(T32($inner)) => DScalar::f32($result),
+                    DScalar::F64(T64($inner)) => DScalar::f64($result),
+                    _ => unreachable!("Invalid dtype of {:?} for float operation {:?}", $x, self),
+                }
+            }};
+        }
         let y = match self {
             UnaryOp::Abs => {
                 assert!(x.dtype().is_signed(), "Cannot take abs of unsigned scalar");
                 match x {
                     DScalar::F32(x) => DScalar::f32(x.abs()),
+                    DScalar::F64(x) => DScalar::f64(x.abs()),
                     DScalar::I8(x) => DScalar::I8(x.abs()),
                     DScalar::I16(x) => DScalar::I16(x.abs()),
                     DScalar::I32(x) => DScalar::I32(x.abs()),
@@ -1479,6 +1490,7 @@ impl UnaryOp {
                 assert!(x.dtype().is_signed(), "Cannot negate unsigned scalar");
                 match x {
                     DScalar::F32(x) => DScalar::f32(-*x),
+                    DScalar::F64(x) => DScalar::f64(-*x),
                     DScalar::I8(x) => DScalar::I8(-x),
                     DScalar::I16(x) => DScalar::I16(-x),
                     DScalar::I32(x) => DScalar::I32(-x),
@@ -1486,23 +1498,15 @@ impl UnaryOp {
                     DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) => unreachable!(),
                 }
             }
-            UnaryOp::Sin => DScalar::f32(x.unwrap_f32().unwrap().sin()),
-            UnaryOp::Cos => DScalar::f32(x.unwrap_f32().unwrap().cos()),
-            UnaryOp::Exp => DScalar::f32(x.unwrap_f32().unwrap().exp()),
-            UnaryOp::Log => DScalar::f32(x.unwrap_f32().unwrap().ln()),
-            UnaryOp::Sqrt => DScalar::f32(x.unwrap_f32().unwrap().sqrt()),
-            UnaryOp::Sigmoid => {
-                let x = x.unwrap_f32().unwrap();
-                let y = 1.0 / (1.0 + (-x).exp());
-                DScalar::f32(y)
-            }
-            UnaryOp::Tanh => DScalar::f32(x.unwrap_f32().unwrap().tanh()),
-            UnaryOp::Erf => DScalar::f32(erf(x.unwrap_f32().unwrap())),
-            UnaryOp::Mish => {
-                let x = x.unwrap_f32().unwrap();
-                let y = x * (x.exp().ln_1p().tanh());
-                DScalar::f32(y)
-            }
+            UnaryOp::Sin => map_float!(x, |x| x.sin()),
+            UnaryOp::Cos => map_float!(x, |x| x.cos()),
+            UnaryOp::Exp => map_float!(x, |x| x.exp()),
+            UnaryOp::Log => map_float!(x, |x| x.ln()),
+            UnaryOp::Sqrt => map_float!(x, |x| x.sqrt()),
+            UnaryOp::Sigmoid => map_float!(x, |x| 1.0 / (1.0 + (-x).exp())),
+            UnaryOp::Tanh => map_float!(x, |x| x.tanh()),
+            UnaryOp::Erf => map_float!(x, |x| erf(x as f64) as _),
+            UnaryOp::Mish => map_float!(x, |x| x * (x.exp().ln_1p().tanh())),
             UnaryOp::ValueCast(to) => x.value_cast(to),
             UnaryOp::BitCast(to) => x.bit_cast(to).unwrap(),
         };
@@ -1591,11 +1595,11 @@ impl ReduceOp {
 }
 
 /// Formula and coefficients from <https://en.wikipedia.org/wiki/Error_function#Numerical_approximations>
-/// (Abramowitz and Stegun),
-/// Max error `3e-7`. We use f64 internally to ensure there are no additional errors introduced.
-pub fn erf(x: f32) -> f32 {
+/// (Abramowitz and Stegun), Max error `3e-7`.
+pub fn erf(x: f64) -> f64 {
+    // TODO find something that's even better for f64?
     let sign = x.signum();
-    let x_abs = x.abs() as f64;
+    let x_abs = x.abs();
 
     const A: &[f64] = &[
         1.0,
@@ -1615,5 +1619,5 @@ pub fn erf(x: f32) -> f32 {
         .sum();
     let y_abs = 1.0 - 1.0 / d.powi(16);
 
-    return sign * y_abs as f32;
+    sign * y_abs
 }
