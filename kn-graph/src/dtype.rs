@@ -146,6 +146,25 @@ impl DSize {
     }
 }
 
+#[rustfmt::skip]
+#[macro_export]
+macro_rules! dispatch_dtype {
+    ($outer:expr, |$ty:ident, $fs:ident, $ft:ident| $expr:expr) => {{
+        use $crate::dtype::{DType, DScalar, DTensor};
+        match $outer {
+            DType::F32 => { type $ty=f32; let $fs=DScalar::F32; let $ft=DTensor::F32; { $expr } },
+            DType::I8 => { type $ty=i8; let $fs=DScalar::I8; let $ft=DTensor::I8; { $expr } },
+            DType::I16 => { type $ty=i16; let $fs=DScalar::I16; let $ft=DTensor::I16; { $expr } },
+            DType::I32 => { type $ty=i32; let $fs=DScalar::I32; let $ft=DTensor::I32; { $expr } },
+            DType::I64 => { type $ty=i64; let $fs=DScalar::I64; let $ft=DTensor::I64; { $expr } },
+            DType::U8 => { type $ty=u8; let $fs=DScalar::U8; let $ft=DTensor::U8; { $expr } },
+            DType::U16 => { type $ty=u16; let $fs=DScalar::U16; let $ft=DTensor::U16; { $expr } },
+            DType::U32 => { type $ty=u32; let $fs=DScalar::U32; let $ft=DTensor::U32; { $expr } },
+            DType::U64 => { type $ty=u64; let $fs=DScalar::U64; let $ft=DTensor::U64; { $expr } },
+        }
+    }};
+}
+
 impl DScalar {
     pub fn f32(x: f32) -> Self {
         DScalar::F32(T32(x))
@@ -398,6 +417,7 @@ macro_rules! map_dscalar_pair {
 }
 
 // export macros
+pub use dispatch_dtype;
 pub use dispatch_dtensor;
 pub use dispatch_dtensor_pair;
 pub use map_dscalar_pair;

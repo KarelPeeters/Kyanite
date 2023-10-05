@@ -78,6 +78,9 @@ fn bit_cast() {
     state.run();
 }
 
+// TODO test tricky double casts, eg. `i8->u16->u32` vs `i8->i16->u32`
+
+// TODO turn this into more general elementwise ops test builder, use for other unary/binary tests too 
 struct CastState {
     graph: Graph,
     inputs: Vec<DTensor>,

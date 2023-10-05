@@ -9,7 +9,7 @@ use ndarray::{
     SliceInfoElem, Zip,
 };
 
-use crate::dtype::{dispatch_dtensor, DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor};
+use crate::dtype::{dispatch_dtype, dispatch_dtensor, DTensor, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor, DType};
 use crate::graph::{ConvDetails, Graph, Operation, SliceRange, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
@@ -222,17 +222,7 @@ fn try_run_cpu_operation(
                 assert_eq!(dtype, y_dtype, "Unary operation wrong dtype: expected {:?}: {:?} -> {:?}, got {:?}", op, dtype, dtype, y_dtype);
             }
 
-            match dtype {
-                DType::F32 => DTensor::F32(general.mapv(|x| f32::from_dscalar(x).unwrap()).into_shared()),
-                DType::I8 => DTensor::I8(general.mapv(|x| i8::from_dscalar(x).unwrap()).into_shared()),
-                DType::I16 => DTensor::I16(general.mapv(|x| i16::from_dscalar(x).unwrap()).into_shared()),
-                DType::I32 => DTensor::I32(general.mapv(|x| i32::from_dscalar(x).unwrap()).into_shared()),
-                DType::I64 => DTensor::I64(general.mapv(|x| i64::from_dscalar(x).unwrap()).into_shared()),
-                DType::U8 => DTensor::U8(general.mapv(|x| u8::from_dscalar(x).unwrap()).into_shared()),
-                DType::U16 => DTensor::U16(general.mapv(|x| u16::from_dscalar(x).unwrap()).into_shared()),
-                DType::U32 => DTensor::U32(general.mapv(|x| u32::from_dscalar(x).unwrap()).into_shared()),
-                DType::U64 => DTensor::U64(general.mapv(|x| u64::from_dscalar(x).unwrap()).into_shared()),
-            }
+            dispatch_dtype!(dtype, |T, _fs, ft| ft(general.mapv(|x| T::from_dscalar(x).unwrap()).into_shared()))
         }
         Operation::Binary { left, right, op } => {
             let left = map(left)?;

@@ -199,6 +199,7 @@ pub enum BinaryOp {
 pub enum ReduceOp {
     Sum,
     // TODO remove mean and rely on operator fusion instead
+    //   definitely do this, it's getting pretty ugly in the planner
     Mean,
     Prod,
     Max,

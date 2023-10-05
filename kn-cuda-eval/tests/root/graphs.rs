@@ -162,7 +162,7 @@ fn gather_simple_axis_0() {
     let mut graph = Graph::new();
 
     let input = graph.constant::<f32>(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
-    let index = graph.constant::<f32>(shape![4], vec![0.0, 1.0, 1.0, 0.0]);
+    let index = graph.constant::<u32>(shape![4], vec![0, 1, 1, 0]);
     let output = graph.gather(input, 0, index);
     let output_tensor = manual_tensor((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
     graph.output(output);
@@ -175,7 +175,7 @@ fn gather_simple_axis_1() {
     let mut graph = Graph::new();
 
     let input = graph.constant::<f32>(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
-    let index = graph.constant::<f32>(shape![4], vec![0.0, 2.0, 1.0, 0.0]);
+    let index = graph.constant::<u32>(shape![4], vec![0, 2, 1, 0]);
     let output = graph.gather(input, 1, index);
     let output_tensor = manual_tensor((2, 4), vec![7.0, 7.2, 7.1, 7.0, 7.3, 7.5, 7.4, 7.3]);
     graph.output(output);

@@ -12,9 +12,9 @@ use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use kn_graph::dtype::{DisplayCFloat, DScalar, DType, T32};
-use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::dispatch_dtensor;
+use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
+use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
 
@@ -326,7 +326,7 @@ impl<'a> Planner<'a> {
         let result_dtype = result_info.dtype;
 
         let result: PlanTensor = match &result_info.operation {
-            &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape,result_dtype, Some(value)),
+            &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, result_dtype, Some(value)),
             Operation::Constant { tensor } => {
                 let result = self.alloc_tensor_dedicated(result_shape, tensor.dtype());
 
@@ -366,16 +366,17 @@ impl<'a> Planner<'a> {
                 let indices = self.visit(indices)?;
                 let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
-                // TODO proper integer gathering
-                assert_eq!(input.dtype(), DType::F32);
-                assert_eq!(indices.dtype(), DType::F32);
-                assert_eq!(output.dtype(), DType::F32);
+                assert_eq!(input.dtype(), output.dtype());
 
+                // TODO make sure all autokernels support 64-bit memory offsets
+                //   and use the proper signedness for all operands and internal variables
                 let kernel = GatherKernel::new(
                     self.device(),
                     input.strided_shape(),
                     indices.strided_shape(),
                     output.strided_shape(),
+                    input.dtype(),
+                    indices.dtype(),
                     axis,
                 );
 
@@ -417,7 +418,9 @@ impl<'a> Planner<'a> {
                 assert_eq!(result_dtype, DType::F32);
 
                 let (input_scale, input) = self.visit_scalable_value(input)?;
-                let output = self.alloc_tensor_shared(result_shape, result_dtype,Some(value));
+                let input_scale = input_scale.unwrap_f32().unwrap();
+
+                let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
                 let kernel = SoftmaxKernel::new(
                     self.device(),
@@ -440,6 +443,8 @@ impl<'a> Planner<'a> {
                 assert_eq!(result_dtype, DType::F32);
 
                 let (alpha_0, input_0, alpha_1, input_1) = self.visit_scalable_added_pair(input)?;
+                let alpha_0 = alpha_0.unwrap_f32().unwrap();
+                let alpha_1 = alpha_1.unwrap_f32().unwrap();
 
                 if let Some(input_1) = &input_1 {
                     assert_eq!(input_0.strided_shape(), input_1.strided_shape());
@@ -470,25 +475,27 @@ impl<'a> Planner<'a> {
             }
             &Operation::Reduce { input, ref axes, op } => {
                 let result_size = result_shape.size();
+                let dtype = result_dtype;
 
                 let input = self.visit(input)?;
                 let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
                 let identity = op.identity();
                 let (operation, is_mean) = op.operation();
-                let scale = if is_mean {
-                    result_size as f32 / input.strided_shape().size() as f32
+
+                let post_process = if is_mean {
+                    assert_eq!(dtype, DType::F32);
+                    let scale = (result_size as f64 / input.strided_shape().size() as f64) as f32;
+                    format!("curr * {}", DisplayCFloat(scale))
                 } else {
-                    1.0
+                    "curr".to_owned()
                 };
 
-                // TODO dtype support
-                assert_eq!(result_dtype, DType::F32);
                 let code = ReduceCode {
-                    ty: "float".to_owned(),
+                    ty: dtype.as_c_str().to_owned(),
                     identity: format!("{}", DisplayCFloat(identity)),
                     operation: binary_op_str(operation, "curr", "x"),
-                    post_process: format!("curr * {}", DisplayCFloat(scale)),
+                    post_process,
                 };
 
                 let kernel =
@@ -508,7 +515,14 @@ impl<'a> Planner<'a> {
         Ok(result)
     }
 
-    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(f32, PlanTensor, f32, Option<PlanTensor>)> {
+    /// Returns values of the form `alpha_0 * input_0 + alpha_1 * input_1`
+    ///
+    /// `None` for an input means that input is not present and should be treated as zero.
+    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(DScalar, PlanTensor, DScalar, Option<PlanTensor>)> {
+        let dtype = self.graph[input].dtype;
+        let zero = dtype.specials().zero;
+        let one = dtype.specials().one;
+
         let result = if let &Operation::Binary {
             op: BinaryOp::Add,
             left,
@@ -521,13 +535,13 @@ impl<'a> Planner<'a> {
             if input_0.strided_shape() != input_1.strided_shape() {
                 // fallback to scalar operation
                 let total = self.visit(input)?;
-                (1.0, total, 0.0, None)
+                (one, total, zero, None)
             } else {
                 (alpha_0, input_0, alpha_1, Some(input_1))
             }
         } else {
             let (alpha_0, input_0) = self.visit_scalable_value(input)?;
-            (alpha_0, input_0, 0.0, None)
+            (alpha_0, input_0, zero, None)
         };
 
         Ok(result)
@@ -563,26 +577,30 @@ impl<'a> Planner<'a> {
         Ok(result)
     }
 
-    fn visit_scalable_value(&mut self, value: Value) -> VisitResult<(f32, PlanTensor)> {
+    fn visit_scalable_value(&mut self, value: Value) -> VisitResult<(DScalar, PlanTensor)> {
+        let dtype = self.graph[value].dtype;
+        let one = dtype.specials().one;
+
         if let &Operation::Binary {
             op: BinaryOp::Mul,
             left,
             right,
         } = &self.graph[value].operation
         {
-            if let Some(DScalar::F32(T32(alpha))) = self.graph.as_single_const(left) {
+            // TODO remove this duplication once we have constant canonicalization in graph
+            if let Some(alpha) = self.graph.as_single_const(left) {
                 return Ok((alpha, self.visit(right)?));
             }
-            if let Some(DScalar::F32(T32(alpha))) = self.graph.as_single_const(right) {
+            if let Some(alpha) = self.graph.as_single_const(right) {
                 return Ok((alpha, self.visit(left)?));
             }
         }
 
-        Ok((1.0, self.visit(value)?))
+        Ok((one, self.visit(value)?))
     }
 
     fn visit_matmul(&mut self, value: Value, left: Value, right: Value, batch_first: bool) -> VisitResult<PlanTensor> {
-        // TODO support other dtypes
+        // TODO support other dtypes?
         assert_eq!(self.graph[value].dtype, DType::F32);
         assert_eq!(self.graph[left].dtype, self.graph[right].dtype);
         let dtype = self.graph[left].dtype;
@@ -605,6 +623,7 @@ impl<'a> Planner<'a> {
                 .permute(&[1, 0, 2])
         };
 
+        // TODO use alpha for operand scaling?
         // to ensure we (usually) get a simple strided output, we actually compute
         //   result^T = right^T * left^T
         let args = BatchedMatMulArgs {
@@ -644,7 +663,7 @@ impl<'a> Planner<'a> {
     }
 
     fn try_visit_fused_conv(&mut self, value: Value) -> VisitResult<Option<PlanTensor>> {
-        if self.graph[value].shape.rank() != 4 {
+        if self.graph[value].dtype != DType::F32 || self.graph[value].shape.rank() != 4 {
             return Ok(None);
         }
 
@@ -724,11 +743,7 @@ impl<'a> Planner<'a> {
         }
 
         if let &Operation::Conv { input, filter, details } = &graph[curr].operation {
-            // TODO support other dtypes
-            // reject convolutions with non-f32 data types for now
-            if details.dtype != DType::F32 {
-                return Ok(None);
-            }
+            assert_eq!(details.dtype, DType::F32);
             let dtype = cudnnDataType_t::CUDNN_DATA_FLOAT;
 
             // collect input tensors
@@ -814,7 +829,6 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_fused_scalar(&mut self, value: Value) -> VisitResult<PlanTensor> {
-        // TODO dtypes in scalar fusion?
         // TODO proper scalar fusion:
         //     keep fusing while bandwidth does not increase
         //     is greedy fusion enough or do we need some proper clique finding?

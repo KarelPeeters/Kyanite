@@ -7,7 +7,7 @@ use itertools::{enumerate, Itertools, multizip, zip_eq};
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
-use kn_graph::dtype::{DTensor, DType, Tensor};
+use kn_graph::dtype::{DTensor, Tensor};
 use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
@@ -52,14 +52,6 @@ pub struct Profile {
 
 impl CudaExecutor {
     pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
-        // assert that inputs and outputs are all f32 tensors
-        for &input in graph.inputs() {
-            assert_eq!(graph[input].dtype, DType::F32);
-        }
-        for &output in graph.outputs() {
-            assert_eq!(graph[output].dtype, DType::F32);
-        }
-
         let handles = Handles {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
@@ -74,11 +66,17 @@ impl CudaExecutor {
 
         let input_buffers = inputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
+            .map(|x| {
+                let len_bytes = x.strided_shape().size() * x.dtype().size().bytes();
+                PinnedMem::alloc(len_bytes, false)
+            })
             .collect();
         let output_buffers = outputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
+            .map(|x| {
+                let len_bytes = x.strided_shape().size() * x.dtype().size().bytes();
+                PinnedMem::alloc(len_bytes, false)
+            })
             .collect();
 
         CudaExecutor {
@@ -126,14 +124,16 @@ impl CudaExecutor {
         outputs
     }
 
+    // TODO fix signature
     pub fn evaluate(&mut self, inputs: &[&[f32]]) -> Vec<&[f32]> {
         assert_eq!(inputs.len(), self.inputs.len());
-        // TODO support different input/output tensor types
+
 
         unsafe {
             // make sure there is no other leftover memcpy running
             self.stream().synchronize();
 
+            // TODO fix slice casting
             // copy inputs to buffers and then to device
             for (slice, buffer, tensor) in multizip((inputs, &self.input_buffers, &self.inputs)) {
                 buffer.as_slice().copy_from_slice(cast_slice::<f32, u8>(slice));
@@ -153,6 +153,7 @@ impl CudaExecutor {
             self.stream().synchronize();
 
             // interpret buffers
+            // TODO fix slice casting
             self.output_buffers
                 .iter()
                 .map(|x| cast_slice::<u8, f32>(x.as_slice()))
