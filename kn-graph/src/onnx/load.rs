@@ -46,7 +46,7 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) 
             continue;
         }
 
-        let (shape, dtype) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?)?;
+        let (shape, dtype) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?, &input.name)?;
         let value = graph.input(shape, dtype);
         nodes.define(&input.name, OnnxValue::Value(value));
     }
@@ -471,8 +471,8 @@ fn visit_node(
         }
         "Cast" => {
             let input = inputs.required(0)?;
-            let dtype = DataType::try_from(attrs.take_int("to")? as i32).expect("Invalid data type");
-            let dtype = resolve_dtype(dtype)?;
+            let data_type = DataType::try_from(attrs.take_int("to")? as i32).expect("Invalid data type");
+            let dtype = resolve_dtype(data_type, node.name)?;
 
             match input {
                 &OnnxValue::Value(value) => {
@@ -891,21 +891,9 @@ fn define_tensor_data(
     let dims = tensor.dims.iter().map(|&d| Size::fixed(d as usize)).collect_vec();
     let shape = Shape::new(dims);
     let size = shape.size().unwrap_fixed("Data tensor shape must be fixed");
-    let data_type = DataType::try_from(tensor.data_type).expect("Illegal data type");
 
-    let dtype = match data_type {
-        DataType::Float => DType::F32,
-        DataType::Uint8 => DType::U8,
-        DataType::Int8 => DType::I8,
-        DataType::Uint16 => DType::U16,
-        DataType::Int16 => DType::I16,
-        DataType::Int32 => DType::I32,
-        DataType::Int64 => DType::I64,
-        DataType::Double => DType::F64,
-        DataType::Uint32 => DType::U32,
-        DataType::Uint64 => DType::U64,
-        _ => panic!("Unsupported constant type {:?} {} in {}", data_type, tensor.data_type, name),
-    };
+    let data_type = DataType::try_from(tensor.data_type).expect("Illegal data type");
+    let dtype = resolve_dtype(data_type, name)?;
 
     let length_guess = size * dtype.size().bytes();
 
@@ -989,7 +977,7 @@ fn define_tensor_data(
     Ok(value)
 }
 
-fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, DType)> {
+fn resolve_tensor_type(ty: &TypeProto, name: &str) -> OnnxResult<(Shape, DType)> {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
     let result = match value {
         ProtoTypeValue::TensorType(tensor) => {
@@ -1004,7 +992,7 @@ fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, DType)> {
                 .map(resolve_tensor_dim)
                 .collect_vec();
 
-            let dtype = resolve_dtype(data_type)?;
+            let dtype = resolve_dtype(data_type, name)?;
 
             (Shape::new(dims), dtype)
         }
@@ -1013,9 +1001,10 @@ fn resolve_tensor_type(ty: &TypeProto) -> OnnxResult<(Shape, DType)> {
     Ok(result)
 }
 
-fn resolve_dtype(data_type: DataType) -> OnnxResult<DType> {
+fn resolve_dtype(data_type: DataType, node: &str) -> OnnxResult<DType> {
     let dtype = match data_type {
         DataType::Float => DType::F32,
+        DataType::Double => DType::F64,
         DataType::Uint8 => DType::U8,
         DataType::Int8 => DType::I8,
         DataType::Uint16 => DType::U16,
@@ -1025,9 +1014,9 @@ fn resolve_dtype(data_type: DataType) -> OnnxResult<DType> {
         DataType::Uint32 => DType::U32,
         DataType::Uint64 => DType::U64,
         DataType::Undefined | DataType::String | DataType::Bool |
-        DataType::Float16 | DataType::Double |
+        DataType::Float16 |
         DataType::Complex64 | DataType::Complex128 |
-        DataType::Bfloat16 => return Err(OnnxError::UnsupportedType(data_type)),
+        DataType::Bfloat16 => return Err(OnnxError::UnsupportedType(node.to_owned(), data_type)),
     };
     Ok(dtype)
 }

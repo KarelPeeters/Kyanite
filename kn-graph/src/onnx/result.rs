@@ -38,7 +38,7 @@ pub enum OnnxError {
 
     UnsupportedMultipleOutputs(Node, Vec<String>),
     UnsupportedNonFloatOutput(String),
-    UnsupportedType(DataType),
+    UnsupportedType(String, DataType),
 
     UnsupportedNdConvolution(Node, usize),
 
