@@ -170,7 +170,7 @@ impl DInfo {
     }
 
     fn float(size: DSize) -> Self {
-        DInfo { size, signed: false, float: true, int: false, is_bool: false }
+        DInfo { size, signed: true, float: true, int: false, is_bool: false }
     }
 
     fn bool() -> Self {
