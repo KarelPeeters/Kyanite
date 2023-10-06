@@ -5,6 +5,7 @@ use kn_graph::dtype::DType;
 use kn_graph::graph::{Graph, Operation, SliceRange, UnaryOp, BinaryOp};
 use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use kn_graph::shape;
+use kn_graph::shape::Shape;
 
 use crate::root::runner::test_all;
 use crate::root::tensor_utils::{manual_tensor, rng_tensor_f32, rng_vec};
@@ -118,4 +119,18 @@ fn gather_cast() {
         range: SliceRange::single(0),
     };
     assert_eq!(opt_graph[opt_y].operation, expected);
+}
+
+#[test]
+fn cast_id() {
+    let mut graph = Graph::new();
+
+    let dtype = DType::F32;
+
+    let x = graph.input(Shape::SCALAR, dtype);
+    let y0 = graph.unary(UnaryOp::BitCast(dtype), x);
+    let y1 = graph.unary(UnaryOp::ValueCast(dtype), x);
+
+    assert_eq!(y0, x);
+    assert_eq!(y1, x);
 }

@@ -1225,11 +1225,20 @@ impl Graph {
             None => panic!("Operation {:?} not supported on dtype {:?}", op, input_dtype),
         };
 
+        // skip cast to same type
+        if let UnaryOp::ValueCast(_) | UnaryOp::BitCast(_) = op {
+            if output_dtype == input_dtype {
+                return input;
+            }
+        }
+
         // skip to innermost bitcast value
         // TODO skip to innermost value for exact value casts, eg. for successive truncating int casts
         //    but be careful, this is tricky stuff!
-        while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
-            input = inner;
+        if let UnaryOp::BitCast(_) = op {
+            while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
+                input = inner;
+            }
         }
 
         self.push(shape.clone(), output_dtype, Operation::Unary { op, input })
