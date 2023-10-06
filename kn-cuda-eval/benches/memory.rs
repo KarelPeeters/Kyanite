@@ -4,6 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use kn_cuda_eval::executor::CudaExecutor;
 use kn_cuda_eval::Device;
+use kn_graph::dtype::DType;
 use kn_graph::graph::Graph;
 use kn_graph::shape::Shape;
 
@@ -20,8 +21,8 @@ fn bench_copy(c: &mut Criterion) {
         );
 
         let mut graph = Graph::new();
-        let input = graph.input(Shape::fixed(&[input_size]));
-        let constant = graph.constant(Shape::fixed(&[extra_output_size]), vec![0.5; extra_output_size]);
+        let input = graph.input(Shape::fixed(&[input_size]), DType::F32);
+        let constant = graph.constant::<f32>(Shape::fixed(&[extra_output_size]), vec![0.5; extra_output_size]);
         graph.output_all(&[input, constant]);
         println!("{}", graph);
 

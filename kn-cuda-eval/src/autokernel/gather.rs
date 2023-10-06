@@ -2,6 +2,7 @@ use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
+use kn_graph::dtype::DType;
 
 use crate::autokernel::common::{
     c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
@@ -14,6 +15,9 @@ pub struct GatherKernel {
     input_shape: StridedShape,
     indices_shape: StridedShape,
     output_shape: StridedShape,
+    
+    dtype: DType,
+    itype: DType,
 
     _axis: usize,
 
@@ -28,6 +32,8 @@ impl GatherKernel {
         input_shape: &StridedShape,
         indices_shape: &StridedShape,
         output_shape: &StridedShape,
+        dtype: DType,
+        itype: DType,
         axis: usize,
     ) -> Self {
         assert_eq!(indices_shape.rank(), 1);
@@ -57,6 +63,8 @@ impl GatherKernel {
         let indices_size_div = if indices_size == 0 { 1 } else { indices_size };
 
         let replacements = vec![
+            ("$DTYPE$", dtype.as_c_str().to_owned()),
+            ("$ITYPE$", itype.as_c_str().to_owned()),
             ("$RANK$", format!("{}", input_shape.rank())),
             ("$KEPT_STRIDES_DENSE$", c_array_string(&kept_strides_dense)),
             ("$KEPT_STRIDES$", c_nested_array_string(&kept_strides)),
@@ -83,6 +91,8 @@ impl GatherKernel {
             input_shape: input_shape.clone(),
             indices_shape: indices_shape.clone(),
             output_shape: output_shape.clone(),
+            dtype,
+            itype,
             _axis: axis,
         }
     }
@@ -91,6 +101,10 @@ impl GatherKernel {
         assert_eq!(input.strided_shape(), &self.input_shape);
         assert_eq!(indices.strided_shape(), &self.indices_shape);
         assert_eq!(output.strided_shape(), &self.output_shape);
+        
+        assert_eq!(input.dtype(), self.dtype);
+        assert_eq!(indices.dtype(), self.itype);
+        assert_eq!(output.dtype(), self.dtype);
 
         let mut args = KernelArgs::new();
         args.push(input.ptr().ptr());

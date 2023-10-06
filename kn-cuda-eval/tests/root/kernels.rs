@@ -1,15 +1,18 @@
+use bytemuck::cast_slice_mut;
+use bytemuck::checked::cast_slice;
 use kn_cuda_eval::device_tensor::DeviceTensor;
 use kn_cuda_eval::quant::QuantizedStorage;
 use kn_cuda_eval::Device;
+use kn_graph::dtype::DType;
 
 #[test]
 fn quantize() {
     let device = Device::new(0);
 
     #[rustfmt::skip]
-        let input_data = vec![0.0, 1.0, -1.0, 1.1, -1.1, 0.9, 0.8, -500.1, 500.1, 0.999, -0.999, -0.2, 0.2, 0.16];
+    let input_data: Vec<f32> = vec![0.0, 1.0, -1.0, 1.1, -1.1, 0.9, 0.8, -500.1, 500.1, 0.999, -0.999, -0.2, 0.2, 0.16];
     #[rustfmt::skip]
-        let expected_output_data = vec![0.0, 1.0, -1.0, 1.0, -1.0, 0.8976378, 0.8031496, -1.0, 1.0, 1.0, -1.0, -0.19685039, 0.19685039, 0.15748031];
+    let expected_output_data: Vec<f32> = vec![0.0, 1.0, -1.0, 1.0, -1.0, 0.8976378, 0.8031496, -1.0, 1.0, 1.0, -1.0, -0.19685039, 0.19685039, 0.15748031];
 
     let length = input_data.len();
     assert_eq!(expected_output_data.len(), length);
@@ -17,18 +20,18 @@ fn quantize() {
     let mut quant_data: Vec<u8> = vec![0; length];
     let mut output_data: Vec<f32> = vec![0.0; length];
 
-    let input = DeviceTensor::alloc_simple(device, vec![1, length]);
+    let input = DeviceTensor::alloc_simple(device, vec![1, length], DType::F32);
     let quant = QuantizedStorage::alloc(device, length);
-    let output = DeviceTensor::alloc_simple(device, vec![1, length]);
+    let output = DeviceTensor::alloc_simple(device, vec![1, length], DType::F32);
 
     unsafe {
-        input.copy_simple_from_host(&input_data);
+        input.copy_simple_from_host(cast_slice(&input_data));
 
         quant.quantize_from(&input);
         quant.unquantize_to(&output);
 
         quant.ptr().copy_linear_to_host(&mut quant_data);
-        output.copy_simple_to_host(&mut output_data);
+        output.copy_simple_to_host(cast_slice_mut(&mut output_data));
     }
 
     println!("{:?}", input_data);

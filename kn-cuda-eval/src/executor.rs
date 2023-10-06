@@ -2,24 +2,26 @@ use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
 use bytemuck::cast_slice;
-use itertools::{enumerate, multizip, zip_eq, Itertools};
+use bytemuck::checked::cast_slice_mut;
+use itertools::{multizip, zip_eq};
 
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
-use kn_graph::cpu::Tensor;
+use kn_graph::{dispatch_dtensor, dispatch_dtype};
+use kn_graph::dtype::{DTensor, Tensor};
 use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
 use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{Handles, Step, StepInfo};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
     pub handles: Handles,
 
-    pub inputs: Vec<DeviceTensor>,
-    pub outputs: Vec<DeviceTensor>,
+    pub device_inputs: Vec<DeviceTensor>,
+    pub device_outputs: Vec<DeviceTensor>,
 
     pub batch_size: usize,
     pub mem_usage: MemoryUsage,
@@ -28,15 +30,10 @@ pub struct CudaExecutor {
     profile: bool,
     last_profile: Option<Profile>,
 
-    // TODO maybe these could just be one buffer each?
-    input_buffers: Vec<PinnedMem>,
-    output_buffers: Vec<PinnedMem>,
-}
-
-#[derive(Debug)]
-pub struct Handles {
-    pub cudnn: CudnnHandle,
-    pub cublas: CublasHandle,
+    // TODO switch to single in/out buffer each, so we do a single memcpy between host and device?
+    buffer_inputs: Vec<PinnedMem>,
+    buffer_outputs: Vec<PinnedMem>,
+    tensor_outputs: Vec<DTensor>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -70,26 +67,41 @@ impl CudaExecutor {
             mem_usage,
         } = Planner::plan(&handles, graph, batch_size);
 
-        let input_buffers = inputs
+        let buffer_inputs = inputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
+            .map(|x| {
+                let len_bytes = x.strided_shape().size() * x.dtype().size().bytes();
+                PinnedMem::alloc(len_bytes, false)
+            })
             .collect();
-        let output_buffers = outputs
+        let buffer_outputs = outputs
             .iter()
-            .map(|x| PinnedMem::alloc(x.strided_shape().size() * 4, false))
+            .map(|x| {
+                let len_bytes = x.strided_shape().size() * x.dtype().size().bytes();
+                PinnedMem::alloc(len_bytes, false)
+            })
+            .collect();
+        let tensor_outputs = outputs
+            .iter()
+            .map(|x| {
+                let shape = x.strided_shape().shape().to_vec();
+                let dtype = x.dtype();
+                dispatch_dtype!(dtype, |_T, _fs, ft| ft(Tensor::zeros(shape)))
+            })
             .collect();
 
         CudaExecutor {
             handles,
             batch_size,
             mem_usage,
-            inputs,
-            outputs,
+            device_inputs: inputs,
+            device_outputs: outputs,
             steps,
             profile: false,
             last_profile: None,
-            input_buffers,
-            output_buffers,
+            buffer_inputs,
+            buffer_outputs,
+            tensor_outputs,
         }
     }
 
@@ -97,39 +109,28 @@ impl CudaExecutor {
         self.handles.stream()
     }
 
-    pub fn evaluate_tensors(&mut self, inputs: &[Tensor]) -> Vec<Tensor> {
-        // map the inputs to slices
-        let inputs = enumerate(inputs)
-            .map(|(i, x)| {
-                assert_eq!(x.shape(), self.inputs[i].strided_shape().shape());
-                x.as_slice().expect("Only sliceable inputs supported")
-            })
-            .collect_vec();
-
-        // eval, the outputs are written to self.output_buffers
-        let _ = self.evaluate(&inputs);
-
-        // map the outputs to tensors
-        let outputs = (0..self.outputs.len())
-            .map(|i| {
-                let buffer = unsafe { cast_slice::<u8, f32>(self.output_buffers[i].as_slice()).to_owned() };
-                Tensor::from_shape_vec(self.outputs[i].strided_shape().shape(), buffer).unwrap()
-            })
-            .collect_vec();
-
-        outputs
-    }
-
-    pub fn evaluate(&mut self, inputs: &[&[f32]]) -> Vec<&[f32]> {
-        assert_eq!(inputs.len(), self.inputs.len());
+    // TODO accept views as inputs? introduce DView struct/alias?
+    pub fn evaluate(&mut self, inputs: &[DTensor]) -> &[DTensor] {
+        assert_eq!(inputs.len(), self.device_inputs.len(), "Wrong input count");
+        for (i, (input, tensor)) in zip_eq(inputs, &self.device_inputs).enumerate() {
+            assert_eq!(input.shape(), tensor.strided_shape().shape(), "Wrong shape for input {}", i);
+            assert_eq!(input.dtype(), tensor.dtype(), "Wrong dtype for input {}", i);
+        }
 
         unsafe {
-            // make sure there is no other leftover memcpy running
+            // make sure nothing else is using the buffers
             self.stream().synchronize();
 
-            // copy inputs to buffers and then to device
-            for (slice, buffer, tensor) in multizip((inputs, &self.input_buffers, &self.inputs)) {
-                buffer.as_slice().copy_from_slice(cast_slice::<f32, u8>(slice));
+            for (input, buffer, tensor) in multizip((inputs, &self.buffer_inputs, &self.device_inputs)) {
+                // copy inputs to buffer
+                // TODO is there a simple way to avoid the potential extra layout copy?
+                dispatch_dtensor!(input, |T, _f, input| {
+                    let input = input.as_standard_layout();
+                    let input_slice = input.as_slice().unwrap();
+                    buffer.as_slice().copy_from_slice(cast_slice::<T, u8>(input_slice));
+                });
+
+                // copy buffer to device
                 assert!(tensor.strided_shape().has_simple_strides());
                 tensor.ptr().copy_linear_from_host_async(buffer, self.stream());
             }
@@ -138,19 +139,24 @@ impl CudaExecutor {
             self.run_async();
 
             // copy outputs to buffers
-            for (buffer, tensor) in zip_eq(&mut self.output_buffers, &self.outputs) {
+            for (buffer, tensor) in zip_eq(&mut self.buffer_outputs, &self.device_outputs) {
                 tensor.ptr().copy_linear_to_host_async(buffer, self.handles.stream());
             }
 
             // wait for everything to complete
             self.stream().synchronize();
 
-            // interpret buffers
-            self.output_buffers
-                .iter()
-                .map(|x| cast_slice::<u8, f32>(x.as_slice()))
-                .collect_vec()
+            // copy buffers to tensors
+            // TODO interleave this with copying to host?
+            for (buffer, tensor) in zip_eq(&self.buffer_outputs, &mut self.tensor_outputs) {
+                dispatch_dtensor!(tensor, |T, _f, tensor| {
+                    let tensor_slice = tensor.as_slice_mut().unwrap();
+                    cast_slice_mut::<T, u8>(tensor_slice).copy_from_slice(buffer.as_slice())
+                });
+            }
         }
+
+        &self.tensor_outputs
     }
 
     /// Run the steps in this executor. Does no explicit before/after synchronization,
@@ -225,57 +231,6 @@ impl CudaExecutor {
     }
 }
 
-impl Step<DevicePtr> {
-    unsafe fn run(&self, handles: &Handles) {
-        match self {
-            Step::Conv(args) => {
-                args.run(&handles.cudnn);
-            }
-            Step::MatMul(args) => {
-                // schedule blas wait for cudnn
-                let cuda_event = handles.cudnn.stream().record_event();
-                handles.cublas.stream().wait_for_event(&cuda_event);
-
-                // schedule operation on blas
-                args.run(&handles.cublas);
-
-                // schedule cudnn wait for blas
-                let blas_event = handles.cublas.stream().record_event();
-                handles.cudnn.stream().wait_for_event(&blas_event);
-            }
-            Step::ScalarOp(ScalarOpArgs { kernel, operands }) => {
-                kernel.run(handles.cudnn.stream(), operands);
-            }
-            Step::ReduceOp(ReduceOpArgs { kernel, input, output }) => kernel.run(handles.cudnn.stream(), input, output),
-            Step::SoftmaxOp(SoftmaxOpArgs { kernel, input, output }) => {
-                kernel.run(handles.cudnn.stream(), input, output)
-            }
-            Step::LayernormOp(LayernormOpArgs {
-                kernel,
-                input0,
-                input1,
-                output,
-            }) => kernel.run(handles.cudnn.stream(), input0, input1.as_ref(), output),
-            Step::GatherOp(GatherOpArgs {
-                kernel,
-                input,
-                indices,
-                output,
-            }) => kernel.run(handles.cudnn.stream(), input, indices, output),
-        }
-    }
-}
-
-impl Handles {
-    pub fn device(&self) -> Device {
-        self.stream().device()
-    }
-
-    pub fn stream(&self) -> &CudaStream {
-        self.cudnn.stream()
-    }
-}
-
 impl Debug for CudaExecutor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CudaExecutor {{")?;
@@ -284,8 +239,8 @@ impl Debug for CudaExecutor {
         writeln!(f, "    mem_usage: {:?},", self.mem_usage)?;
         writeln!(f, "    profile: {},", self.profile)?;
 
-        writeln!(f, "    inputs: {:?},", debug_vec_multiline("    ", &self.inputs))?;
-        writeln!(f, "    outputs: {:?},", debug_vec_multiline("    ", &self.outputs))?;
+        writeln!(f, "    inputs: {:?},", debug_vec_multiline("    ", &self.device_inputs))?;
+        writeln!(f, "    outputs: {:?},", debug_vec_multiline("    ", &self.device_outputs))?;
         writeln!(f, "    steps: {:?},", debug_vec_multiline("    ", &self.steps))?;
 
         writeln!(f, "}}")?;

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;
+use crate::onnx::typed_value::AsShapeError;
 
 pub type OnnxResult<T> = Result<T, OnnxError>;
 
@@ -45,6 +46,16 @@ pub enum OnnxError {
     UnsupportedShape(Node, String),
 
     UnsupportedElementWiseCombination(Node, String, String),
+
+    //TODO node/operand info
+    ExpectedNonBatchValue(String),
+    ExpectedSizeError(AsShapeError),
+}
+
+impl From<AsShapeError> for OnnxError {
+    fn from(e: AsShapeError) -> Self {
+        OnnxError::ExpectedSizeError(e)
+    }
 }
 
 pub trait ToOnnxLoadResult {

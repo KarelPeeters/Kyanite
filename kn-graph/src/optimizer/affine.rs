@@ -1,12 +1,13 @@
 use std::fmt::{Debug, Formatter};
 
-use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
+use ndarray::{ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4, s};
 
 use crate::cpu::convolution;
+use crate::dtype::DTensor;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
-use crate::optimizer::core::VisitResult;
 use crate::optimizer::{Optimizer, OptimizerSettings};
+use crate::optimizer::core::VisitResult;
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -46,7 +47,7 @@ impl Optimizer<'_> {
     fn grow_affine_group(&self, builder: &mut AffineGroupBuilder, operation: &Operation) -> VisitResult<Option<Value>> {
         match *operation {
             Operation::Conv { input, filter, details } => {
-                if let Some(filter) = self.old_graph.as_const(filter) {
+                if let Some(DTensor::F32(filter)) = self.old_graph.as_const(filter) {
                     let filter: ArcArray4<f32> = filter.into_dimensionality().unwrap();
 
                     if builder.conv.is_none() && details.keeps_spatial_shape() && !details.has_stride() {
@@ -71,7 +72,7 @@ impl Optimizer<'_> {
                         let channels = builder.current_channels();
                         // TODO it could also just be a broadcasted scalar, maybe fuse this as well
                         if actual_channels == Size::fixed(channels) {
-                            if let Some(data) = self.old_graph.as_const(right_inner) {
+                            if let Some(DTensor::F32(data)) = self.old_graph.as_const(right_inner) {
                                 let data: ArcArray4<f32> = data.into_dimensionality().unwrap();
                                 assert_eq!(data.shape(), &[1, channels, 1, 1]);
                                 let data: ArcArray1<f32> = data.reshape(channels);
@@ -226,8 +227,9 @@ fn apply_fused_conv(
             }
 
             // put everything into the graph
-            let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
-            let value_bias = graph.constant(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
+            let value_filter = graph.constant::<f32>(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
+            let value_bias =
+                graph.constant::<f32>(Shape::fixed(total_bias_after.shape()), total_bias_after.into_raw_vec());
 
             let mut curr = input;
             curr = graph.conv(curr, value_filter, 1, 1, details.padding_y, details.padding_x);
@@ -240,8 +242,8 @@ fn apply_fused_conv(
                 scale: before.scale,
                 bias: bias_before,
             };
-            let value_filter = graph.constant(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
-            let value_bias_after = graph.constant(
+            let value_filter = graph.constant::<f32>(Shape::fixed(total_filter.shape()), total_filter.into_raw_vec());
+            let value_bias_after = graph.constant::<f32>(
                 Shape::fixed(bias_after_shaped.shape()),
                 bias_after_shaped.into_raw_vec(),
             );
@@ -300,8 +302,8 @@ struct ScaleBias {
 impl ScaleBias {
     fn apply(self, graph: &mut Graph, input: Value) -> Value {
         let const_shape = shape![1, self.scale.len(), 1, 1];
-        let scale = graph.constant(const_shape.clone(), self.scale.to_vec());
-        let bias = graph.constant(const_shape, self.bias.to_vec());
+        let scale = graph.constant::<f32>(const_shape.clone(), self.scale.to_vec());
+        let bias = graph.constant::<f32>(const_shape, self.bias.to_vec());
 
         let mut curr = input;
         curr = graph.binary(BinaryOp::Mul, curr, scale);
@@ -311,11 +313,11 @@ impl ScaleBias {
     }
 }
 
-fn is_entirely<S: Data<Elem = f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
+fn is_entirely<S: Data<Elem=f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
     array.iter().all(|&x| x == value)
 }
 
-fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'a AffineOperation>) -> ScaleBias {
+fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item=&'a AffineOperation>) -> ScaleBias {
     let mut total_scale = Array1::ones(channels);
     let mut total_bias = Array1::zeros(channels);
 

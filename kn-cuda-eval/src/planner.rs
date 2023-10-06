@@ -6,13 +6,14 @@ use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
-use crate::autokernel::common::DisplayCFloat;
-use kn_cuda_sys::bindings::cudnnActivationMode_t;
+use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t};
 use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
 use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use kn_graph::dispatch_dtensor;
+use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -23,10 +24,9 @@ use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
 use crate::autokernel::scalar::ScalarKernel;
 use crate::autokernel::softmax::SoftmaxKernel;
 use crate::device_tensor::DeviceTensor;
-use crate::executor::Handles;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherOpArgs, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{GatherOpArgs, Handles, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
 /// Planner converts a Graph into a concrete cuda execution plan.
 ///
@@ -47,7 +47,7 @@ pub(crate) struct Planner<'a> {
     batch_size: usize,
 
     shared_buffers: Vec<SharedBufferInfo>,
-    max_zero_size: usize,
+    max_zero_bytes: usize,
 
     map: HashMap<Value, PlanTensor>,
     steps: Vec<PlanStepInfo>,
@@ -226,11 +226,12 @@ impl<'a> Planner<'a> {
             })
             .collect_vec();
 
-        // allocate (single) zero tensor
-        let zero_bytes = 4 * planner.max_zero_size;
+        // allocate a single shared zero tensor
+        // it's shared between all types, this happens to work even for floats
+        let zero_bytes = planner.max_zero_bytes;
         let zero_allocation = device.alloc(zero_bytes);
         unsafe {
-            zero_allocation.copy_linear_from_host(cast_slice(&vec![0f32; planner.max_zero_size]));
+            zero_allocation.copy_linear_from_host(&vec![0; zero_bytes]);
         }
 
         let mem_usage = MemoryUsage {
@@ -277,7 +278,7 @@ impl<'a> Planner<'a> {
             shared_buffers: vec![],
             map: Default::default(),
             steps: vec![],
-            max_zero_size: 0,
+            max_zero_bytes: 0,
             dedicated_bytes: 0,
         }
     }
@@ -304,6 +305,12 @@ impl<'a> Planner<'a> {
         }
 
         let result = self.visit_single_new(value)?;
+
+        // check that the result matches the expected shape and type
+        let info = &self.graph[value];
+        assert_eq!(result.strided_shape().shape(), info.shape.eval(self.batch_size).dims);
+        assert_eq!(result.dtype(), info.dtype);
+
         self.insert_mapping(value, result.clone());
 
         Ok(result)
@@ -316,14 +323,22 @@ impl<'a> Planner<'a> {
 
         let result_info = &self.graph[value];
         let result_shape = result_info.shape.eval(self.batch_size);
+        let result_dtype = result_info.dtype;
 
         let result: PlanTensor = match &result_info.operation {
-            &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, Some(value)),
-            Operation::Constant { data } => {
-                let result = self.alloc_tensor_dedicated(result_shape);
-                unsafe {
-                    result.copy_simple_from_host(cast_slice(&**data));
-                }
+            &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, result_dtype, Some(value)),
+            Operation::Constant { tensor } => {
+                let result = self.alloc_tensor_dedicated(result_shape, tensor.dtype());
+
+                // copy values
+                dispatch_dtensor!(tensor, |T, _f, inner| {
+                    let inner = inner.as_standard_layout();
+                    let bytes = cast_slice::<T, u8>(inner.as_slice().unwrap());
+                    unsafe {
+                        result.copy_simple_from_host(bytes);
+                    }
+                });
+
                 result.map_ptr(|device_ptr| PlanPtr::from_device_ptr(Some(value), device_ptr))
             }
             &Operation::View { input } => {
@@ -334,7 +349,7 @@ impl<'a> Planner<'a> {
                 //    in the scalar kernel
                 input_tensor.view(result_shape.dims.clone()).unwrap_or_else(|_| {
                     let input_shape = ConcreteShape::new(input_tensor.strided_shape().shape().to_vec());
-                    let result = self.alloc_tensor_shared(input_shape, Some(value));
+                    let result = self.alloc_tensor_shared(input_shape, input_tensor.dtype(), Some(value));
                     self.plan_copy_tensor(&input_tensor, &result, value);
                     result.view(result_shape.dims.clone()).unwrap()
                 })
@@ -349,13 +364,19 @@ impl<'a> Planner<'a> {
             &Operation::Gather { input, axis, indices } => {
                 let input = self.visit(input)?;
                 let indices = self.visit(indices)?;
-                let output = self.alloc_tensor_shared(result_shape, Some(value));
+                let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
+                assert_eq!(input.dtype(), output.dtype());
+
+                // TODO make sure all autokernels support 64-bit memory offsets
+                //   and use the proper signedness for all operands and internal variables
                 let kernel = GatherKernel::new(
                     self.device(),
                     input.strided_shape(),
                     indices.strided_shape(),
                     output.strided_shape(),
+                    input.dtype(),
+                    indices.dtype(),
                     axis,
                 );
 
@@ -370,7 +391,7 @@ impl<'a> Planner<'a> {
                 output
             }
             &Operation::Concat { ref inputs, axis } => {
-                let result = self.alloc_tensor_shared(result_shape, Some(value));
+                let result = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
                 let inputs: Vec<PlanTensor> = inputs.iter().map(|&x| self.visit(x)).try_collect()?;
 
                 // copy each input into the corresponding slice of the output
@@ -394,8 +415,12 @@ impl<'a> Planner<'a> {
             &Operation::MatMul { left, right } => self.visit_matmul(value, left, right, true)?,
             &Operation::Unary { .. } | &Operation::Binary { .. } => self.visit_fused_scalar(value)?,
             &Operation::Softmax { input, axis } => {
+                assert_eq!(result_dtype, DType::F32);
+
                 let (input_scale, input) = self.visit_scalable_value(input)?;
-                let output = self.alloc_tensor_shared(result_shape, Some(value));
+                let input_scale = input_scale.unwrap_f32().unwrap();
+
+                let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
                 let kernel = SoftmaxKernel::new(
                     self.device(),
@@ -415,13 +440,17 @@ impl<'a> Planner<'a> {
                 output
             }
             &Operation::Layernorm { input, axis, eps } => {
+                assert_eq!(result_dtype, DType::F32);
+
                 let (alpha_0, input_0, alpha_1, input_1) = self.visit_scalable_added_pair(input)?;
+                let alpha_0 = alpha_0.unwrap_f32().unwrap();
+                let alpha_1 = alpha_1.unwrap_f32().unwrap();
 
                 if let Some(input_1) = &input_1 {
                     assert_eq!(input_0.strided_shape(), input_1.strided_shape());
                 }
 
-                let output = self.alloc_tensor_shared(result_shape, Some(value));
+                let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
                 let kernel = LayernormKernel::new(
                     self.device(),
@@ -446,23 +475,27 @@ impl<'a> Planner<'a> {
             }
             &Operation::Reduce { input, ref axes, op } => {
                 let result_size = result_shape.size();
+                let dtype = result_dtype;
 
                 let input = self.visit(input)?;
-                let output = self.alloc_tensor_shared(result_shape, Some(value));
+                let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
                 let identity = op.identity();
                 let (operation, is_mean) = op.operation();
-                let scale = if is_mean {
-                    result_size as f32 / input.strided_shape().size() as f32
+
+                let post_process = if is_mean {
+                    assert_eq!(dtype, DType::F32);
+                    let scale = (result_size as f64 / input.strided_shape().size() as f64) as f32;
+                    format!("curr * {}", DisplayCFloat(scale as f64))
                 } else {
-                    1.0
+                    "curr".to_owned()
                 };
 
                 let code = ReduceCode {
-                    ty: "float".to_owned(),
+                    ty: dtype.as_c_str().to_owned(),
                     identity: format!("{}", DisplayCFloat(identity)),
                     operation: binary_op_str(operation, "curr", "x"),
-                    post_process: format!("curr * {}", DisplayCFloat(scale)),
+                    post_process,
                 };
 
                 let kernel =
@@ -482,7 +515,14 @@ impl<'a> Planner<'a> {
         Ok(result)
     }
 
-    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(f32, PlanTensor, f32, Option<PlanTensor>)> {
+    /// Returns values of the form `alpha_0 * input_0 + alpha_1 * input_1`
+    ///
+    /// `None` for an input means that input is not present and should be treated as zero.
+    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(DScalar, PlanTensor, DScalar, Option<PlanTensor>)> {
+        let dtype = self.graph[input].dtype;
+        let zero = dtype.specials().zero;
+        let one = dtype.specials().one;
+
         let result = if let &Operation::Binary {
             op: BinaryOp::Add,
             left,
@@ -495,13 +535,13 @@ impl<'a> Planner<'a> {
             if input_0.strided_shape() != input_1.strided_shape() {
                 // fallback to scalar operation
                 let total = self.visit(input)?;
-                (1.0, total, 0.0, None)
+                (one, total, zero, None)
             } else {
                 (alpha_0, input_0, alpha_1, Some(input_1))
             }
         } else {
             let (alpha_0, input_0) = self.visit_scalable_value(input)?;
-            (alpha_0, input_0, 0.0, None)
+            (alpha_0, input_0, zero, None)
         };
 
         Ok(result)
@@ -529,7 +569,7 @@ impl<'a> Planner<'a> {
             inner
         } else {
             let shape = ConcreteShape::new(inner.strided_shape().shape().to_vec());
-            let new = self.alloc_tensor_shared(shape, Some(value));
+            let new = self.alloc_tensor_shared(shape, inner.dtype(), Some(value));
             self.plan_copy_tensor(&inner, &new, value);
             new
         };
@@ -537,13 +577,17 @@ impl<'a> Planner<'a> {
         Ok(result)
     }
 
-    fn visit_scalable_value(&mut self, value: Value) -> VisitResult<(f32, PlanTensor)> {
+    fn visit_scalable_value(&mut self, value: Value) -> VisitResult<(DScalar, PlanTensor)> {
+        let dtype = self.graph[value].dtype;
+        let one = dtype.specials().one;
+
         if let &Operation::Binary {
             op: BinaryOp::Mul,
             left,
             right,
         } = &self.graph[value].operation
         {
+            // TODO remove this duplication once we have constant canonicalization in graph
             if let Some(alpha) = self.graph.as_single_const(left) {
                 return Ok((alpha, self.visit(right)?));
             }
@@ -552,10 +596,15 @@ impl<'a> Planner<'a> {
             }
         }
 
-        Ok((1.0, self.visit(value)?))
+        Ok((one, self.visit(value)?))
     }
 
     fn visit_matmul(&mut self, value: Value, left: Value, right: Value, batch_first: bool) -> VisitResult<PlanTensor> {
+        // TODO support other dtypes?
+        assert_eq!(self.graph[value].dtype, DType::F32);
+        assert_eq!(self.graph[left].dtype, self.graph[right].dtype);
+        let dtype = self.graph[left].dtype;
+
         let left = self.visit(left)?;
         let right = self.visit(right)?;
 
@@ -568,12 +617,13 @@ impl<'a> Planner<'a> {
         // TODO this could be generalized to consider any possible output permutation
         //   and picking the transpose and storage formats that fit best
         let result = if batch_first {
-            self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]), Some(value))
+            self.alloc_tensor_shared(ConcreteShape::new(vec![batch_size, m, n]), dtype, Some(value))
         } else {
-            self.alloc_tensor_shared(ConcreteShape::new(vec![m, batch_size, n]), Some(value))
+            self.alloc_tensor_shared(ConcreteShape::new(vec![m, batch_size, n]), dtype, Some(value))
                 .permute(&[1, 0, 2])
         };
 
+        // TODO use alpha for operand scaling?
         // to ensure we (usually) get a simple strided output, we actually compute
         //   result^T = right^T * left^T
         let args = BatchedMatMulArgs {
@@ -613,7 +663,7 @@ impl<'a> Planner<'a> {
     }
 
     fn try_visit_fused_conv(&mut self, value: Value) -> VisitResult<Option<PlanTensor>> {
-        if self.graph[value].shape.rank() != 4 {
+        if self.graph[value].dtype != DType::F32 || self.graph[value].shape.rank() != 4 {
             return Ok(None);
         }
 
@@ -628,9 +678,9 @@ impl<'a> Planner<'a> {
         } = &graph[curr].operation
         {
             let relu_other = if self.can_fuse(left) && self.can_fuse(right) {
-                if graph.is_const_filled_with(left, 0.0) {
+                if graph.is_const_zero(left) {
                     right
-                } else if graph.is_const_filled_with(right, 0.0) {
+                } else if graph.is_const_zero(right) {
                     left
                 } else {
                     return Ok(None);
@@ -693,6 +743,9 @@ impl<'a> Planner<'a> {
         }
 
         if let &Operation::Conv { input, filter, details } = &graph[curr].operation {
+            assert_eq!(details.dtype, DType::F32);
+            let dtype = cudnnDataType_t::CUDNN_DATA_FLOAT;
+
             // collect input tensors
             if let Some(res) = res {
                 if graph[input].shape != graph[res].shape {
@@ -710,17 +763,21 @@ impl<'a> Planner<'a> {
 
             let bias = bias.unwrap_or_else(|| {
                 let bias_shape = ConcreteShape::new(vec![1, details.output_channels, 1, 1]);
-                self.alloc_tensor_zero(bias_shape, None)
+                self.alloc_tensor_zero(bias_shape, details.dtype, None)
             });
 
             let output_shape = graph[curr].shape.eval(self.batch_size);
-            let output = self.alloc_tensor_shared(output_shape, Some(value));
+            let output = self.alloc_tensor_shared(output_shape, details.dtype, Some(value));
 
             // build descriptors
-            let input_desc = input.strided_shape().descriptor();
-            let bias_desc = bias.strided_shape().descriptor();
-            let filter_desc = filter.strided_shape().filter_descriptor();
-            let output_desc = output.strided_shape().descriptor();
+            assert_eq!(input.dtype(), DType::F32);
+            assert_eq!(bias.dtype(), DType::F32);
+            assert_eq!(filter.dtype(), DType::F32);
+            assert_eq!(output.dtype(), DType::F32);
+            let input_desc = input.strided_shape().descriptor(dtype);
+            let bias_desc = bias.strided_shape().descriptor(dtype);
+            let filter_desc = filter.strided_shape().filter_descriptor(dtype);
+            let output_desc = output.strided_shape().descriptor(dtype);
 
             let conv_desc = ConvolutionDescriptor::new(
                 details.padding_y as i32,
@@ -729,6 +786,7 @@ impl<'a> Planner<'a> {
                 details.stride_x as i32,
                 1,
                 1,
+                dtype,
             );
             let act_desc = ActivationDescriptor::new(act_mode, 0.0);
             let algo = STANDARD_CONV_ALGO;
@@ -771,13 +829,17 @@ impl<'a> Planner<'a> {
     }
 
     fn visit_fused_scalar(&mut self, value: Value) -> VisitResult<PlanTensor> {
+        // TODO proper scalar fusion:
+        //     keep fusing while bandwidth does not increase
+        //     is greedy fusion enough or do we need some proper clique finding?
         assert!(matches!(
             self.graph[value].operation,
             Operation::Unary { .. } | Operation::Binary { .. }
         ));
 
-        let result_shape = self.graph[value].shape.eval(self.batch_size);
-        let result = self.alloc_tensor_shared(result_shape, Some(value));
+        let result_info = &self.graph[value];
+        let result_shape = result_info.shape.eval(self.batch_size);
+        let result = self.alloc_tensor_shared(result_shape, result_info.dtype, Some(value));
 
         let mut block = ScalarBlock::default();
         let result_y = self.visit_fused_scalar_recurse(value, &mut block, true)?;
@@ -810,7 +872,8 @@ impl<'a> Planner<'a> {
             }
         }
 
-        let op_str = match &self.graph[value].operation {
+        let value_info = &self.graph[value];
+        let op_str = match &value_info.operation {
             &Operation::Unary { op, input } => {
                 let y_input = self.visit_fused_scalar_recurse(input, block, false)?;
                 unary_op_str(op, &format!("y{}", y_input))
@@ -823,8 +886,10 @@ impl<'a> Planner<'a> {
             _ => {
                 assert!(!is_root);
 
-                let y = if let Some(f) = self.graph.as_single_const(value) {
-                    block.define_y(&format!("{}", DisplayCFloat(f)))
+                // TODO implement some support for tiny multi-consts?
+                //   that could be implement with `? :` or small lookup tables
+                let y = if let Some(c) = self.graph.as_single_const(value) {
+                    block.define_y(c.dtype(), &c.to_c_str())
                 } else {
                     block.load_operand_y(&self.visit(value)?)
                 };
@@ -834,7 +899,7 @@ impl<'a> Planner<'a> {
         };
 
         let y_output = block.alloc_y();
-        writeln!(&mut block.operation, "float y{} = {};", y_output, op_str).unwrap();
+        writeln!(&mut block.operation, "{} y{} = {};", value_info.dtype.as_c_str(), y_output, op_str).unwrap();
         Ok(y_output)
     }
 
@@ -857,15 +922,16 @@ impl<'a> Planner<'a> {
             .iter()
             .map(|operand| operand.strided_shape().clone())
             .collect_vec();
-        let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes);
+        let types = operands.iter().map(|operand| operand.dtype().as_c_str().to_string()).collect_vec();
+        let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes, types);
 
         let args = ScalarOpArgs { kernel, operands };
         self.push(PlanStep::ScalarOp(args), debug_value);
     }
 
-    fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape) -> DeviceTensor {
-        self.dedicated_bytes += 4 * shape.size();
-        DeviceTensor::alloc_simple(self.device(), shape.dims)
+    fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape, dtype: DType) -> DeviceTensor {
+        self.dedicated_bytes += shape.size() * dtype.size().bytes();
+        DeviceTensor::alloc_simple(self.device(), shape.dims, dtype)
     }
 
     // TODO add skip for zero-sized buffers?
@@ -879,17 +945,17 @@ impl<'a> Planner<'a> {
         PlanPtr::from_parts(debug_value, PlanBuffer::Shared { index }, 0)
     }
 
-    fn alloc_tensor_shared(&mut self, shape: ConcreteShape, debug_value: Option<Value>) -> PlanTensor {
-        let buffer = self.alloc_buffer_shared(4 * shape.size(), debug_value);
+    fn alloc_tensor_shared(&mut self, shape: ConcreteShape, dtype: DType, debug_value: Option<Value>) -> PlanTensor {
+        let buffer = self.alloc_buffer_shared(dtype.size().bytes() * shape.size(), debug_value);
         let shape = StridedShape::new_simple(shape.dims);
-        PlanTensor::from_parts(buffer, shape)
+        PlanTensor::from_parts(buffer, shape, dtype)
     }
 
-    fn alloc_tensor_zero(&mut self, shape: ConcreteShape, debug_value: Option<Value>) -> PlanTensor {
+    fn alloc_tensor_zero(&mut self, shape: ConcreteShape, dtype: DType, debug_value: Option<Value>) -> PlanTensor {
         let shape = StridedShape::new_simple(shape.dims);
-        let size = shape.size();
-        self.max_zero_size = max(self.max_zero_size, size);
-        PlanTensor::from_parts(PlanPtr::from_parts(debug_value, PlanBuffer::Zero, 0), shape)
+        let bytes = dtype.size().bytes() * shape.size();
+        self.max_zero_bytes = max(self.max_zero_bytes, bytes);
+        PlanTensor::from_parts(PlanPtr::from_parts(debug_value, PlanBuffer::Zero, 0), shape, dtype)
     }
 
     fn device(&self) -> Device {
@@ -942,14 +1008,14 @@ impl ScalarBlock {
         } else {
             let y = self.alloc_y();
             self.loaded_operands[x] = Some(y);
-            writeln!(&mut self.operation, "float y{} = *x{};", y, x).unwrap();
+            writeln!(&mut self.operation, "{} y{} = *x{};", operand.dtype().as_c_str(), y, x).unwrap();
             y
         }
     }
 
-    fn define_y(&mut self, value: &str) -> usize {
+    fn define_y(&mut self, dtype: DType, value: &str) -> usize {
         let y = self.alloc_y();
-        writeln!(&mut self.operation, "float y{} = {};", y, value).unwrap();
+        writeln!(&mut self.operation, "{} y{} = {};", dtype.as_c_str(), y, value).unwrap();
         y
     }
 
@@ -1040,5 +1106,7 @@ fn unary_op_str(op: UnaryOp, x: &str) -> String {
         UnaryOp::Tanh => format!("tanh({})", x),
         UnaryOp::Erf => format!("erff({})", x),
         UnaryOp::Mish => format!("({}) * tanh(log(1.0 + exp({})))", x, x),
+        UnaryOp::ValueCast(to) => format!("(({}) {})", to.as_c_str(), x),
+        UnaryOp::BitCast(to) => format!("bit_cast<{}>({})", to.as_c_str(), x),
     }
 }

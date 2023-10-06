@@ -2,7 +2,7 @@ mod runner;
 mod tensor_utils;
 
 mod elementwise;
-mod scalar_fusion;
+mod opt;
 
 mod graphs;
 mod kernels;

@@ -1,6 +1,9 @@
 #include "util.cu"
 
 // de-dollar-ify template parameters
+typedef $DTYPE$ DType;
+typedef $ITYPE$ IType;
+
 const int RANK = $RANK$;
 
 // *CAREFUL* these arrays are actually of length RANK-1, but zero-sized arrays are not allowed in C++ so we pad them
@@ -14,10 +17,12 @@ const int INDICES_SIZE_DIV = $INDICES_SIZE_DIV$;
 const int INDICES_STRIDE = $INDICES_STRIDE$;
 const int OUTPUT_SIZE = $OUTPUT_SIZE$;
 
+// TODO allow scalar fusion on indices and data?
+//   think of a proper, general way to handle scalar fusion in all kernels (even with multiple operands?)
 __global__ void gather_kernel(
-        float *input,
-        float *indices,
-        float *output
+        DType *input,
+        IType *indices,
+        DType *output
 ) {
     KernelInfo info = kernel_info();
 
@@ -38,7 +43,7 @@ __global__ void gather_kernel(
 
         int input_offset = input_kept_offset + index * INPUT_AXIS_STRIDE;
 
-        float value = 1.0 / 0.0;
+        DType value = 0;
         if (0 <= index && index < INPUT_AXIS_SIZE) {
             value = input[input_offset];
         }

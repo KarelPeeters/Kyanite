@@ -7,7 +7,8 @@ use itertools::Itertools;
 use ndarray::{ArcArray, Axis, Ix4};
 use palette::{LinSrgb, Srgb};
 
-use crate::cpu::{ExecutionInfo, Tensor};
+use crate::cpu::ExecutionInfo;
+use crate::dtype::{DTensor, Tensor};
 use crate::graph::{Graph, Operation, Value};
 use crate::shape::Size;
 
@@ -20,7 +21,7 @@ const HORIZONTAL_PADDING: usize = 5;
 #[derive(Debug)]
 pub struct VisTensor {
     pub normalize: bool,
-    pub tensor: Tensor,
+    pub tensor: Tensor<f32>,
 }
 
 #[derive(Debug)]
@@ -33,7 +34,7 @@ pub struct RenderTensor {
 pub fn visualize_graph_activations(
     graph: &Graph,
     execution: &ExecutionInfo,
-    post_process_value: impl Fn(Value, Tensor) -> Vec<VisTensor>,
+    post_process_value: impl Fn(Value, &DTensor) -> Vec<VisTensor>,
     max_images: Option<usize>,
     show_variance: bool,
     print_details: bool,
@@ -71,18 +72,19 @@ pub fn visualize_graph_activations(
         let data = value
             .tensor
             .as_ref()
-            .expect("Intermediate values should have been kept for visualization")
-            .to_shared();
+            .expect("Intermediate values should have been kept for visualization");
 
-        let vis_tensor = VisTensor {
-            normalize: !is_input,
-            tensor: data.to_shared(),
-        };
-        to_render.push(RenderTensor {
-            value: value.value,
-            original: true,
-            vis_tensor,
-        });
+        if let DTensor::F32(data) = data {
+            let vis_tensor = VisTensor {
+                normalize: !is_input,
+                tensor: data.to_shared(),
+            };
+            to_render.push(RenderTensor {
+                value: value.value,
+                original: true,
+                vis_tensor,
+            });
+        }
 
         for extra_vis_tensor in post_process_value(value.value, data) {
             to_render.push(RenderTensor {
@@ -273,14 +275,14 @@ fn is_effectively_constant(graph: &Graph, value: Value) -> bool {
 }
 
 impl VisTensor {
-    pub fn abs(tensor: Tensor) -> VisTensor {
+    pub fn abs(tensor: Tensor<f32>) -> VisTensor {
         VisTensor {
             normalize: false,
             tensor,
         }
     }
 
-    pub fn norm(tensor: Tensor) -> VisTensor {
+    pub fn norm(tensor: Tensor<f32>) -> VisTensor {
         VisTensor {
             normalize: true,
             tensor,

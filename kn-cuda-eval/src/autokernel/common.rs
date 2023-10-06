@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::num::FpCategory;
 use std::sync::Mutex;
 
 use itertools::Itertools;
@@ -74,20 +72,4 @@ pub fn c_array_string(values: &[isize]) -> String {
 
 pub fn ceil_div(x: u32, y: u32) -> u32 {
     (x + y - 1) / y
-}
-
-#[derive(Debug)]
-pub struct DisplayCFloat(pub f32);
-
-impl Display for DisplayCFloat {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = if self.0.is_sign_negative() { "-" } else { "" };
-
-        match self.0.classify() {
-            FpCategory::Nan => write!(f, "({s}(0.0/0.0))"),
-            FpCategory::Infinite => write!(f, "({s}(1.0/0.0))"),
-            FpCategory::Zero => write!(f, "({s}0.0)"),
-            FpCategory::Subnormal | FpCategory::Normal => write!(f, "{}", self.0),
-        }
-    }
 }

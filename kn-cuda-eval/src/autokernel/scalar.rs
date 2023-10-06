@@ -90,7 +90,7 @@ impl ScalarKernel {
     }
 
     /// Wrapper around [Self::new] that's a bit easier to use if you know the full shape of the operands up front.
-    pub fn new_for_shapes(device: Device, operation: &str, shapes: &[StridedShape]) -> Self {
+    pub fn new_for_shapes(device: Device, operation: &str, shapes: &[StridedShape], operand_types: Vec<String>) -> Self {
         assert!(shapes.len() > 0);
         let expected_shape = shapes[0].shape();
         assert!(expected_shape.len() > 0);
@@ -100,7 +100,6 @@ impl ScalarKernel {
         }
 
         let inner_shape = shapes[0].shape()[1..].to_vec();
-        let operand_types = vec![String::from("float"); shapes.len()];
         let operand_strides = shapes.iter().map(|s| s.strides().to_vec()).collect();
 
         Self::new(device, operation, inner_shape, operand_types, operand_strides)

@@ -11,18 +11,22 @@
 //! # use kn_graph::dot::graph_to_svg;
 //! # use kn_graph::onnx::load_graph_from_onnx_path;
 //! # use kn_graph::optimizer::optimize_graph;
-//! # use kn_graph::cpu::{cpu_eval_graph, Tensor};
+//! # use kn_graph::cpu::cpu_eval_graph;
 //! # use ndarray::{IxDyn, Array};
+//! # use kn_graph::dtype::{DTensor, Tensor};
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // load an onnx file
 //! let graph = load_graph_from_onnx_path("test.onnx", false)?;
+//!
 //! // optimize the graph
 //! let graph = optimize_graph(&graph, Default::default());
+//!
 //! // render the graph as an svg file
 //! graph_to_svg("test.svg", &graph, false, false)?;
+//!
 //! // execute the graph on the CPU
 //! let batch_size = 8;
-//! let inputs = [Tensor::zeros(IxDyn(&[batch_size, 16]))];
+//! let inputs = [DTensor::F32(Tensor::zeros(IxDyn(&[batch_size, 16])))];
 //! let outputs = cpu_eval_graph(&graph, batch_size, &inputs);
 //! # Ok(())
 //! # }
@@ -41,6 +45,8 @@ pub mod graph;
 pub mod optimizer;
 /// The [Shape](shape::Shape) type and utilities.
 pub mod shape;
+/// The [DType](dtype::DType) enum.
+pub mod dtype;
 
 /// CPU graph execution.
 pub mod cpu;

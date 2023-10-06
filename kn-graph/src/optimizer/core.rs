@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
+use crate::dtype::{DScalar, DTensor, DType};
 use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
-use crate::optimizer::recurse::heap_recurse;
 use crate::optimizer::OptimizerSettings;
+use crate::optimizer::recurse::heap_recurse;
 
 #[derive(Debug)]
 pub struct Optimizer<'a> {
@@ -79,12 +80,19 @@ impl<'a> Optimizer<'a> {
         }
         let new_operation = old_operation.clone_map_inputs(|old_input| self.visit(old_input).unwrap());
 
-        let new_value = self.new_graph.push(shape, new_operation);
+        let new_value = self.new_graph.push(shape, old_info.dtype, new_operation);
         self.new_graph.set_debug_id(new_value, old_info.debug_id.clone());
         Ok(new_value)
     }
 
     fn try_fuse(&mut self, old_start: Value) -> VisitResult<Option<Value>> {
+        // TODO support optimizing non-f32 values
+        //   (check each sub-fuse operation separately)
+        let (_, dtype) = self.old_graph.shape_dtype(old_start);
+        if dtype != DType::F32 {
+            return Ok(None);
+        }
+
         if self.settings.fuse_layernorm {
             if let Some(result) = self.try_fuse_layernorm(old_start)? {
                 return Ok(Some(result));
@@ -206,11 +214,11 @@ impl<'a> Optimizer<'a> {
         let axis = axes[0];
 
         let eps = match self.old_graph.as_single_const(old_const_eps) {
-            None => return Ok(None),
-            Some(eps) => eps,
+            Some(DScalar::F32(eps)) => *eps,
+            _ => return Ok(None),
         };
 
-        if !self.old_graph.is_const_filled_with(old_const_2, 2.0) {
+        if !self.old_graph.is_const_filled_with(old_const_2, DScalar::f32(2.0)) {
             return Ok(None);
         }
 
@@ -232,17 +240,13 @@ impl<'a> Optimizer<'a> {
             } = operation
             {
                 // if right is a single constant value we can fuse it
-                if let Some(value) = self.old_graph.as_const(old_right) {
-                    if value.len() == 1 {
-                        let &f = value.iter().next().unwrap();
-
-                        match op {
-                            BinaryOp::Min => total_max = f32::min(total_max, f),
-                            BinaryOp::Max => total_min = f32::max(total_min, f),
-                            _ => unreachable!(),
-                        }
-                        return Ok(Some(old_left));
+                if let Some(DScalar::F32(value)) = self.old_graph.as_single_const(old_right) {
+                    match op {
+                        BinaryOp::Min => total_max = f32::min(total_max, *value),
+                        BinaryOp::Max => total_min = f32::max(total_min, *value),
+                        _ => unreachable!(),
                     }
+                    return Ok(Some(old_left));
                 }
             }
             Ok(None)
@@ -250,7 +254,7 @@ impl<'a> Optimizer<'a> {
 
         if let Some(old_input) = old_input {
             let new_input = self.visit(old_input)?;
-            let new_output = self.new_graph.clamp(new_input, total_min, total_max);
+            let new_output = self.new_graph.clamp::<f32>(new_input, total_min, total_max);
             Ok(Some(new_output))
         } else {
             Ok(None)
@@ -280,9 +284,11 @@ impl<'a> Optimizer<'a> {
             op: BinaryOp::Div,
         } = &self.old_graph[old_start].operation
         {
-            if let Some(data) = self.old_graph.as_const(right) {
+            if let Some(DTensor::F32(data)) = self.old_graph.as_const(right) {
                 let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
-                let new_right = self.new_graph.constant(self.old_graph[right].shape.clone(), new_data);
+                let new_right = self
+                    .new_graph
+                    .constant::<f32>(self.old_graph[right].shape.clone(), new_data);
 
                 let new_left = self.visit(left)?;
                 let result = self.new_graph.mul(new_left, new_right);

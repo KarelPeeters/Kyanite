@@ -1,6 +1,6 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use kn_cuda_sys::bindings::cudnnActivationMode_t;
+use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t};
 use kn_cuda_sys::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor,
 };
@@ -12,15 +12,15 @@ fn fused_all() {
     let device = Device::new(0);
     let mut handle = CudnnHandle::new(device);
     let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
-    let conv_desc = ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1);
+    let conv_desc = ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);
 
     let algo = STANDARD_CONV_ALGO;
-    let filter_desc = FilterDescriptor::new(1, 1, 1, 1);
+    let filter_desc = FilterDescriptor::new(1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);
     let filter_mem = device.alloc(filter_desc.size_bytes());
-    let io_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
+    let io_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1], cudnnDataType_t::CUDNN_DATA_FLOAT);
     let input_mem = device.alloc(io_desc.size_bytes());
     let res_mem = device.alloc(io_desc.size_bytes());
-    let bias_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1]);
+    let bias_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1], cudnnDataType_t::CUDNN_DATA_FLOAT);
     let bias_mem = device.alloc(bias_desc.size_bytes());
     let mut output_mem = device.alloc(io_desc.size_bytes());
 

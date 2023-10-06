@@ -1,12 +1,13 @@
 use kn_cuda_eval::tester::{assert_tensors_match, eval_cudnn, load_check_data};
-use kn_graph::cpu::{cpu_eval_graph, Tensor};
+use kn_graph::cpu::cpu_eval_graph;
+use kn_graph::dtype::{DTensor, DType};
 use kn_graph::graph::{Graph, Value};
 use kn_graph::ndarray::ArcArray;
 use kn_graph::onnx::load_graph_from_onnx_bytes;
 use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use kn_graph::shape;
 
-pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_outputs: Option<&[Tensor]>) {
+pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[DTensor], expected_outputs: Option<&[DTensor]>) {
     if expected_outputs.is_none() {
         println!("No expected outputs provided, using unoptimized cpu outputs instead");
     }
@@ -28,9 +29,9 @@ pub fn test_all(graph: &Graph, batch_size: usize, inputs: &[Tensor], expected_ou
 pub fn test_all_exact_graph(
     graph: &Graph,
     batch_size: usize,
-    inputs: &[Tensor],
-    expected_outputs: Option<&[Tensor]>,
-) -> Vec<Tensor> {
+    inputs: &[DTensor],
+    expected_outputs: Option<&[DTensor]>,
+) -> Vec<DTensor> {
     println!("Testing:\n{}", graph);
 
     println!("Testing CPU");
@@ -64,8 +65,8 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
     let values = ELEMENTWISE_TEST_VALUES;
     let pair_count = values.len() * values.len();
 
-    let left = graph.input(shape![pair_count]);
-    let right = graph.input(shape![pair_count]);
+    let left = graph.input(shape![pair_count], DType::F32);
+    let right = graph.input(shape![pair_count], DType::F32);
 
     let output = graph_op(&mut graph, left, right);
     graph.output(output);
@@ -75,7 +76,12 @@ pub fn test_elementwise_pair(op: impl Fn(f32, f32) -> f32, graph_op: impl Fn(&mu
     let expected_output =
         ArcArray::from_shape_fn(pair_count, |i| op(values[i / values.len()], values[i % values.len()])).into_dyn();
 
-    test_all(&graph, 0, &[left_tensor, right_tensor], Some(&[expected_output]));
+    test_all(
+        &graph,
+        0,
+        &[DTensor::F32(left_tensor), DTensor::F32(right_tensor)],
+        Some(&[DTensor::F32(expected_output)]),
+    );
 }
 
 pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, Value) -> Value) {
@@ -83,7 +89,7 @@ pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, V
 
     let values = ELEMENTWISE_TEST_VALUES;
 
-    let input = graph.input(shape![values.len()]);
+    let input = graph.input(shape![values.len()], DType::F32);
     let output = graph_op(&mut graph, input);
     graph.output(output);
 
@@ -92,7 +98,12 @@ pub fn test_elementwise(op: impl Fn(f32) -> f32, graph_op: impl Fn(&mut Graph, V
         .into_dyn();
     let expected_output = input_tensor.map(|&v| op(v)).into_shared().into_dyn();
 
-    test_all(&graph, 0, &[input_tensor], Some(&[expected_output]));
+    test_all(
+        &graph,
+        0,
+        &[DTensor::F32(input_tensor)],
+        Some(&[DTensor::F32(expected_output)]),
+    );
 }
 
 pub fn test_onnx_bin(onnx: &[u8], bin: &[u8]) {
