@@ -124,10 +124,12 @@ The planner has the following major responsibilities:
     * Some compound kernels support fusing input or output scalar operations
 
 
-This final operator fusion can be significant and save a lot of redundant tranfers to and from main memory. An example generated scalar kernel, with some handwritten clarifying comments is provided below:
+This final operator fusion can be significant and save a lot of redundant transfers to and from main memory. The same performance could be achieved by manually writing kernels for each used combination of operations, but the combinatorial explosion and associated maintenance would be huge.
+
+An example generated scalar kernel with some handwritten clarifying comments is shown below:
 
 <details>
-<summary>Example scalar autokernel</summary>
+<summary>Example scalar autokernel for residual + batchnorm + relu6</summary>
 
 ```cpp
 #include "util.cu"
@@ -143,17 +145,18 @@ const int STRIDES[OPERANDS][RANK] = {
     {648, 81, 9, 1},
     // these values have zero strides for all axes except the channel one,
     //    so these are probably biases and scaling factors
+    //    that are broadcast across the other axes
     {0, 1, 0, 0},
     {0, 1, 0, 0},
     {0, 1, 0, 0},
     {0, 1, 0, 0},
-    // the output tensors is just another operand
+    // the output tensor is just another operand
     {648, 81, 9, 1}
 };
 
 // the template function, the body of which is generated at runtime
 __device__ void operation(void *pointers[OPERANDS], int offsets[OPERANDS]) {
-    // all input operands memory locations are cast to the right type
+    // all input operand memory locations are cast to the right type
     float *x0 = &((float *) pointers[0])[offsets[0]];
     float *x1 = &((float *) pointers[1])[offsets[1]];
     float *x2 = &((float *) pointers[2])[offsets[2]];
@@ -166,19 +169,20 @@ __device__ void operation(void *pointers[OPERANDS], int offsets[OPERANDS]) {
     float y0 = *x0;
     float y1 = *x1;
     
-    // these +-/* steps look like they're implementing a batchnorm layer  
+    // this is probably a residual connection
     float y2 = y0 + y1;
+    
+    // these 4 steps look like they're implementing a batchnorm layer  
     float y3 = *x2;
     float y4 = y2 - y3;
     float y5 = *x3;
     float y6 = y4 / y5;
     float y7 = *x4;
     float y8 = y6 * y7;
-    // this extra addition is a final bias bias
     float y9 = *x5;
     float y10 = y8 + y9;
     
-    // this implements y14 = relu6(y10)
+    // this implements a relu6 activation function
     float y11 = 6;
     float y12 = min(y10, y11);
     float y13 = (0.0);
