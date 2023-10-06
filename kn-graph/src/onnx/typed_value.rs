@@ -164,6 +164,10 @@ impl SignedSize {
             None
         }
     }
+
+    pub fn is_neg(self) -> bool {
+        self.fixed_factor < 0
+    }
 }
 
 impl Display for SignedSize {
@@ -198,6 +202,26 @@ impl std::ops::Add for SignedSize {
         }
         if self.batch_exp == rhs.batch_exp {
             return Some(SignedSize::new(self.batch_exp, self.fixed_factor + rhs.fixed_factor));
+        }
+        None
+    }
+}
+
+impl std::ops::Add<Size> for SignedSize {
+    type Output = Option<Self>;
+
+    fn add(self, rhs: Size) -> Self::Output {
+        if self == SignedSize::ZERO {
+            return SignedSize::from_size(rhs).ok();
+        }
+        if rhs == Size::ZERO {
+            return Some(self);
+        }
+
+        let (rhs_fixed_factor, rhs_batch_exp) = rhs.components_factor_exp();
+        if self.batch_exp == rhs_batch_exp {
+            let fixed_factor = (self.fixed_factor as i128 + rhs_fixed_factor as i128).try_into().ok()?;
+            return Some(SignedSize::new(self.batch_exp, fixed_factor));
         }
         None
     }

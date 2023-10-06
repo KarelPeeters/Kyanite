@@ -197,7 +197,7 @@ fn check_tensor_match(
             counts,
             first_errors,
         )),
-        DType::U8 | DType::U16 | DType::U32 | DType::U64 | DType::I8 | DType::I16 | DType::I32 | DType::I64 => {
+        DType::U8 | DType::U16 | DType::U32 | DType::U64 | DType::I8 | DType::I16 | DType::I32 | DType::I64 | DType::Bool => {
             dispatch_dtensor_pair!(expected_output, output, |_T, _f, expected_output, output| {
                 check_tensor_match_exact(i, expected_output, output, counts, first_errors)
             })
@@ -212,7 +212,7 @@ fn check_tensor_match_exact<T: IntoDScalar>(
     counts: &mut Counts,
     first_errors: &mut Vec<Error>,
 ) -> Difference {
-    assert!(T::DTYPE.is_int());
+    assert!(T::DTYPE.is_int() || T::DTYPE.is_bool());
 
     let mut current_error_count = 0;
 

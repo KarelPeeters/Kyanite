@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use bytemuck::cast_slice;
+use bytemuck::{cast_slice, Pod};
 use bytemuck::checked::cast_slice_mut;
 use itertools::{multizip, zip_eq};
 
@@ -9,7 +9,7 @@ use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
 use kn_graph::{dispatch_dtensor, dispatch_dtype};
-use kn_graph::dtype::{DTensor, Tensor};
+use kn_graph::dtype::{DBool, DTensor, Tensor};
 use kn_graph::graph::Graph;
 
 use crate::device_tensor::DeviceTensor;
@@ -149,10 +149,36 @@ impl CudaExecutor {
             // copy buffers to tensors
             // TODO interleave this with copying to host?
             for (buffer, tensor) in zip_eq(&self.buffer_outputs, &mut self.tensor_outputs) {
-                dispatch_dtensor!(tensor, |T, _f, tensor| {
-                    let tensor_slice = tensor.as_slice_mut().unwrap();
-                    cast_slice_mut::<T, u8>(tensor_slice).copy_from_slice(buffer.as_slice())
-                });
+                let buffer: &[u8] = buffer.as_slice();
+
+                unsafe fn branch<T: Pod>(tensor: &mut Tensor<T>, buffer: &[u8]) {
+                    cast_slice_mut::<T, u8>(tensor.as_slice_mut().unwrap()).copy_from_slice(buffer);
+                }
+
+                match tensor {
+                    DTensor::F32(tensor) => branch::<f32>(tensor, buffer),
+                    DTensor::F64(tensor) => branch::<f64>(tensor, buffer),
+                    DTensor::I8(tensor) => branch::<i8>(tensor, buffer),
+                    DTensor::I16(tensor) => branch::<i16>(tensor, buffer),
+                    DTensor::I32(tensor) => branch::<i32>(tensor, buffer),
+                    DTensor::I64(tensor) => branch::<i64>(tensor, buffer),
+                    DTensor::U8(tensor) => branch::<u8>(tensor, buffer),
+                    DTensor::U16(tensor) => branch::<u16>(tensor, buffer),
+                    DTensor::U32(tensor) => branch::<u32>(tensor, buffer),
+                    DTensor::U64(tensor) => branch::<u64>(tensor, buffer),
+
+                    // do a manual copy, with proper error checking
+                    // we can't use bytemuck here since it rightfully doesn't want to cast &mut bool/DBool to &mut u8
+                    DTensor::Bool(tensor) => {
+                        let mut fail = false;
+                        for (i, x) in tensor.iter_mut().enumerate() {
+                            let y = buffer[i];
+                            *x = DBool(y != 0);
+                            fail |= y > 1;
+                        }
+                        assert!(!fail);
+                    }
+                }
             }
         }
 

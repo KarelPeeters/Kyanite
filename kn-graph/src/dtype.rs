@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::num::FpCategory;
 use std::ops::Deref;
 
+use bytemuck::NoUninit;
 use decorum::cmp::FloatEq;
 use decorum::hash::FloatHash;
 use itertools::zip_eq;
@@ -13,6 +14,12 @@ pub struct T32(pub f32);
 
 #[derive(Debug, Copy, Clone)]
 pub struct T64(pub f64);
+
+// TODO maybe remove this at some point and switch to proper bools,
+//   and figure out another solution to the "bool arithmetic" problem
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct DBool(pub bool);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum DType {
@@ -26,8 +33,7 @@ pub enum DType {
     U16,
     U32,
     U64,
-    // TODO add bool
-    // Bool,
+    Bool,
 }
 
 pub type Tensor<T> = ArcArray<T, IxDyn>;
@@ -44,6 +50,7 @@ pub enum DTensor {
     U16(Tensor<u16>),
     U32(Tensor<u32>),
     U64(Tensor<u64>),
+    Bool(Tensor<DBool>),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -58,6 +65,7 @@ pub enum DScalar {
     U16(u16),
     U32(u32),
     U64(u64),
+    Bool(DBool),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -76,42 +84,53 @@ pub struct Specials {
     pub max: DScalar,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct DInfo {
+    pub size: DSize,
+    pub signed: bool,
+    pub float: bool,
+    pub int: bool,
+    pub is_bool: bool,
+}
+
 impl DType {
-    pub fn size(self) -> DSize {
+    pub fn info(self) -> DInfo {
         match self {
-            DType::F32 => DSize::S32,
-            DType::F64 => DSize::S64,
-            DType::U8 | DType::I8 => DSize::S8,
-            DType::U16 | DType::I16 => DSize::S16,
-            DType::U32 | DType::I32 => DSize::S32,
-            DType::U64 | DType::I64 => DSize::S64,
+            DType::F32 => DInfo::float(DSize::S32),
+            DType::F64 => DInfo::float(DSize::S64),
+            DType::I8 => DInfo::int(DSize::S8, true),
+            DType::I16 => DInfo::int(DSize::S16, true),
+            DType::I32 => DInfo::int(DSize::S32, true),
+            DType::I64 => DInfo::int(DSize::S64, true),
+            DType::U8 => DInfo::int(DSize::S8, false),
+            DType::U16 => DInfo::int(DSize::S16, false),
+            DType::U32 => DInfo::int(DSize::S32, false),
+            DType::U64 => DInfo::int(DSize::S64, false),
+            DType::Bool => DInfo::bool(),
         }
+    }
+
+    pub fn size(self) -> DSize {
+        self.info().size
     }
 
     pub fn is_signed(self) -> bool {
-        match self {
-            DType::F32 | DType::F64 => true,
-            DType::I8 | DType::I16 | DType::I32 | DType::I64 => true,
-            DType::U8 | DType::U16 | DType::U32 | DType::U64 => false,
-        }
+        self.info().signed
     }
 
     pub fn is_float(self) -> bool {
-        match self {
-            DType::F32 | DType::F64 => true,
-            DType::I8 | DType::I16 | DType::I32 | DType::I64 => false,
-            DType::U8 | DType::U16 | DType::U32 | DType::U64 => false,
-        }
+        self.info().float
     }
 
     pub fn is_int(self) -> bool {
-        match self {
-            DType::F32 | DType::F64 => false,
-            DType::I8 | DType::I16 | DType::I32 | DType::I64 => true,
-            DType::U8 | DType::U16 | DType::U32 | DType::U64 => true,
-        }
+        self.info().int
     }
 
+    pub fn is_bool(self) -> bool {
+        self.info().is_bool
+    }
+
+    // TODO move specials to type itself, while keeping this one too?
     pub fn specials(self) -> Specials {
         match self {
             DType::F32 => Specials::new(f32::NEG_INFINITY, f32::INFINITY),
@@ -124,6 +143,7 @@ impl DType {
             DType::U16 => Specials::new(u16::MIN, u16::MAX),
             DType::U32 => Specials::new(u32::MIN, u32::MAX),
             DType::U64 => Specials::new(u64::MIN, u64::MAX),
+            DType::Bool => Specials::new(DBool(false), DBool(true)),
         }
     }
 
@@ -139,7 +159,22 @@ impl DType {
             DType::U16 => "uint16_t",
             DType::U32 => "uint32_t",
             DType::U64 => "uint64_t",
+            DType::Bool => "bool",
         }
+    }
+}
+
+impl DInfo {
+    fn int(size: DSize, signed: bool) -> Self {
+        DInfo { size, signed, float: false, int: true, is_bool: false }
+    }
+
+    fn float(size: DSize) -> Self {
+        DInfo { size, signed: false, float: true, int: false, is_bool: false }
+    }
+
+    fn bool() -> Self {
+        DInfo { size: DSize::S8, signed: false, float: false, int: false, is_bool: true }
     }
 }
 
@@ -158,18 +193,19 @@ impl DSize {
 #[macro_export]
 macro_rules! dispatch_dtype {
     ($outer:expr, |$ty:ident, $fs:ident, $ft:ident| $expr:expr) => {{
-        use $crate::dtype::{DType, DScalar, DTensor};
+        use $crate::dtype::{DType, DBool, DScalar, DTensor};
         match $outer {
-            DType::F32 => { type $ty=f32; let $fs=DScalar::F32; let $ft=DTensor::F32; { $expr } },
-            DType::F64 => { type $ty=f64; let $fs=DScalar::F64; let $ft=DTensor::F64; { $expr } },
-            DType::I8 => { type $ty=i8; let $fs=DScalar::I8; let $ft=DTensor::I8; { $expr } },
-            DType::I16 => { type $ty=i16; let $fs=DScalar::I16; let $ft=DTensor::I16; { $expr } },
-            DType::I32 => { type $ty=i32; let $fs=DScalar::I32; let $ft=DTensor::I32; { $expr } },
-            DType::I64 => { type $ty=i64; let $fs=DScalar::I64; let $ft=DTensor::I64; { $expr } },
-            DType::U8 => { type $ty=u8; let $fs=DScalar::U8; let $ft=DTensor::U8; { $expr } },
-            DType::U16 => { type $ty=u16; let $fs=DScalar::U16; let $ft=DTensor::U16; { $expr } },
-            DType::U32 => { type $ty=u32; let $fs=DScalar::U32; let $ft=DTensor::U32; { $expr } },
-            DType::U64 => { type $ty=u64; let $fs=DScalar::U64; let $ft=DTensor::U64; { $expr } },
+            DType::F32 => { type $ty=f32; let $fs=DScalar::F32; let $ft=DTensor::F32; { $expr } }
+            DType::F64 => { type $ty=f64; let $fs=DScalar::F64; let $ft=DTensor::F64; { $expr } }
+            DType::I8 => { type $ty=i8; let $fs=DScalar::I8; let $ft=DTensor::I8; { $expr } }
+            DType::I16 => { type $ty=i16; let $fs=DScalar::I16; let $ft=DTensor::I16; { $expr } }
+            DType::I32 => { type $ty=i32; let $fs=DScalar::I32; let $ft=DTensor::I32; { $expr } }
+            DType::I64 => { type $ty=i64; let $fs=DScalar::I64; let $ft=DTensor::I64; { $expr } }
+            DType::U8 => { type $ty=u8; let $fs=DScalar::U8; let $ft=DTensor::U8; { $expr } }
+            DType::U16 => { type $ty=u16; let $fs=DScalar::U16; let $ft=DTensor::U16; { $expr } }
+            DType::U32 => { type $ty=u32; let $fs=DScalar::U32; let $ft=DTensor::U32; { $expr } }
+            DType::U64 => { type $ty=u64; let $fs=DScalar::U64; let $ft=DTensor::U64; { $expr } }
+            DType::Bool => { type $ty=DBool; let $fs=DScalar::Bool; let $ft=DTensor::Bool; { $expr } }
         }
     }};
 }
@@ -181,6 +217,10 @@ impl DScalar {
 
     pub fn f64(x: f64) -> Self {
         DScalar::F64(T64(x))
+    }
+
+    pub fn bool(x: bool) -> Self {
+        DScalar::Bool(DBool(x))
     }
 
     pub fn dtype(self) -> DType {
@@ -195,6 +235,7 @@ impl DScalar {
             DScalar::U16(_) => DType::U16,
             DScalar::U32(_) => DType::U32,
             DScalar::U64(_) => DType::U64,
+            DScalar::Bool(_) => DType::Bool,
         }
     }
 
@@ -217,6 +258,7 @@ impl DScalar {
             DScalar::U16(x) => DTensor::U16(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
             DScalar::U32(x) => DTensor::U32(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
             DScalar::U64(x) => DTensor::U64(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
+            DScalar::Bool(x) => DTensor::Bool(ArcArray::from_shape_vec(IxDyn(&[]), vec![x]).unwrap()),
         }
     }
 
@@ -256,6 +298,7 @@ impl DScalar {
             DScalar::I16(c) => format!("{}", c),
             DScalar::I32(c) => format!("{}", c),
             DScalar::I64(c) => format!("{}", c),
+            DScalar::Bool(c) => format!("{}", *c),
         }
     }
 
@@ -272,6 +315,7 @@ impl DScalar {
             DScalar::U16(x) => (x as f64, x as i128),
             DScalar::U32(x) => (x as f64, x as i128),
             DScalar::U64(x) => (x as f64, x as i128),
+            DScalar::Bool(DBool(x)) => (x as u8 as f64, x as u8 as i128),
         };
 
         // convert to target
@@ -286,6 +330,7 @@ impl DScalar {
             DType::U16 => DScalar::U16(yi as u16),
             DType::U32 => DScalar::U32(yi as u32),
             DType::U64 => DScalar::U64(yi as u64),
+            DType::Bool => DScalar::bool(yf != 0.0 || yi != 0),
         }
     }
 
@@ -306,6 +351,7 @@ impl DScalar {
             DScalar::U16(x) => x as u64,
             DScalar::U32(x) => x as u64,
             DScalar::U64(x) => x,
+            DScalar::Bool(_) => return None,
         };
 
         // convert to target
@@ -320,6 +366,7 @@ impl DScalar {
             DType::U16 => DScalar::U16(bits as u16),
             DType::U32 => DScalar::U32(bits as u32),
             DType::U64 => DScalar::U64(bits),
+            DType::Bool => return None,
         };
 
         Some(y)
@@ -367,23 +414,25 @@ impl_into_dscalar!(u8, DType::U8, U8, |x| DScalar::U8(x), DScalar::U8(x) => x);
 impl_into_dscalar!(u16, DType::U16, U16, |x| DScalar::U16(x), DScalar::U16(x) => x);
 impl_into_dscalar!(u32, DType::U32, U32, |x| DScalar::U32(x), DScalar::U32(x) => x);
 impl_into_dscalar!(u64, DType::U64, U64, |x| DScalar::U64(x), DScalar::U64(x) => x);
+impl_into_dscalar!(DBool, DType::Bool, Bool, |x| DScalar::Bool(x), DScalar::Bool(x) => x);
 
 #[rustfmt::skip]
 #[macro_export]
 macro_rules! dispatch_dtensor {
     ($outer:expr, |$ty:ident, $f:ident, $inner:ident| $expr:expr) => {{
-        use $crate::dtype::DTensor;
+        use $crate::dtype::{DBool, DTensor};
         match $outer {
-            DTensor::F32($inner) => { type $ty=f32; let $f=DTensor::F32; { $expr } },
-            DTensor::F64($inner) => { type $ty=f64; let $f=DTensor::F64; { $expr } },
-            DTensor::I8($inner) => { type $ty=i8; let $f=DTensor::I8; { $expr } },
-            DTensor::I16($inner) => { type $ty=i16; let $f=DTensor::I16; { $expr } },
-            DTensor::I32($inner) => { type $ty=i32; let $f=DTensor::I32; { $expr } },
-            DTensor::I64($inner) => { type $ty=i64; let $f=DTensor::I64; { $expr } },
-            DTensor::U8($inner) => { type $ty=u8; let $f=DTensor::U8; { $expr } },
-            DTensor::U16($inner) => { type $ty=u16; let $f=DTensor::U16; { $expr } },
-            DTensor::U32($inner) => { type $ty=u32; let $f=DTensor::U32; { $expr } },
-            DTensor::U64($inner) => { type $ty=u64; let $f=DTensor::U64; { $expr } },
+            DTensor::F32($inner) => { type $ty=f32; let $f=DTensor::F32; { $expr } }
+            DTensor::F64($inner) => { type $ty=f64; let $f=DTensor::F64; { $expr } }
+            DTensor::I8($inner) => { type $ty=i8; let $f=DTensor::I8; { $expr } }
+            DTensor::I16($inner) => { type $ty=i16; let $f=DTensor::I16; { $expr } }
+            DTensor::I32($inner) => { type $ty=i32; let $f=DTensor::I32; { $expr } }
+            DTensor::I64($inner) => { type $ty=i64; let $f=DTensor::I64; { $expr } }
+            DTensor::U8($inner) => { type $ty=u8; let $f=DTensor::U8; { $expr } }
+            DTensor::U16($inner) => { type $ty=u16; let $f=DTensor::U16; { $expr } }
+            DTensor::U32($inner) => { type $ty=u32; let $f=DTensor::U32; { $expr } }
+            DTensor::U64($inner) => { type $ty=u64; let $f=DTensor::U64; { $expr } }
+            DTensor::Bool($inner) => { type $ty=DBool; let $f=DTensor::Bool; { $expr } }
         }
     }};
 }
@@ -392,7 +441,7 @@ macro_rules! dispatch_dtensor {
 #[macro_export]
 macro_rules! dispatch_dtensor_pair {
     ($out_left:expr, $out_right:expr, |$ty:ident, $f:ident, $in_left:ident, $in_right:ident| $expr:expr) => {{
-        use $crate::dtype::DTensor;
+        use $crate::dtype::{DBool, DTensor};
 
         let out_left = $out_left;
         let out_right = $out_right;
@@ -400,15 +449,16 @@ macro_rules! dispatch_dtensor_pair {
         let dtype_right = out_right.dtype();
         
         match (out_left, out_right) {
-            (DTensor::F32($in_left), DTensor::F32($in_right)) => { type $ty=f32; let $f=DTensor::F32; { $expr } },
-            (DTensor::I8($in_left), DTensor::I8($in_right)) => { type $ty=i8; let $f=DTensor::I8; { $expr } },
-            (DTensor::I16($in_left), DTensor::I16($in_right)) => { type $ty=i16; let $f=DTensor::I16; { $expr } },
-            (DTensor::I32($in_left), DTensor::I32($in_right)) => { type $ty=i32; let $f=DTensor::I32; { $expr } },
-            (DTensor::I64($in_left), DTensor::I64($in_right)) => { type $ty=i64; let $f=DTensor::I64; { $expr } },
-            (DTensor::U8($in_left), DTensor::U8($in_right)) => { type $ty=u8; let $f=DTensor::U8; { $expr } },
-            (DTensor::U16($in_left), DTensor::U16($in_right)) => { type $ty=u16; let $f=DTensor::U16; { $expr } },
-            (DTensor::U32($in_left), DTensor::U32($in_right)) => { type $ty=u32; let $f=DTensor::U32; { $expr } },
-            (DTensor::U64($in_left), DTensor::U64($in_right)) => { type $ty=u64; let $f=DTensor::U64; { $expr } },
+            (DTensor::F32($in_left), DTensor::F32($in_right)) => { type $ty=f32; let $f=DTensor::F32; { $expr } }
+            (DTensor::I8($in_left), DTensor::I8($in_right)) => { type $ty=i8; let $f=DTensor::I8; { $expr } }
+            (DTensor::I16($in_left), DTensor::I16($in_right)) => { type $ty=i16; let $f=DTensor::I16; { $expr } }
+            (DTensor::I32($in_left), DTensor::I32($in_right)) => { type $ty=i32; let $f=DTensor::I32; { $expr } }
+            (DTensor::I64($in_left), DTensor::I64($in_right)) => { type $ty=i64; let $f=DTensor::I64; { $expr } }
+            (DTensor::U8($in_left), DTensor::U8($in_right)) => { type $ty=u8; let $f=DTensor::U8; { $expr } }
+            (DTensor::U16($in_left), DTensor::U16($in_right)) => { type $ty=u16; let $f=DTensor::U16; { $expr } }
+            (DTensor::U32($in_left), DTensor::U32($in_right)) => { type $ty=u32; let $f=DTensor::U32; { $expr } }
+            (DTensor::U64($in_left), DTensor::U64($in_right)) => { type $ty=u64; let $f=DTensor::U64; { $expr } }
+            (DTensor::Bool($in_left), DTensor::Bool($in_right)) => { type $ty=DBool; let $f=DTensor::Bool; { $expr } }
             _ => panic!("Mismatched dtypes: left {:?}, right {:?}", dtype_left, dtype_right),
         }
     }};
@@ -447,6 +497,7 @@ macro_rules! map_dscalar_pair {
             (DScalar::U16($in_left), DScalar::U16($in_right)) => DScalar::U16($expr),
             (DScalar::U32($in_left), DScalar::U32($in_right)) => DScalar::U32($expr),
             (DScalar::U64($in_left), DScalar::U64($in_right)) => DScalar::U64($expr),
+            (DScalar::Bool($in_left), DScalar::Bool($in_right)) => DScalar::Bool($expr),
             _ => panic!("Mismatched dtypes: left {:?}, right {:?}", out_left, out_right),
         }
     }}
@@ -502,6 +553,13 @@ impl DTensor {
             _ => None,
         }
     }
+
+    pub fn unwrap_bool(&self) -> Option<&Tensor<DBool>> {
+        match self {
+            DTensor::Bool(tensor) => Some(tensor),
+            _ => None,
+        }
+    }
 }
 
 impl Eq for DTensor {}
@@ -515,8 +573,9 @@ impl PartialEq for DTensor {
         match (self, other) {
             // proper float compare
             (DTensor::F32(a), DTensor::F32(b)) => zip_eq(a.iter(), b.iter()).all(|(a, b)| a.float_eq(b)),
+            (DTensor::F64(a), DTensor::F64(b)) => zip_eq(a.iter(), b.iter()).all(|(a, b)| a.float_eq(b)),
 
-            // ints can be compared like normal
+            // ints and bools can be compared like normal
             (DTensor::I8(a), DTensor::I8(b)) => a == b,
             (DTensor::I16(a), DTensor::I16(b)) => a == b,
             (DTensor::I32(a), DTensor::I32(b)) => a == b,
@@ -525,6 +584,8 @@ impl PartialEq for DTensor {
             (DTensor::U16(a), DTensor::U16(b)) => a == b,
             (DTensor::U32(a), DTensor::U32(b)) => a == b,
             (DTensor::U64(a), DTensor::U64(b)) => a == b,
+            (DTensor::Bool(a), DTensor::Bool(b)) => a == b,
+
             _ => unreachable!(),
         }
     }
@@ -600,3 +661,62 @@ impl Display for DisplayCFloat {
         }
     }
 }
+
+impl Deref for DBool {
+    type Target = bool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Add for DBool {
+    type Output = DBool;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        DBool(self.0 || rhs.0)
+    }
+}
+
+impl std::ops::Mul for DBool {
+    type Output = DBool;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        DBool(self.0 && rhs.0)
+    }
+}
+
+// sub and div don't make much sense
+impl std::ops::Sub for DBool {
+    type Output = DBool;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        DBool(self.0 && !rhs.0)
+    }
+}
+
+impl std::ops::Div for DBool {
+    type Output = DBool;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        DBool(self.0 && !rhs.0)
+    }
+}
+
+impl num_traits::Zero for DBool {
+    fn zero() -> Self {
+        DBool(false)
+    }
+
+    fn is_zero(&self) -> bool {
+        !self.0
+    }
+}
+
+impl num_traits::One for DBool {
+    fn one() -> Self {
+        DBool(true)
+    }
+}
+
+unsafe impl NoUninit for DBool {}

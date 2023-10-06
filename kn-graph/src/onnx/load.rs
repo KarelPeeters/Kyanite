@@ -5,9 +5,9 @@ use itertools::Itertools;
 use ndarray::{Axis, azip};
 use prost::Message;
 
-use crate::shape;
+use crate::{shape};
 use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
-use crate::dtype::{DTensor, DType, Tensor};
+use crate::dtype::{DBool, DTensor, DType, Tensor, dispatch_dtensor, map_dtensor_pair, DScalar, IntoDScalar};
 use crate::graph::{BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value};
 pub use crate::graph::Graph;
 use crate::onnx::external_data::ExternalDataLoader;
@@ -265,10 +265,56 @@ fn visit_node(
             }
         }
         "Equal" => {
-            todo!("implement eq again, once we have proper bool types (and have decided to stop worrying about batch_size in onnx)")
+            let left = inputs.required(0)?;
+            let right = inputs.required(1)?;
+
+            let result = match (left, right) {
+                (&OnnxValue::Value(left), &OnnxValue::Value(right)) => {
+                    // subtract and cast to bool
+                    // this automatically broadcasts correctly
+                    let diff = graph.sub(left, right);
+                    graph.unary(UnaryOp::ValueCast(DType::Bool), diff)
+
+                }
+                (OnnxValue::Size(left), OnnxValue::Size(right)) => {
+                    // broadcast and compare
+                    // TODO we consider batch and ints always not-equal, even though they theoretically could be
+                    let (left, right) = broadcast_tensors_symmetric(&left, &right);
+
+                    let result = azip!(left, right).map_collect(|l, r| DBool(l == r)).into_shared();
+                    graph.constant_tensor(DTensor::Bool(result))
+                }
+                _ => {
+                    // one contains batch, the other doesn't => they can't be equal
+                    // return false of the right shape
+                    let broadcast_shape = broadcast_shape_symmetric(&left.shape(graph), &right.shape(graph));
+                    let scalar = graph.scalar(DBool(false));
+                    graph.broadcast(scalar, broadcast_shape)
+                }
+            };
+
+            OnnxValue::Value(result)
         }
         "Where" => {
-            todo!("implement once we have bool types")
+            // TODO extend to non-consts and shapes
+            let cond = inputs.required(0)?.unwrap_value().unwrap();
+            let x = inputs.required(1)?.unwrap_value().unwrap();
+            let y = inputs.required(2)?.unwrap_value().unwrap();
+
+            let cond = graph.as_const(cond).unwrap();
+            let cond = cond.unwrap_bool().unwrap();
+            let x = graph.as_const(x).unwrap();
+            let y = graph.as_const(y).unwrap();
+
+            // TODO proper broadcasting
+            assert_eq!(cond.shape(), x.shape(), "Where broadcasting not yet implemented");
+            assert_eq!(cond.shape(), y.shape(), "Where broadcasting not yet implemented");
+
+            let result = map_dtensor_pair!(x, y, |x, y| {
+                azip!(cond, &x, &y).map_collect(|&DBool(c), &x, &y| if c { x } else { y }).into_shared()
+            });
+
+            OnnxValue::Value(graph.constant_tensor(result))
         }
         "Flatten" => {
             let input = inputs.required(0)?;
@@ -581,15 +627,46 @@ fn visit_node(
         }
         "Gather" => {
             let input = inputs.required(0)?;
-            let indices = inputs.required(1)?;
+            let indices_raw = inputs.required(1)?;
             let rel_axis = attrs.maybe_take_int("axis")?.unwrap_or(0);
 
             let input_shape = input.shape(graph);
             let axis = abs_axis(rel_axis, input_shape.rank());
+            let axis_size = input.shape(graph).dims[axis];
+
+            let indices = match indices_raw {
+                &OnnxValue::Value(indices) => {
+                    match graph.as_const(indices) {
+                        Some(indices) => {
+                            let dim = axis_size.unwrap_fixed("gather dim size");
+                            let indices = dispatch_dtensor!(indices, |T, ft, indices| {
+                                // this is super cursed but it seems to work
+                                let zero = T::from_dscalar(T::DTYPE.specials().zero).unwrap();
+                                let dim = T::from_dscalar(DScalar::U64(dim as u64).value_cast(T::DTYPE)).unwrap();
+
+                                ft(indices.mapv(|x| if x < zero { x + dim } else { x }).into_shared())
+                            });
+                            OnnxValue::Value(graph.constant_tensor(indices))
+                        },
+                        // TODO support dynamic negative indices, by properly remapping in the graph
+                        //   for now just hope for the best
+                        None => OnnxValue::Value(indices),
+                    }
+                }
+                OnnxValue::Size(indices) => {
+                    let indices = indices.mapv(|x| {
+                        if x.is_neg() {
+                            (x + axis_size).expect("gather negative index overflow")
+                        } else {
+                            x
+                        }
+                    });
+                    OnnxValue::new_size(indices.into_shared(), graph)
+                }
+            };
 
             match input {
                 &OnnxValue::Value(input) => {
-                    // TODO properly support negative indices, either by remapping here or in the graph operator
                     let result = graph.gather(input, axis, indices.unwrap_value().unwrap());
                     OnnxValue::Value(result)
                 }
@@ -972,6 +1049,14 @@ fn define_tensor_data(
         DType::U16 => read_type!(graph, u16, int32_data, read_u16_into),
         DType::U32 => read_type!(graph, u32, uint64_data, read_u32_into),
         DType::U64 => read_type!(graph, u64, uint64_data, read_u64_into),
+        DType::Bool => {
+            let data: Vec<DBool> = if tensor.int32_data.is_empty() {
+                raw_data.iter().map(|&x| DBool(x != 0)).collect_vec()
+            } else {
+                tensor.int32_data.iter().map(|&x| DBool(x != 0)).collect()
+            };
+            graph.constant::<DBool>(shape, data)
+        },
     };
 
     Ok(value)

@@ -15,6 +15,7 @@ prost-build.workspace = true
 
 [dependencies]
 byteorder.workspace = true
+bytemuck.workspace = true
 decorum.workspace = true
 image.workspace = true
 indexmap.workspace = true

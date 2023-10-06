@@ -84,7 +84,7 @@ pub fn cpu_eval_graph_exec(graph: &Graph, batch_size: usize, inputs: &[DTensor],
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum OperationError {
     NoBatchSize,
     MissingOperand,
@@ -108,13 +108,13 @@ fn run_cpu_operation(
         .unwrap()
 }
 
-pub(crate) fn run_cpu_const_operation(info: &ValueInfo, map: impl Fn(Value) -> OperationResult) -> OperationResult {
+pub(crate) fn run_cpu_const_operation(info: &ValueInfo, map: impl FnMut(Value) -> OperationResult) -> OperationResult {
     try_run_cpu_operation(info, map, |_| Err(OperationError::MissingInput), None)
 }
 
 fn try_run_cpu_operation(
     info: &ValueInfo,
-    map: impl Fn(Value) -> OperationResult,
+    mut map: impl FnMut(Value) -> OperationResult,
     input: impl Fn(usize) -> OperationResult,
     batch_size: Option<usize>,
 ) -> OperationResult {
@@ -178,6 +178,7 @@ fn try_run_cpu_operation(
                 DType::U16 => concat!(inputs, axis, DTensor::U16),
                 DType::U32 => concat!(inputs, axis, DTensor::U32),
                 DType::U64 => concat!(inputs, axis, DTensor::U64),
+                DType::Bool => concat!(inputs, axis, DTensor::Bool),
             }
         }
         Operation::Conv {
@@ -297,8 +298,8 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
     output_shape[axis] = indices.len();
 
     let indices = match indices {
-        DTensor::F32(_) | DTensor::F64(_) => {
-            unreachable!("gather indices should be unsigned integers")
+        DTensor::F32(_) | DTensor::F64(_)  | DTensor::Bool(_) => {
+            unreachable!("gather indices should be unsigned integers, got {:?}", indices.dtype())
         }
         DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
         DTensor::U16(indices) => indices.mapv(|x| x as u64).into_shared(),

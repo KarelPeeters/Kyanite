@@ -9,9 +9,10 @@ use itertools::{Itertools, zip_eq};
 use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
-use crate::cpu::{OperationError, run_cpu_const_operation};
-use crate::dtype::{dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
-use crate::shape;
+use crate::{shape};
+use crate::cpu::{OperationError, OperationResult, run_cpu_const_operation};
+use crate::dtype::{map_dscalar_pair, dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, Tensor};
+use crate::optimizer::recurse::heap_recurse;
 use crate::shape::{Shape, Size};
 
 /// The core graph datastructure.
@@ -68,6 +69,10 @@ use crate::shape::{Shape, Size};
 /// ```
 #[derive(Clone)]
 // TODO override clone manually, replace check value
+// TODO think about two builder categories:
+//     * things that map directly to an operation, with all the type and shape checking
+//     * things that do optimizations, extra broadcasting, ...
+//   alternatively do extra checking in `self.push`?
 pub struct Graph {
     check: u32,
     values: Vec<ValueInfo>,
@@ -151,6 +156,8 @@ pub enum Operation {
         axes: Vec<usize>,
         op: ReduceOp,
     },
+
+    // TODO "select"/"where" operation
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -423,7 +430,44 @@ impl Graph {
 
     /// Try to evaluate `value` as a constant.
     pub fn as_const(&self, value: Value) -> Option<DTensor> {
-        run_cpu_const_operation(&self[value], |x| self.as_const(x).ok_or(OperationError::MissingOperand)).ok()
+        // we have to use heap_recurse to avoid stack overflows
+
+        // TODO always immediately evaluate all possible values instead?
+        // TODO store this cache in the graph permanently?
+        //   this will all take a bunch of memory and time :(
+        let mut cache: HashMap<Value, OperationResult> = HashMap::new();
+
+        let f_cached = |curr| {
+            let mut missing_arg = None;
+
+            let res = run_cpu_const_operation(&self[curr], |arg| {
+                match cache.get(&arg) {
+                    // already evaluated
+                    Some(Ok(tensor)) => Ok(tensor.clone()),
+                    Some(&Err(err)) => Err(err),
+                    // not evaluated yet, bubble back to the top
+                    None => {
+                        missing_arg = Some(arg);
+                        //   the exact error used here doesn't matter
+                        Err(OperationError::MissingOperand)
+                    },
+                }
+            });
+
+            // continue bubbling
+            if let Some(missing_arg) = missing_arg {
+                assert_eq!(res, Err(OperationError::MissingOperand));
+                return Err(missing_arg);
+            }
+
+            let prev = cache.insert(curr, res.clone());
+            assert!(prev.is_none());
+
+            Ok(res)
+        };
+
+        let res = heap_recurse(value, f_cached);
+        res.ok()
     }
 
     /// Returns whether `value` is effectively a constant with every element equal to `expected`.
@@ -1196,7 +1240,7 @@ impl Graph {
     #[must_use]
     pub fn binary(&mut self, op: BinaryOp, left: Value, right: Value) -> Value {
         // TODO move constants to the right hand side for binary operations add/mul/min/max
-        //   alsot think about other normalizations!
+        //   also think about other normalizations!
         let (left_shape, left_dtype) = self.shape_dtype(left);
         let (right_shape, right_dtype) = self.shape_dtype(right);
 
@@ -1208,7 +1252,7 @@ impl Graph {
         );
         let dtype = left_dtype;
 
-        // TODO expand this skipping to be symmetric (and to do const eval if both are known?)
+        // TODO expand this skipping to be symmetric (and to do const eval if both are known and small?)
         let skip = match op {
             BinaryOp::Sub | BinaryOp::Add => self.is_const_zero(right),
             BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => self.is_const_one(right),
@@ -1531,7 +1575,7 @@ impl UnaryOp {
                     DScalar::I16(x) => DScalar::I16(x.abs()),
                     DScalar::I32(x) => DScalar::I32(x.abs()),
                     DScalar::I64(x) => DScalar::I64(x.abs()),
-                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) => unreachable!(),
+                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => unreachable!(),
                 }
             }
             UnaryOp::Neg => {
@@ -1543,7 +1587,7 @@ impl UnaryOp {
                     DScalar::I16(x) => DScalar::I16(-x),
                     DScalar::I32(x) => DScalar::I32(-x),
                     DScalar::I64(x) => DScalar::I64(-x),
-                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) => unreachable!(),
+                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => unreachable!(),
                 }
             }
             UnaryOp::Sin => map_float!(x, |x| x.sin()),
