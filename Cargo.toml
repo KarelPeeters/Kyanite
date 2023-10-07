@@ -7,7 +7,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-version = "0.2.1"
+version = "0.3.0"
 license = "Apache-2.0 OR MIT"
 categories = ["science", "compilers"]
 keywords = ["inference", "neural-network", "gpu", "cuda", "kyanite"]
