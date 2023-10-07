@@ -5,7 +5,6 @@ mod elementwise;
 mod opt;
 
 mod graphs;
-mod kernels;
 mod onnx;
 
 mod slow;
