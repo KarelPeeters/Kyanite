@@ -10,6 +10,15 @@ repository.workspace = true
 authors.workspace = true
 readme.workspace = true
 
+# trick to detect docs.rs building
+# to test locally, run `cargo doc --no-deps --features docsrs`
+# source: https://users.rust-lang.org/t/knowing-if-a-build-rs-script-is-running-in-rustdoc/76535
+[features]
+docsrs = []
+
+[package.metadata.docs.rs]
+features = ["docsrs"]
+
 [build-dependencies]
 bindgen.workspace = true
 

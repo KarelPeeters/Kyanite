@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
+use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 
 #[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
@@ -24,7 +24,7 @@ fn get_var_path(name: &str) -> PathBuf {
     path
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(all(target_family = "windows", not(feature = "docsrs")))]
 fn link_cuda() -> Vec<PathBuf> {
     let cuda_path = get_var_path("CUDA_PATH");
     let cudnn_path = get_var_path("CUDNN_PATH");
@@ -44,13 +44,24 @@ fn link_cuda() -> Vec<PathBuf> {
     ]
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(all(target_family = "unix", not(feature = "docsrs")))]
 fn link_cuda() -> Vec<PathBuf> {
+    // TODO also use env vars here if they're present?
     println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
 
     vec![
         PathBuf::from("/usr/local/cuda/include/"),
         PathBuf::from("/usr/local/cuda/include/nvtx3"),
+    ]
+}
+
+#[cfg(feature = "docsrs")]
+fn link_cuda() -> Vec<PathBuf> {
+    println!("Running in docs.rs mode, using vendored headers");
+    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    vec![
+        manifest_dir.join("doc_headers/cuda_include"),
+        manifest_dir.join("doc_headers/cudnn_include"),
     ]
 }
 
