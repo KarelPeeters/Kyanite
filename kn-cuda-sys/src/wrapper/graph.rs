@@ -34,7 +34,7 @@ impl CudaGraph {
     pub unsafe fn instantiate(&self) -> CudaGraphExec {
         //TODO try printing error string for fun
         let mut inner = null_mut();
-        cudaGraphInstantiate(&mut inner as *mut _, self.inner(), null_mut(), null_mut(), 0).unwrap();
+        cudaGraphInstantiate(&mut inner as *mut _, self.inner(), 0).unwrap();
         CudaGraphExec { inner }
     }
 

@@ -55,6 +55,8 @@ Ensure that the environment variable `CUDA_PATH` is set such that `CUDA_PATH/bin
 * Cudnn: [archive file](https://developer.nvidia.com/cudnn), to be extract to a location of your choosing.
 Ensure that the environment variable `CUDNN_PATH` is set such that `CUDNN_PATH/bin` exists.
 
+The project has been tested with Cuda `v12.2` and cuDNN version `v8.9.5`. Newer versions might work, but this is not guaranteed since cuda sometimes changes the name of or removed certain functions. 
+
 ## Details
 
 The typical pipeline is shown in the first figure below. The second figure shows the results of running this pipeline on a simple NN architecture.

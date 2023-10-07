@@ -7,7 +7,7 @@ use crate::bindings::{
     cublasLtMatmulPreferenceAttributes_t, cublasLtMatmulPreferenceCreate, cublasLtMatmulPreferenceDestroy,
     cublasLtMatmulPreferenceSetAttribute, cublasLtMatmulPreference_t, cublasLtMatrixLayoutAttribute_t,
     cublasLtMatrixLayoutCreate, cublasLtMatrixLayoutDestroy, cublasLtMatrixLayoutSetAttribute, cublasLtMatrixLayout_t,
-    cublasLtOrder_t, cublasLtPointerModeMask_t, cudaDataType_t, cudnnActivationDescriptor_t, cudnnActivationMode_t,
+    cublasLtOrder_t, cudaDataType_t, cudnnActivationDescriptor_t, cudnnActivationMode_t,
     cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor,
     cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor,
     cudnnCreatePoolingDescriptor, cudnnCreateReduceTensorDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t,
@@ -578,6 +578,10 @@ impl MatMulDesc {
             )
             .unwrap();
 
+            // TODO do we need to set CUBLASLT_MATMUL_PREF_POINTER_MODE_MASK and CUBLASLT_MATMUL_PREF_EPILOGUE_MASK here?
+            //   see the deprecations here: https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cublas-release-12-0-update-1
+            //   epilogue is probably fine (we already set it here), but what about the pointer?
+
             if let Some(bias) = bias {
                 cublasLtMatmulDescSetAttribute(
                     inner,
@@ -615,7 +619,7 @@ impl Drop for MatMulPreference {
 }
 
 impl MatMulPreference {
-    pub fn new(min_alignment: usize, max_workspace: usize, epilogue: cublasLtEpilogue_t) -> Self {
+    pub fn new(min_alignment: usize, max_workspace: usize) -> Self {
         unsafe {
             let mut inner = null_mut();
             cublasLtMatmulPreferenceCreate(&mut inner as *mut _).unwrap();
@@ -636,22 +640,6 @@ impl MatMulPreference {
                 )
                 .unwrap();
             }
-
-            cublasLtMatmulPreferenceSetAttribute(
-                inner,
-                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_POINTER_MODE_MASK,
-                &(cublasLtPointerModeMask_t::CUBLASLT_POINTER_MODE_MASK_HOST as u32) as *const _ as *const _,
-                std::mem::size_of::<u32>(),
-            )
-            .unwrap();
-
-            cublasLtMatmulPreferenceSetAttribute(
-                inner,
-                cublasLtMatmulPreferenceAttributes_t::CUBLASLT_MATMUL_PREF_EPILOGUE_MASK,
-                &(epilogue as u32) as *const _ as *const _,
-                std::mem::size_of::<u32>(),
-            )
-            .unwrap();
 
             cublasLtMatmulPreferenceSetAttribute(
                 inner,
