@@ -7,7 +7,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-version = "0.4.0"
+version = "0.4.1"
 license = "Apache-2.0 OR MIT"
 categories = ["science", "compilers"]
 keywords = ["inference", "neural-network", "gpu", "cuda", "kyanite"]
@@ -25,9 +25,9 @@ readme = "Readme.md"
 
 [workspace.dependencies]
 # path dependencies
-kn-graph = { path = "kn-graph", version = "0.4.0" }
-kn-cuda-sys = { path = "kn-cuda-sys", version = "0.4.0" }
-kn-cuda-eval = { path = "kn-cuda-eval", version = "0.4.0" }
+kn-graph = { path = "kn-graph", version = "0.4.1" }
+kn-cuda-sys = { path = "kn-cuda-sys", version = "0.4.1" }
+kn-cuda-eval = { path = "kn-cuda-eval", version = "0.4.1" }
 
 # crates.io dependencies
 bindgen = "0.68.1"
