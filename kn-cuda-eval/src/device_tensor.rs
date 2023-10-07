@@ -125,7 +125,7 @@ impl DeviceTensor {
         }
     }
 
-    /// A (potentially) slower version of [Self::copy_from_host] that works for any strides,
+    /// A (potentially) slower version of [Self::copy_simple_from_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_from_host_staged(&self, buffer: &[u8]) {
         assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");
@@ -146,7 +146,7 @@ impl DeviceTensor {
         }
     }
 
-    /// A (potentially) slower version of [Self::copy_to_host] that works for any strides,
+    /// A (potentially) slower version of [Self::copy_simple_to_host] that works for any strides,
     /// by potentially copying to an intermediate stage on the device.
     pub unsafe fn copy_to_host_staged(&self, buffer: &mut [u8]) {
         assert_eq!(self.dtype(), DType::F32, "Only f32 is supported for now");

@@ -323,7 +323,7 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
     concatenate(IxDyn(&output_shape), axis, slices.as_slice())
 }
 
-/// Wrapper around [ndarray::concatenate] that can handle an empty input list.
+/// Wrapper around [ndarray::concatenate()] that can handle an empty input list.
 pub fn concatenate<T: Clone>(
     output_shape: IxDyn,
     axis: usize,
