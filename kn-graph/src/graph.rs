@@ -9,9 +9,9 @@ use itertools::{Itertools, zip_eq};
 use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
-use crate::{shape};
+use crate::shape;
 use crate::cpu::{OperationError, OperationResult, run_cpu_const_operation};
-use crate::dtype::{map_dscalar_pair, dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, Tensor};
+use crate::dtype::{dispatch_dtensor, dispatch_dtype, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
 use crate::optimizer::recurse::heap_recurse;
 use crate::shape::{Shape, Size};
 
@@ -450,7 +450,7 @@ impl Graph {
                         missing_arg = Some(arg);
                         //   the exact error used here doesn't matter
                         Err(OperationError::MissingOperand)
-                    },
+                    }
                 }
             });
 
@@ -1367,6 +1367,20 @@ impl Graph {
         sub.output(new);
 
         sub
+    }
+
+    /// Generate a set of dummy inputs that have the right shapes and dtypes and are all fully zero.
+    /// This can be useful for some quick testing.
+    pub fn dummy_zero_inputs(&self, batch_size: usize) -> Vec<DTensor> {
+        // TODO add add a random version? ofc both can break gather operations, but that's acceptable
+        self
+            .inputs()
+            .iter()
+            .map(|&v| {
+                let dtype = self[v].dtype;
+                dispatch_dtype!(dtype, |_T, _fs, ft| ft(Tensor::zeros(self[v].shape.eval(batch_size).dims)))
+            })
+            .collect_vec()
     }
 }
 
