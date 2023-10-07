@@ -2,7 +2,11 @@
 
 //! A Cuda CPU executor for neural network graphs from the `kn_graph` crate. The core type is [CudaExecutor](executor::CudaExecutor).
 //!
-//! The typical workflow:
+//! This crate is part of the [Kyanite](https://github.com/KarelPeeters/Kyanite) project, see its readme for more information.
+//! See [system-requirements](https://github.com/KarelPeeters/Kyanite#system-requirements) for how to set up the cuda libraries.
+//!
+//! # Quick demo
+//!
 //! ```no_run
 //! # use kn_cuda_eval::executor::CudaExecutor;
 //! # use kn_cuda_sys::wrapper::handle::Device;
@@ -28,8 +32,7 @@
 //! # Ok(())
 //! # }
 //! ```
-//!
-//! This crate is part of the [Kyanite](https://github.com/KarelPeeters/Kyanite) project, see its readme for more information.
+
 
 /// Export the [Device] type for convenience: often an explicit dependency on the `kn_cuda_sys` crate is not needed.
 pub use kn_cuda_sys::wrapper::handle::Device;

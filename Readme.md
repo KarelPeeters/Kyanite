@@ -47,6 +47,14 @@ let mut executor = CudaExecutor::new(device, &graph, batch_size);
 let outputs: &[DTensor] = executor.evaluate(&inputs);
 ```
 
+## System requirements
+
+To use the cuda crates, the appropriate libraries need to be installed on this system, they are not downloaded automatically:
+* Cuda (includes Cuda, cuBLAS, NVRTC): [installer](https://developer.nvidia.com/cuda-downloads), follow the instructions.
+Ensure that the environment variable `CUDA_PATH` is set such that `CUDA_PATH/bin/` exists.
+* Cudnn: [archive file](https://developer.nvidia.com/cudnn), to be extract to a location of your choosing.
+Ensure that the environment variable `CUDNN_PATH` is set such that `CUDNN_PATH/bin` exists.
+
 ## Details
 
 The typical pipeline is shown in the first figure below. The second figure shows the results of running this pipeline on a simple NN architecture.

@@ -13,6 +13,7 @@
 //! The [wrapper]  module contains more user-friendly and where possible safe wrappers around certain objects.
 //!
 //! This crate is part of the [Kyanite](https://github.com/KarelPeeters/Kyanite) project, see its readme for more information.
+//! See [system-requirements](https://github.com/KarelPeeters/Kyanite#system-requirements) for how to set up the cuda libraries.
 
 pub mod bindings;
 pub mod wrapper;
