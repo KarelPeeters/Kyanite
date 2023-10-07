@@ -49,6 +49,8 @@ let outputs: &[DTensor] = executor.evaluate(&inputs);
 
 ## System requirements
 
+To parse ONNX files, the [prost crate](https://crates.io/crates/prost) is used. This requires that `protoc` is installed and that the `PROTOC` environment variable is set to point to the executable. See their installation instructions (or the error message the build script shows if any) for more details.
+
 To use the cuda crates, the appropriate libraries need to be installed on this system, they are not downloaded automatically:
 * Cuda (includes Cuda, cuBLAS, NVRTC): [installer](https://developer.nvidia.com/cuda-downloads), follow the instructions.
 Ensure that the environment variable `CUDA_PATH` is set such that `CUDA_PATH/bin/` exists.
