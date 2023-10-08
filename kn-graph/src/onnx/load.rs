@@ -1098,10 +1098,13 @@ fn resolve_dtype(data_type: DataType, node: &str) -> OnnxResult<DType> {
         DataType::Int64 => DType::I64,
         DataType::Uint32 => DType::U32,
         DataType::Uint64 => DType::U64,
-        DataType::Undefined | DataType::String | DataType::Bool |
-        DataType::Float16 |
+        DataType::Bool => DType::Bool,
+        DataType::Undefined | DataType::String |
         DataType::Complex64 | DataType::Complex128 |
-        DataType::Bfloat16 => return Err(OnnxError::UnsupportedType(node.to_owned(), data_type)),
+        DataType::Float16 | DataType::Bfloat16 |
+        DataType::Float8e4m3fn | DataType::Float8e4m3fnuz | DataType::Float8e5m2 | DataType::Float8e5m2fnuz => {
+            return Err(OnnxError::UnsupportedType(node.to_owned(), data_type))
+        },
     };
     Ok(dtype)
 }

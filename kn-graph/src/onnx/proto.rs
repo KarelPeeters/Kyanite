@@ -51,6 +51,12 @@ pub struct AttributeProto {
     /// sparse tensor value
     #[prost(message, optional, tag = "22")]
     pub sparse_tensor: ::core::option::Option<SparseTensorProto>,
+    /// Do not use field below, it's deprecated.
+    /// optional ValueProto v = 12;         // value - subsumes everything but graph
+    ///
+    /// type proto
+    #[prost(message, optional, tag = "14")]
+    pub tp: ::core::option::Option<TypeProto>,
     /// list of floats
     #[prost(float, repeated, tag = "7")]
     pub floats: ::prost::alloc::vec::Vec<f32>,
@@ -69,6 +75,9 @@ pub struct AttributeProto {
     /// list of sparse tensors
     #[prost(message, repeated, tag = "23")]
     pub sparse_tensors: ::prost::alloc::vec::Vec<SparseTensorProto>,
+    /// list of type protos
+    #[prost(message, repeated, tag = "15")]
+    pub type_protos: ::prost::alloc::vec::Vec<TypeProto>,
 }
 /// Nested message and enum types in `AttributeProto`.
 pub mod attribute_proto {
@@ -94,12 +103,14 @@ pub mod attribute_proto {
         Tensor = 4,
         Graph = 5,
         SparseTensor = 11,
+        TypeProto = 13,
         Floats = 6,
         Ints = 7,
         Strings = 8,
         Tensors = 9,
         Graphs = 10,
         SparseTensors = 12,
+        TypeProtos = 14,
     }
     impl AttributeType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -115,12 +126,14 @@ pub mod attribute_proto {
                 AttributeType::Tensor => "TENSOR",
                 AttributeType::Graph => "GRAPH",
                 AttributeType::SparseTensor => "SPARSE_TENSOR",
+                AttributeType::TypeProto => "TYPE_PROTO",
                 AttributeType::Floats => "FLOATS",
                 AttributeType::Ints => "INTS",
                 AttributeType::Strings => "STRINGS",
                 AttributeType::Tensors => "TENSORS",
                 AttributeType::Graphs => "GRAPHS",
                 AttributeType::SparseTensors => "SPARSE_TENSORS",
+                AttributeType::TypeProtos => "TYPE_PROTOS",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -133,12 +146,14 @@ pub mod attribute_proto {
                 "TENSOR" => Some(Self::Tensor),
                 "GRAPH" => Some(Self::Graph),
                 "SPARSE_TENSOR" => Some(Self::SparseTensor),
+                "TYPE_PROTO" => Some(Self::TypeProto),
                 "FLOATS" => Some(Self::Floats),
                 "INTS" => Some(Self::Ints),
                 "STRINGS" => Some(Self::Strings),
                 "TENSORS" => Some(Self::Tensors),
                 "GRAPHS" => Some(Self::Graphs),
                 "SPARSE_TENSORS" => Some(Self::SparseTensors),
+                "TYPE_PROTOS" => Some(Self::TypeProtos),
                 _ => None,
             }
         }
@@ -385,6 +400,24 @@ pub struct ModelProto {
     /// If this field is empty, the training behavior of the model is undefined.
     #[prost(message, repeated, tag = "20")]
     pub training_info: ::prost::alloc::vec::Vec<TrainingInfoProto>,
+    /// A list of function protos local to the model.
+    ///
+    /// Name of the function "FunctionProto.name" should be unique within the domain "FunctionProto.domain".
+    /// In case of any conflicts the behavior (whether the model local functions are given higher priority,
+    /// or standard opserator sets are given higher priotity or this is treated as error) is defined by
+    /// the runtimes.
+    ///
+    /// The operator sets imported by FunctionProto should be compatible with the ones
+    /// imported by ModelProto and other model local FunctionProtos.
+    /// Example, if same operator set say 'A' is imported by a FunctionProto and ModelProto
+    /// or by 2 FunctionProtos then versions for the operator set may be different but,
+    /// the operator schema returned for op_type, domain, version combination
+    /// for both the versions should be same for every node in the function body.
+    ///
+    /// One FunctionProto can reference other FunctionProto in the model, however, recursive reference
+    /// is not allowed.
+    #[prost(message, repeated, tag = "25")]
+    pub functions: ::prost::alloc::vec::Vec<FunctionProto>,
 }
 /// StringStringEntryProto follows the pattern for cross-proto-version maps.
 /// See <https://developers.google.com/protocol-buffers/docs/proto3#maps>
@@ -477,11 +510,11 @@ pub struct TensorProto {
     /// When this field is present, the data_type field MUST be FLOAT or COMPLEX64.
     #[prost(float, repeated, tag = "4")]
     pub float_data: ::prost::alloc::vec::Vec<f32>,
-    /// For int32, uint8, int8, uint16, int16, bool, and float16 values
-    /// float16 values must be bit-wise converted to an uint16_t prior
+    /// For int32, uint8, int8, uint16, int16, bool, float8, and float16 values
+    /// float16 and float8 values must be bit-wise converted to an uint16_t prior
     /// to writing to the buffer.
     /// When this field is present, the data_type field MUST be
-    /// INT32, INT16, INT8, UINT16, UINT8, BOOL, or FLOAT16
+    /// INT32, INT16, INT8, UINT16, UINT8, BOOL, FLOAT16, BFLOAT16, FLOAT8E4M3FN, FLOAT8E4M3FNUZ, FLOAT8E5M2, FLOAT8E5M2FNUZ
     #[prost(int32, repeated, tag = "5")]
     pub int32_data: ::prost::alloc::vec::Vec<i32>,
     /// For strings.
@@ -610,6 +643,21 @@ pub mod tensor_proto {
         /// floating-point number truncated to 16 bits.
         /// This format has 1 sign bit, 8 exponent bits, and 7 mantissa bits.
         Bfloat16 = 16,
+        /// Non-IEEE floating-point format based on papers
+        /// FP8 Formats for Deep Learning, <https://arxiv.org/abs/2209.05433,>
+        /// 8-bit Numerical Formats For Deep Neural Networks, <https://arxiv.org/pdf/2206.02915.pdf.>
+        /// Operators supported FP8 are Cast, CastLike, QuantizeLinear, DequantizeLinear.
+        /// The computation usually happens inside a block quantize / dequantize
+        /// fused by the runtime.
+        ///
+        /// float 8, mostly used for coefficients, supports nan, not inf
+        Float8e4m3fn = 17,
+        /// float 8, mostly used for coefficients, supports nan, not inf, no negative zero
+        Float8e4m3fnuz = 18,
+        /// follows IEEE 754, supports nan, inf, mostly used for gradients
+        Float8e5m2 = 19,
+        /// follows IEEE 754, supports nan, inf, mostly used for gradients, no negative zero
+        Float8e5m2fnuz = 20,
     }
     impl DataType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -635,6 +683,10 @@ pub mod tensor_proto {
                 DataType::Complex64 => "COMPLEX64",
                 DataType::Complex128 => "COMPLEX128",
                 DataType::Bfloat16 => "BFLOAT16",
+                DataType::Float8e4m3fn => "FLOAT8E4M3FN",
+                DataType::Float8e4m3fnuz => "FLOAT8E4M3FNUZ",
+                DataType::Float8e5m2 => "FLOAT8E5M2",
+                DataType::Float8e5m2fnuz => "FLOAT8E5M2FNUZ",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -657,6 +709,10 @@ pub mod tensor_proto {
                 "COMPLEX64" => Some(Self::Complex64),
                 "COMPLEX128" => Some(Self::Complex128),
                 "BFLOAT16" => Some(Self::Bfloat16),
+                "FLOAT8E4M3FN" => Some(Self::Float8e4m3fn),
+                "FLOAT8E4M3FNUZ" => Some(Self::Float8e4m3fnuz),
+                "FLOAT8E5M2" => Some(Self::Float8e5m2),
+                "FLOAT8E5M2FNUZ" => Some(Self::Float8e5m2fnuz),
                 _ => None,
             }
         }
@@ -744,7 +800,7 @@ pub mod tensor_shape_proto {
         /// Standard denotation can optionally be used to denote tensor
         /// dimensions with standard semantic descriptions to ensure
         /// that operations are applied to the correct axis of a tensor.
-        /// Refer to <https://github.com/onnx/onnx/blob/master/docs/DimensionDenotation.md#denotation-definition>
+        /// Refer to <https://github.com/onnx/onnx/blob/main/docs/DimensionDenotation.md#denotation-definition>
         /// for pre-defined dimension denotations.
         #[prost(string, tag = "3")]
         pub denotation: ::prost::alloc::string::String,
@@ -772,11 +828,11 @@ pub mod tensor_shape_proto {
 pub struct TypeProto {
     /// An optional denotation can be used to denote the whole
     /// type with a standard semantic description as to what is
-    /// stored inside. Refer to <https://github.com/onnx/onnx/blob/master/docs/TypeDenotation.md#type-denotation-definition>
+    /// stored inside. Refer to <https://github.com/onnx/onnx/blob/main/docs/TypeDenotation.md#type-denotation-definition>
     /// for pre-defined type denotations.
     #[prost(string, tag = "6")]
     pub denotation: ::prost::alloc::string::String,
-    #[prost(oneof = "type_proto::Value", tags = "1, 4, 5")]
+    #[prost(oneof = "type_proto::Value", tags = "1, 4, 5, 9, 8")]
     pub value: ::core::option::Option<type_proto::Value>,
 }
 /// Nested message and enum types in `TypeProto`.
@@ -818,6 +874,29 @@ pub mod type_proto {
             ::prost::alloc::boxed::Box<super::TypeProto>,
         >,
     }
+    /// wrapper for Tensor, Sequence, or Map
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Optional {
+        /// The type and optional shape of the element wrapped.
+        /// This field MUST be present for this version of the IR.
+        /// Possible values correspond to OptionalProto.DataType enum
+        #[prost(message, optional, boxed, tag = "1")]
+        pub elem_type: ::core::option::Option<
+            ::prost::alloc::boxed::Box<super::TypeProto>,
+        >,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SparseTensor {
+        /// This field MUST NOT have the value of UNDEFINED
+        /// This field MUST have a valid TensorProto.DataType value
+        /// This field MUST be present for this version of the IR.
+        #[prost(int32, tag = "1")]
+        pub elem_type: i32,
+        #[prost(message, optional, tag = "2")]
+        pub shape: ::core::option::Option<super::TensorShapeProto>,
+    }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
@@ -830,6 +909,12 @@ pub mod type_proto {
         /// The type of a map.
         #[prost(message, tag = "5")]
         MapType(::prost::alloc::boxed::Box<Map>),
+        /// The type of an optional.
+        #[prost(message, tag = "9")]
+        OptionalType(::prost::alloc::boxed::Box<Optional>),
+        /// Type of the sparse tensor
+        #[prost(message, tag = "8")]
+        SparseTensorType(SparseTensor),
     }
 }
 /// Operator Sets
@@ -848,6 +933,42 @@ pub struct OperatorSetIdProto {
     /// This field MUST be present in this version of the IR.
     #[prost(int64, tag = "2")]
     pub version: i64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FunctionProto {
+    /// The name of the function, similar usage of op_type in OperatorProto.
+    /// Combined with FunctionProto.domain, this forms the unique identity of
+    /// the FunctionProto.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// The inputs and outputs of the function.
+    #[prost(string, repeated, tag = "4")]
+    pub input: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "5")]
+    pub output: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The attribute parameters of the function.
+    /// It is for function parameters without default values.
+    #[prost(string, repeated, tag = "6")]
+    pub attribute: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The attribute protos of the function.
+    /// It is for function attributes with default values.
+    /// A function attribute shall be represented either as
+    /// a string attribute or an AttributeProto, not both.
+    #[prost(message, repeated, tag = "11")]
+    pub attribute_proto: ::prost::alloc::vec::Vec<AttributeProto>,
+    /// The nodes in the function.
+    #[prost(message, repeated, tag = "7")]
+    pub node: ::prost::alloc::vec::Vec<NodeProto>,
+    /// A human-readable documentation for this function. Markdown is allowed.
+    #[prost(string, tag = "8")]
+    pub doc_string: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "9")]
+    pub opset_import: ::prost::alloc::vec::Vec<OperatorSetIdProto>,
+    /// The domain which this function belongs to. Combined with FunctionProto.name, this forms the unique identity of
+    /// the FunctionProto.
+    #[prost(string, tag = "10")]
+    pub domain: ::prost::alloc::string::String,
 }
 /// Versioning
 ///
@@ -889,7 +1010,7 @@ pub enum Version {
     ///    - Add message SparseTensorProto
     ///    - Add sparse initializers
     IrVersion2019919 = 6,
-    /// IR VERSION 7 published on <TBD>
+    /// IR VERSION 7 published on May 8, 2020
     /// - Add support to allow function body graph to rely on multiple external opreator sets.
     /// - Add a list to promote inference graph's initializers to global and
     ///    mutable variables. Global variables are visible in all graphs of the
@@ -898,7 +1019,17 @@ pub enum Version {
     ///    method and training algorithm. The execution of TrainingInfoProto
     ///    can modify the values of mutable variables.
     /// - Implicitly add inference graph into each TrainingInfoProto's algorithm.
-    IrVersion = 7,
+    IrVersion202058 = 7,
+    /// IR VERSION 8 published on July 30, 2021
+    /// Introduce TypeProto.SparseTensor
+    /// Introduce TypeProto.Optional
+    /// Added a list of FunctionProtos local to the model
+    /// Deprecated since_version and operator status from FunctionProto
+    IrVersion2021730 = 8,
+    /// IR VERSION 9 published on TBD
+    /// Added AttributeProto to FunctionProto so that default attribute values can be set.
+    /// Added FLOAT8E4M3FN, FLOAT8E4M3FNUZ, FLOAT8E5M2, FLOAT8E5M2FNUZ.
+    IrVersion = 9,
 }
 impl Version {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -914,6 +1045,8 @@ impl Version {
             Version::IrVersion2019122 => "IR_VERSION_2019_1_22",
             Version::IrVersion2019318 => "IR_VERSION_2019_3_18",
             Version::IrVersion2019919 => "IR_VERSION_2019_9_19",
+            Version::IrVersion202058 => "IR_VERSION_2020_5_8",
+            Version::IrVersion2021730 => "IR_VERSION_2021_7_30",
             Version::IrVersion => "IR_VERSION",
         }
     }
@@ -927,7 +1060,36 @@ impl Version {
             "IR_VERSION_2019_1_22" => Some(Self::IrVersion2019122),
             "IR_VERSION_2019_3_18" => Some(Self::IrVersion2019318),
             "IR_VERSION_2019_9_19" => Some(Self::IrVersion2019919),
+            "IR_VERSION_2020_5_8" => Some(Self::IrVersion202058),
+            "IR_VERSION_2021_7_30" => Some(Self::IrVersion2021730),
             "IR_VERSION" => Some(Self::IrVersion),
+            _ => None,
+        }
+    }
+}
+/// Operator/function status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OperatorStatus {
+    Experimental = 0,
+    Stable = 1,
+}
+impl OperatorStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            OperatorStatus::Experimental => "EXPERIMENTAL",
+            OperatorStatus::Stable => "STABLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "EXPERIMENTAL" => Some(Self::Experimental),
+            "STABLE" => Some(Self::Stable),
             _ => None,
         }
     }
