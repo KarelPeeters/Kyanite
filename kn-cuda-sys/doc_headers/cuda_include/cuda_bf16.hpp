@@ -77,7 +77,8 @@
 
 // implicitly provided by NVRTC
 #if !defined(__CUDACC_RTC__)
-#include <nv/target>
+// Modified from original: https://github.com/rust-lang/cargo/issues/12790
+#include <nv/not_target>
 #endif  /* !defined(__CUDACC_RTC__) */
 
 #if !defined(IF_DEVICE_OR_CUDACC)
