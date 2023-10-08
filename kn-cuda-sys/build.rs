@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 
-#[cfg(all(target_family = "windows", not(feature = "docsrs")))]
+#[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
     println!("rerun-if-env-changed={}", name);
 
@@ -24,7 +24,7 @@ fn get_var_path(name: &str) -> PathBuf {
     path
 }
 
-#[cfg(all(target_family = "windows", not(feature = "docsrs")))]
+#[cfg(target_family = "windows")]
 fn link_cuda() -> Vec<PathBuf> {
     let cuda_path = get_var_path("CUDA_PATH");
     let cudnn_path = get_var_path("CUDNN_PATH");
@@ -44,7 +44,7 @@ fn link_cuda() -> Vec<PathBuf> {
     ]
 }
 
-#[cfg(all(target_family = "unix", not(feature = "docsrs")))]
+#[cfg(target_family = "unix")]
 fn link_cuda() -> Vec<PathBuf> {
     // TODO also use env vars here if they're present?
     println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
@@ -55,16 +55,14 @@ fn link_cuda() -> Vec<PathBuf> {
     ]
 }
 
-// TODO switch to DOCS_RS env var
-#[cfg(feature = "docsrs")]
-fn link_cuda() -> Vec<PathBuf> {
+fn link_cuda_docs_rs() -> Vec<PathBuf> {
     println!("Running in docs.rs mode, using vendored headers");
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
 
     // https://github.com/rust-lang/cargo/issues/12790
     std::fs::copy(
         manifest_dir.join("doc_headers/cuda_include/nv/not_target"),
-        manifest_dir.join("doc_headers/cuda_include/nv/target")
+        manifest_dir.join("doc_headers/cuda_include/nv/target"),
     ).unwrap();
 
     vec![
@@ -115,8 +113,18 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=cublasLt");
     println!("cargo:rustc-link-lib=dylib=nvrtc");
 
+    // check if this is a docs.rs build
+    println!("rerun-if-env-changed=DOCS_RS");
+    let is_docs_rs = std::env::var_os("DOCS_RS").is_some();
+
     // find include directories and set up link search paths
-    let include_paths = link_cuda();
+    let include_paths = if is_docs_rs {
+        link_cuda_docs_rs()
+    } else {
+        link_cuda()
+    };
+
+    // add include dirs to builder
     let builder = include_paths.iter().fold(builder, |builder, path| {
         let path = path.to_str().unwrap();
 
