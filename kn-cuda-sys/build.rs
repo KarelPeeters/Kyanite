@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 
-#[cfg(target_family = "windows")]
+#[cfg(all(target_family = "windows", not(feature = "docsrs")))]
 fn get_var_path(name: &str) -> PathBuf {
     println!("rerun-if-env-changed={}", name);
 
@@ -55,10 +55,18 @@ fn link_cuda() -> Vec<PathBuf> {
     ]
 }
 
+// TODO switch to DOCS_RS env var
 #[cfg(feature = "docsrs")]
 fn link_cuda() -> Vec<PathBuf> {
     println!("Running in docs.rs mode, using vendored headers");
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+
+    // https://github.com/rust-lang/cargo/issues/12790
+    std::fs::copy(
+        manifest_dir.join("doc_headers/cuda_include/nv/not_target"),
+        manifest_dir.join("doc_headers/cuda_include/nv/target")
+    ).unwrap();
+
     vec![
         manifest_dir.join("doc_headers/cuda_include"),
         manifest_dir.join("doc_headers/cudnn_include"),
