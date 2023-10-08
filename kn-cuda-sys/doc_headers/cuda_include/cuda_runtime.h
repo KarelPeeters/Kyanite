@@ -98,7 +98,8 @@ typedef unsigned size_t;
 #endif /* !__CUDACC_RTC__ */
 #include "crt/host_defines.h"
 #ifdef __CUDACC_RTC__
-#include "target"
+// Modified from original: https://github.com/rust-lang/cargo/issues/12790
+#include "not_target"
 #endif  /* defined(__CUDACC_RTC__) */
 
 

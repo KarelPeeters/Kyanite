@@ -59,12 +59,6 @@ fn link_cuda_docs_rs() -> Vec<PathBuf> {
     println!("Running in docs.rs mode, using vendored headers");
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
 
-    // https://github.com/rust-lang/cargo/issues/12790
-    std::fs::copy(
-        manifest_dir.join("doc_headers/cuda_include/nv/not_target"),
-        manifest_dir.join("doc_headers/cuda_include/nv/target"),
-    ).unwrap();
-
     vec![
         manifest_dir.join("doc_headers/cuda_include"),
         manifest_dir.join("doc_headers/cudnn_include"),
