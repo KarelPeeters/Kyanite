@@ -10,9 +10,6 @@ repository.workspace = true
 authors.workspace = true
 readme.workspace = true
 
-[build-dependencies]
-prost-build.workspace = true
-
 [dependencies]
 byteorder.workspace = true
 bytemuck.workspace = true

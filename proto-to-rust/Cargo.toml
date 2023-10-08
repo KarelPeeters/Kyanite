@@ -1,0 +1,7 @@
+[package]
+name = "proto-to-rust"
+version = "0.1.0"
+
+[dependencies]
+prost.workspace = true
+prost-build.workspace = true

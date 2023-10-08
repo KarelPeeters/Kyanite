@@ -409,9 +409,9 @@ checksum = "dd2e7510819d6fbf51a5545c8f922716ecfb14df168a3242f7d33e0239efe6a1"
 
 [[package]]
 name = "fastrand"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6999dc1837253364c2ebb0704ba97994bd874e8f195d665c50b7548f6ea92764"
+checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "fdeflate"
@@ -604,7 +604,6 @@ dependencies = [
  "num-traits",
  "palette",
  "prost",
- "prost-build",
  "rand",
  "unwrap-match",
 ]
@@ -933,6 +932,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e081b29f63d83a4bc75cfc9f3fe424f9156cf92d8a4f0c9407cce9a1b67327cf"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "proto-to-rust"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
 ]
 
 [[package]]

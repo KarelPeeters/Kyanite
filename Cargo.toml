@@ -3,6 +3,7 @@ members = [
     "kn-graph",
     "kn-cuda-sys",
     "kn-cuda-eval",
+    "proto-to-rust",
 ]
 
 [workspace.package]
