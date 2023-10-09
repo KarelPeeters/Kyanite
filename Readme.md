@@ -7,6 +7,8 @@
 [![Crates.io kn-cuda-sys](https://img.shields.io/crates/v/kn-cuda-sys?label=kn-cuda-sys)](https://crates.io/crates/kn-cuda-sys)
 [![Crates.io kn-cuda-eval](https://img.shields.io/crates/v/kn-cuda-eval?label=kn-cuda-eval)](https://crates.io/crates/kn-cuda-eval)
 [![docs.rs](https://img.shields.io/docsrs/kn-graph)](https://docs.rs/releases/search?query=kyanite+kn-)
+![CI status](https://github.com/KarelPeeters/Kyanite/actions/workflows/CI.yml/badge.svg)
+
 
 A neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on Nvidia GPUs using cuda/cudnn/cublas/nvrtc.
 
