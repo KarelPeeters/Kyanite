@@ -17,6 +17,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Check
-      run: cargo check --verbose
+      run: cargo check
     - name: Test kn-graph
-      run: cargo test --verbose -p kn-graph
+      run: cargo test -p kn-graph
