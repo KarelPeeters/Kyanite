@@ -7,11 +7,11 @@ use crate::onnx::external_data::{NoExternalData, PathExternalData};
 use crate::onnx::load::graph_from_onnx_bytes;
 use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
 
-#[allow(warnings)]
-mod proto;
 pub mod external_data;
 mod inputs;
 mod load;
+#[allow(warnings)]
+mod proto;
 pub mod result;
 mod store;
 mod typed_value;

@@ -9,7 +9,10 @@ fn unary() {
     // TODO build single graph for all cases
     // TODO other dtypes
     for &op in UnaryOp::ALL {
-        test_elementwise(|x| f32::from_dscalar(op.map(x.to_dscalar())).unwrap(), |g, a| g.unary(op, a));
+        test_elementwise(
+            |x| f32::from_dscalar(op.map(x.to_dscalar())).unwrap(),
+            |g, a| g.unary(op, a),
+        );
     }
 }
 
@@ -80,7 +83,7 @@ fn bit_cast() {
 
 // TODO test tricky double casts, eg. `i8->u16->u32` vs `i8->i16->u32`
 
-// TODO turn this into more general elementwise ops test builder, use for other unary/binary tests too 
+// TODO turn this into more general elementwise ops test builder, use for other unary/binary tests too
 struct CastState {
     graph: Graph,
     inputs: Vec<DTensor>,
@@ -90,7 +93,12 @@ struct CastState {
 
 impl CastState {
     pub fn new() -> Self {
-        Self { graph: Graph::new(), inputs: vec![], outputs: vec![], ran: false }
+        Self {
+            graph: Graph::new(),
+            inputs: vec![],
+            outputs: vec![],
+            ran: false,
+        }
     }
 
     fn value<X: IntoDScalar, Y: IntoDScalar>(&mut self, x: X, y: Y) {

@@ -83,17 +83,7 @@ pub struct AttributeProto {
 pub mod attribute_proto {
     /// Note: this enum is structurally identical to the OpSchema::AttrType
     /// enum defined in schema.h.  If you rev one, you likely need to rev the other.
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum AttributeType {
         Undefined = 0,
@@ -595,17 +585,7 @@ pub mod tensor_proto {
         #[prost(int64, tag = "2")]
         pub end: i64,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum DataType {
         Undefined = 0,
@@ -720,17 +700,7 @@ pub mod tensor_proto {
     /// Location of the data for this tensor. MUST be one of:
     /// - DEFAULT - data stored inside the protobuf message. Data is stored in raw_data (if set) otherwise in type-specified field.
     /// - EXTERNAL - data stored in an external location as described by external_data field.
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum DataLocation {
         Default = 0,
@@ -855,9 +825,7 @@ pub mod type_proto {
         /// The type and optional shape of each element of the sequence.
         /// This field MUST be present for this version of the IR.
         #[prost(message, optional, boxed, tag = "1")]
-        pub elem_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::TypeProto>,
-        >,
+        pub elem_type: ::core::option::Option<::prost::alloc::boxed::Box<super::TypeProto>>,
     }
     /// map<K,V>
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -870,9 +838,7 @@ pub mod type_proto {
         pub key_type: i32,
         /// This field MUST be present for this version of the IR.
         #[prost(message, optional, boxed, tag = "2")]
-        pub value_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::TypeProto>,
-        >,
+        pub value_type: ::core::option::Option<::prost::alloc::boxed::Box<super::TypeProto>>,
     }
     /// wrapper for Tensor, Sequence, or Map
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -882,9 +848,7 @@ pub mod type_proto {
         /// This field MUST be present for this version of the IR.
         /// Possible values correspond to OptionalProto.DataType enum
         #[prost(message, optional, boxed, tag = "1")]
-        pub elem_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::TypeProto>,
-        >,
+        pub elem_type: ::core::option::Option<::prost::alloc::boxed::Box<super::TypeProto>>,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]

@@ -20,7 +20,10 @@ fn test_negative_stride() {
     let input = device.alloc(input_desc.size_bytes());
     let output = device.alloc(input_desc.size_bytes());
 
-    let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, cudnnDataType_t::CUDNN_DATA_FLOAT);
+    let op_desc = TensorOpDescriptor::new(
+        cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD,
+        cudnnDataType_t::CUDNN_DATA_FLOAT,
+    );
 
     let zero = device.alloc(4);
     let zero_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1], cudnnDataType_t::CUDNN_DATA_FLOAT);

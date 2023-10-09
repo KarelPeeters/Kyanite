@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
 use itertools::Itertools;
+use std::fmt::{Display, Formatter};
 
 use crate::dtype::{DTensor, DType, Tensor};
 use crate::graph::{Graph, Value};
@@ -64,7 +64,10 @@ impl OnnxValue {
                 if let DTensor::I64(value) = value {
                     Ok(value.mapv(SignedSize::from_int).into_shared())
                 } else {
-                    return Err(AsShapeError::WrongType { expected: DType::I64, actual: value.dtype() });
+                    return Err(AsShapeError::WrongType {
+                        expected: DType::I64,
+                        actual: value.dtype(),
+                    });
                 }
             }
             OnnxValue::Size(size) => Ok(size.clone()),
@@ -75,7 +78,9 @@ impl OnnxValue {
         let shape_tensor = self.as_size(graph)?;
 
         if shape_tensor.shape().len() != 1 {
-            return Err(AsShapeError::WrongShape { shape: ConcreteShape::new(shape_tensor.shape().to_vec()) });
+            return Err(AsShapeError::WrongShape {
+                shape: ConcreteShape::new(shape_tensor.shape().to_vec()),
+            });
         }
 
         Ok(shape_tensor.iter().copied().collect_vec())
@@ -83,7 +88,8 @@ impl OnnxValue {
 
     pub fn as_shape(&self, graph: &Graph) -> Result<Shape, AsShapeError> {
         let signed = self.as_signed_shape(graph)?;
-        let unsigned = signed.iter()
+        let unsigned = signed
+            .iter()
             .map(|v| v.to_size())
             .try_collect()
             .map_err(|e| AsShapeError::Overflow(e))?;
@@ -117,18 +123,20 @@ impl SignedSize {
     pub const ZERO: SignedSize = SignedSize::from_int(0);
     pub const ONE: SignedSize = SignedSize::from_int(1);
     pub const NEG_ONE: SignedSize = SignedSize::from_int(-1);
-    pub const BATCH: SignedSize = SignedSize { batch_exp: 1, fixed_factor: 1 };
+    pub const BATCH: SignedSize = SignedSize {
+        batch_exp: 1,
+        fixed_factor: 1,
+    };
 }
 
 impl SignedSize {
     pub const fn new(batch_exp: u32, fixed_factor: i64) -> Self {
-        let batch_exp = if fixed_factor == 0 {
-            0
-        } else {
-            batch_exp
-        };
+        let batch_exp = if fixed_factor == 0 { 0 } else { batch_exp };
 
-        SignedSize { batch_exp, fixed_factor }
+        SignedSize {
+            batch_exp,
+            fixed_factor,
+        }
     }
 
     pub const fn from_int(i: i64) -> SignedSize {

@@ -5,11 +5,13 @@ use std::time::Instant;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
-    ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, Ix4, IxDyn, LinalgScalar, s, SliceInfo,
+    s, ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, Ix4, IxDyn, LinalgScalar, SliceInfo,
     SliceInfoElem, Zip,
 };
 
-use crate::dtype::{dispatch_dtype, dispatch_dtensor, DTensor, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor, DType};
+use crate::dtype::{
+    dispatch_dtensor, dispatch_dtype, map_dtensor, map_dtensor_pair, DTensor, DType, IntoDScalar, Tensor,
+};
 use crate::graph::{ConvDetails, Graph, Operation, SliceRange, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
@@ -105,7 +107,7 @@ fn run_cpu_operation(
         |index| Ok(inputs[index].clone()),
         Some(batch_size),
     )
-        .unwrap()
+    .unwrap()
 }
 
 pub(crate) fn run_cpu_const_operation(info: &ValueInfo, map: impl FnMut(Value) -> OperationResult) -> OperationResult {
@@ -221,10 +223,16 @@ fn try_run_cpu_operation(
 
             if let Some(y) = general.iter().next() {
                 let y_dtype = y.dtype();
-                assert_eq!(dtype, y_dtype, "Unary operation wrong dtype: expected {:?}: {:?} -> {:?}, got {:?}", op, dtype, dtype, y_dtype);
+                assert_eq!(
+                    dtype, y_dtype,
+                    "Unary operation wrong dtype: expected {:?}: {:?} -> {:?}, got {:?}",
+                    op, dtype, dtype, y_dtype
+                );
             }
 
-            dispatch_dtype!(dtype, |T, _fs, ft| ft(general.mapv(|x| T::from_dscalar(x).unwrap()).into_shared()))
+            dispatch_dtype!(dtype, |T, _fs, ft| ft(general
+                .mapv(|x| T::from_dscalar(x).unwrap())
+                .into_shared()))
         }
         Operation::Binary { left, right, op } => {
             let left = map(left)?;
@@ -298,7 +306,7 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
     output_shape[axis] = indices.len();
 
     let indices = match indices {
-        DTensor::F32(_) | DTensor::F64(_)  | DTensor::Bool(_) => {
+        DTensor::F32(_) | DTensor::F64(_) | DTensor::Bool(_) => {
             unreachable!("gather indices should be unsigned integers, got {:?}", indices.dtype())
         }
         DTensor::U8(indices) => indices.mapv(|x| x as u64).into_shared(),
@@ -324,11 +332,7 @@ pub fn cpu_gather<T: Clone>(input: &Tensor<T>, axis: usize, indices: DTensor) ->
 }
 
 /// Wrapper around [ndarray::concatenate()] that can handle an empty input list.
-pub fn concatenate<T: Clone>(
-    output_shape: IxDyn,
-    axis: usize,
-    inputs: &[ArrayView<T, IxDyn>],
-) -> ArcArray<T, IxDyn> {
+pub fn concatenate<T: Clone>(output_shape: IxDyn, axis: usize, inputs: &[ArrayView<T, IxDyn>]) -> ArcArray<T, IxDyn> {
     let result = if inputs.is_empty() {
         ArcArray::from_shape_fn(output_shape.clone(), |_| unreachable!("empty array has no elements"))
     } else {
@@ -436,9 +440,9 @@ pub fn batched_mat_mul<T: LinalgScalar>(left: ArrayView3<T>, right: ArrayView3<T
 /// Softmax along the given axis of the tensor.
 /// Implementation (and more importantly, the generic bounds) based on softmax within the onnxruntime crate
 pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
-    where
-        D: ndarray::RemoveAxis,
-        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
+where
+    D: ndarray::RemoveAxis,
+    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
 {
     let mut result = array.to_owned();
 
@@ -454,9 +458,9 @@ pub fn softmax<S, D>(array: ArrayBase<S, D>, axis: Axis) -> Array<f32, D>
 
 /// Layernorm along the given axis of the tensor.
 pub fn layernorm<S, D>(array: ArrayBase<S, D>, axis: Axis, eps: f32) -> Array<f32, D>
-    where
-        D: ndarray::RemoveAxis,
-        S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem=f32>,
+where
+    D: ndarray::RemoveAxis,
+    S: ndarray::RawData + ndarray::Data + ndarray::RawData<Elem = f32>,
 {
     let mut result = array.to_owned();
 

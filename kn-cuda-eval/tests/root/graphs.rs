@@ -1,7 +1,7 @@
 use decorum::Total;
 use itertools::Itertools;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use kn_graph::dtype::{DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
@@ -164,7 +164,8 @@ fn gather_simple_axis_0() {
     let input = graph.constant::<f32>(shape![2, 3], vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5]);
     let index = graph.constant::<u32>(shape![4], vec![0, 1, 1, 0]);
     let output = graph.gather(input, 0, index);
-    let output_tensor = manual_tensor::<f32, _>((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
+    let output_tensor =
+        manual_tensor::<f32, _>((4, 3), vec![7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.3, 7.4, 7.5, 7.0, 7.1, 7.2]);
     graph.output(output);
 
     test_all(&graph, 0, &[], Some(&[output_tensor]))
@@ -580,7 +581,10 @@ fn conv_padding() {
     test_all(
         &graph,
         0,
-        &[manual_tensor::<f32, _>((1, 1, 1, 1), vec![1.0]), linspace_tensor((1, 1, 8, 8))],
+        &[
+            manual_tensor::<f32, _>((1, 1, 1, 1), vec![1.0]),
+            linspace_tensor((1, 1, 8, 8)),
+        ],
         None,
     );
 }

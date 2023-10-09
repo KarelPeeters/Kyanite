@@ -2,7 +2,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use kn_graph::dtype::DType;
-use kn_graph::graph::{Graph, Operation, SliceRange, UnaryOp, BinaryOp};
+use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp};
 use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
 use kn_graph::shape;
 use kn_graph::shape::Shape;

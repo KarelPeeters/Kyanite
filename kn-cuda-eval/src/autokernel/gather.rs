@@ -15,7 +15,7 @@ pub struct GatherKernel {
     input_shape: StridedShape,
     indices_shape: StridedShape,
     output_shape: StridedShape,
-    
+
     dtype: DType,
     itype: DType,
 
@@ -101,7 +101,7 @@ impl GatherKernel {
         assert_eq!(input.strided_shape(), &self.input_shape);
         assert_eq!(indices.strided_shape(), &self.indices_shape);
         assert_eq!(output.strided_shape(), &self.output_shape);
-        
+
         assert_eq!(input.dtype(), self.dtype);
         assert_eq!(indices.dtype(), self.itype);
         assert_eq!(output.dtype(), self.dtype);

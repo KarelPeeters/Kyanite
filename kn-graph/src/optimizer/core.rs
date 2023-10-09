@@ -5,8 +5,8 @@ use itertools::Itertools;
 
 use crate::dtype::{DScalar, DTensor, DType};
 use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
-use crate::optimizer::OptimizerSettings;
 use crate::optimizer::recurse::heap_recurse;
+use crate::optimizer::OptimizerSettings;
 
 #[derive(Debug)]
 pub struct Optimizer<'a> {

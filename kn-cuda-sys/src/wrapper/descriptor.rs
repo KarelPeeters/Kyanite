@@ -7,8 +7,8 @@ use crate::bindings::{
     cublasLtMatmulPreferenceAttributes_t, cublasLtMatmulPreferenceCreate, cublasLtMatmulPreferenceDestroy,
     cublasLtMatmulPreferenceSetAttribute, cublasLtMatmulPreference_t, cublasLtMatrixLayoutAttribute_t,
     cublasLtMatrixLayoutCreate, cublasLtMatrixLayoutDestroy, cublasLtMatrixLayoutSetAttribute, cublasLtMatrixLayout_t,
-    cublasLtOrder_t, cudaDataType_t, cudnnActivationDescriptor_t, cudnnActivationMode_t,
-    cudnnConvolutionDescriptor_t, cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor,
+    cublasLtOrder_t, cudaDataType_t, cudnnActivationDescriptor_t, cudnnActivationMode_t, cudnnConvolutionDescriptor_t,
+    cudnnConvolutionFwdAlgo_t, cudnnConvolutionMode_t, cudnnCreateActivationDescriptor,
     cudnnCreateConvolutionDescriptor, cudnnCreateFilterDescriptor, cudnnCreateOpTensorDescriptor,
     cudnnCreatePoolingDescriptor, cudnnCreateReduceTensorDescriptor, cudnnCreateTensorDescriptor, cudnnDataType_t,
     cudnnDestroyActivationDescriptor, cudnnDestroyConvolutionDescriptor, cudnnDestroyFilterDescriptor,
@@ -142,14 +142,7 @@ impl FilterDescriptor {
     /// * `c`: input channels
     /// * `(h, w)`: kernel size
     pub fn new(k: i32, c: i32, h: i32, w: i32, dtype: cudnnDataType_t) -> Self {
-        Self::new_with_type_format(
-            k,
-            c,
-            h,
-            w,
-            dtype,
-            cudnnTensorFormat_t::CUDNN_TENSOR_NCHW,
-        )
+        Self::new_with_type_format(k, c, h, w, dtype, cudnnTensorFormat_t::CUDNN_TENSOR_NCHW)
     }
 
     pub fn new_f32(k: i32, c: i32, h: i32, w: i32) -> Self {
@@ -183,7 +176,15 @@ impl Drop for ConvolutionDescriptor {
 }
 
 impl ConvolutionDescriptor {
-    pub fn new(pad_y: i32, pad_x: i32, stride_y: i32, stride_x: i32, dilation_y: i32, dilation_x: i32, dtype: cudnnDataType_t) -> Self {
+    pub fn new(
+        pad_y: i32,
+        pad_x: i32,
+        stride_y: i32,
+        stride_x: i32,
+        dilation_y: i32,
+        dilation_x: i32,
+        dtype: cudnnDataType_t,
+    ) -> Self {
         assert!(
             pad_y >= 0 && pad_x >= 0,
             "Padding cannot be negative, got ({}, {})",

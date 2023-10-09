@@ -1,7 +1,7 @@
 extern crate prost_build;
 
-use std::io::ErrorKind;
 use prost_build::Config;
+use std::io::ErrorKind;
 
 fn main() -> std::io::Result<()> {
     let path_curr = std::env::current_dir()?;
@@ -20,8 +20,8 @@ fn main() -> std::io::Result<()> {
     // TODO figure out a way to immediately set the output filename instead
     // delete file if it exists
     match std::fs::remove_file(path_out.join("proto.rs")) {
-        Ok(_) => {},
-        Err(e) if e.kind() == ErrorKind::NotFound => {},
+        Ok(_) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => return Err(e),
     }
     std::fs::rename(path_out.join("onnx.rs"), path_out.join("proto.rs"))?;

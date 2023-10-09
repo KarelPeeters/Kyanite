@@ -41,11 +41,15 @@ fn restride_with_activation() {
 fn restride_with_bias() {
     unsafe {
         test_restride(|handle, input_desc, input, output_desc, output| {
-            let op_desc = TensorOpDescriptor::new(cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD, cudnnDataType_t::CUDNN_DATA_FLOAT);
+            let op_desc = TensorOpDescriptor::new(
+                cudnnOpTensorOp_t::CUDNN_OP_TENSOR_ADD,
+                cudnnDataType_t::CUDNN_DATA_FLOAT,
+            );
 
             // we don't need to initialize anything, since alpha_2 is already 0
             let zero = handle.device().alloc(4);
-            let zero_desc = TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1], cudnnDataType_t::CUDNN_DATA_FLOAT);
+            let zero_desc =
+                TensorDescriptor::new(vec![1, 1, 1, 1], vec![1, 1, 1, 1], cudnnDataType_t::CUDNN_DATA_FLOAT);
 
             run_tensor_op(
                 handle,

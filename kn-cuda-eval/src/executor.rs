@@ -1,16 +1,16 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use bytemuck::{cast_slice, Pod};
 use bytemuck::checked::cast_slice_mut;
+use bytemuck::{cast_slice, Pod};
 use itertools::{multizip, zip_eq};
 
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
-use kn_graph::{dispatch_dtensor, dispatch_dtype};
 use kn_graph::dtype::{DBool, DTensor, Tensor};
 use kn_graph::graph::Graph;
+use kn_graph::{dispatch_dtensor, dispatch_dtype};
 
 use crate::device_tensor::DeviceTensor;
 use crate::planner::{MemoryUsage, Plan, Planner};
@@ -113,7 +113,12 @@ impl CudaExecutor {
     pub fn evaluate(&mut self, inputs: &[DTensor]) -> &[DTensor] {
         assert_eq!(inputs.len(), self.device_inputs.len(), "Wrong input count");
         for (i, (input, tensor)) in zip_eq(inputs, &self.device_inputs).enumerate() {
-            assert_eq!(input.shape(), tensor.strided_shape().shape(), "Wrong shape for input {}", i);
+            assert_eq!(
+                input.shape(),
+                tensor.strided_shape().shape(),
+                "Wrong shape for input {}",
+                i
+            );
             assert_eq!(input.dtype(), tensor.dtype(), "Wrong dtype for input {}", i);
         }
 
@@ -266,7 +271,11 @@ impl Debug for CudaExecutor {
         writeln!(f, "    profile: {},", self.profile)?;
 
         writeln!(f, "    inputs: {:?},", debug_vec_multiline("    ", &self.device_inputs))?;
-        writeln!(f, "    outputs: {:?},", debug_vec_multiline("    ", &self.device_outputs))?;
+        writeln!(
+            f,
+            "    outputs: {:?},",
+            debug_vec_multiline("    ", &self.device_outputs)
+        )?;
         writeln!(f, "    steps: {:?},", debug_vec_multiline("    ", &self.steps))?;
 
         writeln!(f, "}}")?;

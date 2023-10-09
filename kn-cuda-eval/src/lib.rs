@@ -33,7 +33,6 @@
 //! # }
 //! ```
 
-
 /// Export the [Device] type for convenience: often an explicit dependency on the `kn_cuda_sys` crate is not needed.
 pub use kn_cuda_sys::wrapper::handle::Device;
 
@@ -43,6 +42,8 @@ pub mod autokernel;
 pub mod device_tensor;
 /// The main executor type and the compiler for it.
 pub mod executor;
+/// Tensor utility.
+pub mod offset_tensor;
 /// A utility to automatically choose between CPU and GPU evaluation.
 pub mod runtime;
 /// Shape utilities.
@@ -51,8 +52,6 @@ pub mod shape;
 pub mod tester;
 /// Miscellaneous utilities.
 pub mod util;
-/// Tensor utility.
-pub mod offset_tensor;
 
 mod planner;
 mod step;

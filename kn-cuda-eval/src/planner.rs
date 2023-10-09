@@ -13,7 +13,7 @@ use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use kn_graph::dispatch_dtensor;
-use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
+use kn_graph::dtype::{DScalar, DType, DisplayCFloat};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -518,7 +518,10 @@ impl<'a> Planner<'a> {
     /// Returns values of the form `alpha_0 * input_0 + alpha_1 * input_1`
     ///
     /// `None` for an input means that input is not present and should be treated as zero.
-    fn visit_scalable_added_pair(&mut self, input: Value) -> VisitResult<(DScalar, PlanTensor, DScalar, Option<PlanTensor>)> {
+    fn visit_scalable_added_pair(
+        &mut self,
+        input: Value,
+    ) -> VisitResult<(DScalar, PlanTensor, DScalar, Option<PlanTensor>)> {
         let dtype = self.graph[input].dtype;
         let zero = dtype.specials().zero;
         let one = dtype.specials().one;
@@ -899,7 +902,14 @@ impl<'a> Planner<'a> {
         };
 
         let y_output = block.alloc_y();
-        writeln!(&mut block.operation, "{} y{} = {};", value_info.dtype.as_c_str(), y_output, op_str).unwrap();
+        writeln!(
+            &mut block.operation,
+            "{} y{} = {};",
+            value_info.dtype.as_c_str(),
+            y_output,
+            op_str
+        )
+        .unwrap();
         Ok(y_output)
     }
 
@@ -922,7 +932,10 @@ impl<'a> Planner<'a> {
             .iter()
             .map(|operand| operand.strided_shape().clone())
             .collect_vec();
-        let types = operands.iter().map(|operand| operand.dtype().as_c_str().to_string()).collect_vec();
+        let types = operands
+            .iter()
+            .map(|operand| operand.dtype().as_c_str().to_string())
+            .collect_vec();
         let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes, types);
 
         let args = ScalarOpArgs { kernel, operands };

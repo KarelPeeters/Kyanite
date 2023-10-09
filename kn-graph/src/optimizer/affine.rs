@@ -1,13 +1,13 @@
 use std::fmt::{Debug, Formatter};
 
-use ndarray::{ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4, s};
+use ndarray::{s, ArcArray, ArcArray1, Array1, Array4, Data, Dimension, Ix4};
 
 use crate::cpu::convolution;
 use crate::dtype::DTensor;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
-use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::optimizer::core::VisitResult;
+use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape;
 use crate::shape::{Shape, Size};
 
@@ -313,11 +313,11 @@ impl ScaleBias {
     }
 }
 
-fn is_entirely<S: Data<Elem=f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
+fn is_entirely<S: Data<Elem = f32>, D: Dimension>(array: &ArrayBase<S, D>, value: f32) -> bool {
     array.iter().all(|&x| x == value)
 }
 
-fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item=&'a AffineOperation>) -> ScaleBias {
+fn fuse_affine_list<'a>(channels: usize, operations: impl IntoIterator<Item = &'a AffineOperation>) -> ScaleBias {
     let mut total_scale = Array1::ones(channels);
     let mut total_bias = Array1::zeros(channels);
 

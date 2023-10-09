@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::cpu::cpu_eval_graph;

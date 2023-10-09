@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 #[cfg(target_family = "windows")]
 fn get_var_path(name: &str) -> PathBuf {
@@ -112,11 +112,7 @@ fn main() {
     let is_docs_rs = std::env::var_os("DOCS_RS").is_some();
 
     // find include directories and set up link search paths
-    let include_paths = if is_docs_rs {
-        link_cuda_docs_rs()
-    } else {
-        link_cuda()
-    };
+    let include_paths = if is_docs_rs { link_cuda_docs_rs() } else { link_cuda() };
 
     // add include dirs to builder
     let builder = include_paths.iter().fold(builder, |builder, path| {

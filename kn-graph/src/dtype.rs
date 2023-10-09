@@ -166,15 +166,33 @@ impl DType {
 
 impl DInfo {
     fn int(size: DSize, signed: bool) -> Self {
-        DInfo { size, signed, float: false, int: true, is_bool: false }
+        DInfo {
+            size,
+            signed,
+            float: false,
+            int: true,
+            is_bool: false,
+        }
     }
 
     fn float(size: DSize) -> Self {
-        DInfo { size, signed: true, float: true, int: false, is_bool: false }
+        DInfo {
+            size,
+            signed: true,
+            float: true,
+            int: false,
+            is_bool: false,
+        }
     }
 
     fn bool() -> Self {
-        DInfo { size: DSize::S8, signed: false, float: false, int: false, is_bool: true }
+        DInfo {
+            size: DSize::S8,
+            signed: false,
+            float: false,
+            int: false,
+            is_bool: true,
+        }
     }
 }
 
@@ -504,9 +522,9 @@ macro_rules! map_dscalar_pair {
 }
 
 // export macros
-pub use dispatch_dtype;
 pub use dispatch_dtensor;
 pub use dispatch_dtensor_pair;
+pub use dispatch_dtype;
 pub use map_dscalar_pair;
 pub use map_dtensor;
 pub use map_dtensor_pair;

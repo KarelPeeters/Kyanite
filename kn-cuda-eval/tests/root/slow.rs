@@ -1,11 +1,11 @@
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+use crate::root::runner::test_all_exact_graph;
+use crate::root::tensor_utils::rng_tensor_f32;
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::dtype::DType;
 use kn_graph::graph::Graph;
 use kn_graph::shape;
-use crate::root::runner::test_all_exact_graph;
-use crate::root::tensor_utils::rng_tensor_f32;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 #[test]
 #[ignore]

@@ -6,18 +6,18 @@ use clap::Parser;
 use image::{ImageBuffer, Rgb, RgbImage};
 use itertools::Itertools;
 use ndarray::Axis;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 
 use kn_cuda_eval::runtime::Runtime;
 use kn_cuda_sys::wrapper::handle::Device;
-use kn_graph::{ndarray, shape};
 use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::optimize_graph;
+use kn_graph::{ndarray, shape};
 
 use crate::ndarray::{Array1, IxDyn, Slice};
 use crate::scheduler::PNDMSScheduler;
@@ -107,13 +107,9 @@ fn main() -> std::io::Result<()> {
     let tokens_prompt = tokens_to_tensor(&tokens_prompt);
     let tokens_uncond = tokens_to_tensor(&tokens_prompt_avoid);
 
-    let emb_prompt = runtime
-        .eval(runtime_text_encoder, &[tokens_prompt])
-        .single();
+    let emb_prompt = runtime.eval(runtime_text_encoder, &[tokens_prompt]).single();
     let emb_prompt = emb_prompt.unwrap_f32().unwrap();
-    let emb_uncond = runtime
-        .eval(runtime_text_encoder, &[tokens_uncond])
-        .single();
+    let emb_uncond = runtime.eval(runtime_text_encoder, &[tokens_uncond]).single();
     let emb_uncond = emb_uncond.unwrap_f32().unwrap();
     let emb_all = ndarray::concatenate![Axis(0), emb_uncond.clone(), emb_prompt.clone()].into_shared();
 
@@ -124,8 +120,10 @@ fn main() -> std::io::Result<()> {
         println!("  Loading from disk");
         let data = std::fs::read(seed_latents_path)?;
         let data_float = cast_slice::<u8, f32>(&data).to_vec();
-        Array::from_shape_vec(latent_shape, data_float).unwrap()
-            .into_dyn().into_shared()
+        Array::from_shape_vec(latent_shape, data_float)
+            .unwrap()
+            .into_dyn()
+            .into_shared()
     } else {
         println!("  Generating random");
 
@@ -136,7 +134,8 @@ fn main() -> std::io::Result<()> {
         };
 
         Array::from_shape_simple_fn(latent_shape, || rng.sample::<f32, _>(StandardNormal))
-            .into_dyn().into_shared()
+            .into_dyn()
+            .into_shared()
     };
 
     println!("Initializing schedule");
@@ -276,8 +275,8 @@ fn tensor_from_image(image: &RgbImage) -> Tensor<f32> {
             p as f32 / 255.0 * 2.0 - 1.0
         },
     )
-        .into_shared()
-        .into_dyn()
+    .into_shared()
+    .into_dyn()
 }
 
 #[allow(dead_code)]
@@ -405,9 +404,9 @@ mod scheduler {
             } else {
                 model_output = ((1.0 / 24.0)
                     * (55.0 * self.ets.signed_index(-1) - 59.0 * self.ets.signed_index(-2)
-                    + 37.0 * self.ets.signed_index(-3)
-                    - 9.0 * self.ets.signed_index(-4)))
-                    .into_shared();
+                        + 37.0 * self.ets.signed_index(-3)
+                        - 9.0 * self.ets.signed_index(-4)))
+                .into_shared();
             }
 
             let prev_sample = self.get_prev_sample(sample, timestep, prev_timestep, model_output);

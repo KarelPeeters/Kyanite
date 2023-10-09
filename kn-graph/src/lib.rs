@@ -39,14 +39,14 @@
 /// The [ndarray] crate is used for constant storage and CPU execution, and re-exported for convenience.
 pub use ndarray;
 
+/// The [DType](dtype::DType) enum.
+pub mod dtype;
 /// The core graph datastructure.
 pub mod graph;
 /// Graph optimization.
 pub mod optimizer;
 /// The [Shape](shape::Shape) type and utilities.
 pub mod shape;
-/// The [DType](dtype::DType) enum.
-pub mod dtype;
 
 /// CPU graph execution.
 pub mod cpu;

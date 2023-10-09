@@ -5,14 +5,14 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
 use decorum::Total;
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
-use crate::shape;
-use crate::cpu::{OperationError, OperationResult, run_cpu_const_operation};
-use crate::dtype::{dispatch_dtensor, dispatch_dtype, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
+use crate::cpu::{run_cpu_const_operation, OperationError, OperationResult};
+use crate::dtype::{dispatch_dtensor, dispatch_dtype, map_dscalar_pair, DScalar, DTensor, DType, IntoDScalar, Tensor};
 use crate::optimizer::recurse::heap_recurse;
+use crate::shape;
 use crate::shape::{Shape, Size};
 
 /// The core graph datastructure.
@@ -156,7 +156,6 @@ pub enum Operation {
         axes: Vec<usize>,
         op: ReduceOp,
     },
-
     // TODO "select"/"where" operation
 }
 
@@ -385,7 +384,7 @@ impl Graph {
 
     /// Iterate over the values in this graph, in topological order,
     /// which means that nodes will only be visited after all of their inputs have been visited.
-    pub fn values(&self) -> impl Iterator<Item=Value> {
+    pub fn values(&self) -> impl Iterator<Item = Value> {
         let check = self.check;
         (0..self.values.len()).map(move |index| Value { index, check })
     }
@@ -511,9 +510,7 @@ impl Graph {
                 let f = self.as_single_const(*inputs.first()?)?;
                 inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
             }
-            Operation::Unary { input, op } => {
-                Some(op.map(self.as_single_const(input)?))
-            }
+            Operation::Unary { input, op } => Some(op.map(self.as_single_const(input)?)),
             Operation::Binary { left, right, op } => {
                 Some(op.map(self.as_single_const(left)?, self.as_single_const(right)?))
             }
@@ -1236,7 +1233,11 @@ impl Graph {
         // TODO skip to innermost value for exact value casts, eg. for successive truncating int casts
         //    but be careful, this is tricky stuff!
         if let UnaryOp::BitCast(_) = op {
-            while let &Operation::Unary { op: UnaryOp::BitCast(_), input: inner } = &self[input].operation {
+            while let &Operation::Unary {
+                op: UnaryOp::BitCast(_),
+                input: inner,
+            } = &self[input].operation
+            {
                 input = inner;
             }
         }
@@ -1334,22 +1335,32 @@ impl Graph {
     /// Extract a small subgraph consisting of all values that go into `value`, up to a given `depth`.
     /// Values that exceed the depth are added as inputs.
     pub fn extract_subgraph(&self, value: Value, depth: u32) -> Graph {
-        fn extract_impl(graph: &Graph, sub: &mut Graph, map: &mut HashMap<Value, Value>, old: Value, depth: u32) -> Value {
+        fn extract_impl(
+            graph: &Graph,
+            sub: &mut Graph,
+            map: &mut HashMap<Value, Value>,
+            old: Value,
+            depth: u32,
+        ) -> Value {
             // luckily we don't have to worry about cycles
             if let Some(&new) = map.get(&old) {
                 return new;
             }
 
-            let &ValueInfo { ref shape, dtype, operation: ref old_op, ref debug_id, non_output_uses: _ } = &graph[old];
+            let &ValueInfo {
+                ref shape,
+                dtype,
+                operation: ref old_op,
+                ref debug_id,
+                non_output_uses: _,
+            } = &graph[old];
 
             let new = if depth == 0 {
                 // insert input
                 sub.input(shape.clone(), dtype)
             } else {
                 // insert operation and map operands
-                let new_op = old_op.clone_map_inputs(|p| {
-                    extract_impl(graph, sub, map, p, depth - 1)
-                });
+                let new_op = old_op.clone_map_inputs(|p| extract_impl(graph, sub, map, p, depth - 1));
                 sub.push(shape.clone(), dtype, new_op)
             };
 
@@ -1373,12 +1384,13 @@ impl Graph {
     /// This can be useful for some quick testing.
     pub fn dummy_zero_inputs(&self, batch_size: usize) -> Vec<DTensor> {
         // TODO add add a random version? ofc both can break gather operations, but that's acceptable
-        self
-            .inputs()
+        self.inputs()
             .iter()
             .map(|&v| {
                 let dtype = self[v].dtype;
-                dispatch_dtype!(dtype, |_T, _fs, ft| ft(Tensor::zeros(self[v].shape.eval(batch_size).dims)))
+                dispatch_dtype!(dtype, |_T, _fs, ft| ft(Tensor::zeros(
+                    self[v].shape.eval(batch_size).dims
+                )))
             })
             .collect_vec()
     }
@@ -1404,7 +1416,10 @@ pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
     Shape::new(result)
 }
 
-pub fn broadcast_tensors_symmetric<'l, 'r, L, R>(left: &'l Tensor<L>, right: &'r Tensor<R>) -> (ArrayView<'l, L, IxDyn>, ArrayView<'r, R, IxDyn>) {
+pub fn broadcast_tensors_symmetric<'l, 'r, L, R>(
+    left: &'l Tensor<L>,
+    right: &'r Tensor<R>,
+) -> (ArrayView<'l, L, IxDyn>, ArrayView<'r, R, IxDyn>) {
     let result_shape = broadcast_shape_symmetric(&Shape::fixed(left.shape()), &Shape::fixed(right.shape()));
     let result_shape = result_shape.as_fixed().unwrap().dims;
 
@@ -1565,14 +1580,34 @@ impl UnaryOp {
     pub fn output_dtype(self, x: DType) -> Option<DType> {
         match self {
             UnaryOp::Abs | UnaryOp::Neg => {
-                if x.is_signed() { Some(x) } else { None }
+                if x.is_signed() {
+                    Some(x)
+                } else {
+                    None
+                }
             }
-            UnaryOp::Sin | UnaryOp::Cos | UnaryOp::Exp | UnaryOp::Log | UnaryOp::Sqrt | UnaryOp::Sigmoid | UnaryOp::Tanh | UnaryOp::Erf | UnaryOp::Mish => {
-                if x.is_float() { Some(x) } else { None }
+            UnaryOp::Sin
+            | UnaryOp::Cos
+            | UnaryOp::Exp
+            | UnaryOp::Log
+            | UnaryOp::Sqrt
+            | UnaryOp::Sigmoid
+            | UnaryOp::Tanh
+            | UnaryOp::Erf
+            | UnaryOp::Mish => {
+                if x.is_float() {
+                    Some(x)
+                } else {
+                    None
+                }
             }
             UnaryOp::ValueCast(y) => Some(y),
             UnaryOp::BitCast(y) => {
-                if x.size() == y.size() { Some(y) } else { None }
+                if x.size() == y.size() {
+                    Some(y)
+                } else {
+                    None
+                }
             }
         }
     }
@@ -1598,7 +1633,9 @@ impl UnaryOp {
                     DScalar::I16(x) => DScalar::I16(x.abs()),
                     DScalar::I32(x) => DScalar::I32(x.abs()),
                     DScalar::I64(x) => DScalar::I64(x.abs()),
-                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => unreachable!(),
+                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => {
+                        unreachable!()
+                    }
                 }
             }
             UnaryOp::Neg => {
@@ -1610,7 +1647,9 @@ impl UnaryOp {
                     DScalar::I16(x) => DScalar::I16(-x),
                     DScalar::I32(x) => DScalar::I32(-x),
                     DScalar::I64(x) => DScalar::I64(-x),
-                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => unreachable!(),
+                    DScalar::U8(_) | DScalar::U16(_) | DScalar::U32(_) | DScalar::U64(_) | DScalar::Bool(_) => {
+                        unreachable!()
+                    }
                 }
             }
             UnaryOp::Sin => map_float!(x, |x| x.sin()),
@@ -1690,7 +1729,7 @@ impl ReduceOp {
         }
     }
 
-    pub fn reduce_t<T: IntoDScalar>(self, seq: impl IntoIterator<Item=T>) -> T {
+    pub fn reduce_t<T: IntoDScalar>(self, seq: impl IntoIterator<Item = T>) -> T {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;

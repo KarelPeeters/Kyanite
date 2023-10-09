@@ -112,7 +112,6 @@ impl DeviceTensor {
             other
         );
 
-
         if self.strided_shape() == other.strided_shape() && self.strided_shape().has_dense_strides() {
             // if strides are dense and match we can just do a simple memcpy
             self.ptr()

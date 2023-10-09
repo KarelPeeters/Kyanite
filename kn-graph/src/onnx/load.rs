@@ -2,24 +2,26 @@ use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::Itertools;
-use ndarray::{Axis, azip};
+use ndarray::{azip, Axis};
 use prost::Message;
 
-use crate::{shape};
 use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
-use crate::dtype::{DBool, DTensor, DType, Tensor, dispatch_dtensor, map_dtensor_pair, DScalar, IntoDScalar};
-use crate::graph::{BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value};
+use crate::dtype::{dispatch_dtensor, map_dtensor_pair, DBool, DScalar, DTensor, DType, IntoDScalar, Tensor};
 pub use crate::graph::Graph;
+use crate::graph::{
+    broadcast_shape_symmetric, broadcast_tensors_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp, Value,
+};
 use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
-use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
+use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{OnnxValue, SignedSize};
+use crate::shape;
 use crate::shape::{Shape, Size};
 
 // TODO convert every possible panic to an error (even in the shape classes if possible)
@@ -94,7 +96,9 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) 
 
     for output in &model_graph.output {
         let value_or_size = &nodes[output.name.as_str()];
-        let value = value_or_size.unwrap_value().ok_or(OnnxError::ExpectedNonBatchValue(output.name.clone()))?;
+        let value = value_or_size
+            .unwrap_value()
+            .ok_or(OnnxError::ExpectedNonBatchValue(output.name.clone()))?;
         graph.output(value);
     }
 
@@ -257,7 +261,8 @@ fn visit_node(
                 let (left, right) = broadcast_tensors_symmetric(&left, &right);
 
                 let result = azip!(&left, &right).map_collect(|&l, &r| {
-                    eval_binary_op(op, l, r).unwrap_or_else(|| panic!("Operation {:?} failed between {:?} and {:?}", op, left, right))
+                    eval_binary_op(op, l, r)
+                        .unwrap_or_else(|| panic!("Operation {:?} failed between {:?} and {:?}", op, left, right))
                 });
 
                 // the batch size might have cancelled out!
@@ -274,7 +279,6 @@ fn visit_node(
                     // this automatically broadcasts correctly
                     let diff = graph.sub(left, right);
                     graph.unary(UnaryOp::ValueCast(DType::Bool), diff)
-
                 }
                 (OnnxValue::Size(left), OnnxValue::Size(right)) => {
                     // broadcast and compare
@@ -311,7 +315,9 @@ fn visit_node(
             assert_eq!(cond.shape(), y.shape(), "Where broadcasting not yet implemented");
 
             let result = map_dtensor_pair!(x, y, |x, y| {
-                azip!(cond, &x, &y).map_collect(|&DBool(c), &x, &y| if c { x } else { y }).into_shared()
+                azip!(cond, &x, &y)
+                    .map_collect(|&DBool(c), &x, &y| if c { x } else { y })
+                    .into_shared()
             });
 
             OnnxValue::Value(graph.constant_tensor(result))
@@ -338,10 +344,10 @@ fn visit_node(
 
             // apply view operation
             match input {
-                &OnnxValue::Value(input) =>
-                    OnnxValue::Value(graph.view(input, new_shape)),
-                OnnxValue::Size(input) =>
-                    OnnxValue::new_size(input.reshape(new_shape.unwrap_fixed("size shape").dims), graph),
+                &OnnxValue::Value(input) => OnnxValue::Value(graph.view(input, new_shape)),
+                OnnxValue::Size(input) => {
+                    OnnxValue::new_size(input.reshape(new_shape.unwrap_fixed("size shape").dims), graph)
+                }
             }
         }
         "Gemm" => {
@@ -521,9 +527,7 @@ fn visit_node(
             let dtype = resolve_dtype(data_type, node.name)?;
 
             match input {
-                &OnnxValue::Value(value) => {
-                    OnnxValue::Value(graph.unary(UnaryOp::ValueCast(dtype), value))
-                }
+                &OnnxValue::Value(value) => OnnxValue::Value(graph.unary(UnaryOp::ValueCast(dtype), value)),
                 OnnxValue::Size(value) => {
                     // only allow no-op casts for now
                     assert_eq!(dtype, DType::I64);
@@ -647,7 +651,7 @@ fn visit_node(
                                 ft(indices.mapv(|x| if x < zero { x + dim } else { x }).into_shared())
                             });
                             OnnxValue::Value(graph.constant_tensor(indices))
-                        },
+                        }
                         // TODO support dynamic negative indices, by properly remapping in the graph
                         //   for now just hope for the best
                         None => OnnxValue::Value(indices),
@@ -685,31 +689,30 @@ fn visit_node(
             }
         }
         "Slice" => {
-            let get =
-                |inputs: &mut Inputs, attrs: &mut Attributes, index: usize, name: &str| -> OnnxResult<_> {
-                    match inputs.optional(index) {
-                        Some(value) => {
-                            let value = graph.as_const(value.unwrap_value().unwrap()).unwrap();
+            let get = |inputs: &mut Inputs, attrs: &mut Attributes, index: usize, name: &str| -> OnnxResult<_> {
+                match inputs.optional(index) {
+                    Some(value) => {
+                        let value = graph.as_const(value.unwrap_value().unwrap()).unwrap();
 
-                            assert_eq!(
-                                value.shape().len(),
-                                1,
-                                "Slice operand {} must be 1D const, got shape {:?}",
-                                name,
-                                value.shape()
-                            );
+                        assert_eq!(
+                            value.shape().len(),
+                            1,
+                            "Slice operand {} must be 1D const, got shape {:?}",
+                            name,
+                            value.shape()
+                        );
 
-                            let vec = match value {
-                                DTensor::I64(value) => value.iter().copied().collect_vec(),
-                                DTensor::I32(value) => value.iter().map(|&x| x as i64).collect_vec(),
-                                _ => panic!("Invalid slice operand type {:?}", value.dtype()),
-                            };
+                        let vec = match value {
+                            DTensor::I64(value) => value.iter().copied().collect_vec(),
+                            DTensor::I32(value) => value.iter().map(|&x| x as i64).collect_vec(),
+                            _ => panic!("Invalid slice operand type {:?}", value.dtype()),
+                        };
 
-                            Ok(Some(vec))
-                        }
-                        None => Ok(attrs.maybe_take_ints(name)?.map(|v| v.to_vec())),
+                        Ok(Some(vec))
                     }
-                };
+                    None => Ok(attrs.maybe_take_ints(name)?.map(|v| v.to_vec())),
+                }
+            };
 
             let input = inputs.required(0)?;
             let starts = get(inputs, attrs, 1, "starts")?.expect("Missing starts input and attribute");
@@ -798,13 +801,21 @@ fn visit_node(
             let input_shape = &graph[input].shape.clone();
 
             let constant_value = constant_value
-                .map(|v| graph.as_single_const(v.unwrap_value().unwrap()).unwrap().unwrap_f32().unwrap())
+                .map(|v| {
+                    graph
+                        .as_single_const(v.unwrap_value().unwrap())
+                        .unwrap()
+                        .unwrap_f32()
+                        .unwrap()
+                })
                 .unwrap_or(0.0);
 
             let axes = match axes {
                 Some(axes) => {
                     let axes = axes.as_signed_shape(graph)?;
-                    axes.iter().map(|&i| abs_axis(i.unwrap_fixed().unwrap(), input_shape.rank())).collect_vec()
+                    axes.iter()
+                        .map(|&i| abs_axis(i.unwrap_fixed().unwrap(), input_shape.rank()))
+                        .collect_vec()
                 }
                 None => (0..input_shape.rank()).collect_vec(),
             };
@@ -839,7 +850,11 @@ fn visit_node(
         "Shape" => {
             let input = inputs.required(0)?;
             let shape = input.shape(graph);
-            let dims = shape.dims.iter().map(|&d| SignedSize::from_size(d).unwrap()).collect_vec();
+            let dims = shape
+                .dims
+                .iter()
+                .map(|&d| SignedSize::from_size(d).unwrap())
+                .collect_vec();
             OnnxValue::new_size(Tensor::from_shape_vec(vec![dims.len()], dims).unwrap(), graph)
         }
         "Identity" => {
@@ -1001,12 +1016,12 @@ fn define_tensor_data(
             }
 
             if let Some(length) = length {
-            assert_eq!(length, length_guess, "External data length mismatch");
-        }
+                assert_eq!(length, length_guess, "External data length mismatch");
+            }
 
-        // try loading from external source
-        let location = location.expect("External data must have a location");
-        raw_data_slot = external.load_external_data(&PathBuf::from(location), offset, length, length_guess)?;
+            // try loading from external source
+            let location = location.expect("External data must have a location");
+            raw_data_slot = external.load_external_data(&PathBuf::from(location), offset, length, length_guess)?;
 
             if let Some(length) = length {
                 assert_eq!(raw_data_slot.len(), length, "Raw data length mismatch");
@@ -1056,7 +1071,7 @@ fn define_tensor_data(
                 tensor.int32_data.iter().map(|&x| DBool(x != 0)).collect()
             };
             graph.constant::<DBool>(shape, data)
-        },
+        }
     };
 
     Ok(value)
@@ -1099,12 +1114,16 @@ fn resolve_dtype(data_type: DataType, node: &str) -> OnnxResult<DType> {
         DataType::Uint32 => DType::U32,
         DataType::Uint64 => DType::U64,
         DataType::Bool => DType::Bool,
-        DataType::Undefined | DataType::String |
-        DataType::Complex64 | DataType::Complex128 |
-        DataType::Float16 | DataType::Bfloat16 |
-        DataType::Float8e4m3fn | DataType::Float8e4m3fnuz | DataType::Float8e5m2 | DataType::Float8e5m2fnuz => {
-            return Err(OnnxError::UnsupportedType(node.to_owned(), data_type))
-        },
+        DataType::Undefined
+        | DataType::String
+        | DataType::Complex64
+        | DataType::Complex128
+        | DataType::Float16
+        | DataType::Bfloat16
+        | DataType::Float8e4m3fn
+        | DataType::Float8e4m3fnuz
+        | DataType::Float8e5m2
+        | DataType::Float8e5m2fnuz => return Err(OnnxError::UnsupportedType(node.to_owned(), data_type)),
     };
     Ok(dtype)
 }

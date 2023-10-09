@@ -160,21 +160,21 @@ impl<P> Step<P> {
     fn for_each_ptr<'a, R>(&'a self, mut f: impl FnMut(Operand<&'a P>) -> ControlFlow<R>) -> ControlFlow<R> {
         match self {
             Step::Conv(FusedConvolutionArgs {
-                           conv_desc: _,
-                           algo: _,
-                           work_ptr,
-                           work_size_bytes: _,
-                           filter_desc: _,
-                           filter_ptr,
-                           input_desc: _,
-                           input_ptr,
-                           res_ptr,
-                           bias_desc: _,
-                           bias_ptr,
-                           act_desc: _,
-                           output_desc: _,
-                           output_ptr,
-                       }) => {
+                conv_desc: _,
+                algo: _,
+                work_ptr,
+                work_size_bytes: _,
+                filter_desc: _,
+                filter_ptr,
+                input_desc: _,
+                input_ptr,
+                res_ptr,
+                bias_desc: _,
+                bias_ptr,
+                act_desc: _,
+                output_desc: _,
+                output_ptr,
+            }) => {
                 f(Operand::new_inout(work_ptr))?;
                 f(Operand::new_in(filter_ptr))?;
                 f(Operand::new_in(input_ptr))?;
@@ -185,16 +185,16 @@ impl<P> Step<P> {
                 f(Operand::new_out(output_ptr))?;
             }
             Step::MatMul(BatchedMatMulArgs {
-                             m: _,
-                             n: _,
-                             k: _,
-                             alpha: _,
-                             beta,
-                             a,
-                             b,
-                             c,
-                             batch_count: _,
-                         }) => {
+                m: _,
+                n: _,
+                k: _,
+                alpha: _,
+                beta,
+                a,
+                b,
+                c,
+                batch_count: _,
+            }) => {
                 f(Operand::new_in(&a.ptr))?;
                 f(Operand::new_in(&b.ptr))?;
 
@@ -209,27 +209,27 @@ impl<P> Step<P> {
                 operands.iter().map(|a| Operand::new_inout(a.ptr())).try_for_each(f)?
             }
             Step::ReduceOp(ReduceOpArgs {
-                               kernel: _,
-                               input,
-                               output,
-                           }) => {
+                kernel: _,
+                input,
+                output,
+            }) => {
                 f(Operand::new_in(input.ptr()))?;
                 f(Operand::new_out(output.ptr()))?;
             }
             Step::SoftmaxOp(SoftmaxOpArgs {
-                                kernel: _,
-                                input,
-                                output,
-                            }) => {
+                kernel: _,
+                input,
+                output,
+            }) => {
                 f(Operand::new_in(input.ptr()))?;
                 f(Operand::new_out(output.ptr()))?;
             }
             Step::LayernormOp(LayernormOpArgs {
-                                  kernel: _,
-                                  input0,
-                                  input1,
-                                  output,
-                              }) => {
+                kernel: _,
+                input0,
+                input1,
+                output,
+            }) => {
                 f(Operand::new_in(input0.ptr()))?;
                 if let Some(input1) = input1 {
                     f(Operand::new_in(input1.ptr()))?;
@@ -237,11 +237,11 @@ impl<P> Step<P> {
                 f(Operand::new_out(output.ptr()))?;
             }
             Step::GatherOp(GatherOpArgs {
-                               kernel: _,
-                               input,
-                               indices,
-                               output,
-                           }) => {
+                kernel: _,
+                input,
+                indices,
+                output,
+            }) => {
                 f(Operand::new_in(input.ptr()))?;
                 f(Operand::new_in(indices.ptr()))?;
                 f(Operand::new_out(output.ptr()))?;
@@ -256,8 +256,8 @@ impl<'a, P> InternalIterator for PlanStepOperands<'a, P> {
     type Item = Operand<&'a P>;
 
     fn try_for_each<R, F>(self, f: F) -> ControlFlow<R>
-        where
-            F: FnMut(Self::Item) -> ControlFlow<R>,
+    where
+        F: FnMut(Self::Item) -> ControlFlow<R>,
     {
         self.0.for_each_ptr(f)
     }
@@ -354,14 +354,24 @@ impl SoftmaxOpArgs<DevicePtr> {
 
 impl LayernormOpArgs<DevicePtr> {
     pub unsafe fn run(&self, stream: &CudaStream) {
-        let LayernormOpArgs { kernel, input0, input1, output } = self;
+        let LayernormOpArgs {
+            kernel,
+            input0,
+            input1,
+            output,
+        } = self;
         kernel.run(stream, input0, input1.as_ref(), output)
     }
 }
 
 impl GatherOpArgs<DevicePtr> {
     pub unsafe fn run(&self, stream: &CudaStream) {
-        let GatherOpArgs { kernel, input, indices, output } = self;
+        let GatherOpArgs {
+            kernel,
+            input,
+            indices,
+            output,
+        } = self;
         kernel.run(stream, input, indices, output)
     }
 }

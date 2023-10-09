@@ -1,12 +1,18 @@
 use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
+use itertools::Itertools;
+use rand::Rng;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
-use itertools::Itertools;
-use rand::Rng;
 
 pub trait ExternalDataLoader {
-    fn load_external_data(&mut self, location: &Path, offset: usize, length: Option<usize>, length_guess: usize) -> OnnxResult<Vec<u8>>;
+    fn load_external_data(
+        &mut self,
+        location: &Path,
+        offset: usize,
+        length: Option<usize>,
+        length_guess: usize,
+    ) -> OnnxResult<Vec<u8>>;
 }
 
 #[derive(Debug)]
@@ -34,7 +40,13 @@ impl<R: Rng> ExternalDataLoader for DummyExternalData<R> {
 }
 
 impl ExternalDataLoader for PathExternalData {
-    fn load_external_data(&mut self, location: &Path, offset: usize, length: Option<usize>, _: usize) -> OnnxResult<Vec<u8>> {
+    fn load_external_data(
+        &mut self,
+        location: &Path,
+        offset: usize,
+        length: Option<usize>,
+        _: usize,
+    ) -> OnnxResult<Vec<u8>> {
         if !path_is_normal(location) {
             return Err(OnnxError::NonNormalExternalDataPath(location.to_owned()));
         }
