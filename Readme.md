@@ -9,8 +9,25 @@
 [![docs.rs](https://img.shields.io/docsrs/kn-graph)](https://docs.rs/releases/search?query=kyanite+kn-)
 ![CI status](https://github.com/KarelPeeters/Kyanite/actions/workflows/CI.yml/badge.svg)
 
+<!-- TOC -->
+* [Kyanite](#kyanite)
+  * [Overview](#overview)
+  * [Quick demo](#quick-demo)
+  * [System requirements](#system-requirements)
+  * [Internals](#internals)
+    * [Graph IR](#graph-ir)
+    * [Optimizer](#optimizer)
+    * [CPU executor](#cpu-executor)
+    * [Cuda Executor](#cuda-executor)
+  * [Comparison to other crates](#comparison-to-other-crates)
+    * [Rust wrappers around existing runtimes](#rust-wrappers-around-existing-runtimes)
+    * [From-scratch Rust projects](#from-scratch-rust-projects)
+  * [Development](#development)
+<!-- TOC -->
 
-A neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on Nvidia GPUs using cuda/cudnn/cublas/nvrtc.
+## Overview
+
+A neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on Nvidia GPUs using cuda/cudnn/cublas
 
 It is general enough to run all kinds of networks, it has been tested with:
 * Simple fully connected networks
@@ -59,7 +76,7 @@ Ensure that the environment variable `CUDNN_PATH` is set such that `CUDNN_PATH/b
 
 The project has been tested with Cuda `v12.2` and cuDNN version `v8.9.5`. Newer versions might work, but this is not guaranteed since cuda sometimes changes the name of or removed certain functions. 
 
-## Details
+## Internals
 
 The typical pipeline is shown in the first figure below. The second figure shows the results of running this pipeline on a simple NN architecture.
 
@@ -221,7 +238,33 @@ __global__ void scalar_kernel(
 ```
 </details>
 
-# Development
+## Comparison to other crates
+
+See [Are We Learning Yet?](https://www.arewelearningyet.com/neural-networks/) for a full list of potential alternatives. 
+
+### Rust wrappers around existing runtimes
+
+* Pytorch wrapper: [tch](https://crates.io/crates/tch)
+* Tensorflow wrapper: [tensorflow](https://crates.io/crates/tensorflow)
+* OnnxRuntime wrapper: [ort](https://github.com/pykeio/ort)
+
+Positives:
+* extensive support for many neural network operations
+* support for many different backends (CPU, GPU (Nvidia + Amd), TPU, ...)
+
+Negatives
+* not always great support for loading onnx files (ort is great at this though, as the name suggests)
+* large and somewhat black-box external dependency
+* less operator fusion in many cases, although this is expected to improve in the future
+
+Performance should be about the same as Kyanite for cases where operator fusion does not matter much, all libraries mostly use the same underlying cudnn and cublas kernels. 
+
+### From-scratch Rust projects
+
+* [tract](https://github.com/sonos/tract): larger coverage of the ONNX specification, but only does CPU inference
+
+
+## Development
 
 While developing this crate, to update the onnx proto, the [prost-build crate](https://crates.io/crates/prost-build) is used. This requires that `protoc` is installed and that the `PROTOC` environment variable is set to point to the executable. See their installation instructions (or the error message the build script shows if any) for more details.
 
