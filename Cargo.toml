@@ -5,6 +5,7 @@ members = [
     "kn-cuda-eval",
     "proto-to-rust",
 ]
+resolver = "2"
 
 [workspace.package]
 edition = "2021"
