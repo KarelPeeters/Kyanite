@@ -19,6 +19,13 @@ use crate::wrapper::status::Status;
 
 //TODO try automatic conv benchmarking thing again
 //  careful, cudnnConvolutionBiasActivationForward may require this algorithm
+
+// TODO onnxruntime seems to use CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED and be faster,
+//   but it's only supported for: cross-correlation, no relu, no res?
+//   no, even then it's still not supported :(
+//   idea: try to look at ort kernels used to see which exact set of things is happening to the input?
+//   idea: search online for winograd non-fused conditions
+
 pub const STANDARD_CONV_ALGO: cudnnConvolutionFwdAlgo_t =
     cudnnConvolutionFwdAlgo_t::CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
