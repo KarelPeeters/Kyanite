@@ -604,7 +604,34 @@ impl PartialEq for DTensor {
             (DTensor::U64(a), DTensor::U64(b)) => a == b,
             (DTensor::Bool(a), DTensor::Bool(b)) => a == b,
 
-            _ => unreachable!(),
+            // different types, not equal
+            _ => false,
+        }
+    }
+}
+
+impl Hash for DTensor {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // hash shape, dtype and some of the first elements
+        // (not all of them since that could be slow for large tensors)
+        // TODO figure out how to include some of the middle and final elements too?
+        const N: usize = 8;
+
+        self.shape().hash(state);
+        self.dtype().hash(state);
+
+        match self {
+            DTensor::F32(tensor) => tensor.iter().take(N).for_each(|x| x.float_hash(state)),
+            DTensor::F64(tensor) => tensor.iter().take(N).for_each(|x| x.float_hash(state)),
+            DTensor::I8(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::I16(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::I32(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::I64(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::U8(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::U16(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::U32(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::U64(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
+            DTensor::Bool(tensor) => tensor.iter().take(N).for_each(|x| x.hash(state)),
         }
     }
 }

@@ -76,6 +76,7 @@ use crate::shape::{Shape, Size};
 pub struct Graph {
     check: u32,
     values: Vec<ValueInfo>,
+    back_map: HashMap<(Shape, DType, Operation), usize>,
     new_values: Vec<Value>,
     inputs: Vec<Value>,
     outputs: Vec<Value>,
@@ -100,7 +101,7 @@ pub struct ValueInfo {
 
 /// The core set of graph operations.
 /// Some attempt was made to keep operations orthogonal but flexible, so they can be composed easily.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Operation {
     /// A runtime-variable input.
     Input { index: usize },
@@ -159,7 +160,7 @@ pub enum Operation {
     // TODO "select"/"where" operation
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SliceRange {
     pub start: usize,
     pub end: usize,
@@ -168,7 +169,7 @@ pub struct SliceRange {
 
 // TODO consider removing the compound operations (sigmoid, mish)
 //   alternatively check if either the CPU or CUDA implementations are faster/more accurate
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum UnaryOp {
     Abs,
     Neg,
@@ -191,7 +192,7 @@ pub enum UnaryOp {
     BitCast(DType),
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -202,7 +203,7 @@ pub enum BinaryOp {
     Pow,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ReduceOp {
     Sum,
     // TODO remove mean and rely on operator fusion instead
@@ -306,7 +307,7 @@ impl Operation {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ConvDetails {
     pub dtype: DType,
     pub batch_size: Size,
@@ -362,6 +363,7 @@ impl Graph {
         Graph {
             check: random(),
             values: vec![],
+            back_map: HashMap::new(),
             new_values: vec![],
             inputs: vec![],
             outputs: vec![],
@@ -531,33 +533,38 @@ impl Graph {
     pub(crate) fn push(&mut self, shape: Shape, dtype: DType, operation: Operation) -> Value {
         // TODO replace const computations, especially for simple ops like unary and binary?
 
-        let info = ValueInfo {
-            shape,
-            dtype,
-            operation,
-            non_output_uses: 0,
-            debug_id: String::new(),
-        };
-
         let check = self.check;
+        let key = (shape.clone(), dtype, operation.clone());
 
-        match self.values.iter().position(|cand| cand == &info) {
-            Some(index) => {
+        match self.back_map.get(&key) {
+            Some(&index) => {
                 // found duplicate, reuse existing value
                 Value { index, check }
             }
             None => {
-                // no duplicate found, create new value
-                for input in info.operation.inputs() {
+                // no duplicate found
+                // check validness
+                for input in operation.inputs() {
                     self.check_contains(input);
                     self.values[input.index].non_output_uses += 1;
                 }
 
-                let index = self.values.len();
-                let value = Value { index, check };
+                // push new value
+                let info = ValueInfo {
+                    shape,
+                    dtype,
+                    operation,
+                    non_output_uses: 0,
+                    debug_id: String::new(),
+                };
 
+                let index = self.values.len();
                 self.values.push(info);
+
+                let value = Value { index, check };
                 self.new_values.push(value);
+
+                self.back_map.insert(key, index);
 
                 value
             }
@@ -1444,6 +1451,7 @@ impl Display for Graph {
         let Graph {
             check,
             values,
+            back_map: _,
             new_values: _,
             inputs,
             outputs,
