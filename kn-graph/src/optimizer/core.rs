@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-use itertools::Itertools;
 
 use crate::dtype::{DScalar, DTensor, DType};
 use crate::graph::{BinaryOp, Graph, Operation, ReduceOp, UnaryOp, Value};
-use crate::optimizer::recurse::heap_recurse;
 use crate::optimizer::OptimizerSettings;
+use crate::optimizer::recurse::heap_recurse;
 
 #[derive(Debug)]
 pub struct Optimizer<'a> {
@@ -285,10 +284,8 @@ impl<'a> Optimizer<'a> {
         } = &self.old_graph[old_start].operation
         {
             if let Some(DTensor::F32(data)) = self.old_graph.as_const(right) {
-                let new_data = data.iter().map(|&x| 1.0 / x).collect_vec();
-                let new_right = self
-                    .new_graph
-                    .constant::<f32>(self.old_graph[right].shape.clone(), new_data);
+                let new_data = data.mapv(|x| 1.0 / x).into_shared();
+                let new_right = self.new_graph.constant_tensor(DTensor::F32(new_data));
 
                 let new_left = self.visit(left)?;
                 let result = self.new_graph.mul(new_left, new_right);
