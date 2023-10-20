@@ -1,6 +1,7 @@
 use std::ops::ControlFlow;
 
 use internal_iterator::InternalIterator;
+use itertools::zip_eq;
 
 use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
@@ -44,6 +45,7 @@ pub struct GatherArgs<P> {
 pub struct ScalarOpArgs<P> {
     pub kernel: ScalarKernel,
     pub operands: Vec<PtrTensor<P>>,
+    pub operand_kinds: Vec<OperandKind>,
 }
 
 #[derive(Debug)]
@@ -85,11 +87,18 @@ pub struct Operand<T> {
     pub value: T,
 }
 
-#[derive(Debug)]
+// TODO think about how to properly represent all of this: read/write/clobber/read+write/...
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum OperandKind {
+    /// Memory is read, nothing is written.
     In,
+    /// Memory is written, nothing is read.
     Out,
+    /// Memory is both read and written.
     InOut,
+    /// Memory is used as scratch space, it is both written to and read from but only is that order.
+    /// This means that any pre-existing data in the memory doesn't matter.
+    Scratch,
 }
 
 //TODO is there some way to reduce the huge amount of boilerplate here?
@@ -130,6 +139,7 @@ impl<P> Step<P> {
             Step::ScalarOp(args) => Step::ScalarOp(ScalarOpArgs {
                 kernel: args.kernel,
                 operands: args.operands.into_iter().map(|op| op.map_ptr(&mut f)).collect(),
+                operand_kinds: args.operand_kinds.clone(),
             }),
             Step::ReduceOp(args) => Step::ReduceOp(ReduceOpArgs {
                 kernel: args.kernel,
@@ -175,7 +185,7 @@ impl<P> Step<P> {
                 output_desc: _,
                 output_ptr,
             }) => {
-                f(Operand::new_inout(work_ptr))?;
+                f(Operand::new_scratch(work_ptr))?;
                 f(Operand::new_in(filter_ptr))?;
                 f(Operand::new_in(input_ptr))?;
                 f(Operand::new_in(bias_ptr))?;
@@ -201,12 +211,11 @@ impl<P> Step<P> {
                 if *beta == 0.0 {
                     f(Operand::new_out(&c.ptr))?;
                 } else {
-                    f(Operand::new_inout(&c.ptr))?;
+                    f(Operand::new_real_inout(&c.ptr))?;
                 }
             }
-            Step::ScalarOp(ScalarOpArgs { kernel: _, operands }) => {
-                // TODO mark some of these input/output only if appropriate
-                operands.iter().map(|a| Operand::new_inout(a.ptr())).try_for_each(f)?
+            Step::ScalarOp(ScalarOpArgs { kernel: _, operands, operand_kinds }) => {
+                zip_eq(operands, operand_kinds).try_for_each(|(op, &kind)| f(Operand { value: op.ptr(), kind }))?
             }
             Step::ReduceOp(ReduceOpArgs {
                 kernel: _,
@@ -278,10 +287,33 @@ impl<T> Operand<T> {
         }
     }
 
-    pub fn new_inout(value: T) -> Self {
+    // TODO rename back to inout
+    pub fn new_real_inout(value: T) -> Self {
         Operand {
             kind: OperandKind::InOut,
             value,
+        }
+    }
+
+    pub fn new_scratch(value: T) -> Self {
+        Operand {
+            kind: OperandKind::Scratch,
+            value,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn as_ref(&self) -> Operand<&T> {
+        Operand {
+            kind: self.kind,
+            value: &self.value,
+        }
+    }
+
+    pub fn map_value<K>(self, mut f: impl FnMut(T) -> K) -> Operand<K> {
+        Operand {
+            kind: self.kind,
+            value: f(self.value),
         }
     }
 }
@@ -333,7 +365,7 @@ impl Step<DevicePtr> {
 
 impl ScalarOpArgs<DevicePtr> {
     pub unsafe fn run(&self, stream: &CudaStream) {
-        let ScalarOpArgs { kernel, operands } = self;
+        let ScalarOpArgs { kernel, operands, operand_kinds: _ } = self;
         kernel.run(stream, operands);
     }
 }

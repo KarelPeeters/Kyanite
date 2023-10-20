@@ -13,7 +13,7 @@ use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use kn_graph::dispatch_dtensor;
-use kn_graph::dtype::{DScalar, DType, DisplayCFloat};
+use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -26,7 +26,7 @@ use crate::autokernel::softmax::SoftmaxKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherOpArgs, Handles, LayernormOpArgs, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{GatherOpArgs, Handles, LayernormOpArgs, Operand, OperandKind, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
 
 /// Planner converts a Graph into a concrete cuda execution plan.
 ///
@@ -848,7 +848,23 @@ impl<'a> Planner<'a> {
         let result_y = self.visit_fused_scalar_recurse(value, &mut block, true)?;
         block.store_operand_y(&result, result_y);
 
-        self.plan_scalar_op(&block.operation, block.operands, value);
+        let operands = block.operands.iter().map(|operand| {
+            let ScalarOperand { tensor, loaded_y, stored_to } = operand;
+
+            let kind = match (loaded_y.is_some(), stored_to) {
+                (true, true) => OperandKind::InOut,
+                (true, false) => OperandKind::In,
+                (false, true) => OperandKind::Out,
+                (false, false) => panic!("Scalar operand needs to be either loaded or stored"),
+            };
+
+            Operand {
+                kind,
+                value: tensor.clone(),
+            }
+        }).collect_vec();
+
+        self.plan_scalar_op(&block.operation, operands, value);
 
         Ok(result)
     }
@@ -892,7 +908,7 @@ impl<'a> Planner<'a> {
                 // TODO implement some support for tiny multi-consts?
                 //   that could be implement with `? :` or small lookup tables
                 let y = if let Some(c) = self.graph.as_single_const(value) {
-                    block.define_y(c.dtype(), &c.to_c_str())
+                    block.define_y_simple(c.dtype(), &c.to_c_str())
                 } else {
                     block.load_operand_y(&self.visit(value)?)
                 };
@@ -901,7 +917,7 @@ impl<'a> Planner<'a> {
             }
         };
 
-        let y_output = block.define_y(value_info.dtype, &op_str);
+        let y_output = block.define_y_simple(value_info.dtype, &op_str);
         Ok(y_output)
     }
 
@@ -909,15 +925,17 @@ impl<'a> Planner<'a> {
     fn plan_copy_tensor(&mut self, old: &PlanTensor, new: &PlanTensor, debug_value: Value) {
         assert_eq!(old.strided_shape().shape(), new.strided_shape().shape());
 
-        self.plan_scalar_op("*x0 = *x1;", vec![new.clone(), old.clone()], debug_value);
+        let operands = vec![Operand::new_out(new.clone()), Operand::new_in(old.clone())];
+        self.plan_scalar_op("*x0 = *x1;", operands, debug_value);
     }
 
-    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<PlanTensor>, debug_value: Value) {
+    fn plan_scalar_op(&mut self, operation: &str, operands: Vec<Operand<PlanTensor>>, debug_value: Value) {
         // add extra axis since ironically the scalar kernel doesn't work for scalar operands
-        let operands = if operands[0].strided_shape().rank() == 0 {
-            operands.into_iter().map(|op| op.view(vec![1]).unwrap()).collect_vec()
+        let operand_kinds = operands.iter().map(|op| op.kind).collect_vec();
+        let operands = if operands[0].value.strided_shape().rank() == 0 {
+            operands.into_iter().map(|op| op.value.view(vec![1]).unwrap()).collect_vec()
         } else {
-            operands
+            operands.into_iter().map(|op| op.value).collect_vec()
         };
 
         let shapes = operands
@@ -930,7 +948,7 @@ impl<'a> Planner<'a> {
             .collect_vec();
         let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes, types);
 
-        let args = ScalarOpArgs { kernel, operands };
+        let args = ScalarOpArgs { kernel, operands, operand_kinds };
         self.push(PlanStep::ScalarOp(args), debug_value);
     }
 
@@ -974,13 +992,17 @@ impl<'a> Planner<'a> {
 
 #[derive(Debug, Default)]
 struct ScalarBlock {
-    // map operand to x index
-    operands: Vec<PlanTensor>,
-    // map operand x to y index
-    loaded_operands: Vec<Option<usize>>,
-
+    // x index -> operand
+    operands: Vec<ScalarOperand>,
     operation: String,
     next_y_index: usize,
+}
+
+#[derive(Debug)]
+struct ScalarOperand {
+    tensor: PlanTensor,
+    loaded_y: Option<usize>,
+    stored_to: bool,
 }
 
 impl ScalarBlock {
@@ -990,17 +1012,20 @@ impl ScalarBlock {
         y
     }
 
-    fn push_operand_x(&mut self, operand: &PlanTensor) -> usize {
+    fn push_operand_x(&mut self, tensor: &PlanTensor) -> usize {
         if let Some(other) = self.operands.get(0) {
-            assert_eq!(operand.strided_shape().shape(), other.strided_shape().shape());
+            assert_eq!(tensor.strided_shape().shape(), other.tensor.strided_shape().shape());
         }
 
-        if let Some(x) = self.operands.iter().position(|o| o == operand) {
+        if let Some(x) = self.operands.iter().position(|o| &o.tensor == tensor) {
             x
         } else {
             let x = self.operands.len();
-            self.operands.push(operand.clone());
-            self.loaded_operands.push(None);
+            self.operands.push(ScalarOperand {
+                tensor: tensor.clone(),
+                loaded_y: None,
+                stored_to: false,
+            });
             x
         }
     }
@@ -1008,24 +1033,27 @@ impl ScalarBlock {
     fn load_operand_y(&mut self, operand: &PlanTensor) -> usize {
         let x = self.push_operand_x(operand);
 
-        if let Some(y) = self.loaded_operands[x] {
+        if let Some(y) = self.operands[x].loaded_y {
             y
         } else {
             let y = self.alloc_y();
-            self.loaded_operands[x] = Some(y);
+            self.operands[x].loaded_y = Some(y);
             writeln!(&mut self.operation, "{} y{} = *x{};", operand.dtype().as_c_str(), y, x).unwrap();
             y
         }
     }
 
-    fn define_y(&mut self, dtype: DType, value: &str) -> usize {
+    /// Define a new y value, computed by `expression`.
+    /// The expression is not allowed to do any memory accesses, it should only use existing `y` values.
+    fn define_y_simple(&mut self, dtype: DType, expression: &str) -> usize {
         let y = self.alloc_y();
-        writeln!(&mut self.operation, "{} y{} = {};", dtype.as_c_str(), y, value).unwrap();
+        writeln!(&mut self.operation, "{} y{} = {};", dtype.as_c_str(), y, expression).unwrap();
         y
     }
 
     fn store_operand_y(&mut self, operand: &PlanTensor, y: usize) {
         let x = self.push_operand_x(operand);
+        self.operands[x].stored_to = true;
         writeln!(&mut self.operation, "*x{} = y{};", x, y).unwrap();
     }
 }

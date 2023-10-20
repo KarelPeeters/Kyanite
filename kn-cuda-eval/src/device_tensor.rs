@@ -7,7 +7,7 @@ use kn_graph::dtype::DType;
 use crate::autokernel::scalar::ScalarKernel;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::ScalarOpArgs;
+use crate::step::{OperandKind, ScalarOpArgs};
 
 pub type DeviceTensor = PtrTensor<DevicePtr>;
 
@@ -95,6 +95,7 @@ impl DeviceTensor {
         ScalarOpArgs {
             kernel,
             operands: vec![self.clone(), other.clone()],
+            operand_kinds: vec![OperandKind::Out, OperandKind::In]
         }
     }
 
