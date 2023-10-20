@@ -901,15 +901,7 @@ impl<'a> Planner<'a> {
             }
         };
 
-        let y_output = block.alloc_y();
-        writeln!(
-            &mut block.operation,
-            "{} y{} = {};",
-            value_info.dtype.as_c_str(),
-            y_output,
-            op_str
-        )
-        .unwrap();
+        let y_output = block.define_y(value_info.dtype, &op_str);
         Ok(y_output)
     }
 
