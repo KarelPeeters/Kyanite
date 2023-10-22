@@ -2,7 +2,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
-use kn_graph::dtype::DType;
+use kn_graph::dispatch_dtensor;
+use kn_graph::dtype::{DTensor, DType};
 
 use crate::autokernel::scalar::ScalarKernel;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
@@ -26,6 +27,21 @@ impl DeviceTensor {
 
     pub fn device(&self) -> Device {
         self.ptr().device()
+    }
+    
+    pub fn alloc_simple_init(device: Device, value: &DTensor) -> Self {
+        let tensor = Self::alloc_simple(device, value.shape().to_vec(), value.dtype());
+
+        // copy values
+        dispatch_dtensor!(value, |T, _f, inner| {
+            let inner = inner.as_standard_layout();
+            let bytes = cast_slice::<T, u8>(inner.as_slice().unwrap());
+            unsafe {
+                tensor.copy_simple_from_host(bytes);
+            }
+        });
+        
+        tensor
     }
 
     pub fn deep_clone(&self) -> DeviceTensor {

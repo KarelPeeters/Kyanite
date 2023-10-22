@@ -530,6 +530,8 @@ pub use map_dtensor;
 pub use map_dtensor_pair;
 
 impl DTensor {
+    // TODO store shape and dtype in DTensor field so we don't have to pay this dispatch cost all the time?
+    // TODO single accesor `shape_dtype`?
     pub fn shape(&self) -> &[usize] {
         dispatch_dtensor!(self, |_T, _f, inner| inner.shape())
     }

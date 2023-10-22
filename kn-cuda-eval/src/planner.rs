@@ -2,7 +2,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use bytemuck::cast_slice;
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
@@ -12,8 +11,7 @@ use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
-use kn_graph::dispatch_dtensor;
-use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
+use kn_graph::dtype::{DisplayCFloat, DScalar, DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -46,13 +44,12 @@ pub(crate) struct Planner<'a> {
     graph: &'a Graph,
     batch_size: usize,
 
+    const_buffers: Vec<ConstBufferInfo>,
     shared_buffers: Vec<SharedBufferInfo>,
     max_zero_bytes: usize,
 
     map: HashMap<Value, PlanTensor>,
     steps: Vec<PlanStepInfo>,
-
-    dedicated_bytes: usize,
 }
 
 #[derive(Debug)]
@@ -65,8 +62,8 @@ pub struct Plan {
 
 #[derive(Debug)]
 pub struct MemoryUsage {
-    /// Bytes allocated for dedicated tensors (weights)
-    pub dedicated_bytes: usize,
+    /// Bytes allocated for constant tensors (weights)
+    pub const_bytes: usize,
     /// Bytes allocated for shared tensors (inputs, outputs, hidden states)
     pub shared_bytes: usize,
     /// Bytes allocated for fixed-zero tensors.
@@ -86,9 +83,16 @@ struct SharedBufferInfo {
     debug_value: Option<Value>,
 }
 
+#[derive(Debug)]
+struct ConstBufferInfo {
+    value: DTensor,
+    #[allow(dead_code)]
+    debug_value: Option<Value>,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum PlanBuffer {
-    Dedicated(DevicePtr),
+    Const { index: usize },
     Shared { index: usize },
     Zero,
 }
@@ -162,10 +166,18 @@ impl<'a> Planner<'a> {
             live_ranges
         };
 
-        // actually allocate shared tensors
-        let mut free_allocations: HashMap<usize, Vec<DevicePtr>> = Default::default();
+        // actually allocate buffers
         let device = planner.device();
 
+        let mut const_bytes = 0;
+        let const_allocations = planner.const_buffers.iter().map(|info| {
+            let ConstBufferInfo { value, debug_value: _ } = info;
+            let tensor = DeviceTensor::alloc_simple_init(device, value);
+            const_bytes += tensor.dense_size_bytes();
+            tensor.into_ptr()
+        }).collect_vec();
+
+        let mut free_allocations: HashMap<usize, Vec<DevicePtr>> = Default::default();
         let mut shared_allocations: Vec<Option<DevicePtr>> = vec![None; buffer_count];
 
         let mut shared_bytes = 0;
@@ -235,7 +247,7 @@ impl<'a> Planner<'a> {
         }
 
         let mem_usage = MemoryUsage {
-            dedicated_bytes: planner.dedicated_bytes,
+            const_bytes,
             shared_bytes,
             zero_bytes,
             hypo_shared_bytes_peak,
@@ -244,6 +256,7 @@ impl<'a> Planner<'a> {
 
         // realize planned tensors and steps
         let ctx = RealizationContext {
+            const_allocations,
             shared_allocations,
             zero_allocation,
         };
@@ -275,11 +288,11 @@ impl<'a> Planner<'a> {
             handles,
             graph,
             batch_size,
+            const_buffers: vec![],
             shared_buffers: vec![],
             map: Default::default(),
             steps: vec![],
             max_zero_bytes: 0,
-            dedicated_bytes: 0,
         }
     }
 
@@ -327,20 +340,7 @@ impl<'a> Planner<'a> {
 
         let result: PlanTensor = match &result_info.operation {
             &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, result_dtype, Some(value)),
-            Operation::Constant { tensor } => {
-                let result = self.alloc_tensor_dedicated(result_shape, tensor.dtype());
-
-                // copy values
-                dispatch_dtensor!(tensor, |T, _f, inner| {
-                    let inner = inner.as_standard_layout();
-                    let bytes = cast_slice::<T, u8>(inner.as_slice().unwrap());
-                    unsafe {
-                        result.copy_simple_from_host(bytes);
-                    }
-                });
-
-                result.map_ptr(|device_ptr| PlanPtr::from_device_ptr(Some(value), device_ptr))
-            }
+            Operation::Constant { tensor } => self.alloc_tensor_const(tensor.clone(), Some(value)),
             &Operation::View { input } => {
                 let input_tensor = self.visit(input)?;
 
@@ -952,9 +952,20 @@ impl<'a> Planner<'a> {
         self.push(PlanStep::ScalarOp(args), debug_value);
     }
 
-    fn alloc_tensor_dedicated(&mut self, shape: ConcreteShape, dtype: DType) -> DeviceTensor {
-        self.dedicated_bytes += shape.size() * dtype.size().bytes();
-        DeviceTensor::alloc_simple(self.device(), shape.dims, dtype)
+    fn alloc_tensor_const(&mut self, value: DTensor, debug_value: Option<Value>) -> PlanTensor {
+        let shape = value.shape().to_vec();
+        let dtype = value.dtype();
+
+        // push info, get index
+        let index = self.const_buffers.len();
+        let info = ConstBufferInfo { value, debug_value };
+        self.const_buffers.push(info);
+        let buffer = PlanBuffer::Const { index };
+
+        // wrap in tensor
+        let buffer = PlanPtr::from_parts(debug_value, buffer, 0);
+        let shape = StridedShape::new_simple(shape);
+        PlanTensor::from_parts(buffer, shape, dtype)
     }
 
     // TODO add skip for zero-sized buffers?
@@ -1060,6 +1071,7 @@ impl ScalarBlock {
 
 #[derive(Debug)]
 struct RealizationContext {
+    const_allocations: Vec<DevicePtr>,
     shared_allocations: Vec<Option<DevicePtr>>,
     zero_allocation: DevicePtr,
 }
@@ -1073,7 +1085,7 @@ impl RealizationContext {
         } = ptr;
 
         let base = match buffer {
-            PlanBuffer::Dedicated(buffer) => buffer,
+            PlanBuffer::Const { index } => self.const_allocations[index].clone(),
             PlanBuffer::Shared { index } => self.shared_allocations[index]
                 .as_ref()
                 .unwrap_or_else(|| panic!("Unused shared buffer {index} is actually used"))
@@ -1100,11 +1112,6 @@ impl PlanPtr {
             buffer,
             offset_bytes,
         }
-    }
-
-    pub fn from_device_ptr(debug_value: Option<Value>, device_ptr: DevicePtr) -> Self {
-        // device_ptr already has a built-in offset, so we don't need to use the extra one we have here
-        Self::from_parts(debug_value, PlanBuffer::Dedicated(device_ptr), 0)
     }
 }
 
