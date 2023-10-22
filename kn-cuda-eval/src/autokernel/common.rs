@@ -7,6 +7,10 @@ use lazy_static::lazy_static;
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
+// TODO cache kernel compilation on disk
+//   * make sure to invalidate old files?
+//   * user-configurable cache dir, either env var or actual code?
+//   * disabled by default to ensure it always works, even on read-only fs
 lazy_static! {
     static ref KERNEL_CACHE: Mutex<HashMap<KernelKey, CuFunction>> = Mutex::new(HashMap::new());
     static ref HEADERS: HashMap<&'static str, &'static str> = {
