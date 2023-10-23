@@ -5,13 +5,13 @@ use kn_cuda_sys::wrapper::status::Status;
 use kn_graph::dtype::DisplayCFloat;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
 
 #[derive(Debug)]
-pub struct SoftmaxKernel {
+pub struct SoftmaxKernel<K> {
     input_shape: StridedShape,
     output_shape: StridedShape,
 
@@ -19,12 +19,12 @@ pub struct SoftmaxKernel {
     _input_scale: f32,
     static_size: usize,
 
-    function: CuFunction,
+    kernel: K,
 }
 
 const SOFTMAX_SOURCE: &str = include_str!("softmax.cu");
 
-impl SoftmaxKernel {
+impl SoftmaxKernel<KernelKey> {
     pub fn new(
         device: Device,
         input_shape: &StridedShape,
@@ -67,16 +67,15 @@ impl SoftmaxKernel {
 
         // compile the kernel
         let source = fill_replacements(SOFTMAX_SOURCE, &replacements);
-        let key = KernelKey {
+        let kernel = KernelKey {
             device,
             source,
             func_name: "softmax_kernel".to_owned(),
         };
-        let function = compile_cached_kernel(key);
 
         // wrap everything up
         SoftmaxKernel {
-            function,
+            kernel,
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
             _softmax_axis: softmax_axis,
@@ -84,7 +83,22 @@ impl SoftmaxKernel {
             static_size,
         }
     }
+}
 
+impl<T> SoftmaxKernel<T> {
+    pub fn map_kernel<K>(&self, mut f: impl FnMut(&T) -> K) -> SoftmaxKernel<K> {
+        SoftmaxKernel {
+            kernel: f(&self.kernel),
+            input_shape: self.input_shape.clone(),
+            output_shape: self.output_shape.clone(),
+            _softmax_axis: self._softmax_axis,
+            _input_scale: self._input_scale,
+            static_size: self.static_size,
+        }
+    }
+}
+
+impl SoftmaxKernel<CuFunction> {
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
         assert_eq!(input.strided_shape(), &self.input_shape);
         assert_eq!(output.strided_shape(), &self.output_shape);
@@ -101,7 +115,7 @@ impl SoftmaxKernel {
         let threads_per_block = (threads_per_warp * warps_per_block) as u32;
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
-        self.function
+        self.kernel
             .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
             .unwrap();
     }

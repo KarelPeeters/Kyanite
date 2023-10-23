@@ -7,10 +7,15 @@ use lazy_static::lazy_static;
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
+// TODO cache bytecode separately from functions, so we can reuse the same bytecode for multiple devices?
+//   the reason we included the device id in the key is because bytecode needs to be reloaded for each device,
+//   and that needs to stay, but we can still cache the bytecode and skip the slow compilation!
 // TODO cache kernel compilation on disk
 //   * make sure to invalidate old files?
 //   * user-configurable cache dir, either env var or actual code?
 //   * disabled by default to ensure it always works, even on read-only fs
+//   * include device type in disk-cached kernels, not device id
+//       (since we cache bytecode, not functions, and also since devices can change)
 lazy_static! {
     static ref KERNEL_CACHE: Mutex<HashMap<KernelKey, CuFunction>> = Mutex::new(HashMap::new());
     static ref HEADERS: HashMap<&'static str, &'static str> = {
@@ -20,13 +25,14 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct KernelKey {
     pub device: Device,
     pub source: String,
     pub func_name: String,
 }
 
+// TODO take reference here, only clone if new
 pub fn compile_cached_kernel(key: KernelKey) -> CuFunction {
     // keep locked for the duration of compilation
     let mut cache = KERNEL_CACHE.lock().unwrap();

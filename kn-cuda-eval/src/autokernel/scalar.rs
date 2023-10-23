@@ -8,7 +8,7 @@ use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -16,7 +16,7 @@ use crate::shape::StridedShape;
 /// An instance of a scalar/elementwise kernel. Can be build for any operation, rank, strides, and sizes.
 /// The first axis is runtime-dynamic without recompiling the kernel.
 #[derive(Debug)]
-pub struct ScalarKernel {
+pub struct ScalarKernel<K> {
     #[allow(dead_code)]
     operation: String,
 
@@ -25,12 +25,12 @@ pub struct ScalarKernel {
     operand_types: Vec<String>,
     operand_strides: Vec<Vec<isize>>,
 
-    function: CuFunction,
+    kernel: K,
 }
 
 const SCALAR_SOURCE: &str = include_str!("scalar.cu");
 
-impl ScalarKernel {
+impl ScalarKernel<KernelKey> {
     /// Compile an instance of a new scalar kernel.
     ///
     /// `operation` has the format `*x0 = *x1 + *x2;`.
@@ -70,18 +70,17 @@ impl ScalarKernel {
         ];
         let source = fill_replacements(SCALAR_SOURCE, &replacements);
 
-        let key = KernelKey {
+        let kernel = KernelKey {
             device,
             source,
             func_name: "scalar_kernel".to_owned(),
         };
 
-        let function = compile_cached_kernel(key);
         let inner_size = inner_shape.iter().product();
 
         ScalarKernel {
             operation: operation.to_owned(),
-            function,
+            kernel,
             inner_size,
             inner_shape,
             operand_types,
@@ -109,7 +108,22 @@ impl ScalarKernel {
 
         Self::new(device, operation, inner_shape, operand_types, operand_strides)
     }
+}
 
+impl<K> ScalarKernel<K> {
+    pub fn map_kernel<T>(&self, mut f: impl FnMut(&K) -> T) -> ScalarKernel<T> {
+        ScalarKernel {
+            operation: self.operation.clone(),
+            kernel: f(&self.kernel),
+            inner_size: self.inner_size,
+            inner_shape: self.inner_shape.clone(),
+            operand_types: self.operand_types.clone(),
+            operand_strides: self.operand_strides.clone(),
+        }
+    }
+}
+
+impl ScalarKernel<CuFunction> {
     pub unsafe fn run(&self, stream: &CudaStream, tensors: &[DeviceTensor]) {
         let items_per_thread = 64;
         let threads_per_block = 64;
@@ -147,7 +161,7 @@ impl ScalarKernel {
         let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
 
         // TODO cache all of this so we just have to call launch_kernel at the end?
-        self.function
+        self.kernel
             .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
             .unwrap();
     }

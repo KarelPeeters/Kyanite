@@ -11,11 +11,13 @@ use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
+use kn_cuda_sys::wrapper::rtc::core::CuFunction;
 use kn_graph::dtype::{DisplayCFloat, DScalar, DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
 
+use crate::autokernel::common::{compile_cached_kernel, KernelKey};
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
 use crate::autokernel::reduce::{ReduceCode, ReduceKernel};
@@ -91,24 +93,25 @@ struct ConstBufferInfo {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum PlanBuffer {
+pub enum PlanBuffer {
     Const { index: usize },
     Shared { index: usize },
     Zero,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct PlanPtr {
+pub struct PlanPtr {
     debug_value: Option<Value>,
     buffer: PlanBuffer,
     offset_bytes: isize,
 }
 
-type PlanTensor = PtrTensor<PlanPtr>;
-type PlanStep = Step<PlanPtr>;
-type ExecStep = Step<DevicePtr>;
-type PlanStepInfo = StepInfo<PlanPtr>;
-type ExecStepInfo = StepInfo<DevicePtr>;
+pub type PlanTensor = PtrTensor<PlanPtr>;
+// `ExecTensor` would just be the already-existing alias `DeviceTensor`.
+pub type PlanStep = Step<KernelKey, PlanPtr>;
+pub type ExecStep = Step<CuFunction, DevicePtr>;
+pub type PlanStepInfo = StepInfo<KernelKey, PlanPtr>;
+pub type ExecStepInfo = StepInfo<CuFunction, DevicePtr>;
 
 type VisitResult<T> = Result<T, Value>;
 
@@ -1101,7 +1104,7 @@ impl RealizationContext {
     }
 
     fn realize_step(&self, step: PlanStep) -> ExecStep {
-        step.map_ptrs(|ptr| self.realize_ptr(ptr))
+        step.map_kernel_and_ptrs(|kernel| compile_cached_kernel(kernel.clone()), |ptr| self.realize_ptr(ptr))
     }
 }
 

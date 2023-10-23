@@ -2,9 +2,11 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
+use kn_cuda_sys::wrapper::rtc::core::CuFunction;
 use kn_graph::dispatch_dtensor;
 use kn_graph::dtype::{DTensor, DType};
 
+use crate::autokernel::common::compile_cached_kernel;
 use crate::autokernel::scalar::ScalarKernel;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
@@ -28,7 +30,7 @@ impl DeviceTensor {
     pub fn device(&self) -> Device {
         self.ptr().device()
     }
-    
+
     pub fn alloc_simple_init(device: Device, value: &DTensor) -> Self {
         let tensor = Self::alloc_simple(device, value.shape().to_vec(), value.dtype());
 
@@ -40,7 +42,7 @@ impl DeviceTensor {
                 tensor.copy_simple_from_host(bytes);
             }
         });
-        
+
         tensor
     }
 
@@ -86,7 +88,7 @@ impl DeviceTensor {
 
     // TODO ideally we would decay to memcpy if possible
     //   but callers can already do that, this is this fallback!
-    pub fn copy_from_as_scalar_op(&self, other: &DeviceTensor) -> ScalarOpArgs<DevicePtr> {
+    fn copy_from_as_scalar_op(&self, other: &DeviceTensor) -> ScalarOpArgs<CuFunction, DevicePtr> {
         assert_eq!(self.device(), other.device(), "Tensors must be on the same device");
         assert_eq!(self.dtype(), other.dtype(), "Tensors must have the same dtype");
         let device = self.device();
@@ -107,6 +109,8 @@ impl DeviceTensor {
             &[self.strided_shape().clone(), other.strided_shape().clone()],
             vec![dtype_str.to_owned(), dtype_str.to_owned()],
         );
+
+        let kernel = kernel.map_kernel(|k| compile_cached_kernel(k.clone()));
 
         ScalarOpArgs {
             kernel,

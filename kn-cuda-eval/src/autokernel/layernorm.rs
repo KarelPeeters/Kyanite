@@ -7,13 +7,13 @@ use kn_cuda_sys::wrapper::status::Status;
 use kn_graph::dtype::DisplayCFloat;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
 
 #[derive(Debug)]
-pub struct LayernormKernel {
+pub struct LayernormKernel<K> {
     input_shape: StridedShape,
     output_shape: StridedShape,
 
@@ -25,12 +25,12 @@ pub struct LayernormKernel {
     _alpha1: f32,
     _beta: f32,
 
-    function: CuFunction,
+    kernel: K,
 }
 
 const LAYERNORM_SOURCE: &str = include_str!("layernorm.cu");
 
-impl LayernormKernel {
+impl LayernormKernel<KernelKey> {
     pub fn new(
         device: Device,
         input_shape: &StridedShape,
@@ -76,16 +76,15 @@ impl LayernormKernel {
 
         // compile the kernel
         let source = fill_replacements(LAYERNORM_SOURCE, &replacements);
-        let key = KernelKey {
+        let kernel = KernelKey {
             device,
             source,
             func_name: "layernorm_kernel".to_owned(),
         };
-        let function = compile_cached_kernel(key);
 
         // wrap everything up
         LayernormKernel {
-            function,
+            kernel,
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
             _norm_axis: norm_axis,
@@ -96,7 +95,25 @@ impl LayernormKernel {
             _beta: beta,
         }
     }
+}
 
+impl<T> LayernormKernel<T> {
+    pub fn map_kernel<K>(&self, mut f: impl FnMut(&T) -> K) -> LayernormKernel<K> {
+        LayernormKernel {
+            input_shape: self.input_shape.clone(),
+            output_shape: self.output_shape.clone(),
+            _norm_axis: self._norm_axis,
+            static_size: self.static_size,
+            _eps: self._eps,
+            _alpha0: self._alpha0,
+            _alpha1: self._alpha1,
+            _beta: self._beta,
+            kernel: f(&self.kernel),
+        }
+    }
+}
+
+impl LayernormKernel<CuFunction> {
     pub unsafe fn run(
         &self,
         stream: &CudaStream,
@@ -129,7 +146,7 @@ impl LayernormKernel {
         let threads_per_block = (threads_per_warp * warps_per_block) as u32;
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
-        self.function
+        self.kernel
             .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
             .unwrap();
     }

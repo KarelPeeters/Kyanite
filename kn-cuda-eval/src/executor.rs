@@ -1,20 +1,19 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use bytemuck::checked::cast_slice_mut;
 use bytemuck::{cast_slice, Pod};
+use bytemuck::checked::cast_slice_mut;
 use itertools::{multizip, zip_eq};
 
 use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
-use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
+use kn_graph::{dispatch_dtensor, dispatch_dtype};
 use kn_graph::dtype::{DBool, DTensor, Tensor};
 use kn_graph::graph::Graph;
-use kn_graph::{dispatch_dtensor, dispatch_dtype};
 
 use crate::device_tensor::DeviceTensor;
-use crate::planner::{MemoryUsage, Plan, Planner};
-use crate::step::{Handles, Step, StepInfo};
+use crate::planner::{ExecStepInfo, MemoryUsage, Plan, Planner};
+use crate::step::{Handles, Step};
 use crate::util::debug_vec_multiline;
 
 pub struct CudaExecutor {
@@ -25,7 +24,7 @@ pub struct CudaExecutor {
 
     pub batch_size: usize,
     pub mem_usage: MemoryUsage,
-    steps: Vec<StepInfo<DevicePtr>>,
+    steps: Vec<ExecStepInfo>,
 
     profile: bool,
     last_profile: Option<Profile>,

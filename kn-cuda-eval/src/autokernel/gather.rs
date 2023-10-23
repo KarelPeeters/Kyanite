@@ -5,13 +5,13 @@ use kn_cuda_sys::wrapper::status::Status;
 use kn_graph::dtype::DType;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
 
 #[derive(Debug)]
-pub struct GatherKernel {
+pub struct GatherKernel<K> {
     input_shape: StridedShape,
     indices_shape: StridedShape,
     output_shape: StridedShape,
@@ -21,12 +21,12 @@ pub struct GatherKernel {
 
     _axis: usize,
 
-    function: CuFunction,
+    kernel: K,
 }
 
 const GATHER_SOURCE: &str = include_str!("gather.cu");
 
-impl GatherKernel {
+impl GatherKernel<KernelKey> {
     pub fn new(
         device: Device,
         input_shape: &StridedShape,
@@ -78,16 +78,15 @@ impl GatherKernel {
 
         let source = fill_replacements(GATHER_SOURCE, &replacements);
 
-        let key = KernelKey {
+        let kernel = KernelKey {
             device,
             source,
             func_name: "gather_kernel".to_owned(),
         };
-        let function = compile_cached_kernel(key);
 
         // wrap everything up
         GatherKernel {
-            function,
+            kernel,
             input_shape: input_shape.clone(),
             indices_shape: indices_shape.clone(),
             output_shape: output_shape.clone(),
@@ -96,7 +95,23 @@ impl GatherKernel {
             _axis: axis,
         }
     }
+}
 
+impl<K> GatherKernel<K> {
+    pub fn map_kernel<T>(&self, mut f: impl FnMut(&K) -> T) -> GatherKernel<T> {
+        GatherKernel {
+            input_shape: self.input_shape.clone(),
+            indices_shape: self.indices_shape.clone(),
+            output_shape: self.output_shape.clone(),
+            dtype: self.dtype,
+            itype: self.itype,
+            _axis: self._axis,
+            kernel: f(&self.kernel),
+        }
+    }
+}
+
+impl GatherKernel<CuFunction> {
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, indices: &DeviceTensor, output: &DeviceTensor) {
         assert_eq!(input.strided_shape(), &self.input_shape);
         assert_eq!(indices.strided_shape(), &self.indices_shape);
@@ -121,7 +136,7 @@ impl GatherKernel {
         if items != 0 {
             let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
 
-            self.function
+            self.kernel
                 .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
                 .unwrap();
         }

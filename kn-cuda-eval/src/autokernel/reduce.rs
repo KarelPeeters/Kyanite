@@ -6,17 +6,17 @@ use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, ceil_div, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
 
 #[derive(Debug)]
-pub struct ReduceKernel {
+pub struct ReduceKernel<K> {
     _code: ReduceCode,
     _reduced_axes: Vec<usize>,
 
-    function: CuFunction,
+    kernel: K,
 
     input_shape: StridedShape,
     output_shape: StridedShape,
@@ -32,7 +32,7 @@ pub struct ReduceCode {
     pub post_process: String,
 }
 
-impl ReduceKernel {
+impl ReduceKernel<KernelKey> {
     pub fn new(
         device: Device,
         code: ReduceCode,
@@ -112,23 +112,36 @@ impl ReduceKernel {
 
         // compile the kernel
         let source = fill_replacements(REDUCE_SOURCE, &replacements);
-        let key = KernelKey {
+        let kernel = KernelKey {
             device,
             source,
             func_name: "reduce_kernel".to_owned(),
         };
-        let function = compile_cached_kernel(key);
 
         // wrap everything up
         ReduceKernel {
-            function,
+            kernel,
             _code: code,
             _reduced_axes: reduced_axes.to_owned(),
             input_shape: input_shape.clone(),
             output_shape: output_shape.clone(),
         }
     }
+}
 
+impl<T> ReduceKernel<T> {
+    pub fn map_kernel<K>(&self, mut f: impl FnMut(&T) -> K) -> ReduceKernel<K> {
+        ReduceKernel {
+            kernel: f(&self.kernel),
+            _code: self._code.clone(),
+            _reduced_axes: self._reduced_axes.clone(),
+            input_shape: self.input_shape.clone(),
+            output_shape: self.output_shape.clone(),
+        }
+    }
+}
+
+impl ReduceKernel<CuFunction> {
     pub unsafe fn run(&self, stream: &CudaStream, input: &DeviceTensor, output: &DeviceTensor) {
         assert_eq!(input.strided_shape(), &self.input_shape);
         assert_eq!(output.strided_shape(), &self.output_shape);
@@ -146,7 +159,7 @@ impl ReduceKernel {
         let threads_per_block = (threads_per_warp * warps_per_block) as u32;
         let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
 
-        self.function
+        self.kernel
             .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
             .unwrap();
     }
