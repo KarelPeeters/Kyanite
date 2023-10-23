@@ -55,7 +55,22 @@ pub(crate) struct Planner<'a> {
 }
 
 #[derive(Debug)]
+pub struct SplitPlan {
+    pub device: Device,
+
+    pub const_buffers: Vec<ConstBufferInfo>,
+    pub shared_buffers: Vec<SharedBufferInfo>,
+    pub max_zero_bytes: usize,
+
+    pub inputs: Vec<PlanTensor>,
+    pub outputs: Vec<PlanTensor>,
+    pub steps: Vec<PlanStepInfo>,
+}
+
+#[derive(Debug)]
 pub struct Plan {
+    pub device: Device,
+
     pub inputs: Vec<DeviceTensor>,
     pub outputs: Vec<DeviceTensor>,
     pub steps: Vec<ExecStepInfo>,
@@ -79,14 +94,14 @@ pub struct MemoryUsage {
 }
 
 #[derive(Debug)]
-struct SharedBufferInfo {
+pub struct SharedBufferInfo {
     size_bytes: usize,
     #[allow(dead_code)]
     debug_value: Option<Value>,
 }
 
 #[derive(Debug)]
-struct ConstBufferInfo {
+pub struct ConstBufferInfo {
     value: DTensor,
     #[allow(dead_code)]
     debug_value: Option<Value>,
@@ -115,32 +130,16 @@ pub type ExecStepInfo = StepInfo<CuFunction, DevicePtr>;
 
 type VisitResult<T> = Result<T, Value>;
 
-impl<'a> Planner<'a> {
-    pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Plan {
-        let mut planner = Planner::new(&handles, graph, batch_size);
-
-        // allocate inputs (even if they're not actually used)
-        let inputs = graph
-            .inputs()
-            .iter()
-            .map(|&input| planner.visit_completely(input))
-            .collect_vec();
-
-        // collect outputs, this recursively plans all the necessary operations
-        let outputs = graph
-            .outputs()
-            .iter()
-            .map(|&output| planner.visit_completely_ensure_simple_strides(output))
-            .collect_vec();
-
-        let buffer_count = planner.shared_buffers.len();
-        let step_count = planner.steps.len();
+impl SplitPlan {
+    pub fn realize(self) -> Plan {
+        let buffer_count = self.shared_buffers.len();
+        let step_count = self.steps.len();
 
         // determine live ranges for shared tensors
         let live_ranges = {
             let mut live_ranges = vec![(step_count, 0); buffer_count];
 
-            for (si, step_info) in planner.steps.iter().enumerate() {
+            for (si, step_info) in self.steps.iter().enumerate() {
                 step_info.step.ptr_operands().for_each(|op| {
                     if let &PlanBuffer::Shared { index } = &op.value.buffer {
                         let (lower, upper) = &mut live_ranges[index];
@@ -151,7 +150,7 @@ impl<'a> Planner<'a> {
             }
 
             // consider outputs live at the end
-            for output in &outputs {
+            for output in &self.outputs {
                 if let &PlanBuffer::Shared { index } = &output.ptr().buffer {
                     let (_, upper) = &mut live_ranges[index];
                     *upper = step_count;
@@ -159,7 +158,7 @@ impl<'a> Planner<'a> {
             }
 
             // consider inputs live at the start
-            for input in &inputs {
+            for input in &self.inputs {
                 if let &PlanBuffer::Shared { index } = &input.ptr().buffer {
                     let (lower, _) = &mut live_ranges[index];
                     *lower = 0;
@@ -170,10 +169,10 @@ impl<'a> Planner<'a> {
         };
 
         // actually allocate buffers
-        let device = planner.device();
+        let device = self.device;
 
         let mut const_bytes = 0;
-        let const_allocations = planner.const_buffers.iter().map(|info| {
+        let const_allocations = self.const_buffers.iter().map(|info| {
             let ConstBufferInfo { value, debug_value: _ } = info;
             let tensor = DeviceTensor::alloc_simple_init(device, value);
             const_bytes += tensor.dense_size_bytes();
@@ -192,7 +191,7 @@ impl<'a> Planner<'a> {
             for (ti, &(start, _)) in live_ranges.iter().enumerate() {
                 if start == si {
                     // allocate the given tensor
-                    let size_bytes = planner.shared_buffers[ti].size_bytes;
+                    let size_bytes = self.shared_buffers[ti].size_bytes;
                     curr_shared_bytes += size_bytes;
                     hypo_shared_bytes_peak = max(hypo_shared_bytes_peak, curr_shared_bytes);
                     hypo_shared_bytes_total += size_bytes;
@@ -210,7 +209,7 @@ impl<'a> Planner<'a> {
             for (ti, &(start, end)) in live_ranges.iter().enumerate() {
                 if start <= si && end == si {
                     // free the given tensor
-                    let size_bytes = planner.shared_buffers[ti].size_bytes;
+                    let size_bytes = self.shared_buffers[ti].size_bytes;
                     curr_shared_bytes -= size_bytes;
 
                     let ptr = shared_allocations[ti].as_ref().unwrap().clone();
@@ -230,7 +229,7 @@ impl<'a> Planner<'a> {
 
                     if start <= end {
                         // allocate leftover buffers that are never used before the end (eg. empty concat output tensors)
-                        let size_bytes = planner.shared_buffers[i].size_bytes;
+                        let size_bytes = self.shared_buffers[i].size_bytes;
                         shared_bytes += size_bytes;
                         Some(device.alloc(size_bytes))
                     } else {
@@ -243,7 +242,7 @@ impl<'a> Planner<'a> {
 
         // allocate a single shared zero tensor
         // it's shared between all types, this happens to work even for floats
-        let zero_bytes = planner.max_zero_bytes;
+        let zero_bytes = self.max_zero_bytes;
         let zero_allocation = device.alloc(zero_bytes);
         unsafe {
             zero_allocation.copy_linear_from_host(&vec![0; zero_bytes]);
@@ -265,9 +264,10 @@ impl<'a> Planner<'a> {
         };
 
         Plan {
-            inputs: inputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
-            outputs: outputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
-            steps: planner
+            device: self.device,
+            inputs: self.inputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
+            outputs: self.outputs.into_iter().map(|t| ctx.realize_tensor(t)).collect(),
+            steps: self
                 .steps
                 .into_iter()
                 .map(
@@ -283,6 +283,36 @@ impl<'a> Planner<'a> {
                 )
                 .collect_vec(),
             mem_usage,
+        }
+    }
+}
+
+impl<'a> Planner<'a> {
+    pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> SplitPlan {
+        let mut planner = Planner::new(&handles, graph, batch_size);
+
+        // allocate inputs (even if they're not actually used)
+        let inputs = graph
+            .inputs()
+            .iter()
+            .map(|&input| planner.visit_completely(input))
+            .collect_vec();
+
+        // collect outputs, this recursively plans all the necessary operations
+        let outputs = graph
+            .outputs()
+            .iter()
+            .map(|&output| planner.visit_completely_ensure_simple_strides(output))
+            .collect_vec();
+
+        SplitPlan {
+            device: handles.device(),
+            const_buffers: planner.const_buffers,
+            shared_buffers: planner.shared_buffers,
+            max_zero_bytes: planner.max_zero_bytes,
+            inputs,
+            outputs,
+            steps: planner.steps,
         }
     }
 

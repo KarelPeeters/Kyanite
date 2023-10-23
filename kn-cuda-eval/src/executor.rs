@@ -60,11 +60,12 @@ impl CudaExecutor {
         };
 
         let Plan {
+            device: _,
             inputs,
             outputs,
             steps,
             mem_usage,
-        } = Planner::plan(&handles, graph, batch_size);
+        } = Planner::plan(&handles, graph, batch_size).realize();
 
         let buffer_inputs = inputs
             .iter()
