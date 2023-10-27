@@ -25,6 +25,10 @@ readme = "Readme.md"
 # TODO get rid of criterion
 # TODO there are two different syn versions in the tree
 
+[patch.crates-io]
+russcip = { git = "https://github.com/KarelPeeters/russcip", branch = "fix-msvc" }
+scip-sys = { git = "https://github.com/KarelPeeters/scip-sys", branch = "fix-msvc" }
+
 [workspace.dependencies]
 # path dependencies
 kn-graph = { path = "kn-graph", version = "0.5.0" }
@@ -39,6 +43,7 @@ cc = "1.0.83"
 clap = { version = "4.4.4", features = ["derive"] }
 criterion = "0.5.1"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
+good_lp = { version = "1.7.0", features = ["scip"], default-features = false }
 image = { version = "0.24.7", default-features = false, features = ["png"] }
 indexmap = "2.0.0"
 internal-iterator = "0.2.1"
@@ -47,6 +52,7 @@ lazy_static = "1.4.0"
 ndarray = "0.15.6"
 num-traits = "0.2.16"
 palette = { version = "0.7.3", default-features = false, features = ["std"] }
+plotters = "0.3.5" # TODO disable default features, only keep svg?
 prost = "0.12.1"
 prost-build = "0.12.1"
 rand = "0.8.5"

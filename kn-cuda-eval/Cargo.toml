@@ -10,6 +10,11 @@ repository.workspace = true
 authors.workspace = true
 readme.workspace = true
 
+[features]
+default = ["plot"]
+plot = ["dep:plotters"]
+# TODO ILP feature
+
 [dependencies]
 kn-graph.workspace = true
 kn-cuda-sys.workspace = true
@@ -19,6 +24,8 @@ internal-iterator.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
+good_lp.workspace = true
+plotters = { workspace = true, optional = true }
 
 [build-dependencies]
 cc.workspace = true

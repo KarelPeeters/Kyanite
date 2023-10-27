@@ -1,7 +1,11 @@
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::fs::File;
+use std::io::Write as _;
+use std::time::Instant;
 
+use good_lp::{default_solver, ProblemVariables, Solution, SolverModel, VariableDefinition};
 use internal_iterator::InternalIterator;
 use itertools::Itertools;
 
@@ -17,6 +21,7 @@ use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
 
+use crate::alloc::problem::{AllocProblem, BufferInfo};
 use crate::autokernel::common::{compile_cached_kernel, KernelKey};
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
@@ -130,66 +135,240 @@ pub type ExecStepInfo = StepInfo<CuFunction, DevicePtr>;
 
 type VisitResult<T> = Result<T, Value>;
 
+/*
+Nodes:
+* The memory allocation problem (assuming a fixed schedule) is called "2D bin packing"
+* Resources
+    * TelaMalloc: https://dl.acm.org/doi/pdf/10.1145/3567955.3567961
+    * OLLA: https://arxiv.org/abs/2210.12924
+* Notes:
+    * do we even want combined scheduling + allocation?
+    * careful about numerical precision! u32 is only 4 GB, although luckily f64 is 2^53, 8000 TB
+    * idea: downscale tensors by a fixed factor if we risk hitting the edge?
+ */
+
+fn int_var<S: Into<String>, N: Into<f64>>(name: S, min: N, max: N) -> VariableDefinition {
+    VariableDefinition::new().clamp(min.into(), max.into()).name(name).integer()
+}
+
 impl SplitPlan {
+    pub fn extract_problem(&self) {
+        let buffers = &self.shared_buffers;
+        let buffer_range = 0..buffers.len();
+
+        // TODO filter out unused buffers somewhere else, this is stupid
+        // detect buffers that are actually used
+        let mut buffer_used = vec![false; buffers.len()];
+        for step in &self.steps {
+            step.step.ptr_operands().for_each(|op| {
+                match op.value.buffer {
+                    PlanBuffer::Shared { index } => buffer_used[index] = true,
+                    PlanBuffer::Const { .. } | PlanBuffer::Zero => {}
+                }
+            })
+        }
+
+        let live_range = self.live_ranges();
+
+        // build problem
+        let mut problem = AllocProblem::new();
+
+        // TODO do proper alignment? or just use 8 everywhere, saving a couple of bytes isn't that interesting
+        let vars = buffer_range.clone().map(|i| {
+            if buffer_used[i] {
+                Some(problem.add_buffer(BufferInfo {
+                    size: buffers[i].size_bytes,
+                    alignment: 8,
+                    life_start: live_range[i].0,
+                    life_end: live_range[i].1,
+                }))
+            } else {
+                None
+            }
+        }).collect_vec();
+
+        println!("{:?}", problem);
+
+        problem.plot();
+    }
+
+    pub fn test_ilp(&self) {
+        self.extract_problem();
+
+        let start = Instant::now();
+
+        let mut vars = ProblemVariables::new();
+
+        let buffers = &self.shared_buffers;
+        let buffer_range = 0..buffers.len();
+
+        // TODO filter out unused buffers somewhere else, this is stupid
+        // detect buffers that are actually used
+        let mut buffer_used = vec![false; buffers.len()];
+        for step in &self.steps {
+            step.step.ptr_operands().for_each(|op| {
+                match op.value.buffer {
+                    PlanBuffer::Shared { index } => buffer_used[index] = true,
+                    PlanBuffer::Const { .. } | PlanBuffer::Zero => {}
+                }
+            })
+        }
+        for index in buffer_range.clone() {
+            if buffers[index].size_bytes > 1e9 as usize {
+                println!("ILP Skipping large buffer index {} size {}", index, buffers[index].size_bytes);
+                buffer_used[index] = false;
+            }
+        }
+
+        // define vars
+        let worst_case_mem = buffer_range.clone().map(|i| buffers[i].size_bytes * buffer_used[i] as usize).sum::<usize>();
+        let dummy_var = vars.add(int_var("dummy", -1, -1));
+
+        println!("worst case mem M={} = {}", worst_case_mem, worst_case_mem as f64);
+
+        // TODO try with and without limiting each size var?
+        let buffer_start = buffer_range.clone().map(|i| {
+            if buffer_used[i] {
+                let max_start = worst_case_mem - buffers[i].size_bytes;
+                vars.add(int_var(format!("start_{i}"), 0f64, max_start as f64))
+            } else {
+                dummy_var
+            }
+        }).collect_vec();
+
+        let live_ranges = self.live_ranges();
+        let mut constraints = vec![];
+
+        // prevent overlap
+        for i in buffer_range.clone() {
+            for j in buffer_range.clone() {
+                // prevent self and dupes
+                if i >= j {
+                    continue;
+                }
+
+                // only consider buffers that are used
+                if !buffer_used[i] || !buffer_used[j] {
+                    continue;
+                }
+
+                // only consider tensors that are alive at the same time
+                {
+                    let (si, ei) = live_ranges[i];
+                    let (sj, ej) = live_ranges[j];
+
+                    let both_exist = si <= ei && sj <= ej;
+                    let overlap = si <= ej && sj <= ei;
+                    let alias = both_exist && overlap;
+
+                    if !alias {
+                        continue
+                    }
+                }
+
+                // upper is always just 1-lower, since we _know_ there is overlap here
+                let start_lower = vars.add(int_var(format!("lower_{i}_{j}"), 0, 1));
+                let start_higher = 1 - start_lower;
+
+                let start_i = buffer_start[i];
+                let start_j = buffer_start[j];
+
+                let size_i = buffers[i].size_bytes as f64;
+                let size_j = buffers[j].size_bytes as f64;
+
+                constraints.push(start_i - start_j + size_i << (1 - start_lower) * (worst_case_mem as f64));
+                constraints.push(start_i - start_j - size_j >> -(1 - start_higher) * (worst_case_mem as f64));
+            }
+        }
+
+        // TODO constrain this to be <= the trivial solution from both LTR and RTL allocations?
+        //    are LTR and RTL often different in practice?
+        let peak_mem = vars.add(int_var("peak_mem", 0f64, worst_case_mem as f64));
+
+        for i in buffer_range.clone() {
+            if buffer_used[i] {
+                // TODO we don't need this, it can already be in the var range itself
+                constraints.push(buffer_start[i] + (buffers[i].size_bytes as f64) << peak_mem);
+            }
+        }
+
+        // constraints.push(peak_mem << 6.5e8);
+        // constraints.push(peak_mem << 1e20);
+        constraints.push(peak_mem << 2f64 * 629056768f64);
+
+        // 629056768
+        // 629056768f64
+
+        // solve problem
+        let mut prob = vars.minimise(peak_mem).using(default_solver);
+        for c in constraints {
+            prob.add_constraint(c);
+        }
+
+        let solution = prob.solve().unwrap();
+
+        let mut f = File::create("ignored/alloc_log.txt").unwrap();
+
+        for i in buffer_range.clone() {
+            if buffer_used[i] {
+                let addr = solution.value(buffer_start[i]) as usize;
+                let (start, end) = live_ranges[i];
+                writeln!(&mut f, "Buffer {} size {} addr {} start {} end {}", i, buffers[i].size_bytes, addr, start, end).unwrap();
+            }
+        }
+
+        f.flush().unwrap();
+        drop(f);
+
+        let max_mem = solution.value(peak_mem);
+        println!("Peak ILP memory: {}", max_mem);
+
+        println!("Dummy value: {}", solution.value(dummy_var));
+
+        println!("ILP elapsed: {:?}", start.elapsed());
+    }
+
     pub fn realize(self) -> Plan {
+        self.test_ilp();
+
         let buffer_count = self.shared_buffers.len();
         let step_count = self.steps.len();
 
         // determine live ranges for shared tensors
-        let live_ranges = {
-            let mut live_ranges = vec![(step_count, 0); buffer_count];
-
-            for (si, step_info) in self.steps.iter().enumerate() {
-                step_info.step.ptr_operands().for_each(|op| {
-                    if let &PlanBuffer::Shared { index } = &op.value.buffer {
-                        let (lower, upper) = &mut live_ranges[index];
-                        *lower = min(*lower, si);
-                        *upper = max(*upper, si);
-                    }
-                })
-            }
-
-            // consider outputs live at the end
-            for output in &self.outputs {
-                if let &PlanBuffer::Shared { index } = &output.ptr().buffer {
-                    let (_, upper) = &mut live_ranges[index];
-                    *upper = step_count;
-                }
-            }
-
-            // consider inputs live at the start
-            for input in &self.inputs {
-                if let &PlanBuffer::Shared { index } = &input.ptr().buffer {
-                    let (lower, _) = &mut live_ranges[index];
-                    *lower = 0;
-                }
-            }
-
-            live_ranges
-        };
+        let live_ranges = self.live_ranges();
 
         // actually allocate buffers
         let device = self.device;
 
+        // TODO uncomment this stuff, just disabled for now to save time
         let mut const_bytes = 0;
-        let const_allocations = self.const_buffers.iter().map(|info| {
-            let ConstBufferInfo { value, debug_value: _ } = info;
-            let tensor = DeviceTensor::alloc_simple_init(device, value);
-            const_bytes += tensor.dense_size_bytes();
-            tensor.into_ptr()
-        }).collect_vec();
+        let const_allocations = vec![];
+        // let const_allocations = self.const_buffers.iter().map(|info| {
+        //     let ConstBufferInfo { value, debug_value: _ } = info;
+        //     let tensor = DeviceTensor::alloc_simple_init(device, value);
+        //     const_bytes += tensor.dense_size_bytes();
+        //     tensor.into_ptr()
+        // }).collect_vec();
 
-        let mut free_allocations: HashMap<usize, Vec<DevicePtr>> = Default::default();
-        let mut shared_allocations: Vec<Option<DevicePtr>> = vec![None; buffer_count];
+        let mut free_allocations: HashMap<usize, Vec<(usize, DevicePtr)>> = Default::default();
+        let mut shared_allocations: Vec<Option<(usize, DevicePtr)>> = vec![None; buffer_count];
 
         let mut shared_bytes = 0;
         let mut curr_shared_bytes = 0;
         let mut hypo_shared_bytes_peak = 0;
         let mut hypo_shared_bytes_total = 0;
 
+        let mut f = File::create("ignored/simple_log.txt").unwrap();
+
+        // TODO O(n^2), sad times :(. Only iterate over step-relevant buffers/tensors instead
         for si in 0..step_count {
             for (ti, &(start, _)) in live_ranges.iter().enumerate() {
                 if start == si {
+                    if self.shared_buffers[ti].size_bytes > 1e9 as usize {
+                        println!("LTR Skipping large buffer index {} size {}", ti, self.shared_buffers[ti].size_bytes);
+                        continue;
+                    }
+
                     // allocate the given tensor
                     let size_bytes = self.shared_buffers[ti].size_bytes;
                     curr_shared_bytes += size_bytes;
@@ -198,9 +377,13 @@ impl SplitPlan {
 
                     let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
                     let ptr = vec.pop().unwrap_or_else(|| {
+                        let address = shared_bytes;
                         shared_bytes += size_bytes;
-                        device.alloc(size_bytes)
+                        (address, device.alloc(size_bytes))
                     });
+
+                    writeln!(&mut f, "start {} index {} address {} size {}", si, ti, ptr.0, size_bytes).unwrap();
+
                     assert!(shared_allocations[ti].is_none());
                     shared_allocations[ti] = Some(ptr);
                 }
@@ -208,13 +391,20 @@ impl SplitPlan {
 
             for (ti, &(start, end)) in live_ranges.iter().enumerate() {
                 if start <= si && end == si {
+                    if self.shared_buffers[ti].size_bytes > 1e9 as usize {
+                        continue;
+                    }
+
                     // free the given tensor
                     let size_bytes = self.shared_buffers[ti].size_bytes;
                     curr_shared_bytes -= size_bytes;
 
+
                     let ptr = shared_allocations[ti].as_ref().unwrap().clone();
+                    writeln!(&mut f, "end {} index {} address {} size {}", si, ti, ptr.0, size_bytes).unwrap();
                     let vec = free_allocations.get_mut(&size_bytes).unwrap();
                     vec.push(ptr);
+
                 }
             }
         }
@@ -228,10 +418,12 @@ impl SplitPlan {
                     let (start, end) = live_ranges[i];
 
                     if start <= end {
+                        // TODO is this really necessary? does anyone actually use this?
+                        //   (check the empty concat unit test)
                         // allocate leftover buffers that are never used before the end (eg. empty concat output tensors)
                         let size_bytes = self.shared_buffers[i].size_bytes;
                         shared_bytes += size_bytes;
-                        Some(device.alloc(size_bytes))
+                        Some((shared_bytes, device.alloc(size_bytes)))
                     } else {
                         // don't allocate buffers that are actually never used
                         None
@@ -256,12 +448,17 @@ impl SplitPlan {
             hypo_shared_bytes_total,
         };
 
+        println!("{:?}", mem_usage);
+
         // realize planned tensors and steps
         let ctx = RealizationContext {
             const_allocations,
-            shared_allocations,
+            shared_allocations: shared_allocations.into_iter().map(|x| x.map(|x| x.1)).collect(),
             zero_allocation,
         };
+
+        // TODO remove this (obviously)
+        std::process::exit(0);
 
         Plan {
             device: self.device,
@@ -285,12 +482,48 @@ impl SplitPlan {
             mem_usage,
         }
     }
+
+    fn live_ranges(&self) -> Vec<(usize, usize)> {
+        let step_count = self.steps.len();
+        let buffer_count = self.shared_buffers.len();
+
+        let mut live_ranges = vec![(step_count, 0); buffer_count];
+
+        for (si, step_info) in self.steps.iter().enumerate() {
+            step_info.step.ptr_operands().for_each(|op| {
+                if let &PlanBuffer::Shared { index } = &op.value.buffer {
+                    let (lower, upper) = &mut live_ranges[index];
+                    *lower = min(*lower, si);
+                    *upper = max(*upper, si);
+                }
+            })
+        }
+
+        // consider outputs live at the end
+        for output in &self.outputs {
+            if let &PlanBuffer::Shared { index } = &output.ptr().buffer {
+                let (_, upper) = &mut live_ranges[index];
+                *upper = step_count;
+            }
+        }
+
+        // consider inputs live at the start
+        for input in &self.inputs {
+            if let &PlanBuffer::Shared { index } = &input.ptr().buffer {
+                let (lower, _) = &mut live_ranges[index];
+                *lower = 0;
+            }
+        }
+
+        live_ranges
+    }
 }
 
 impl<'a> Planner<'a> {
     pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> SplitPlan {
         let mut planner = Planner::new(&handles, graph, batch_size);
 
+        // TODO skip unused input allocations?
         // allocate inputs (even if they're not actually used)
         let inputs = graph
             .inputs()
