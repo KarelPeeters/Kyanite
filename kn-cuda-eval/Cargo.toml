@@ -19,12 +19,12 @@ internal-iterator.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
+clap.workspace = true
 
 [build-dependencies]
 cc.workspace = true
 
 [dev-dependencies]
-clap.workspace = true
 criterion.workspace = true
 decorum.workspace = true
 image.workspace = true
