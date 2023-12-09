@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::time::Instant;
 
 use clap::Parser;
-use itertools::izip;
+use itertools::{Itertools, izip};
 
 use kn_cuda_eval::Device;
 use kn_cuda_eval::executor::CudaExecutor;
@@ -10,6 +10,7 @@ use kn_graph::cpu::cpu_eval_graph;
 use kn_graph::graph::Graph;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::{optimize_graph, OptimizerSettings};
+use kn_graph::shape::Size;
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -53,19 +54,35 @@ fn main() {
     let n = n.unwrap_or(DEFAULT_ITERATIONS);
     let device = Device::new(device.unwrap_or(0));
 
+    let mut warnings = vec![];
+    let mut warn = |s: &str| {
+        warnings.push(s.to_owned());
+        eprintln!("{}", s);
+    };
+
     if cfg!(debug_assertions) {
-        println!("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
+        warn("Warning: debug assertions are enabled, maybe this binary is not optimized either?");
     }
 
     let abs_path = std::fs::canonicalize(path).unwrap();
     println!("Loading graph '{:?}'", abs_path);
     let loaded_graph = load_graph_from_onnx_path(abs_path, true).unwrap();
 
+    let any_input_no_batch = loaded_graph.inputs().iter().any(|&input| {
+        let batch_count = loaded_graph[input].shape.dims.iter().filter(|&&d| d == Size::BATCH).count();
+        batch_count != 1
+    });
+    if any_input_no_batch {
+        let input_shapes = loaded_graph.inputs().iter().map(|&input| &loaded_graph[input].shape).collect_vec();
+        warn("Warning: graph has inputs without exactly one batch dimension. This messes up the evals/s stats.");
+        warn(&format!("    input shapes: {:?}", input_shapes));
+    }
+
     let graph = if optimize {
         println!("Optimizing graph");
         optimize_graph(&loaded_graph, OptimizerSettings::default())
     } else {
-        println!("Warning: not optimizing graph");
+        warn("Warning: not optimizing graph");
         loaded_graph
     };
 
@@ -81,7 +98,7 @@ fn main() {
     } else {
         if batch_size < 1 {
             if cpu {
-                println!("Error: profiling different batch sizes for CPU not yet implemented");
+                eprintln!("Error: profiling different batch sizes for CPU not yet implemented");
             } else {
                 profile_different_batch_sizes(device, &graph);
             }
@@ -92,6 +109,10 @@ fn main() {
                 profile_single_batch_size_cudnn(device, &graph, batch_size as usize, n, skip_io);
             }
         }
+    }
+
+    for warning in warnings {
+        eprintln!("{}", warning);
     }
 }
 
