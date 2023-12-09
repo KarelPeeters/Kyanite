@@ -5,15 +5,16 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
 use decorum::Total;
-use itertools::{zip_eq, Itertools};
+use itertools::{Itertools, zip_eq};
 use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
-use crate::cpu::{run_cpu_const_operation, OperationError, OperationResult};
-use crate::dtype::{dispatch_dtensor, dispatch_dtype, map_dscalar_pair, DScalar, DTensor, DType, IntoDScalar, Tensor};
+use crate::cpu::{OperationError, OperationResult, run_cpu_const_operation};
+use crate::dtype::{dispatch_dtensor, dispatch_dtype, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
 use crate::optimizer::recurse::heap_recurse;
 use crate::shape;
 use crate::shape::{Shape, Size};
+use crate::wrap_debug::WrapDebug;
 
 /// The core graph datastructure.
 ///
@@ -106,7 +107,7 @@ pub enum Operation {
     /// A runtime-variable input.
     Input { index: usize },
     /// A constant built into the network.
-    Constant { tensor: DTensor },
+    Constant { tensor: WrapDebug<DTensor> },
 
     //TODO maybe fuse a bunch of these operations into a single "Restride" operation?
     /// View a value as a different shape.
@@ -490,7 +491,7 @@ impl Graph {
 
         match info.operation {
             Operation::Input { .. } => None,
-            Operation::Constant { ref tensor } => dispatch_dtensor!(tensor, |_T, _f, tensor| {
+            Operation::Constant { tensor: WrapDebug(ref tensor) } => dispatch_dtensor!(tensor, |_T, _f, tensor| {
                 let &e = tensor.iter().next()?;
                 tensor.iter().all(|&d| d == e).then(|| e.to_dscalar())
             }),
@@ -590,7 +591,7 @@ impl Graph {
     #[must_use]
     pub fn constant_tensor(&mut self, tensor: DTensor) -> Value {
         let shape = Shape::fixed(tensor.shape());
-        self.push(shape, tensor.dtype(), Operation::Constant { tensor })
+        self.push(shape, tensor.dtype(), Operation::Constant { tensor: WrapDebug(tensor) })
     }
 
     #[must_use]

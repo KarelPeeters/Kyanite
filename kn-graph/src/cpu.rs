@@ -5,16 +5,17 @@ use std::time::Instant;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{
-    s, ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, Ix4, IxDyn, LinalgScalar, SliceInfo,
+    ArcArray, Array3, Array4, ArrayView, ArrayView3, ArrayView4, Ix3, Ix4, IxDyn, LinalgScalar, s, SliceInfo,
     SliceInfoElem, Zip,
 };
 
 use crate::dtype::{
-    dispatch_dtensor, dispatch_dtype, map_dtensor, map_dtensor_pair, DTensor, DType, IntoDScalar, Tensor,
+    dispatch_dtensor, dispatch_dtype, DTensor, DType, IntoDScalar, map_dtensor, map_dtensor_pair, Tensor,
 };
 use crate::graph::{ConvDetails, Graph, Operation, SliceRange, Value, ValueInfo};
 use crate::ndarray::{Array, ArrayBase, Axis};
 use crate::shape::ConcreteShape;
+use crate::wrap_debug::WrapDebug;
 
 pub fn cpu_eval_graph(graph: &Graph, batch_size: usize, inputs: &[DTensor]) -> Vec<DTensor> {
     let exec = cpu_eval_graph_exec(graph, batch_size, inputs, false);
@@ -131,7 +132,7 @@ fn try_run_cpu_operation(
 
     let result: DTensor = match info.operation {
         Operation::Input { index } => input(index)?,
-        Operation::Constant { ref tensor } => tensor.clone(),
+        Operation::Constant { tensor: WrapDebug(ref tensor) } => tensor.clone(),
         Operation::View { input } => {
             let input = map(input)?;
             input.reshape(output_shape_dyn)

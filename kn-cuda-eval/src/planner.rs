@@ -17,6 +17,7 @@ use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
+use kn_graph::wrap_debug::WrapDebug;
 
 use crate::autokernel::gather::GatherKernel;
 use crate::autokernel::layernorm::LayernormKernel;
@@ -327,7 +328,7 @@ impl<'a> Planner<'a> {
 
         let result: PlanTensor = match &result_info.operation {
             &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, result_dtype, Some(value)),
-            Operation::Constant { tensor } => {
+            Operation::Constant { tensor: WrapDebug(tensor) } => {
                 let result = self.alloc_tensor_dedicated(result_shape, tensor.dtype());
 
                 // copy values
