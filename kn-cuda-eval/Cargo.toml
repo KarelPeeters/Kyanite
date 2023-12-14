@@ -29,8 +29,3 @@ criterion.workspace = true
 decorum.workspace = true
 image.workspace = true
 rand_distr.workspace = true
-
-# TODO clean up executables and add profile_net binary again
-[[bench]]
-name = "memory"
-harness = false
