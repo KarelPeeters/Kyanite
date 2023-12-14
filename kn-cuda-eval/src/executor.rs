@@ -36,6 +36,10 @@ pub struct CudaExecutor {
     tensor_outputs: Vec<DTensor>,
 }
 
+// TODO is this safe?
+//   check what the cuda docs say about transfering streams and all the structure pointers across threads
+unsafe impl Send for CudaExecutor {}
+
 #[derive(Default, Debug, Clone)]
 pub struct Profile {
     pub steps: Vec<String>,
