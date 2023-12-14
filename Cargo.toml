@@ -3,6 +3,7 @@ members = [
     "kn-graph",
     "kn-cuda-sys",
     "kn-cuda-eval",
+    "knpy",
     "proto-to-rust",
 ]
 resolver = "2"

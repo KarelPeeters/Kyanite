@@ -13,20 +13,27 @@ use crate::executor::CudaExecutor;
 pub struct Runtime {
     check: u64,
     core: RuntimeCore,
+    infos: Vec<PreparedInfo>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PreparedToken {
+    check: u64,
+    index: usize,
+}
+
+#[derive(Debug)]
+pub struct PreparedInfo {
+    pub graph: Graph,
+    pub batch_size: usize,
 }
 
 enum RuntimeCore {
-    Cpu(Vec<(Graph, usize)>),
+    Cpu,
     Gpu {
         device: Device,
         executors: Vec<CudaExecutor>,
     },
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct GraphToken {
-    check: u64,
-    index: usize,
 }
 
 impl Runtime {
@@ -38,39 +45,53 @@ impl Runtime {
                 executors: vec![],
             }
         } else {
-            RuntimeCore::Cpu(vec![])
+            RuntimeCore::Cpu
         };
-        Runtime { check, core }
+        Runtime {
+            check,
+            core,
+            infos: vec![],
+        }
     }
 
-    pub fn prepare(&mut self, graph: Graph, batch_size: usize) -> GraphToken {
-        let index = match &mut self.core {
-            RuntimeCore::Cpu(graphs) => {
-                let index = graphs.len();
-                graphs.push((graph, batch_size));
-                index
-            }
-            RuntimeCore::Gpu { device, executors } => {
-                let index = executors.len();
-                executors.push(CudaExecutor::new(*device, &graph, batch_size));
-                index
-            }
+    pub fn prepare(&mut self, graph: Graph, batch_size: usize) -> PreparedToken {
+        let info = PreparedInfo {
+            graph: graph.clone(),
+            batch_size,
         };
 
-        GraphToken {
+        let index = self.infos.len();
+        self.infos.push(info);
+
+        match &mut self.core {
+            RuntimeCore::Cpu => {}
+            RuntimeCore::Gpu { device, executors } => {
+                assert_eq!(executors.len(), self.infos.len());
+                executors.push(CudaExecutor::new(*device, &graph, batch_size));
+            }
+        }
+
+        PreparedToken {
             check: self.check,
             index,
         }
     }
 
-    pub fn eval(&mut self, token: GraphToken, inputs: &[DTensor]) -> Vec<DTensor> {
-        let GraphToken { check, index } = token;
+    // TODO move batch size from CPU into common struct
+    pub fn info(&self, token: PreparedToken) -> &PreparedInfo {
+        let PreparedToken { check, index } = token;
+        assert_eq!(self.check, check);
+        &self.infos[index]
+    }
+
+    pub fn eval(&mut self, token: PreparedToken, inputs: &[DTensor]) -> Vec<DTensor> {
+        let PreparedToken { check, index } = token;
         assert_eq!(self.check, check);
 
         match &mut self.core {
-            RuntimeCore::Cpu(graphs) => {
-                let (graph, batch_size) = &graphs[index];
-                cpu_eval_graph(graph, *batch_size, inputs)
+            RuntimeCore::Cpu => {
+                let info = &self.infos[index];
+                cpu_eval_graph(&info.graph, info.batch_size, inputs)
             }
             RuntimeCore::Gpu { device: _, executors } => {
                 let executor = &mut executors[index];
@@ -83,7 +104,7 @@ impl Runtime {
 impl Debug for Runtime {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let device = match &self.core {
-            RuntimeCore::Cpu(_) => None,
+            RuntimeCore::Cpu => None,
             RuntimeCore::Gpu { device, executors: _ } => Some(*device),
         };
 
