@@ -55,14 +55,6 @@ impl Runtime {
     }
 
     pub fn prepare(&mut self, graph: Graph, batch_size: usize) -> PreparedToken {
-        let info = PreparedInfo {
-            graph: graph.clone(),
-            batch_size,
-        };
-
-        let index = self.infos.len();
-        self.infos.push(info);
-
         match &mut self.core {
             RuntimeCore::Cpu => {}
             RuntimeCore::Gpu { device, executors } => {
@@ -70,6 +62,14 @@ impl Runtime {
                 executors.push(CudaExecutor::new(*device, &graph, batch_size));
             }
         }
+
+        let info = PreparedInfo {
+            graph: graph.clone(),
+            batch_size,
+        };
+
+        let index = self.infos.len();
+        self.infos.push(info);
 
         PreparedToken {
             check: self.check,
