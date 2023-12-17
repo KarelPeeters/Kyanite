@@ -320,6 +320,82 @@ impl ConcreteShape {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShapeMismatch {
+    DifferentLength,
+    ConstantMismatch,
+    BatchConflict,
+    ImpossibleBatchValue,
+}
+
+/// Infer what the batch size should be for the given input shapes.
+///
+/// Returns:
+/// * `Ok(Some(batch_size))` if the batch size can be inferred
+/// * `Ok(None)` if any batch size would fit
+/// * `Err(ShapeMismatch)` if no batch size would fit,
+/// either because there are conflicting requirements or because there is some other shape mismatch
+pub fn infer_batch_size(expected: &[Shape], actual: &[ConcreteShape]) -> Result<Option<usize>, ShapeMismatch> {
+    infer_batch_size_dims(
+        expected.iter().flat_map(|s| s.dims.iter().copied()),
+        actual.iter().flat_map(|s| s.dims.iter().copied()),
+    )
+}
+
+/// Same as [infer_batch_size], except for individual dimensions.
+pub fn infer_batch_size_dims(
+    expected: impl IntoIterator<Item=Size>,
+    actuals: impl IntoIterator<Item=usize>,
+) -> Result<Option<usize>, ShapeMismatch> {
+    let mut shapes = expected.into_iter();
+    let mut actuals = actuals.into_iter();
+
+    let mut batch_size = None;
+
+    loop {
+        let (expected, actual) = match (shapes.next(), actuals.next()) {
+            (Some(shape), Some(actual)) => (shape, actual),
+            (None, None) => return Ok(batch_size),
+            _ => return Err(ShapeMismatch::DifferentLength),
+        };
+
+        let (factor, exp) = expected.components_factor_exp();
+
+        if exp == 0 {
+            // constant dim, check match
+            if actual != factor {
+                return Err(ShapeMismatch::ConstantMismatch);
+            }
+        } else {
+            // dim containing batch
+            if let Some(batch_size) = batch_size {
+                // we already know the batch size, check match
+                if actual != expected.eval(batch_size) {
+                    return Err(ShapeMismatch::BatchConflict);
+                }
+            } else {
+                // we don't know the batch size, compute it
+                let batch_size_approx = (actual as f64 / factor as f64).powf(1.0 / exp as f64) as usize;
+
+                let deltas = [0, 1, -1, 2, -2];
+                let batch_size_exact = deltas
+                    .iter()
+                    .find_map(|&delta| {
+                        let cand = batch_size_approx.checked_add_signed(delta).unwrap();
+                        if factor * cand.pow(exp) == actual {
+                            Some(cand)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or(ShapeMismatch::ImpossibleBatchValue)?;
+
+                batch_size = Some(batch_size_exact);
+            }
+        }
+    }
+}
+
 impl<R: Into<Size>> std::ops::Add<R> for Size {
     type Output = Option<Size>;
 
