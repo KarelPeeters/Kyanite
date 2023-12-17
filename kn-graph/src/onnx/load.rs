@@ -2,27 +2,30 @@ use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
 use itertools::Itertools;
-use ndarray::{azip, Axis};
+use ndarray::{Axis, azip};
 use prost::Message;
 
 use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
-use crate::dtype::{dispatch_dtensor, map_dtensor_pair, DBool, DScalar, DTensor, DType, IntoDScalar, Tensor};
-pub use crate::graph::Graph;
+use crate::dtype::{DBool, dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, map_dtensor_pair, Tensor};
 use crate::graph::{
-    broadcast_shape_symmetric, broadcast_tensors_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp, Value,
+    BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value,
 };
+pub use crate::graph::Graph;
 use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
+use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
-use crate::onnx::proto::{tensor_shape_proto, ModelProto, TensorProto, TypeProto};
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{OnnxValue, SignedSize};
 use crate::shape;
 use crate::shape::{Shape, Size};
+
+// TODO we should switch to taking an extra `HashMap<String, Size>` parameter,
+//   so the user can decide which named axes match to what size or even the batch size
 
 // TODO convert every possible panic to an error (even in the shape classes if possible)
 // we use &dyn to avoid duplicate codegen of this large and non-critical function

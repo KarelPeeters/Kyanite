@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::cpu::cpu_eval_graph;
@@ -8,6 +8,8 @@ use kn_graph::dtype::DTensor;
 use kn_graph::graph::Graph;
 
 use crate::executor::CudaExecutor;
+
+// TODO replace runtime with more lightweight "Device" struct that compiles single models at a time
 
 /// A utility to dynamically choose between CPU and GPU evaluation at runtime.
 pub struct Runtime {
