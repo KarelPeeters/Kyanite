@@ -31,7 +31,7 @@ A neural network inference library, written in/for Rust. It can run ONNX files e
 
 It is general enough to run all kinds of networks, it has been tested with:
 * Simple fully connected networks
-* Reset-based CNNs
+* ResNet-based CNNs
 * Large language models like [LLaMA](https://arxiv.org/abs/2302.13971)
 * Image generation models like [Stable Diffusion](https://arxiv.org/abs/2112.10752). For a demo see the `stable_diffusion` example in the `kn-cuda-eval` crate.
 
