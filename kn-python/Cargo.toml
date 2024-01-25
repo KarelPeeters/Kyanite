@@ -1,0 +1,18 @@
+[package]
+name = "kn-python"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "kyanite"
+crate-type = ["cdylib"]
+
+[dependencies]
+kn-graph.workspace = true
+kn-cuda-eval.workspace = true
+
+pyo3.workspace = true
+numpy.workspace = true
+
+itertools.workspace = true

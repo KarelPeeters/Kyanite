@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use kn_cuda_sys::wrapper::handle::Device;
 use kn_graph::cpu::cpu_eval_graph;
@@ -9,24 +9,33 @@ use kn_graph::graph::Graph;
 
 use crate::executor::CudaExecutor;
 
+// TODO replace runtime with more lightweight "Device" struct that compiles single models at a time
+
 /// A utility to dynamically choose between CPU and GPU evaluation at runtime.
 pub struct Runtime {
     check: u64,
     core: RuntimeCore,
+    infos: Vec<PreparedInfo>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PreparedToken {
+    check: u64,
+    index: usize,
+}
+
+#[derive(Debug)]
+pub struct PreparedInfo {
+    pub graph: Graph,
+    pub batch_size: usize,
 }
 
 enum RuntimeCore {
-    Cpu(Vec<(Graph, usize)>),
+    Cpu,
     Gpu {
         device: Device,
         executors: Vec<CudaExecutor>,
     },
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct GraphToken {
-    check: u64,
-    index: usize,
 }
 
 impl Runtime {
@@ -38,39 +47,53 @@ impl Runtime {
                 executors: vec![],
             }
         } else {
-            RuntimeCore::Cpu(vec![])
+            RuntimeCore::Cpu
         };
-        Runtime { check, core }
+        Runtime {
+            check,
+            core,
+            infos: vec![],
+        }
     }
 
-    pub fn prepare(&mut self, graph: Graph, batch_size: usize) -> GraphToken {
-        let index = match &mut self.core {
-            RuntimeCore::Cpu(graphs) => {
-                let index = graphs.len();
-                graphs.push((graph, batch_size));
-                index
-            }
+    pub fn prepare(&mut self, graph: Graph, batch_size: usize) -> PreparedToken {
+        match &mut self.core {
+            RuntimeCore::Cpu => {}
             RuntimeCore::Gpu { device, executors } => {
-                let index = executors.len();
+                assert_eq!(executors.len(), self.infos.len());
                 executors.push(CudaExecutor::new(*device, &graph, batch_size));
-                index
             }
+        }
+
+        let info = PreparedInfo {
+            graph: graph.clone(),
+            batch_size,
         };
 
-        GraphToken {
+        let index = self.infos.len();
+        self.infos.push(info);
+
+        PreparedToken {
             check: self.check,
             index,
         }
     }
 
-    pub fn eval(&mut self, token: GraphToken, inputs: &[DTensor]) -> Vec<DTensor> {
-        let GraphToken { check, index } = token;
+    // TODO move batch size from CPU into common struct
+    pub fn info(&self, token: PreparedToken) -> &PreparedInfo {
+        let PreparedToken { check, index } = token;
+        assert_eq!(self.check, check);
+        &self.infos[index]
+    }
+
+    pub fn eval(&mut self, token: PreparedToken, inputs: &[DTensor]) -> Vec<DTensor> {
+        let PreparedToken { check, index } = token;
         assert_eq!(self.check, check);
 
         match &mut self.core {
-            RuntimeCore::Cpu(graphs) => {
-                let (graph, batch_size) = &graphs[index];
-                cpu_eval_graph(graph, *batch_size, inputs)
+            RuntimeCore::Cpu => {
+                let info = &self.infos[index];
+                cpu_eval_graph(&info.graph, info.batch_size, inputs)
             }
             RuntimeCore::Gpu { device: _, executors } => {
                 let executor = &mut executors[index];
@@ -83,7 +106,7 @@ impl Runtime {
 impl Debug for Runtime {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let device = match &self.core {
-            RuntimeCore::Cpu(_) => None,
+            RuntimeCore::Cpu => None,
             RuntimeCore::Gpu { device, executors: _ } => Some(*device),
         };
 
