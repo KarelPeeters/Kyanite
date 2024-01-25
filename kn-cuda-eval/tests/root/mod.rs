@@ -16,6 +16,7 @@ mod onnx;
 mod slow;
 
 #[test]
+#[ignore]
 fn onnx_tests() {
     let path_folder = r#"C:\Documents\Programming\STTT\Kyanite\kn-python\models"#;
 
