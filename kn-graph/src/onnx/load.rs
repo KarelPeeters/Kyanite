@@ -28,6 +28,9 @@ use crate::shape::{Shape, Size};
 //   so the user can decide which named axes match to what size or even the batch size
 
 // TODO convert every possible panic to an error (even in the shape classes if possible)
+//    things to grep for: unwrap|expect|assert|panic
+//    introduce two main error kinds: "bug in file" and "unsupported"
+
 // we use &dyn to avoid duplicate codegen of this large and non-critical function
 pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) -> OnnxResult<Graph> {
     let model = load_model_proto(buf);
