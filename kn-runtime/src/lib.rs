@@ -107,7 +107,12 @@ impl Device {
 
     /// Returns the first available cuda device if any.
     pub fn first_cuda() -> Option<Device> {
-        Some(Device::Cuda(CudaDevice::all().next()?))
+        #[cfg(feature = "cuda")]
+        if let Some(device) = CudaDevice::all().next()? {
+            return Some(Device::Cuda(device));
+        }
+
+        None
     }
 }
 
