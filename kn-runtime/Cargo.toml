@@ -19,3 +19,6 @@ kn-cuda-sys = { workspace = true, optional = true }
 kn-cuda-eval = { workspace = true, optional = true }
 
 clap.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
