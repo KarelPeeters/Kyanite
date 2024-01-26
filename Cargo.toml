@@ -11,7 +11,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.5.0"
+version = "0.6.0"
 license = "Apache-2.0 OR MIT"
 categories = ["science", "compilers"]
 keywords = ["inference", "neural-network", "gpu", "cuda", "kyanite"]
@@ -29,12 +29,13 @@ readme = "Readme.md"
 
 [workspace.dependencies]
 # path dependencies
-kn-graph = { path = "kn-graph", version = "0.5.0" }
-kn-cuda-sys = { path = "kn-cuda-sys", version = "0.5.0" }
-kn-cuda-eval = { path = "kn-cuda-eval", version = "0.5.0" }
-kn-runtime = { path = "kn-runtime", version = "0.5.0" }
+kn-graph = { path = "kn-graph", version = "0.6.0" }
+kn-cuda-sys = { path = "kn-cuda-sys", version = "0.6.0" }
+kn-cuda-eval = { path = "kn-cuda-eval", version = "0.6.0" }
+kn-runtime = { path = "kn-runtime", version = "0.6.0" }
 
 # crates.io dependencies
+# TODO update once https://github.com/rust-lang/rust-bindgen/issues/2712 is fixed
 bindgen = "0.68.1"
 bytemuck = "1.14.0"
 byteorder = "1.4.3"
@@ -45,7 +46,7 @@ decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 image = { version = "0.24.7", default-features = false, features = ["png"] }
 indexmap = "2.0.0"
 internal-iterator = "0.2.1"
-itertools = "0.11.0"
+itertools = "0.12.0"
 lazy_static = "1.4.0"
 ndarray = "0.15.6"
 num-traits = "0.2.16"
