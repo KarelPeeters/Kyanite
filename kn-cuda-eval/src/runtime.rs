@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 
 use rand::{Rng, thread_rng};
 
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_graph::cpu::cpu_eval_graph;
 use kn_graph::dtype::DTensor;
 use kn_graph::graph::Graph;
@@ -33,13 +33,13 @@ pub struct PreparedInfo {
 enum RuntimeCore {
     Cpu,
     Gpu {
-        device: Device,
+        device: CudaDevice,
         executors: Vec<CudaExecutor>,
     },
 }
 
 impl Runtime {
-    pub fn new(gpu_device: Option<Device>) -> Self {
+    pub fn new(gpu_device: Option<CudaDevice>) -> Self {
         let check = thread_rng().gen();
         let core = if let Some(device) = gpu_device {
             RuntimeCore::Gpu {

@@ -1,16 +1,16 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Instant;
 
-use bytemuck::checked::cast_slice_mut;
 use bytemuck::{cast_slice, Pod};
+use bytemuck::checked::cast_slice_mut;
 use itertools::{multizip, zip_eq};
 
-use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaDevice, CudaStream, CudnnHandle};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::mem::pinned::PinnedMem;
+use kn_graph::{dispatch_dtensor, dispatch_dtype};
 use kn_graph::dtype::{DBool, DTensor, Tensor};
 use kn_graph::graph::Graph;
-use kn_graph::{dispatch_dtensor, dispatch_dtype};
 
 use crate::device_tensor::DeviceTensor;
 use crate::planner::{MemoryUsage, Plan, Planner};
@@ -58,7 +58,7 @@ pub struct Profile {
 }
 
 impl CudaExecutor {
-    pub fn new(device: Device, graph: &Graph, batch_size: usize) -> Self {
+    pub fn new(device: CudaDevice, graph: &Graph, batch_size: usize) -> Self {
         let handles = Handles {
             cudnn: CudnnHandle::new(device),
             cublas: CublasHandle::new(device),
@@ -197,7 +197,7 @@ impl CudaExecutor {
     /// Run the steps in this executor. Does no explicit before/after synchronization,
     /// so ensure inputs are written and synchronize before reading outputs.
     pub unsafe fn run_async(&mut self) {
-        assert_eq!(self.stream().device(), Device::current());
+        assert_eq!(self.stream().device(), CudaDevice::current());
 
         if !self.profile {
             for step_info in &self.steps {

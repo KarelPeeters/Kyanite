@@ -9,7 +9,7 @@ use itertools::Itertools;
 use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t};
 use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, ConvolutionDescriptor};
 use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use kn_graph::dispatch_dtensor;
@@ -982,7 +982,7 @@ impl<'a> Planner<'a> {
         PlanTensor::from_parts(PlanPtr::from_parts(debug_value, PlanBuffer::Zero, 0), shape, dtype)
     }
 
-    fn device(&self) -> Device {
+    fn device(&self) -> CudaDevice {
         self.handles.device()
     }
 

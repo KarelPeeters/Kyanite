@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use itertools::zip_eq;
 
-use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudaStream};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
@@ -35,7 +35,7 @@ impl ScalarKernel {
     ///
     /// `operation` has the format `*x0 = *x1 + *x2;`.
     pub fn new(
-        device: Device,
+        device: CudaDevice,
         operation: &str,
         inner_shape: Vec<usize>,
         operand_types: Vec<String>,
@@ -91,7 +91,7 @@ impl ScalarKernel {
 
     /// Wrapper around [Self::new] that's a bit easier to use if you know the full shape of the operands up front.
     pub fn new_for_shapes(
-        device: Device,
+        device: CudaDevice,
         operation: &str,
         shapes: &[StridedShape],
         operand_types: Vec<String>,

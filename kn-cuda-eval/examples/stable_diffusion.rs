@@ -6,18 +6,18 @@ use clap::Parser;
 use image::{ImageBuffer, Rgb, RgbImage};
 use itertools::Itertools;
 use ndarray::Axis;
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use rand_distr::StandardNormal;
 
 use kn_cuda_eval::runtime::Runtime;
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
+use kn_graph::{ndarray, shape};
 use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::optimize_graph;
-use kn_graph::{ndarray, shape};
 
 use crate::ndarray::{Array1, IxDyn, Slice};
 use crate::scheduler::PNDMSScheduler;
@@ -74,7 +74,7 @@ fn main() -> std::io::Result<()> {
         println!("  Using CPU");
         None
     } else {
-        let device = Device::new(0);
+        let device = CudaDevice::new(0);
         println!("  Using GPU {:?}", device);
         Some(device)
     };

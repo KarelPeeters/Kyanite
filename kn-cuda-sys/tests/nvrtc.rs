@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudaStream};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuModule, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
@@ -26,7 +26,7 @@ extern "C" {
 
 #[test]
 fn saxpy() {
-    let device = Device::new(0);
+    let device = CudaDevice::new(0);
     let stream = CudaStream::new(device);
 
     unsafe {

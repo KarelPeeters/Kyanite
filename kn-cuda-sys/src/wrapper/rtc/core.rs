@@ -7,12 +7,12 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use crate::bindings::{
-    cuLaunchKernel, cuModuleGetFunction, cuModuleLoadDataEx, cuModuleUnload, nvrtcAddNameExpression,
-    nvrtcCompileProgram, nvrtcCreateProgram, nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetPTX, nvrtcGetPTXSize,
-    nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
-    CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
+    CU_LAUNCH_PARAM_BUFFER_POINTER, CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END, cuLaunchKernel, cuModuleGetFunction,
+    cuModuleLoadDataEx, cuModuleUnload, CUresult, nvrtcAddNameExpression, nvrtcCompileProgram, nvrtcCreateProgram,
+    nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcGetPTX,
+    nvrtcGetPTXSize, nvrtcResult,
 };
-use crate::wrapper::handle::{CudaStream, Device};
+use crate::wrapper::handle::{CudaDevice, CudaStream};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub struct CuModule {
 
 #[derive(Debug)]
 struct CuModuleInner {
-    device: Device,
+    device: CudaDevice,
     inner: crate::bindings::CUmodule,
 }
 
@@ -63,7 +63,7 @@ impl Drop for CuModuleInner {
 }
 
 impl CuModule {
-    pub unsafe fn from_ptx(device: Device, ptx: &[u8]) -> CuModule {
+    pub unsafe fn from_ptx(device: CudaDevice, ptx: &[u8]) -> CuModule {
         let mut inner = null_mut();
         cuModuleLoadDataEx(
             &mut inner as *mut _,
@@ -79,7 +79,7 @@ impl CuModule {
     }
 
     pub fn from_source(
-        device: Device,
+        device: CudaDevice,
         src: &str,
         name: Option<&str>,
         expected_names: &[&str],
@@ -214,7 +214,7 @@ impl CuModule {
         }
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.inner.device
     }
 }
@@ -228,7 +228,7 @@ impl CuFunction {
         stream: &CudaStream,
         args: &[*mut c_void],
     ) {
-        assert_eq!(self.device(), Device::current());
+        assert_eq!(self.device(), CudaDevice::current());
         let grid_dim = grid_dim.into();
         let block_dim = block_dim.into();
 
@@ -256,7 +256,7 @@ impl CuFunction {
         stream: &CudaStream,
         args: &[u8],
     ) -> CUresult {
-        assert_eq!(self.device(), Device::current());
+        assert_eq!(self.device(), CudaDevice::current());
         let grid_dim = grid_dim.into();
         let block_dim = block_dim.into();
 
@@ -283,7 +283,7 @@ impl CuFunction {
         )
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.module.device
     }
 }

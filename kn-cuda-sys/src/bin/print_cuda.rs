@@ -1,7 +1,7 @@
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
 
 fn main() {
-    for device in Device::all() {
+    for device in CudaDevice::all() {
         let cap = device.compute_capability();
         let prop = device.properties();
 

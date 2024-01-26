@@ -4,12 +4,12 @@ use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t};
 use kn_cuda_sys::wrapper::descriptor::{
     ActivationDescriptor, ConvolutionDescriptor, FilterDescriptor, TensorDescriptor,
 };
-use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudnnHandle};
 use kn_cuda_sys::wrapper::operation::{run_conv_bias_res_activation, STANDARD_CONV_ALGO};
 
 #[test]
 fn fused_all() {
-    let device = Device::new(0);
+    let device = CudaDevice::new(0);
     let mut handle = CudnnHandle::new(device);
     let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
     let conv_desc = ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);

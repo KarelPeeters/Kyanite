@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudaStream};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
@@ -32,7 +32,7 @@ const LAYERNORM_SOURCE: &str = include_str!("layernorm.cu");
 
 impl LayernormKernel {
     pub fn new(
-        device: Device,
+        device: CudaDevice,
         input_shape: &StridedShape,
         output_shape: &StridedShape,
         norm_axis: usize,

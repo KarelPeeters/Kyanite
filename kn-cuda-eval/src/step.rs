@@ -4,7 +4,7 @@ use internal_iterator::InternalIterator;
 use itertools::zip_eq;
 
 use kn_cuda_sys::wrapper::group::{BatchedMatMulArgs, FusedConvolutionArgs};
-use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaStream, CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaDevice, CudaStream, CudnnHandle};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_graph::graph::Value;
 
@@ -325,7 +325,7 @@ pub struct Handles {
 }
 
 impl Handles {
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.stream().device()
     }
 

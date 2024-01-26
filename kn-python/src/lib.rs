@@ -5,7 +5,7 @@ use numpy::{PyArrayDyn, PyUntypedArray};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use pyo3::exceptions::PyTypeError;
 
-use kn_cuda_eval::{Device, runtime::{PreparedToken, Runtime}};
+use kn_cuda_eval::{CudaDevice, runtime::{PreparedToken, Runtime}};
 use kn_graph::{graph::Graph, onnx::load_graph_from_onnx_bytes};
 use kn_graph::dtype::{DBool, DTensor};
 use kn_graph::optimizer::optimize_graph;
@@ -125,19 +125,19 @@ fn tensor_to_array(py: Python, tensor: DTensor) -> &PyUntypedArray {
     }
 }
 
-fn parse_device(device: &str) -> Result<Option<Device>, ()> {
+fn parse_device(device: &str) -> Result<Option<CudaDevice>, ()> {
     let device = device.to_lowercase();
 
     if device == "cpu" {
         return Ok(None);
     }
     if device == "cuda" {
-        return Ok(Some(Device::new(0)));
+        return Ok(Some(CudaDevice::new(0)));
     }
 
     if let Some(("cuda", index)) = device.split_once(':') {
         if let Ok(index) = index.parse() {
-            return Ok(Some(Device::new(index)));
+            return Ok(Some(CudaDevice::new(index)));
         }
     }
 

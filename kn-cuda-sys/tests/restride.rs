@@ -2,12 +2,12 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use kn_cuda_sys::bindings::{cudnnActivationMode_t, cudnnDataType_t, cudnnOpTensorOp_t};
 use kn_cuda_sys::wrapper::descriptor::{ActivationDescriptor, TensorDescriptor, TensorOpDescriptor};
-use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudnnHandle};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::{run_activation, run_tensor_op};
 
 unsafe fn test_restride(f: impl FnOnce(&CudnnHandle, &TensorDescriptor, &DevicePtr, &TensorDescriptor, &DevicePtr)) {
-    let device = Device::new(0);
+    let device = CudaDevice::new(0);
     let handle = CudnnHandle::new(device);
 
     let input = device.alloc(6 * 4);

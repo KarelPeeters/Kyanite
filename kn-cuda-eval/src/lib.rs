@@ -9,7 +9,7 @@
 //!
 //! ```no_run
 //! # use kn_cuda_eval::executor::CudaExecutor;
-//! # use kn_cuda_sys::wrapper::handle::Device;
+//! # use kn_cuda_sys::wrapper::handle::CudaDevice;
 //! # use kn_graph::dtype::{DTensor, Tensor};
 //! # use kn_graph::ndarray::{Array, IxDyn};
 //! # use kn_graph::onnx::load_graph_from_onnx_path;
@@ -20,7 +20,7 @@
 //! let graph = optimize_graph(&graph, Default::default());
 //!
 //! // select a device
-//! let device = Device::new(0);
+//! let device = CudaDevice::new(0);
 //!
 //! // build an executor
 //! let batch_size = 8;
@@ -33,8 +33,8 @@
 //! # }
 //! ```
 
-/// Export the [Device] type for convenience: often an explicit dependency on the `kn_cuda_sys` crate is not needed.
-pub use kn_cuda_sys::wrapper::handle::Device;
+/// Export the [CudaDevice] type for convenience: often an explicit dependency on the `kn_cuda_sys` crate is not needed.
+pub use kn_cuda_sys::wrapper::handle::CudaDevice;
 
 /// The autokernel infrastructure and specific kernels.
 pub mod autokernel;

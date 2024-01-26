@@ -1,7 +1,7 @@
 use bytemuck::cast_slice_mut;
-use itertools::{enumerate, zip_eq, Itertools};
+use itertools::{enumerate, Itertools, zip_eq};
 
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_graph::dispatch_dtensor_pair;
 use kn_graph::dtype::{DScalar, DTensor, DType, IntoDScalar, Tensor};
 use kn_graph::graph::{Graph, Value};
@@ -18,7 +18,7 @@ pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
 }
 
 pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[DTensor], print_executor: bool) -> Vec<DTensor> {
-    let mut executor = CudaExecutor::new(Device::new(0), graph, batch_size);
+    let mut executor = CudaExecutor::new(CudaDevice::new(0), graph, batch_size);
     if print_executor {
         println!("{:?}", executor);
     }

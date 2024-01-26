@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
-use kn_cuda_sys::wrapper::handle::Device;
+use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, CuModule};
 
 // TODO cache kernel compilation on disk
@@ -22,7 +22,7 @@ lazy_static! {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct KernelKey {
-    pub device: Device,
+    pub device: CudaDevice,
     pub source: String,
     pub func_name: String,
 }

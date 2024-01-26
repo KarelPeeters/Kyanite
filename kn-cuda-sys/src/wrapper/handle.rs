@@ -6,17 +6,16 @@ use bytemuck::cast_slice;
 use crate::bindings::{
     cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasLtCreate, cublasLtDestroy, cublasLtHandle_t,
     cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDevice,
-    cudaGetDeviceCount, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate,
-    cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate,
+    cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamBeginCapture, cudaStreamCaptureMode,
+    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate,
     cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
+// TODO fix this annoying v2 import once https://github.com/rust-lang/rust-bindgen/issues/2544 is fixed
+use crate::bindings::cudaGetDeviceProperties_v2 as cudaGetDeviceProperties;
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::mem::device::DevicePtr;
 use crate::wrapper::status::Status;
-
-// TODO fix this annoying v2 import once https://github.com/rust-lang/rust-bindgen/issues/2544 is fixed
-use crate::bindings::cudaGetDeviceProperties_v2 as cudaGetDeviceProperties;
 
 /// A cuda device index.
 ///
@@ -24,7 +23,7 @@ use crate::bindings::cudaGetDeviceProperties_v2 as cudaGetDeviceProperties;
 /// Every cuda call that depends on the device should be preceded by `device.switch_to()`,
 /// which corresponds to [cudaSetDevice].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Device(i32);
+pub struct CudaDevice(i32);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ComputeCapability {
@@ -32,25 +31,25 @@ pub struct ComputeCapability {
     pub minor: i32,
 }
 
-impl Device {
+impl CudaDevice {
     pub fn new(device: i32) -> Self {
         assert!(
             0 <= device && device < cuda_device_count(),
             "Device with id {} doesn't exist",
             device
         );
-        Device(device)
+        CudaDevice(device)
     }
 
     pub fn all() -> impl Iterator<Item = Self> {
-        (0..cuda_device_count()).map(Device::new)
+        (0..cuda_device_count()).map(CudaDevice::new)
     }
 
-    pub fn current() -> Device {
+    pub fn current() -> CudaDevice {
         unsafe {
             let mut inner = 0;
             cudaGetDevice(&mut inner as *mut _).unwrap();
-            Device::new(inner)
+            CudaDevice::new(inner)
         }
     }
 
@@ -114,7 +113,7 @@ fn cuda_device_count() -> i32 {
 //TODO copy? clone? default stream?
 #[derive(Debug)]
 pub struct CudaStream {
-    device: Device,
+    device: CudaDevice,
     inner: cudaStream_t,
 }
 
@@ -127,7 +126,7 @@ impl Drop for CudaStream {
 }
 
 impl CudaStream {
-    pub fn new(device: Device) -> Self {
+    pub fn new(device: CudaDevice) -> Self {
         unsafe {
             let mut inner = null_mut();
             device.switch_to();
@@ -140,7 +139,7 @@ impl CudaStream {
         unsafe { cudaStreamSynchronize(self.inner()).unwrap() }
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.device
     }
 
@@ -191,7 +190,7 @@ impl Drop for CudnnHandle {
 }
 
 impl CudnnHandle {
-    pub fn new(device: Device) -> Self {
+    pub fn new(device: CudaDevice) -> Self {
         CudnnHandle::new_with_stream(CudaStream::new(device))
     }
 
@@ -205,7 +204,7 @@ impl CudnnHandle {
         }
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.stream.device()
     }
 
@@ -231,7 +230,7 @@ impl Drop for CublasHandle {
 }
 
 impl CublasHandle {
-    pub fn new(device: Device) -> Self {
+    pub fn new(device: CudaDevice) -> Self {
         CublasHandle::new_with_stream(CudaStream::new(device))
     }
 
@@ -266,7 +265,7 @@ impl Drop for CublasLtHandle {
 }
 
 impl CublasLtHandle {
-    pub fn new(device: Device) -> Self {
+    pub fn new(device: CudaDevice) -> Self {
         unsafe {
             let mut inner = null_mut();
             device.switch_to();

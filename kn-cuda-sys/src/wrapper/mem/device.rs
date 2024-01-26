@@ -3,7 +3,7 @@ use std::ptr::null_mut;
 use std::sync::Arc;
 
 use crate::bindings::{cudaFree, cudaMalloc, cudaMemcpy, cudaMemcpyAsync, cudaMemcpyKind};
-use crate::wrapper::handle::{CudaStream, Device};
+use crate::wrapper::handle::{CudaDevice, CudaStream};
 use crate::wrapper::mem::pinned::PinnedMem;
 use crate::wrapper::status::Status;
 
@@ -25,7 +25,7 @@ pub struct DevicePtr {
 /// A device allocation as returned by cudaMalloc.
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct DeviceBuffer {
-    device: Device,
+    device: CudaDevice,
     base_ptr: *mut c_void,
     len_bytes: isize,
 }
@@ -46,7 +46,7 @@ impl Drop for DeviceBuffer {
 }
 
 impl DevicePtr {
-    pub fn alloc(device: Device, len_bytes: usize) -> Self {
+    pub fn alloc(device: CudaDevice, len_bytes: usize) -> Self {
         unsafe {
             let mut device_ptr = null_mut();
 
@@ -65,7 +65,7 @@ impl DevicePtr {
         }
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.buffer.device
     }
 

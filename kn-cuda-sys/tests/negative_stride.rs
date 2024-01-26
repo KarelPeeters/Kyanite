@@ -3,12 +3,12 @@ use itertools::Itertools;
 
 use kn_cuda_sys::bindings::{cudnnDataType_t, cudnnOpTensorOp_t};
 use kn_cuda_sys::wrapper::descriptor::{TensorDescriptor, TensorOpDescriptor};
-use kn_cuda_sys::wrapper::handle::{CudnnHandle, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudnnHandle};
 use kn_cuda_sys::wrapper::operation::run_tensor_op;
 
 #[test]
 fn test_negative_stride() {
-    let device = Device::new(0);
+    let device = CudaDevice::new(0);
     let handle = CudnnHandle::new(device);
 
     let input_desc = TensorDescriptor::new(vec![1, 1, 1, 8], vec![1, 1, 1, -1], cudnnDataType_t::CUDNN_DATA_FLOAT);

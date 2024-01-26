@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudaStream};
 use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
@@ -34,7 +34,7 @@ pub struct ReduceCode {
 
 impl ReduceKernel {
     pub fn new(
-        device: Device,
+        device: CudaDevice,
         code: ReduceCode,
         input_shape: &StridedShape,
         output_shape: &StridedShape,

@@ -1,6 +1,6 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+use kn_cuda_sys::wrapper::handle::{CudaDevice, CudaStream};
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_graph::dtype::DType;
 
@@ -18,13 +18,13 @@ impl OffsetPtr for DevicePtr {
 }
 
 impl DeviceTensor {
-    pub fn alloc_simple(device: Device, shape: Vec<usize>, dtype: DType) -> Self {
+    pub fn alloc_simple(device: CudaDevice, shape: Vec<usize>, dtype: DType) -> Self {
         let shape = StridedShape::new_simple(shape);
         let ptr = DevicePtr::alloc(device, shape.size() * dtype.size().bytes());
         DeviceTensor::from_parts(ptr, shape, dtype)
     }
 
-    pub fn device(&self) -> Device {
+    pub fn device(&self) -> CudaDevice {
         self.ptr().device()
     }
 

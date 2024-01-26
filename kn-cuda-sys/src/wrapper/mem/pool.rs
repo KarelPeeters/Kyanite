@@ -1,4 +1,4 @@
-use crate::wrapper::handle::Device;
+use crate::wrapper::handle::CudaDevice;
 use crate::wrapper::mem::device::DevicePtr;
 
 /// A device memory pool, allocated once up front and then uses a bump allocator to return sub-allocations.
@@ -10,7 +10,7 @@ pub struct DevicePool {
 }
 
 impl DevicePool {
-    pub fn new(device: Device, total_size_bytes: usize) -> Self {
+    pub fn new(device: CudaDevice, total_size_bytes: usize) -> Self {
         DevicePool {
             total_size_bytes,
             buffer: device.alloc(total_size_bytes),

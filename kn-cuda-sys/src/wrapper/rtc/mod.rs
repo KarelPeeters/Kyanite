@@ -8,7 +8,7 @@
 //! The typical workflow, compiling a (very inefficient) memcpy kernel:
 //! ```
 //! # use std::collections::HashMap;
-//! # use kn_cuda_sys::wrapper::handle::{CudaStream, Device};
+//! # use kn_cuda_sys::wrapper::handle::{CudaStream, CudaDevice};
 //! # use kn_cuda_sys::wrapper::rtc::args::KernelArgs;
 //! # use kn_cuda_sys::wrapper::rtc::core::{CuModule};
 //! # use kn_cuda_sys::wrapper::status::Status;
@@ -23,7 +23,7 @@
 //! let kernel_name = "kernel_memcpy";
 //!
 //! // select a device
-//! let device = Device::new(0);
+//! let device = CudaDevice::new(0);
 //! let stream = CudaStream::new(device);
 //!
 //! // compile the module, indicating which function(s) we want to use later
