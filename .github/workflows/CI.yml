@@ -16,7 +16,11 @@ jobs:
       DOCS_RS: 1 # make sure cuda-sys uses vendored headers
     steps:
     - uses: actions/checkout@v3
-    - name: Check
+    - name: Cargo check (default features)
       run: cargo check
+    - name: Cargo check check (all features)
+      run: cargo check --all-features
+    - name: Cargo doc
+      run: cargo doc --no-deps --all-features
     - name: Test kn-graph
       run: cargo test -p kn-graph
