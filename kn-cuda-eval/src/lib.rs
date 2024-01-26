@@ -44,8 +44,6 @@ pub mod device_tensor;
 pub mod executor;
 /// Tensor utility.
 pub mod offset_tensor;
-/// A utility to automatically choose between CPU and GPU evaluation.
-pub mod runtime;
 /// Shape utilities.
 pub mod shape;
 /// Testing and debugging infrastructure.

@@ -5,11 +5,11 @@ use numpy::{PyArrayDyn, PyUntypedArray};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use pyo3::exceptions::PyTypeError;
 
-use kn_cuda_eval::{CudaDevice, runtime::{PreparedToken, Runtime}};
 use kn_graph::{graph::Graph, onnx::load_graph_from_onnx_bytes};
 use kn_graph::dtype::{DBool, DTensor};
 use kn_graph::optimizer::optimize_graph;
 use kn_graph::shape::{ConcreteShape, infer_batch_size};
+use kn_runtime::{CudaDevice, Device, PreparedGraph};
 
 #[pymodule]
 fn kyanite(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -24,11 +24,9 @@ struct PyGraph {
     inner: Graph,
 }
 
-// TODO rename to "compiled"?
 #[pyclass(name = "Prepared")]
 struct PyPrepared {
-    runtime: Runtime,
-    token: PreparedToken,
+    inner: PreparedGraph,
 }
 
 #[pymethods]
@@ -56,10 +54,16 @@ impl PyGraph {
     }
 
     fn prepare(&self, device: &str, batch_size: usize) -> PyResult<PyPrepared> {
-        let core = parse_device(device).map_err(|_| PyRuntimeError::new_err(format!("Invalid device: '{}'", device)))?;
-        let mut runtime = Runtime::new(core);
-        let token = runtime.prepare(self.inner.clone(), batch_size);
-        Ok(PyPrepared { runtime, token })
+        let device = parse_device(device).map_err(|err| {
+            match err {
+                DeviceError::InvalidString => PyTypeError::new_err(format!("Invalid device string: '{}'", device)),
+                DeviceError::NoCudaDevice => PyRuntimeError::new_err("No CUDA device found"),
+                DeviceError::InvalidCudaIndex => PyRuntimeError::new_err("Invalid CUDA device index"),
+            }
+        })?;
+
+        let inner = device.prepare(self.inner.clone(), batch_size);
+        Ok(PyPrepared { inner })
     }
 }
 
@@ -67,7 +71,7 @@ impl PyGraph {
 impl PyPrepared {
     fn eval<'py>(&mut self, inputs: Vec<&PyUntypedArray>, py: Python<'py>) -> PyResult<Vec<&'py PyUntypedArray>> {
         let inputs_dtensor: Vec<_> = inputs.into_iter().map(|t| array_to_tensor(py, t)).try_collect()?;
-        let outputs_dtensor = self.runtime.eval(self.token, &inputs_dtensor);
+        let outputs_dtensor = self.inner.eval(&inputs_dtensor);
         let outputs = outputs_dtensor.into_iter().map(|t| tensor_to_array(py, t)).collect_vec();
         Ok(outputs)
     }
@@ -125,21 +129,34 @@ fn tensor_to_array(py: Python, tensor: DTensor) -> &PyUntypedArray {
     }
 }
 
-fn parse_device(device: &str) -> Result<Option<CudaDevice>, ()> {
+#[derive(Debug, Copy, Clone)]
+pub enum DeviceError {
+    InvalidString,
+    NoCudaDevice,
+    InvalidCudaIndex,
+}
+
+fn parse_device(device: &str) -> Result<Device, DeviceError> {
     let device = device.to_lowercase();
 
+    if device == "best" {
+        return Ok(Device::best());
+    }
     if device == "cpu" {
-        return Ok(None);
+        return Ok(Device::Cpu);
     }
     if device == "cuda" {
-        return Ok(Some(CudaDevice::new(0)));
+        return Device::first_cuda().ok_or(DeviceError::NoCudaDevice);
     }
 
     if let Some(("cuda", index)) = device.split_once(':') {
         if let Ok(index) = index.parse() {
-            return Ok(Some(CudaDevice::new(index)));
+            return match CudaDevice::new(index) {
+                Ok(device) => Ok(Device::Cuda(device)),
+                Err(_) => Err(DeviceError::InvalidCudaIndex),
+            };
         }
     }
 
-    Err(())
+    Err(DeviceError::InvalidString)
 }

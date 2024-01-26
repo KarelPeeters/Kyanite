@@ -26,7 +26,7 @@
 //! // select a device, at runtime
 //! let device_str = "cpu";
 //! let device = match device_str {
-//!     "auto" => Device::gpu_if_available(),
+//!     "auto" => Device::best(),
 //!     "cpu" => Device::Cpu,
 //!     "cuda" => Device::Cuda(CudaDevice::all().next().unwrap()),
 //!     _ => panic!("unknown device"),
@@ -46,9 +46,9 @@
 use std::fmt::Debug;
 
 #[cfg(feature = "cuda")]
-use kn_cuda_eval::executor::CudaExecutor;
+pub use kn_cuda_eval::executor::CudaExecutor;
 #[cfg(feature = "cuda")]
-use kn_cuda_sys::wrapper::handle::CudaDevice;
+pub use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_graph::cpu::cpu_eval_graph;
 use kn_graph::dtype::DTensor;
 use kn_graph::graph::Graph;
@@ -63,7 +63,7 @@ pub fn compiled_with_cuda_support() -> bool {
     return false;
 }
 
-/// A devive that can be used to evaluate a graph.
+/// A device that can be used to evaluate a graph.
 #[derive(Debug)]
 pub enum Device {
     Cpu,
@@ -92,15 +92,22 @@ impl Device {
         }
     }
 
-    /// Returns the first cuda device if available and this crate was compiled with cuda support,
-    /// otherwise returns the cpu.
-    pub fn gpu_if_available() -> Device {
-        #[cfg(feature = "cuda")]
-        if let Some(device) = CudaDevice::all().next() {
-            return Device::Cuda(device);
+    /// Returns the best available device.
+    ///
+    /// For now the algorithm used is very simple:
+    /// * pick the first cuda device if any are available
+    /// * otherwise use the CPU
+    pub fn best() -> Device {
+        if let Some(device) = Device::first_cuda() {
+            return device;
         }
 
         Device::Cpu
+    }
+
+    /// Returns the first available cuda device if any.
+    pub fn first_cuda() -> Option<Device> {
+        Some(Device::Cuda(CudaDevice::all().next()?))
     }
 }
 

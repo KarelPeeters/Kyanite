@@ -52,7 +52,7 @@ fn main() {
     } = Args::parse();
 
     let n = n.unwrap_or(DEFAULT_ITERATIONS);
-    let device = CudaDevice::new(device.unwrap_or(0));
+    let device = CudaDevice::new(device.unwrap_or(0)).unwrap();
 
     let mut warnings = vec![];
     let mut warn = |s: &str| {

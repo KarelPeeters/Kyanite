@@ -32,6 +32,7 @@ readme = "Readme.md"
 kn-graph = { path = "kn-graph", version = "0.5.0" }
 kn-cuda-sys = { path = "kn-cuda-sys", version = "0.5.0" }
 kn-cuda-eval = { path = "kn-cuda-eval", version = "0.5.0" }
+kn-runtime = { path = "kn-runtime", version = "0.5.0" }
 
 # crates.io dependencies
 bindgen = "0.68.1"

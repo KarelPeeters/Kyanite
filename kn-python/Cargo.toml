@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 kn-graph.workspace = true
-kn-cuda-eval.workspace = true
+kn-runtime = { workspace = true, features = ["cuda"] }
 
 pyo3.workspace = true
 numpy.workspace = true

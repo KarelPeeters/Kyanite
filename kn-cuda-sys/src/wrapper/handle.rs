@@ -31,26 +31,26 @@ pub struct ComputeCapability {
     pub minor: i32,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct CudaDeviceNotAvailable;
+
 impl CudaDevice {
-    pub fn new(device: i32) -> Self {
-        assert!(
-            0 <= device && device < cuda_device_count(),
-            "Device with id {} doesn't exist",
-            device
-        );
-        CudaDevice(device)
+    pub fn new(device: i32) -> Result<Self, CudaDeviceNotAvailable> {
+        if 0 <= device && device <= cuda_device_count() {
+            Ok(CudaDevice(device))
+        } else {
+            Err(CudaDeviceNotAvailable)
+        }
     }
 
     pub fn all() -> impl Iterator<Item = Self> {
-        (0..cuda_device_count()).map(CudaDevice::new)
+        (0..cuda_device_count()).map(CudaDevice)
     }
 
-    pub fn current() -> CudaDevice {
-        unsafe {
-            let mut inner = 0;
-            cudaGetDevice(&mut inner as *mut _).unwrap();
-            CudaDevice::new(inner)
-        }
+    pub unsafe fn current() -> CudaDevice {
+        let mut inner = 0;
+        cudaGetDevice(&mut inner as *mut _).unwrap();
+        CudaDevice(inner)
     }
 
     pub fn inner(self) -> i32 {

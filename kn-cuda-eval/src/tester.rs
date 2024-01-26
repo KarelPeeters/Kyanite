@@ -18,7 +18,7 @@ pub fn check_cudnn(graph: &Graph, check_data_bytes: &[u8]) {
 }
 
 pub fn eval_cudnn(graph: &Graph, batch_size: usize, inputs: &[DTensor], print_executor: bool) -> Vec<DTensor> {
-    let mut executor = CudaExecutor::new(CudaDevice::new(0), graph, batch_size);
+    let mut executor = CudaExecutor::new(CudaDevice::new(0).unwrap(), graph, batch_size);
     if print_executor {
         println!("{:?}", executor);
     }
