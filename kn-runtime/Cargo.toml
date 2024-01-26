@@ -1,0 +1,21 @@
+[package]
+name = "kn-runtime"
+description = "Dynamic wrapper around CPU and GPU inference"
+
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+categories.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+
+[features]
+cuda = ["dep:kn-cuda-sys", "dep:kn-cuda-eval"]
+
+[dependencies]
+kn-graph.workspace = true
+kn-cuda-sys = { workspace = true, optional = true }
+kn-cuda-eval = { workspace = true, optional = true }
+
+clap.workspace = true

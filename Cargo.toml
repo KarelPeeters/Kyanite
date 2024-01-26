@@ -3,6 +3,7 @@ members = [
     "kn-graph",
     "kn-cuda-sys",
     "kn-cuda-eval",
+    "kn-runtime",
     "kn-python",
     "proto-to-rust",
 ]

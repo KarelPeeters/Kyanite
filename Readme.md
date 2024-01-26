@@ -39,6 +39,7 @@ The framework is split into three crates:
 * `kn-graph`: The core crate, containing the intermediate representation and the CPU executor.
 * `kn-cuda-sys`: The Cuda FFI bindings, generated with rust-bindgen.
 * `kn-cuda-eval`: The Cuda executor and planner.
+* `kn-runtime`: A wrapper around the other crates to allow selecting between CPU and GPU execution at runtime.
 
 ## Quick demo
 
