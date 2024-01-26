@@ -44,6 +44,7 @@ The framework is split into three crates:
 ## Quick demo
 
 ```rust
+// Graph operations (using kn-graph)
 // Load on onnx file into a graph
 let graph = load_graph_from_onnx_path("test.onnx", false)?;
 // Optimize the graph
@@ -55,16 +56,21 @@ graph_to_svg("test.svg", &graph, false, false)?;
 let batch_size = 8;
 let inputs = [DTensor::F32(Tensor::zeros(IxDyn(&[batch_size, 16])))];
 
-// CPU:
+// CPU: (using kn-graph)
 // just evaluate the graph
 let outputs: Vec<DTensor> = cpu_eval_graph(&graph, batch_size, &inputs);
 
-// GPU:
+// GPU: (using kn-cuda-eval)
 // build an executor
-let device = Device::new(0);
+let device = CudaDevice::new(0).unwrap();
 let mut executor = CudaExecutor::new(device, &graph, batch_size);
 // run the executor on the inputs
 let outputs: &[DTensor] = executor.evaluate(&inputs);
+
+// Runtime device selection: (using kn-runtime)
+let device = Device::best();
+let mut prepared = device.prepare(graph, batch_size);
+let outputs: Vec<DTensor> = prepared.eval( & inputs);
 ```
 
 ## System requirements
