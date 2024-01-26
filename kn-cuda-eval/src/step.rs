@@ -310,6 +310,7 @@ impl<T> Operand<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn map_value<K>(self, mut f: impl FnMut(T) -> K) -> Operand<K> {
         Operand {
             kind: self.kind,
