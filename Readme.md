@@ -31,6 +31,7 @@ A neural network inference library, written in/for Rust. It can run ONNX files e
 cuda/cudnn/cublas.
 
 It is general enough to run all kinds of networks, it has been tested with:
+
 * Simple fully connected networks
 * ResNet-based CNNs
 * Large language models like [LLaMA](https://arxiv.org/abs/2302.13971)
@@ -38,6 +39,7 @@ It is general enough to run all kinds of networks, it has been tested with:
   the `stable_diffusion` example in the `kn-runtime` crate.
 
 The framework consists of the following crates:
+
 * `kn-graph`: The core crate, containing the intermediate representation and the CPU executor.
 * `kn-cuda-sys`: The Cuda FFI bindings, generated with rust-bindgen.
 * `kn-cuda-eval`: The Cuda executor and planner.
@@ -94,7 +96,8 @@ guaranteed since CUDA sometimes changes the name of or removes certain functions
 
 ## Internals
 
-The typical pipeline is shown in the first figure below. The second figure shows the results of running this pipeline on a simple NN architecture.
+The typical pipeline is shown in the first figure below. The second figure shows the results of running this pipeline on
+a simple NN architecture.
 
 ![NN inference diagram](./docs/arch_inference.svg)
 
@@ -103,7 +106,9 @@ The typical pipeline is shown in the first figure below. The second figure shows
 ### Graph IR
 
 [//]: # (TODO separate onnx loading chapter, with some examples and tricks)
+
 [//]: # (TODO link/explain supported ONNX subset)
+
 [//]: # (TODO explain strict orthogonality of IR and why it's better than ONNX)
 
 Central is the _Graph IR_, the intermediate representation for neural network graphs.
@@ -121,7 +126,8 @@ The graph can be constructed directly in code using
 the [graph builder API](https://docs.rs/kn-graph/0.2.1/kn_graph/graph/struct.Graph.html), but for convenience, an ONNX
 loader exists. It can read ONNX files and convert the supported subset of operations into those supported by the IR.
 
-Because the graph IR is much more orthogonal than the ONNX specification, many ONNX operations are decomposed into separate steps, some examples:
+Because the graph IR is much more orthogonal than the ONNX specification, many ONNX operations are decomposed into
+separate steps, some examples:
 
 * ONNX binary operations implicitly broadcast their operands, but this step is a separate operation in the IR.
 * ONNX convolution and matmul have a built-in optional bias operand; this also becomes a separate broadcast plus binary
@@ -144,7 +150,8 @@ The optimizations that are currently implemented are:
 * Fusing consecutive affine (bias, scale, batchnorm) operations into a single bias+scale operation.
 * Fusing consecutive clamping operations (relu, min, max) into a single min+max operation.
 * Strength reduction: replacing division by a constant with multiplication by the inverse constant.
-* Recognizing the layernorm template (reduce, subtract, power, reduce, divide) and replacing it with the layernorm operator.
+* Recognizing the layernorm template (reduce, subtract, power, reduce, divide) and replacing it with the layernorm
+  operator.
 
 ### CPU executor
 
@@ -177,15 +184,19 @@ The planner has the following major responsibilities:
 
 [//]: # (TODO more fusing examples: cuBLAS + scale + transpose, are there others?)
 
-* Compile custom kernels for the remaining scalar and compound operations using an _autokernel_ framework based on [NVRTC (Runtime Compilation)](https://docs.nvidia.com/cuda/nvrtc/index.html).
-  * The operations handled by *autokernel* are: scalar operations, reduce, softmax, layernorm, gather.
-  * Handwritten kernel templates are used, with details such as tensor shapes, strides, scalar operations, ... substituted in before compilation at runtime.
-  * More operator fusion happens here
-    * Multiple scalar operations get compiled to a single kernel
-    * Constant scalars are inlined
-    * Some compound kernels support fusing input or output scalar operations
+* Compile custom kernels for the remaining scalar and compound operations using an _autokernel_ framework based
+  on [NVRTC (Runtime Compilation)](https://docs.nvidia.com/cuda/nvrtc/index.html).
+    * The operations handled by *autokernel* are: scalar operations, reduce, softmax, layernorm, gather.
+    * Handwritten kernel templates are used, with details such as tensor shapes, strides, scalar operations, ...
+      substituted in before compilation at runtime.
+    * More operator fusion happens here
+        * Multiple scalar operations get compiled to a single kernel
+        * Constant scalars are inlined
+        * Some compound kernels support fusing input or output scalar operations
 
-This final operator fusion can be significant and save a lot of redundant transfers to and from main memory. The same performance could be achieved by manually writing kernels for each used combination of operations, but the combinatorial explosion and associated maintenance would be huge.
+This final operator fusion can be significant and save a lot of redundant transfers to and from main memory. The same
+performance could be achieved by manually writing kernels for each used combination of operations, but the combinatorial
+explosion and associated maintenance would be huge.
 
 An example generated scalar kernel with some handwritten clarifying comments is shown below:
 
@@ -302,4 +313,5 @@ While developing this crate, to update the ONNX proto, the [prost-build crate](h
 used. This requires that `protoc` is installed and that the `PROTOC` environment variable is set to point to the
 executable. See their installation instructions (or the error message the build script shows if any) for more details.
 
-To actually update the proto definition, replace `kn-graph/proto/onnx.proto3` with the newer version and run `cargo run --bin proto-to-rust`. Then commit both the `onnx.proto3` file and the generated `onnx.rs` file.
+To actually update the proto definition, replace `kn-graph/proto/onnx.proto3` with the newer version and
+run `cargo run --bin proto-to-rust`. Then commit both the `onnx.proto3` file and the generated `onnx.rs` file.
