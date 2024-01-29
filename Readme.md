@@ -78,10 +78,14 @@ let outputs: Vec<DTensor> = prepared.eval( & inputs);
 ## System requirements
 
 To use the cuda crates, the appropriate libraries need to be installed on this system, they are not downloaded automatically:
-* Cuda (includes Cuda, cuBLAS, NVRTC): [installer](https://developer.nvidia.com/cuda-downloads), follow the instructions.
-Ensure that the environment variable `CUDA_PATH` is set such that `CUDA_PATH/bin/` exists.
+
+* Cuda (includes Cuda, cuBLAS, NVRTC): [installer](https://developer.nvidia.com/cuda-downloads), follow the
+  instructions.
+  Ensure that the environment variable `CUDA_PATH` points to the root directory of the install. (ie. `CUDA_PATH/bin/`
+  should exists)
 * Cudnn: [archive file](https://developer.nvidia.com/cudnn), to be extract to a location of your choosing.
-Ensure that the environment variable `CUDNN_PATH` is set such that `CUDNN_PATH/bin` exists.
+  If you chose the same location as `CUDA_PATH` you don't need to do anything else. Otherwise, set the environment
+  variable `CUDNN_PATH` to the root directory of the cuDNN installation. (ie. `CUDNN_PATH/bin` should exists)
 
 The project has been tested with Cuda `v12.2` and cuDNN version `v8.9.5`. Newer versions might work, but this is not guaranteed since cuda sometimes changes the name of or removed certain functions. 
 
