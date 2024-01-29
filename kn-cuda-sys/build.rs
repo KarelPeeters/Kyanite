@@ -1,47 +1,32 @@
+use std::env::VarError;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 use bindgen::{Builder, CargoCallbacks, EnumVariation};
+use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
 
-#[cfg(target_family = "windows")]
-fn get_var_path(name: &str) -> PathBuf {
-    println!("rerun-if-env-changed={}", name);
-
-    use std::env::VarError;
-    let path = std::env::var(name).unwrap_or_else(|e| match e {
-        VarError::NotPresent => panic!("Environment variable {} is not defined", name),
-        VarError::NotUnicode(_) => panic!("Environment variable {} contains non-unicode path", name),
-    });
-
-    println!("Using {}={:?}", name, path);
-
-    let path = PathBuf::from(path);
-    if !path.exists() {
-        panic!("Path {}={:?} does not exist", name, path);
-    }
-
-    path
+struct PlatformSpecific {
+    fallback_paths: Vec<PathBuf>,
+    suffixes_include: Vec<PathBuf>,
+    suffixes_link: Vec<PathBuf>,
 }
 
 #[cfg(target_family = "windows")]
-fn link_cuda() -> Vec<PathBuf> {
-    let cuda_path = get_var_path("CUDA_PATH");
-    let cudnn_path = get_var_path("CUDNN_PATH");
-
-    for path in [&cuda_path, &cudnn_path] {
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path.join("lib/x64").to_str().unwrap()
-        );
-        println!("cargo:rustc-link-search=native={}", path.join("lib").to_str().unwrap());
+fn platform() -> PlatformSpecific {
+    PlatformSpecific {
+        fallback_paths: vec![],
+        suffixes_include: vec![PathBuf::from("include"), PathBuf::from("include/nvtx3")],
+        suffixes_link: vec![PathBuf::from("lib/x64"), PathBuf::from("lib")],
     }
+}
 
-    vec![
-        cuda_path.join("include"),
-        cuda_path.join("include/nvtx3"),
-        cudnn_path.join("include"),
-    ]
+#[cfg(target_family = "unix")]
+fn platform() -> PlatformSpecific {
+    PlatformSpecific {
+        fallback_paths: vec![PathBuf::from("/usr/local/cuda")],
+        suffixes_include: vec![PathBuf::from("include"), PathBuf::from("include/nvtx3")],
+        suffixes_link: vec![PathBuf::from("lib64"), PathBuf::from("lib")],
+    }
 }
 
 #[cfg(target_family = "unix")]
@@ -53,6 +38,92 @@ fn link_cuda() -> Vec<PathBuf> {
         PathBuf::from("/usr/local/cuda/include/"),
         PathBuf::from("/usr/local/cuda/include/nvtx3"),
     ]
+}
+
+const CUDA_PATH_VAR: &str = "CUDA_PATH";
+const CUDNN_PATH_VAR: &str = "CUDNN_PATH";
+
+const ERROR_MESSAGE: &str = r"
+Could not find CUDA installation.
+Set CUDA_PATH environment variable to the base directory of your CUDA installation.
+CUDNN_PATH can also be optionally set to the base directory of your cuDNN installation.
+";
+
+fn error() -> ! {
+    panic!("{}", ERROR_MESSAGE.trim());
+}
+
+fn find_base_dir(platform: &PlatformSpecific) -> PathBuf {
+    match std::env::var(CUDA_PATH_VAR) {
+        Err(VarError::NotPresent) => {
+            println!("{} is not defined", CUDA_PATH_VAR);
+
+            for fallback in &platform.fallback_paths {
+                println!("Trying default fallback path {:?}", fallback);
+                if fallback.exists() {
+                    return fallback.to_owned();
+                }
+            }
+
+            error()
+        }
+        Err(VarError::NotUnicode(_)) => {
+            panic!("Environment variable {} contains non-unicode path", CUDA_PATH_VAR)
+        }
+        Ok(path) => {
+            println!("Using {}={:?}", CUDA_PATH_VAR, path);
+            let path = PathBuf::from(path);
+            if !path.exists() {
+                panic!("Path {}={:?} does not exist", CUDA_PATH_VAR, path);
+            }
+            return path;
+        }
+    }
+}
+
+fn link_cuda() -> Vec<PathBuf> {
+    println!("rerun-if-env-changed={}", CUDA_PATH_VAR);
+    println!("rerun-if-env-changed={}", CUDNN_PATH_VAR);
+
+    let platform = platform();
+
+    // find all base dirs
+    let mut base_dirs = vec![find_base_dir(&platform)];
+    match std::env::var(CUDNN_PATH_VAR) {
+        Err(VarError::NotPresent) => {}
+        Err(VarError::NotUnicode(_)) => {
+            panic!("Environment variable {} contains non-unicode path", CUDNN_PATH_VAR)
+        }
+        Ok(path) => {
+            println!("Using {}={:?}", CUDNN_PATH_VAR, path);
+            assert!(std::env::var_os(CUDA_PATH_VAR).is_some(), "Cannot use {} without {}", CUDNN_PATH_VAR, CUDA_PATH_VAR);
+
+            let path = PathBuf::from(path);
+            if !path.exists() {
+                panic!("Path {}={:?} does not exist", CUDNN_PATH_VAR, path);
+            }
+            base_dirs.push(path);
+        }
+    }
+
+    // link dirs
+    for path in &base_dirs {
+        for suffix in &platform.suffixes_link {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                path.join(suffix).to_str().unwrap()
+            );
+        }
+    }
+
+    // include dirs
+    let mut include_paths = vec![];
+    for path in &base_dirs {
+        for suffix in &platform.suffixes_include {
+            include_paths.push(path.join(suffix));
+        }
+    }
+    include_paths
 }
 
 fn link_cuda_docs_rs() -> Vec<PathBuf> {
