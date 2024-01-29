@@ -2,7 +2,7 @@ use kn_cuda_sys::wrapper::handle::CudaDevice;
 
 #[test]
 fn mem_slice() {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
 
     let ptr = device.alloc(512);
     let a = ptr.clone().offset_bytes(0);

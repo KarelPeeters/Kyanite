@@ -9,7 +9,7 @@ use kn_cuda_sys::wrapper::operation::{run_conv_bias_res_activation, STANDARD_CON
 
 #[test]
 fn fused_all() {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
     let mut handle = CudnnHandle::new(device);
     let activation_desc = ActivationDescriptor::new(cudnnActivationMode_t::CUDNN_ACTIVATION_IDENTITY, 0.0);
     let conv_desc = ConvolutionDescriptor::new(0, 0, 1, 1, 1, 1, cudnnDataType_t::CUDNN_DATA_FLOAT);

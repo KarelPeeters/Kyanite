@@ -8,7 +8,7 @@ use kn_cuda_sys::wrapper::operation::run_tensor_op;
 
 #[test]
 fn test_negative_stride() {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
     let handle = CudnnHandle::new(device);
 
     let input_desc = TensorDescriptor::new(vec![1, 1, 1, 8], vec![1, 1, 1, -1], cudnnDataType_t::CUDNN_DATA_FLOAT);

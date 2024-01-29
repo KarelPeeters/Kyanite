@@ -26,7 +26,7 @@ extern "C" {
 
 #[test]
 fn saxpy() {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
     let stream = CudaStream::new(device);
 
     unsafe {

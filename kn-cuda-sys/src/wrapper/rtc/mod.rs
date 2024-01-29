@@ -23,7 +23,7 @@
 //! let kernel_name = "kernel_memcpy";
 //!
 //! // select a device
-//! let device = CudaDevice::new(0);
+//! let device = CudaDevice::new(0).unwrap();
 //! let stream = CudaStream::new(device);
 //!
 //! // compile the module, indicating which function(s) we want to use later

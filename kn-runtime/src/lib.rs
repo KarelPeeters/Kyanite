@@ -34,11 +34,11 @@
 //!
 //! // prepare the graph for execution
 //! let batch_size = 8;
-//! let prepared = device.prepare(graph, batch_size);
+//! let mut  prepared = device.prepare(graph, batch_size);
 //!
 //! // evaluate the graph with some inputs, get the outputs back
 //! let inputs = [DTensor::F32(Tensor::zeros(vec![batch_size, 16]))];
-//! let outputs: &[DTensor] = prepared.evaluate(&inputs);
+//! let outputs: Vec<DTensor> = prepared.eval(&inputs);
 //! # Ok(())
 //! # }
 //! ```

@@ -20,7 +20,7 @@ fn layernorm_huge() {
     graph.output(output);
 
     // allocate additional buffer to push indices into 64-bit address space
-    let buffer = CudaDevice::new(0).alloc(4 * 1024 * 1024 * 1024);
+    let buffer = CudaDevice::new(0).unwrap().alloc(4 * 1024 * 1024 * 1024);
 
     let mut rng = StdRng::seed_from_u64(0);
     let input_tensor = rng_tensor_f32((1, 32, 1048576), &mut rng);

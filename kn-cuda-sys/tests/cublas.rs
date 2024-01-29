@@ -6,7 +6,7 @@ use kn_cuda_sys::wrapper::handle::{CublasHandle, CudaDevice};
 
 #[test]
 fn simple() {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
     let handle = CublasHandle::new(device);
 
     let a = device.alloc(3 * 2 * 4);

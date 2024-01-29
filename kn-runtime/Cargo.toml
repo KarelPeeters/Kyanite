@@ -20,5 +20,14 @@ kn-cuda-eval = { workspace = true, optional = true }
 
 clap.workspace = true
 
+[dev-dependencies]
+bytemuck.workspace = true
+criterion.workspace = true
+decorum.workspace = true
+image.workspace = true
+itertools.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
+
 [package.metadata.docs.rs]
 all-features = true

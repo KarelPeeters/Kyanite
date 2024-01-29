@@ -27,5 +27,4 @@ cc.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 decorum.workspace = true
-image.workspace = true
-rand_distr.workspace = true
+

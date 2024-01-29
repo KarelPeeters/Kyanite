@@ -33,13 +33,15 @@ It is general enough to run all kinds of networks, it has been tested with:
 * Simple fully connected networks
 * ResNet-based CNNs
 * Large language models like [LLaMA](https://arxiv.org/abs/2302.13971)
-* Image generation models like [Stable Diffusion](https://arxiv.org/abs/2112.10752). For a demo see the `stable_diffusion` example in the `kn-cuda-eval` crate.
+* Image generation models like [Stable Diffusion](https://arxiv.org/abs/2112.10752). For a demo see
+  the `stable_diffusion` example in the `kn-runtime` crate.
 
-The framework is split into three crates:
+The framework consists of the following crates:
 * `kn-graph`: The core crate, containing the intermediate representation and the CPU executor.
 * `kn-cuda-sys`: The Cuda FFI bindings, generated with rust-bindgen.
 * `kn-cuda-eval`: The Cuda executor and planner.
 * `kn-runtime`: A wrapper around the other crates to allow selecting between CPU and GPU execution at runtime.
+* `kn-python`: An experimental python wrapper around the runtime crate, using [PyO3](https://crates.io/crates/pyo3).
 
 ## Quick demo
 

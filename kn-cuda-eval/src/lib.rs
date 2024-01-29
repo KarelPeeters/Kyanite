@@ -20,7 +20,7 @@
 //! let graph = optimize_graph(&graph, Default::default());
 //!
 //! // select a device
-//! let device = CudaDevice::new(0);
+//! let device = CudaDevice::new(0).unwrap();
 //!
 //! // build an executor
 //! let batch_size = 8;

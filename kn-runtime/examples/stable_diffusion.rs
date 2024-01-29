@@ -10,14 +10,13 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use rand_distr::StandardNormal;
 
-use kn_cuda_eval::runtime::Runtime;
-use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_graph::{ndarray, shape};
 use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::optimize_graph;
+use kn_runtime::Device;
 
 use crate::ndarray::{Array1, IxDyn, Slice};
 use crate::scheduler::PNDMSScheduler;
@@ -71,13 +70,11 @@ fn main() -> std::io::Result<()> {
     std::fs::create_dir_all(&args.output_folder)?;
 
     let device = if args.cpu {
-        println!("  Using CPU");
-        None
+        Device::Cpu
     } else {
-        let device = CudaDevice::new(0);
-        println!("  Using GPU {:?}", device);
-        Some(device)
+        Device::best()
     };
+    println!("  Using device {:?}", device);
 
     println!("Loading graphs");
     let path_text_encoder = args.network_path.join("text_encoder.onnx");
@@ -96,20 +93,19 @@ fn main() -> std::io::Result<()> {
     // let graph_encoder = optimize_graph(&graph_encoder, Default::default());
     let graph_decoder = optimize_graph(&graph_decoder, Default::default());
 
-    println!("Preparing runtime");
-    let mut runtime = Runtime::new(device);
-    let runtime_text_encoder = runtime.prepare(graph_text_encoder, 0);
-    let runtime_unet = runtime.prepare(graph_unet, 0);
-    // let runtime_encoder = runtime.prepare(graph_encoder, 0);
-    let runtime_decoder = runtime.prepare(graph_decoder, 0);
+    println!("Preparing graphs");
+    let mut prepared_text_encoder = device.prepare(graph_text_encoder, 0);
+    let mut prepared_unet = device.prepare(graph_unet, 0);
+    // let mut prepared_encoder = device.prepare(graph_encoder, 0);
+    let mut prepared_decoder = device.prepare(graph_decoder, 0);
 
     println!("Embedding text");
     let tokens_prompt = tokens_to_tensor(&tokens_prompt);
     let tokens_uncond = tokens_to_tensor(&tokens_prompt_avoid);
 
-    let emb_prompt = runtime.eval(runtime_text_encoder, &[tokens_prompt]).single();
+    let emb_prompt = prepared_text_encoder.eval(&[tokens_prompt]).single();
     let emb_prompt = emb_prompt.unwrap_f32().unwrap();
-    let emb_uncond = runtime.eval(runtime_text_encoder, &[tokens_uncond]).single();
+    let emb_uncond = prepared_text_encoder.eval(&[tokens_uncond]).single();
     let emb_uncond = emb_uncond.unwrap_f32().unwrap();
     let emb_all = ndarray::concatenate![Axis(0), emb_uncond.clone(), emb_prompt.clone()].into_shared();
 
@@ -157,7 +153,7 @@ fn main() -> std::io::Result<()> {
 
         if !args.no_save_intermediate {
             println!("    Decoding intermediate image");
-            let image = runtime.eval(runtime_decoder, &[DTensor::F32(latent.clone())]).single();
+            let image = prepared_decoder.eval(&[DTensor::F32(latent.clone())]).single();
             let image = image.unwrap_f32().unwrap();
 
             println!("    Saving intermediate image");
@@ -175,7 +171,7 @@ fn main() -> std::io::Result<()> {
         ];
 
         println!("    Running unet");
-        let noise_pred_all = runtime.eval(runtime_unet, &unet_inputs).single();
+        let noise_pred_all = prepared_unet.eval(&unet_inputs).single();
         let noise_pred_all = noise_pred_all.unwrap_f32().unwrap();
 
         println!("    Shuffling outputs");
@@ -195,7 +191,7 @@ fn main() -> std::io::Result<()> {
         .unwrap();
 
     println!("Decoding final image");
-    let image = runtime.eval(runtime_decoder, &[DTensor::F32(latent.clone())]).single();
+    let image = prepared_decoder.eval(&[DTensor::F32(latent.clone())]).single();
     let image = image.unwrap_f32().unwrap();
 
     println!("Saving final image");

@@ -7,7 +7,7 @@ use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::{run_activation, run_tensor_op};
 
 unsafe fn test_restride(f: impl FnOnce(&CudnnHandle, &TensorDescriptor, &DevicePtr, &TensorDescriptor, &DevicePtr)) {
-    let device = CudaDevice::new(0);
+    let device = CudaDevice::new(0).unwrap();
     let handle = CudnnHandle::new(device);
 
     let input = device.alloc(6 * 4);
