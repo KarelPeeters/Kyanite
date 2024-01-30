@@ -29,17 +29,6 @@ fn platform() -> PlatformSpecific {
     }
 }
 
-#[cfg(target_family = "unix")]
-fn link_cuda() -> Vec<PathBuf> {
-    // TODO also use env vars here if they're present?
-    println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
-
-    vec![
-        PathBuf::from("/usr/local/cuda/include/"),
-        PathBuf::from("/usr/local/cuda/include/nvtx3"),
-    ]
-}
-
 const CUDA_PATH_VAR: &str = "CUDA_PATH";
 const CUDNN_PATH_VAR: &str = "CUDNN_PATH";
 
