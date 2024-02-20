@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::onnx::load::OnnxDimValue;
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::typed_value::AsShapeError;
@@ -21,6 +22,7 @@ pub enum OnnxError {
 
     NonNormalExternalDataPath(PathBuf),
     MustHaveParentPath(PathBuf),
+    FailedToShapeInput(Vec<OnnxDimValue>, String, usize),
 
     MissingProtoField(&'static str),
 

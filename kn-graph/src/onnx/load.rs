@@ -13,10 +13,10 @@ use crate::graph::{
 pub use crate::graph::Graph;
 use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
-use crate::onnx::proto::{ModelProto, tensor_shape_proto, TensorProto, TypeProto};
+use crate::onnx::proto::{ModelProto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
-use crate::onnx::proto::tensor_shape_proto::dimension::Value as ProtoDimValue;
+use crate::onnx::proto::tensor_shape_proto::dimension;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
@@ -31,8 +31,16 @@ use crate::shape::{Shape, Size};
 //    things to grep for: unwrap|expect|assert|panic
 //    introduce two main error kinds: "bug in file" and "unsupported"
 
+pub type InputShaper = dyn Fn(&[OnnxDimValue], &str, usize) -> Option<Shape>;
+
+#[derive(Debug, Clone)]
+pub enum OnnxDimValue {
+    Value(i64),
+    Param(String),
+}
+
 // we use &dyn to avoid duplicate codegen of this large and non-critical function
-pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) -> OnnxResult<Graph> {
+pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader, input_shaper: &InputShaper) -> OnnxResult<Graph> {
     let model = load_model_proto(buf);
     let model_graph = model.graph.as_ref().unwrap_proto("model.graph")?;
 
@@ -45,20 +53,26 @@ pub fn graph_from_onnx_bytes(buf: &[u8], external: &mut dyn ExternalDataLoader) 
         nodes.define(&tensor.name, OnnxValue::Value(value))
     }
 
-    // clear newly defined values so we don't attribute them to the first node
-    graph.take_new_values();
-
+    // load inputs
+    let mut real_input_index = 0;
     for input in &model_graph.input {
         // initializers are allowed to re-appear in the inputs, so we skip them the second time
         if nodes.contains(&input.name) {
             continue;
         }
 
-        let (shape, dtype) = resolve_tensor_type(input.r#type.as_ref().unwrap_proto("input.type")?, &input.name)?;
+        let input_proto = input.r#type.as_ref().unwrap_proto("input.type")?;
+        let (shape, dtype) = resolve_tensor_type(input_proto, &input.name, real_input_index, input_shaper)?;
         let value = graph.input(shape, dtype);
         nodes.define(&input.name, OnnxValue::Value(value));
+
+        real_input_index += 1;
     }
 
+    // clear newly defined values so we don't attribute them to the first node
+    let _ = graph.take_new_values();
+
+    // load nodes
     for node_proto in &model_graph.node {
         let node = Node {
             name: node_proto.name.as_str(),
@@ -1083,11 +1097,12 @@ fn define_tensor_data(
     Ok(value)
 }
 
-fn resolve_tensor_type(ty: &TypeProto, name: &str) -> OnnxResult<(Shape, DType)> {
+fn resolve_tensor_type(ty: &TypeProto, name: &str, index: usize, input_shaper: &InputShaper) -> OnnxResult<(Shape, DType)> {
     let value = ty.value.as_ref().expect("Value doesn't have type set");
     let result = match value {
         ProtoTypeValue::TensorType(tensor) => {
             let data_type = DataType::try_from(tensor.elem_type).expect("Invalid data type");
+            let dtype = resolve_dtype(data_type, name)?;
 
             let dims = tensor
                 .shape
@@ -1095,12 +1110,15 @@ fn resolve_tensor_type(ty: &TypeProto, name: &str) -> OnnxResult<(Shape, DType)>
                 .expect("Tensor does not have shape set")
                 .dim
                 .iter()
-                .map(resolve_tensor_dim)
+                .map(|d| match *d.value.as_ref().expect("Missing value for dimension") {
+                    dimension::Value::DimValue(value) => OnnxDimValue::Value(value),
+                    dimension::Value::DimParam(ref param) => OnnxDimValue::Param(param.clone()),
+                })
                 .collect_vec();
 
-            let dtype = resolve_dtype(data_type, name)?;
+            let shape = input_shaper(&dims, name, index).ok_or_else(|| OnnxError::FailedToShapeInput(dims, name.to_owned(), index))?;
 
-            (Shape::new(dims), dtype)
+            (shape, dtype)
         }
         _ => panic!("Unsupported value kind {:?}", value),
     };
@@ -1132,18 +1150,6 @@ fn resolve_dtype(data_type: DataType, node: &str) -> OnnxResult<DType> {
         | DataType::Float8e5m2fnuz => return Err(OnnxError::UnsupportedType(node.to_owned(), data_type)),
     };
     Ok(dtype)
-}
-
-fn resolve_tensor_dim(dim: &tensor_shape_proto::Dimension) -> Size {
-    let value = dim.value.as_ref().expect("Missing value for dimension");
-
-    match value {
-        &ProtoDimValue::DimValue(inner) => Size::fixed(inner as usize),
-        ProtoDimValue::DimParam(name) => {
-            assert_eq!(name, "batch_size");
-            Size::BATCH
-        }
-    }
 }
 
 fn abs_axis(axis: i64, rank: usize) -> usize {
