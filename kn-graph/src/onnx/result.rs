@@ -52,6 +52,9 @@ pub enum OnnxError {
     //TODO node/operand info
     ExpectedNonBatchValue(String),
     ExpectedSizeError(AsShapeError),
+
+    InvalidAutoPadValue(Node, String),
+    DifferentPadding(Node, usize, i64, i64)
 }
 
 impl From<AsShapeError> for OnnxError {

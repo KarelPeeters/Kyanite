@@ -140,9 +140,31 @@ fn visit_node(
 
             let groups = attrs.take_int("group")?;
             let kernel_shape = attrs.take_ints("kernel_shape")?;
-            let padding = attrs.take_ints("pads")?;
             let strides = attrs.take_ints("strides")?;
             let dilations = attrs.take_ints("dilations")?;
+
+            let conv_rank = kernel_shape.len();
+            let auto_pad = attrs.maybe_take_string("auto_pad")?;
+
+            let padding = match auto_pad {
+                None | Some("NOTSET") => {
+                    // custom padding
+                    attrs.take_ints("pads")?.to_vec()
+                }
+                Some("SAME_UPPER") => {
+                    // input and output same size, excess on upper side of dim
+                    calculate_auto_padding(graph, conv_rank, input, filter, strides, dilations, true)?
+                }
+                Some("SAME_LOWER") => {
+                    // input and output same size, excess on lower side of dim
+                    calculate_auto_padding(graph, conv_rank, input, filter, strides, dilations, false)?
+                }
+                Some("VALID") => {
+                    // no padding
+                    vec![0; strides.len()]
+                }
+                Some(auto_pad) => return Err(OnnxError::InvalidAutoPadValue(node.to_owned(), auto_pad.to_owned()))
+            };
 
             let filter_shape = graph[filter]
                 .shape
@@ -157,12 +179,11 @@ fn visit_node(
             });
 
             assert_eq!(1, groups);
-            let conv_rank = kernel_shape.len();
 
             let result = match conv_rank {
                 1 => {
                     let kernel_size0 = unwrap_1(kernel_shape);
-                    let [padding_0, padding_1] = unwrap_2(padding);
+                    let [padding_0, padding_1] = unwrap_2(&padding);
                     let stride = unwrap_1(strides);
                     let dilation = unwrap_1(dilations);
 
@@ -185,13 +206,13 @@ fn visit_node(
                 }
                 2 => {
                     let [kernel_h0, kernel_w0] = unwrap_2(kernel_shape);
-                    let [padding_y0, padding_x0, padding_y1, padding_x1] = unwrap_4(padding);
+                    let [padding_y0, padding_x0, padding_y1, padding_x1] = unwrap_4(&padding);
                     let [stride_y, stride_x] = unwrap_2(strides);
                     let [dilation_y, dilation_x] = unwrap_2(dilations);
 
                     let [_, _, kernel_h1, kernel_w1] = filter_shape.unwrap_4();
 
-                    assert!(padding_y0 == padding_y1 && padding_x0 == padding_x1 && padding_y0 == padding_x0);
+                    assert!(padding_y0 == padding_y1 && padding_x0 == padding_x1);
                     assert!(dilation_y == 1 && dilation_x == 1);
                     assert!(kernel_h1 == kernel_h0 && kernel_w1 == kernel_w0);
 
@@ -989,6 +1010,35 @@ fn visit_node(
     };
 
     Ok(result)
+}
+
+fn calculate_auto_padding(graph: &Graph, conv_rank: usize, input: Value, filter: Value, strides: &[i64], dilations: &[i64], up: bool) -> OnnxResult<Vec<i64>> {
+    let (_, input_spatial_dims) = graph[input].shape.split(2);
+    let input_spatial_dims = input_spatial_dims.unwrap_fixed("conv input spatial dims");
+
+    let (_, filter_spatial_dims) = graph[filter].shape.split(2);
+    let filter_spatial_dims = filter_spatial_dims.unwrap_fixed("conv filter spatial dims");
+
+    let mut result = vec![];
+    for i in 0..conv_rank {
+        let (low, high) = split_padding(input_spatial_dims.dims[i] as i64, filter_spatial_dims.dims[i] as i64, strides[i], dilations[i], up);
+        result.push(low);
+        result.push(high);
+    }
+    Ok(result)
+}
+
+fn split_padding(i: i64, f: i64, s: i64, d: i64, up: bool) -> (i64, i64) {
+    let total = (i - 1) * s + 1 + d * (f - 1) - i;
+
+    let min = total / 2;
+    let max = total - min;
+
+    if up {
+        (min, max)
+    } else {
+        (max, min)
+    }
 }
 
 fn define_tensor_data(
