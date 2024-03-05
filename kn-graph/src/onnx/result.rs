@@ -7,6 +7,7 @@ use crate::onnx::load::OnnxDimValue;
 use crate::onnx::proto::attribute_proto::AttributeType;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::typed_value::AsShapeError;
+use crate::shape::Shape;
 
 pub type OnnxResult<T> = Result<T, OnnxError>;
 
@@ -54,7 +55,8 @@ pub enum OnnxError {
     ExpectedSizeError(AsShapeError),
 
     InvalidAutoPadValue(Node, String),
-    DifferentPadding(Node, usize, i64, i64)
+    DifferentPadding(Node, usize, i64, i64),
+    NonDividingPooling(Node, Shape, Vec<i64>),
 }
 
 impl From<AsShapeError> for OnnxError {

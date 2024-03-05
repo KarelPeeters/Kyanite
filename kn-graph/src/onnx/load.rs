@@ -941,6 +941,49 @@ fn visit_node(
 
             OnnxValue::Value(result_shaped)
         }
+        "MaxPool" => {
+            let input = inputs.required(0)?.unwrap_value().unwrap();
+
+            let strides = attrs.take_ints("strides")?;
+            let kernel_shape = attrs.take_ints("kernel_shape")?;
+            let pads = attrs.take_ints("pads")?;
+            let auto_pad = attrs.maybe_take_string("auto_pad")?;
+
+            assert_eq!(strides, kernel_shape, "Real strides not supported yet");
+            assert_eq!(pads, &vec![0; pads.len()], "Padding not supported yet");
+            assert!(matches!(auto_pad, None | Some("NOTSET")), "Auto padding not supported yet");
+
+            // max pool the last N dimensions:
+            // split each pooled axis into (input_size/kernel_size, kernel_size), then max pool over all kernel sizes
+
+            let input_shape = &graph[input].shape;
+            let input_rank = input_shape.rank();
+            let kernel_rank = kernel_shape.len();
+
+            // calculate reshaped shape
+            let (batch_shape, active_shape) = input_shape.split(input_rank - kernel_rank);
+            let mut reshape = batch_shape.dims.clone();
+            let mut pooled_dims = vec![];
+            for i in 0..kernel_rank {
+                let kernel_size = Size::fixed(kernel_shape[i] as usize);
+                let active_size = active_shape.dims[i];
+
+                // TODO support non-dividing cases
+                let left = (active_size / kernel_size)
+                    .ok_or_else(|| OnnxError::NonDividingPooling(node.to_owned(), input_shape.clone(), kernel_shape.to_vec()))?;
+
+                reshape.push(left);
+                pooled_dims.push(reshape.len());
+                reshape.push(kernel_size);
+            }
+            let reshape = Shape::new(reshape);
+
+            // reshape and pool
+            let mid = graph.view(input, reshape);
+            let result = graph.reduce(mid, pooled_dims, ReduceOp::Max);
+
+            OnnxValue::Value(result)
+        }
         "Resize" => {
             // operands
             let input = inputs.required(0)?;
