@@ -1739,15 +1739,18 @@ impl ReduceOp {
         ReduceOp::Max,
     ];
 
-    pub fn identity<T: IntoDScalar>(self) -> T {
-        let specials = T::DTYPE.specials();
-        let result = match self {
+    pub fn identity(self, dtype: DType) -> DScalar {
+        let specials = dtype.specials();
+        match self {
             ReduceOp::Sum | ReduceOp::Mean => specials.zero,
             ReduceOp::Prod => specials.one,
             ReduceOp::Min => specials.max,
             ReduceOp::Max => specials.min,
-        };
-        T::from_dscalar(result).unwrap()
+        }
+    }
+
+    pub fn identity_t<T: IntoDScalar>(self) -> T {
+        T::from_dscalar(self.identity(T::DTYPE)).unwrap()
     }
 
     pub fn operation(self) -> (BinaryOp, bool) {
@@ -1764,7 +1767,7 @@ impl ReduceOp {
         let (op, is_mean) = self.operation();
 
         let mut count = 0;
-        let total = seq.into_iter().fold(self.identity(), |acc, x| {
+        let total = seq.into_iter().fold(self.identity_t(), |acc, x| {
             count += 1;
             op.map_t(acc, x)
         });

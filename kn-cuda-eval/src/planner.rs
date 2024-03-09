@@ -481,7 +481,7 @@ impl<'a> Planner<'a> {
                 let input = self.visit(input)?;
                 let output = self.alloc_tensor_shared(result_shape, result_dtype, Some(value));
 
-                let identity = op.identity();
+                let identity = op.identity_t();
                 let (operation, is_mean) = op.operation();
 
                 let post_process = if is_mean {

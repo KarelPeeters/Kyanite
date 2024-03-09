@@ -22,7 +22,7 @@ use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{OnnxValue, SignedSize};
 use crate::shape;
-use crate::shape::{Shape, Size};
+use crate::shape::{DivResult, Shape, Size};
 
 // TODO we should switch to taking an extra `HashMap<String, Size>` parameter,
 //   so the user can decide which named axes match to what size or even the batch size
@@ -947,6 +947,7 @@ fn visit_node(
             let strides = attrs.take_ints("strides")?;
             let kernel_shape = attrs.take_ints("kernel_shape")?;
             let pads = attrs.take_ints("pads")?;
+            let ceil_mode = attrs.maybe_take_int("ceil_mode")?.unwrap_or(0) != 0;
             let auto_pad = attrs.maybe_take_string("auto_pad")?;
 
             assert_eq!(strides, kernel_shape, "Real strides not supported yet");
@@ -955,32 +956,68 @@ fn visit_node(
 
             // max pool the last N dimensions:
             // split each pooled axis into (input_size/kernel_size, kernel_size), then max pool over all kernel sizes
-
-            let input_shape = &graph[input].shape;
-            let input_rank = input_shape.rank();
+            let raw_input_shape = &graph[input].shape;
+            let input_rank = raw_input_shape.rank();
             let kernel_rank = kernel_shape.len();
 
-            // calculate reshaped shape
-            let (batch_shape, active_shape) = input_shape.split(input_rank - kernel_rank);
+            let kept_rank = input_rank - kernel_rank;
+            let (batch_shape, active_shape) = raw_input_shape.split(kept_rank);
+
+            // calculate padding and reshaping
+            let mut pad_amounts = vec![(0, 0); kept_rank];
             let mut reshape = batch_shape.dims.clone();
             let mut pooled_dims = vec![];
+            let mut slices = vec![None; kept_rank];
+
             for i in 0..kernel_rank {
-                let kernel_size = Size::fixed(kernel_shape[i] as usize);
-                let active_size = active_shape.dims[i];
+                let kernel_size = kernel_shape[i] as usize;
+                let input_size = active_shape.dims[i];
 
-                // TODO support non-dividing cases
-                let left = (active_size / kernel_size)
-                    .ok_or_else(|| OnnxError::NonDividingPooling(node.to_owned(), input_shape.clone(), kernel_shape.to_vec()))?;
+                let div_rem = input_size.div_rem(kernel_size);
+                let (left, pad, slice) = match div_rem {
+                    DivResult::Exact(left) => {
+                        (left, (0, 0), None)
+                    }
+                    DivResult::Remainder(rem) => {
+                        if ceil_mode {
+                            let pad = kernel_size - rem;
+                            let left = ((input_size + pad).unwrap() / kernel_size).unwrap();
+                            (left, (0, pad), None)
+                        } else {
+                            let left = ((input_size - rem).unwrap() / kernel_size).unwrap();
+                            let end = left.unwrap_fixed("pool dim size") * kernel_size;
+                            let slice = SliceRange::new(0, end, 1);
+                            (left, (0, 0), Some(slice))
+                        }
+                    },
+                    DivResult::Impossible => {
+                        return Err(OnnxError::NonDividingPooling(node.to_owned(), raw_input_shape.clone(), kernel_shape.to_vec()));
+                    }
+                };
 
+                pad_amounts.push(pad);
                 reshape.push(left);
                 pooled_dims.push(reshape.len());
-                reshape.push(kernel_size);
+                reshape.push(Size::fixed(kernel_size));
+                slices.push(slice);
             }
             let reshape = Shape::new(reshape);
 
-            // reshape and pool
-            let mid = graph.view(input, reshape);
-            let result = graph.reduce(mid, pooled_dims, ReduceOp::Max);
+            let operation = ReduceOp::Max;
+            let pad_value = operation.identity(graph[input].dtype);
+
+            // add to graph
+            let pad_value = graph.scalar_dyn(pad_value);
+            let padded = graph.pad(input, &pad_amounts, pad_value);
+            let sliced = slices.iter().enumerate().fold(padded, |a, (i, &s)| {
+                if let Some(s) = s {
+                    graph.slice(a, i, s)
+                } else {
+                    a
+                }
+            });
+            let reshaped = graph.view(sliced, reshape);
+            let result = graph.reduce(reshaped, pooled_dims, operation);
 
             OnnxValue::Value(result)
         }

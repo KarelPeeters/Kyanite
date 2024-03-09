@@ -224,6 +224,13 @@ impl From<usize> for Size {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum DivResult {
+    Exact(Size),
+    Remainder(usize),
+    Impossible,
+}
+
 impl Size {
     pub const ZERO: Size = Size::new(0, 0);
     pub const ONE: Size = Size::new(0, 1);
@@ -287,6 +294,21 @@ impl Size {
             None
         } else {
             Some(Size::new(
+                self.batch_exp - rhs.batch_exp,
+                self.fixed_factor / rhs.fixed_factor,
+            ))
+        }
+    }
+
+    pub fn div_rem(self, rhs: impl Into<Size>) -> DivResult {
+        let rhs = rhs.into();
+        let fixed_rem = self.fixed_factor % rhs.fixed_factor;
+        if self.batch_exp < rhs.batch_exp {
+            DivResult::Impossible
+        } else if fixed_rem != 0 {
+            DivResult::Remainder(fixed_rem)
+        } else {
+            DivResult::Exact(Size::new(
                 self.batch_exp - rhs.batch_exp,
                 self.fixed_factor / rhs.fixed_factor,
             ))
@@ -445,14 +467,21 @@ impl<R: Into<Size>> std::ops::Div<R> for Size {
     type Output = Option<Size>;
 
     fn div(self, rhs: R) -> Self::Output {
-        let rhs = rhs.into();
-        if self.batch_exp < rhs.batch_exp || self.fixed_factor % rhs.fixed_factor != 0 {
-            None
-        } else {
-            Some(Size::new(
-                self.batch_exp - rhs.batch_exp,
-                self.fixed_factor / rhs.fixed_factor,
-            ))
+        match self.div_rem(rhs) {
+            DivResult::Exact(s) => Some(s),
+            DivResult::Remainder(_) | DivResult::Impossible => None,
+        }
+    }
+}
+
+impl<R: Into<Size>> std::ops::Rem<R> for Size {
+    type Output = Option<usize>;
+
+    fn rem(self, rhs: R) -> Self::Output {
+        match self.div_rem(rhs) {
+            DivResult::Exact(_) => Some(0),
+            DivResult::Remainder(r) => Some(r),
+            DivResult::Impossible => None,
         }
     }
 }
