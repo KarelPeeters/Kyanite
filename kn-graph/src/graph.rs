@@ -904,8 +904,6 @@ impl Graph {
         base_shape: Option<Shape>,
         dtype: Option<DType>,
     ) -> Value {
-        // TODO also remove empty inputs from the list of operands
-        // TODO skip concat entirely if there is only a single nonempty input
         // TODO skip entire operation if the output is empty (generalize this to all operations?)
 
         let base_shape = base_shape.unwrap_or_else(|| {
@@ -940,13 +938,37 @@ impl Graph {
                 panic!("Could not add all concatenation sizes: {:?}", input_shapes);
             });
 
-        // skip operation if there is only a single input (only after shape and type checking)
+        let result_shape = base_shape.replace(axis, shape![size_along_axis]);
+
+        // drop empty inputs
+        let mut inputs = inputs;
+        inputs.retain(|&x| self[x].shape.size() != Size::ZERO);
+
+        // skip operation if there is only a single non-empty input
         if inputs.len() == 1 {
             return inputs[0];
         }
 
-        let result_shape = base_shape.replace(axis, shape![size_along_axis]);
         self.push(result_shape, dtype, Operation::Concat { inputs, axis })
+    }
+
+    /// Pad `input` with the given `padding` along each axis using the given `value`.
+    /// Each padding is a pair of `(before, after)` values.
+    pub fn pad(&mut self, input: Value, pad_amount: &[(usize, usize)], pad_value: Value) -> Value {
+        let (input_shape, dtype) = self.shape_dtype(input);
+        let (pad_value_shape, pad_value_dtype) = self.shape_dtype(pad_value);
+
+        assert_eq!(input_shape.rank(), pad_amount.len(), "Padding length must match input rank");
+        assert_eq!(dtype, pad_value_dtype, "Padding value dtype must match input dtype");
+        assert_eq!(pad_value_shape, &Shape::SCALAR, "Padding value must be scalar");
+
+        // implemented using a bunch of concatenations
+        pad_amount.iter().enumerate().fold(input, |curr, (i, &(before, after))| {
+            let curr_shape = self[curr].shape.clone();
+            let before = self.broadcast(pad_value, curr_shape.replace(i, shape![before]));
+            let after = self.broadcast(pad_value, curr_shape.replace(i, shape![after]));
+            self.concat(vec![before, curr, after], i, None, None)
+        })
     }
 
     /// Apply 2D convolution.

@@ -1,7 +1,7 @@
 use decorum::Total;
 use itertools::Itertools;
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
 use kn_graph::dtype::{DTensor, DType};
 use kn_graph::graph::{BinaryOp, Graph, Operation, ReduceOp, SliceRange, UnaryOp, Value};
@@ -696,6 +696,19 @@ fn concat() {
 
     let result = graph.concat(vec![a, b, c], 1, None, None);
     graph.output(result);
+
+    test_all(&graph, 0, &[], None);
+}
+
+#[test]
+fn pad() {
+    let mut graph = Graph::new();
+
+    let a = graph.constant::<f32>(shape![2, 3, 4], linspace_vec(2 * 3 * 4));
+
+    let zero = graph.scalar(0f32);
+    let b = graph.pad(a, &[(0, 0), (1, 2), (2, 0)], zero);
+    graph.output(b);
 
     test_all(&graph, 0, &[], None);
 }
