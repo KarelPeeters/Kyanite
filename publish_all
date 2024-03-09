@@ -1,5 +1,2 @@
 set -e
-cargo publish -p kn-graph
-cargo publish -p kn-cuda-sys
-cargo publish -p kn-cuda-eval
-cargo publish -p kn-runtime
+cargo publish -p kn-graph && cargo publish -p kn-cuda-sys && cargo publish -p kn-cuda-eval && cargo publish -p kn-runtime
