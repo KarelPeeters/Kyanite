@@ -941,7 +941,13 @@ fn visit_node(
 
             OnnxValue::Value(result_shaped)
         }
-        "MaxPool" => {
+        "MaxPool" | "AveragePool" => {
+            let op = match node.op_type {
+                "MaxPool" => ReduceOp::Max,
+                "AveragePool" => ReduceOp::Mean,
+                _ => unreachable!(),
+            };
+
             let input = inputs.required(0)?.unwrap_value().unwrap();
 
             let strides = attrs.take_ints("strides")?;
@@ -1003,8 +1009,7 @@ fn visit_node(
             }
             let reshape = Shape::new(reshape);
 
-            let operation = ReduceOp::Max;
-            let pad_value = operation.identity(graph[input].dtype);
+            let pad_value = op.identity(graph[input].dtype);
 
             // add to graph
             let pad_value = graph.scalar_dyn(pad_value);
@@ -1017,7 +1022,27 @@ fn visit_node(
                 }
             });
             let reshaped = graph.view(sliced, reshape);
-            let result = graph.reduce(reshaped, pooled_dims, operation);
+            let result = graph.reduce(reshaped, pooled_dims, op);
+
+            OnnxValue::Value(result)
+        }
+        "GlobalMaxPool" | "GlobalAveragePool" => {
+            let op = match node.op_type {
+                "GlobalMaxPool" => ReduceOp::Max,
+                "GlobalAveragePool" => ReduceOp::Mean,
+                _ => unreachable!(),
+            };
+
+            let input = inputs.required(0)?.unwrap_value().unwrap();
+
+            // pool the channel dimension
+            let shape = &graph[input].shape;
+            if shape.rank() < 2 {
+                return Err(OnnxError::UnsupportedShape(node.to_owned(), shape.to_string()));
+            }
+
+            let axes = (2..shape.rank()).collect_vec();
+            let result = graph.reduce(input, axes, op);
 
             OnnxValue::Value(result)
         }
