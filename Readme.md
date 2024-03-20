@@ -27,7 +27,8 @@
 
 ## Overview
 
-A neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on Nvidia GPUs using
+Kyanite is a neural network inference library, written in/for Rust. It can run ONNX files either on the CPU or on Nvidia
+GPUs using
 cuda/cudnn/cublas.
 
 It is general enough to run all kinds of networks, it has been tested with:
@@ -123,7 +124,7 @@ See [the docs](https://docs.rs/kn-graph/latest/kn_graph/graph/enum.Operation.htm
 operations.
 
 The graph can be constructed directly in code using
-the [graph builder API](https://docs.rs/kn-graph/0.2.1/kn_graph/graph/struct.Graph.html), but for convenience, an ONNX
+the [graph builder API](https://docs.rs/kn-graph/latest/kn_graph/graph/struct.Graph.html), but for convenience, an ONNX
 loader exists. It can read ONNX files and convert the supported subset of operations into those supported by the IR.
 
 Because the graph IR is much more orthogonal than the ONNX specification, many ONNX operations are decomposed into
