@@ -550,6 +550,14 @@ impl DTensor {
         map_dtensor!(self, |inner| inner.reshape(shape).into_dyn())
     }
 
+    pub fn single(&self) -> Option<DScalar> {
+        if self.len() == 1 {
+            Some(dispatch_dtensor!(self, |_T, _f, inner| inner.iter().next().unwrap().to_dscalar()))
+        } else {
+            None
+        }
+    }
+
     // TODO generic unwrap function?
     pub fn unwrap_f32(&self) -> Option<&Tensor<f32>> {
         match self {

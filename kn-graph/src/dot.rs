@@ -47,8 +47,8 @@ pub fn graph_to_dot(mut f: impl Write, graph: &Graph, hide_const: bool, show_ids
             Operation::Input { index } => ("gray", "Input", vec![("index", format!("{}", index))]),
             Operation::Constant { ref tensor } => {
                 let mut attrs = vec![];
-                if tensor.len() == 1 {
-                    attrs.push(("value", format!("{:?}", tensor)));
+                if let Some(single) = tensor.single() {
+                    attrs.push(("value", format!("{:?}", single)));
                 }
                 ("gray", "Constant", attrs)
             }
