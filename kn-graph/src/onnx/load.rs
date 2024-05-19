@@ -469,6 +469,11 @@ fn visit_node(
 
             let epsilon = attrs.take_float("epsilon")?;
             let _ = attrs.take_float("momentum")?;
+            let spatial = attrs.maybe_take_int("spatial")?;
+            assert!(
+                spatial == None || spatial == Some(1),
+                "non-spatial cases are not supported and have been deprecated since ONNX version 9"
+            );
 
             // figure out the shapes
             let input_shape = &graph[input].shape;
