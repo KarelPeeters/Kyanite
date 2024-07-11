@@ -17,6 +17,7 @@ pub struct Node<S = String> {
     pub op_type: S,
 }
 
+// TODO remove variants that are never constructed
 #[derive(Debug)]
 pub enum OnnxError {
     IO(PathBuf, io::Error),
@@ -39,7 +40,6 @@ pub enum OnnxError {
 
     UnsupportedOperation(Node),
 
-    UnsupportedMultipleOutputs(Node, Vec<String>),
     UnsupportedNonFloatOutput(String),
     UnsupportedType(String, DataType),
 
