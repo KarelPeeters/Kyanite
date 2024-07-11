@@ -778,30 +778,37 @@ fn visit_node(
                 axes
             );
 
+            // TODO properly clamp ends (and follow all of the other slicing rules, there are a lot of them)
             let input_shape = input.shape(graph);
 
             (0..slice_rank).fold(input.clone(), |curr, i| {
                 let axis = abs_axis(axes[i], input_shape.rank());
-                let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
+                let axis_size = input_shape[axis].try_unwrap_fixed();
 
                 let step = steps[i];
                 assert_ne!(step, 0, "Step cannot be 0");
 
                 if step > 0 {
-                    let start = abs_axis(starts[i], axis_size);
-                    let end = abs_axis(ends[i], axis_size);
+                    // allow slicing the entire batch axis which is effectively just skipping
+                    if axis_size.is_none() && starts[i] == 0 && ends[i] == i32::MAX as i64 {
+                        curr
+                    } else {
+                        let axis_size = input_shape[axis].unwrap_fixed("Slice axis size");
+                        let start = abs_axis(starts[i], axis_size);
+                        let end = abs_axis(ends[i], axis_size);
 
-                    let range = SliceRange::new(start, end, step as usize);
+                        let range = SliceRange::new(start, end, step as usize);
 
-                    // slice
-                    match curr {
-                        OnnxValue::Value(curr) => OnnxValue::Value(graph.slice(curr, axis, range)),
-                        OnnxValue::Size(curr) => OnnxValue::Size(cpu_slice(&curr, axis, range)),
+                        // slice
+                        match curr {
+                            OnnxValue::Value(curr) => OnnxValue::Value(graph.slice(curr, axis, range)),
+                            OnnxValue::Size(curr) => OnnxValue::Size(cpu_slice(&curr, axis, range)),
+                        }
                     }
                 } else {
                     // TODO support all negative strides?
                     assert!(
-                        starts[i] == -1 && ends[i] == i64::MIN && steps[i] == -1,
+                        starts[i] == -1 && ends[i] == i64::MIN && step == -1,
                         "Only simple flip negative stride supported for now"
                     );
 
