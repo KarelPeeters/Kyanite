@@ -183,6 +183,7 @@ pub enum UnaryOp {
     Tanh,
     Erf,
     Mish,
+    Softplus,
 
     /// Cast to a different type.
     /// When possible the value is preserved or at least approximated.
@@ -1606,6 +1607,7 @@ impl UnaryOp {
         UnaryOp::Tanh,
         UnaryOp::Erf,
         UnaryOp::Mish,
+        UnaryOp::Softplus,
     ];
 
     pub fn output_dtype(self, x: DType) -> Option<DType> {
@@ -1625,7 +1627,8 @@ impl UnaryOp {
             | UnaryOp::Sigmoid
             | UnaryOp::Tanh
             | UnaryOp::Erf
-            | UnaryOp::Mish => {
+            | UnaryOp::Mish
+            | UnaryOp::Softplus => {
                 if x.is_float() {
                     Some(x)
                 } else {
@@ -1692,6 +1695,7 @@ impl UnaryOp {
             UnaryOp::Tanh => map_float!(x, |x| x.tanh()),
             UnaryOp::Erf => map_float!(x, |x| erf(x as f64) as _),
             UnaryOp::Mish => map_float!(x, |x| x * (x.exp().ln_1p().tanh())),
+            UnaryOp::Softplus => map_float!(x, |x| (-x.abs()).exp().ln_1p() + x.max(0.0)),
             UnaryOp::ValueCast(to) => x.value_cast(to),
             UnaryOp::BitCast(to) => x.bit_cast(to).unwrap(),
         };

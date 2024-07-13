@@ -1127,6 +1127,8 @@ fn binary_op_str(op: BinaryOp, a: &str, b: &str) -> String {
     }
 }
 
+// TODO use f or p suffix depending on float type
+// TODO avoid duplicate expression when operand is used twice
 fn unary_op_str(op: UnaryOp, x: &str) -> String {
     match op {
         UnaryOp::Abs => format!("fabs({})", x),
@@ -1139,8 +1141,9 @@ fn unary_op_str(op: UnaryOp, x: &str) -> String {
         UnaryOp::Sigmoid => format!("1.0 / (1.0 + exp(-({})))", x),
         UnaryOp::Tanh => format!("tanh({})", x),
         UnaryOp::Erf => format!("erff({})", x),
-        UnaryOp::Mish => format!("({}) * tanh(log(1.0 + exp({})))", x, x),
+        UnaryOp::Mish => format!("({}) * tanh(log1p(exp({})))", x, x),
         UnaryOp::ValueCast(to) => format!("(({}) {})", to.as_c_str(), x),
         UnaryOp::BitCast(to) => format!("bit_cast<{}>({})", to.as_c_str(), x),
+        UnaryOp::Softplus => format!("log1p(exp(-fabs({}))) + fmax(({}), 0)", x, x),
     }
 }

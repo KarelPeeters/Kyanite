@@ -256,7 +256,7 @@ fn visit_node(
 
             OnnxValue::Value(result)
         }
-        "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" | "Erf" => {
+        "Abs" | "Neg" | "Sin" | "Cos" | "Exp" | "Log" | "Sqrt" | "Sigmoid" | "Relu" | "Tanh" | "Erf" | "Mish" | "Softplus" => {
             let input = inputs.required(0)?.unwrap_value().unwrap();
 
             let result = match node.op_type {
@@ -271,7 +271,8 @@ fn visit_node(
                 "Relu" => graph.relu(input),
                 "Tanh" => graph.unary(UnaryOp::Tanh, input),
                 "Erf" => graph.unary(UnaryOp::Erf, input),
-                _ => unreachable!(),
+                "Softplus" => graph.unary(UnaryOp::Softplus, input),
+                _ => unreachable!("missing {:?}", node.op_type),
             };
 
             OnnxValue::Value(result)
@@ -285,7 +286,7 @@ fn visit_node(
                 "Min" => BinaryOp::Min,
                 "Max" => BinaryOp::Max,
                 "Pow" => BinaryOp::Pow,
-                _ => unreachable!(),
+                _ => unreachable!("missing {:?}", node.op_type),
             };
 
             let left = inputs.required(0)?;
@@ -509,32 +510,60 @@ fn visit_node(
 
             OnnxValue::Value(result)
         }
-        "InstanceNormalization" => {
-            let input = inputs.required(0)?.unwrap_value().unwrap();
-            let scale = inputs.required(1)?.unwrap_value().unwrap();
-            let bias = inputs.required(2)?.unwrap_value().unwrap();
-            let epsilon = attrs.take_float("epsilon")?;
+        "InstanceNormalization" | "LayerNormalization" => {
+            let (input, start_axis, epsilon, scale_bias) = match node.op_type {
+                "InstanceNormalization" => {
+                    let input = inputs.required(0)?.unwrap_value().unwrap();
+                    let scale = inputs.required(1)?.unwrap_value().unwrap();
+                    let bias = inputs.required(2)?.unwrap_value().unwrap();
+                    let epsilon = attrs.take_float("epsilon")?;
+
+                    let broadcast_shape = graph[input].shape.keep(1, Size::ONE);
+                    let scale_broadcast = graph.view(scale, broadcast_shape.clone());
+                    let bias_broadcast = graph.view(bias, broadcast_shape);
+
+                    (input, 2, epsilon, Some((scale_broadcast, bias_broadcast)))
+                },
+                "LayerNormalization" => {
+                    let input = inputs.required(0)?.unwrap_value().unwrap();
+                    let scale = inputs.required(1)?.unwrap_value().unwrap();
+                    let bias = inputs.required(2)?.unwrap_value().unwrap();
+                    let axis = attrs.maybe_take_int("axis")?.unwrap_or(-1);
+                    let epsilon = attrs.maybe_take_float("epsilon")?.unwrap_or(1e-05);
+
+                    let input_shape = graph[input].shape.clone();
+                    let scale_broadcast = graph.broadcast(scale, input_shape.clone());
+                    let bias_broadcast = graph.broadcast(bias, input_shape);
+
+                    let axis = abs_axis(axis, graph[input].shape.rank());
+
+                    (input, axis, epsilon, Some((scale_broadcast, bias_broadcast)))
+                },
+                _ => unreachable!("missing {:?}", node.op_type)
+            };
 
             let shape = graph[input].shape.clone();
             assert!(
-                shape.rank() >= 2,
-                "Input rank must be >= 2, for the the batch and channel axes, got {}",
+                shape.rank() >= start_axis,
+                "Input rank must be >= {} (the start axis), for the the batch and channel axes, got {}",
+                start_axis,
                 shape
             );
 
-            let rest_size = shape.dims[2..].iter().copied().product::<Size>();
-            let flat_shape = shape![shape[0], shape[1], rest_size];
-            let broadcast_shape = shape.keep(1, Size::ONE);
+            let (shape_keep, shape_reduced) = shape.split(start_axis);
+            let shape_flat = shape_keep.concat(&shape![shape_reduced.size()]);
 
-            let flat = graph.view(input, flat_shape);
-            let norm_flat = graph.layernorm(flat, 2, epsilon);
+            let input_flat = graph.view(input, shape_flat);
+            let norm_flat = graph.layernorm(input_flat, start_axis, epsilon);
             let norm = graph.view(norm_flat, shape);
 
-            let scale_broadcast = graph.view(scale, broadcast_shape.clone());
-            let bias_broadcast = graph.view(bias, broadcast_shape);
-
-            let scaled = graph.mul(norm, scale_broadcast);
-            let result = graph.add(scaled, bias_broadcast);
+            let result = if let Some((scale, bias)) = scale_bias {
+                let scaled = graph.mul(norm, scale);
+                let result = graph.add(scaled, bias);
+                result
+            } else {
+                norm
+            };
 
             OnnxValue::Value(result)
         }
@@ -845,28 +874,38 @@ fn visit_node(
         "Split" => {
             // TODO support "num_outputs" and "split" attribute/input
             let input = inputs.required(0)?;
-            let shape = input.shape(graph);
+            let split = inputs.optional(1).map(|s| s.as_shape(graph).unwrap());
 
+            let shape = input.shape(graph);
             let axis = attrs.take_int("axis")?;
             let axis = abs_axis(axis, shape.rank());
 
-            let num_outputs = 2;
-            let size = shape[axis].unwrap_fixed("Split axis length");
-
-            let len_first = (size + num_outputs - 1) / num_outputs;
+            let ranges = match split {
+                None => {
+                    // two equally sized outputs by default
+                    let len = shape[axis].unwrap_fixed("Split axis length");
+                    let num_outputs = 2;
+                    let len_first = (len + num_outputs - 1) / num_outputs;
+                    vec![SliceRange::simple(0, len_first), SliceRange::simple(len_first, len)]
+                }
+                Some(split) => {
+                    split.unwrap_fixed("split lengths").dims.iter()
+                        .scan(0, |a, s| {
+                            let start = *a;
+                            let end = start + s;
+                            *a = end;
+                            Some(SliceRange::simple(start, end))
+                        })
+                        .collect_vec()
+                }
+            };
 
             let result = match input {
                 &OnnxValue::Value(input) => {
-                    vec![
-                        OnnxValue::Value(graph.slice(input, axis, SliceRange::simple(0, len_first))),
-                        OnnxValue::Value(graph.slice(input, axis, SliceRange::simple(len_first, size))),
-                    ]
+                    ranges.iter().map(|&r| OnnxValue::Value(graph.slice(input, axis, r))).collect_vec()
                 }
                 OnnxValue::Size(input) => {
-                    vec![
-                        OnnxValue::new_size(input.slice_axis(Axis(axis), ndarray::Slice::from(..len_first)).into_owned().into_shared(), graph),
-                        OnnxValue::new_size(input.slice_axis(Axis(axis), ndarray::Slice::from(len_first..)).into_owned().into_shared(), graph),
-                    ]
+                    ranges.iter().map(|&r| OnnxValue::new_size(cpu_slice(&input, axis, r), graph)).collect_vec()
                 }
             };
 
@@ -960,7 +999,7 @@ fn visit_node(
                 "ReduceProd" => ReduceOp::Prod,
                 "ReduceMin" => ReduceOp::Min,
                 "ReduceMax" => ReduceOp::Max,
-                _ => unreachable!(),
+                _ => unreachable!("missing {:?}", node.op_type),
             };
 
             let input = inputs.required(0)?.unwrap_value().unwrap();
@@ -987,7 +1026,7 @@ fn visit_node(
             let op = match node.op_type {
                 "MaxPool" => ReduceOp::Max,
                 "AveragePool" => ReduceOp::Mean,
-                _ => unreachable!(),
+                _ => unreachable!("missing {:?}", node.op_type),
             };
 
             let input = inputs.required(0)?.unwrap_value().unwrap();
@@ -1072,7 +1111,7 @@ fn visit_node(
             let op = match node.op_type {
                 "GlobalMaxPool" => ReduceOp::Max,
                 "GlobalAveragePool" => ReduceOp::Mean,
-                _ => unreachable!(),
+                _ => unreachable!("missing {:?}", node.op_type),
             };
 
             let input = inputs.required(0)?.unwrap_value().unwrap();

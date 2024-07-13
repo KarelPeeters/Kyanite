@@ -1,8 +1,10 @@
 use kn_graph::dtype::{DTensor, IntoDScalar};
 use kn_graph::graph::{BinaryOp, Graph, UnaryOp};
-use kn_graph::shape::Shape;
+use kn_graph::shape;
+use kn_graph::shape::{Shape, Size};
 
 use crate::root::runner::{test_all, test_elementwise, test_elementwise_pair};
+use crate::root::tensor_utils::manual_tensor;
 
 #[test]
 fn unary() {
@@ -14,6 +16,24 @@ fn unary() {
             |g, a| g.unary(op, a),
         );
     }
+}
+
+#[test]
+fn unary_fixed() {
+    let graph = {
+        let mut graph = Graph::new();
+        let x = graph.input(shape![Size::BATCH], f32::DTYPE);
+        let y = graph.unary(UnaryOp::Softplus, x);
+        graph.output(y);
+        graph
+    };
+
+    let x: Vec<f32> = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+    let y: Vec<f32> = vec![0.126928, 0.313262, 0.693147, 1.313262, 2.126928];
+
+    let x = manual_tensor(x.len(), x);
+    let y = manual_tensor(y.len(), y);
+    test_all(&graph, x.len(), &[x], Some(&[y]));
 }
 
 #[test]
