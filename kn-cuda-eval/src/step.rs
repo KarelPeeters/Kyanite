@@ -34,14 +34,6 @@ pub enum Step<P> {
 }
 
 #[derive(Debug)]
-pub struct GatherArgs<P> {
-    pub input: PtrTensor<P>,
-    pub axis: usize,
-    pub indices: PtrTensor<P>,
-    pub output: PtrTensor<P>,
-}
-
-#[derive(Debug)]
 pub struct ScalarOpArgs<P> {
     pub kernel: ScalarKernel,
     pub operands: Vec<PtrTensor<P>>,
