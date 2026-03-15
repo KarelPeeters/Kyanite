@@ -11,7 +11,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.7.3"
+version = "0.7.4"
 license = "Apache-2.0 OR MIT"
 categories = ["science", "compilers"]
 keywords = ["inference", "neural-network", "gpu", "cuda", "kyanite"]
