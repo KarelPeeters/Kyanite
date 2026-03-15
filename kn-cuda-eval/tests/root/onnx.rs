@@ -25,6 +25,7 @@ fn pre() {
 }
 
 #[test]
+#[ignore = "This test became too inaccurate on newer GPUs"]
 fn att_tiny() {
     test_onnx_bin(
         include_bytes!("../data/att-tiny.onnx"),

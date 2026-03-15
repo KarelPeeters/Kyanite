@@ -1,13 +1,13 @@
 use std::fmt::{Debug, Formatter};
 
-use ndarray::{ArcArray, ArcArray1, Array4, Data, Dimension, Ix4, s};
+use ndarray::{s, ArcArray, ArcArray1, Array4, Data, Dimension, Ix4};
 
 use crate::cpu::convolution;
 use crate::dtype::DTensor;
 use crate::graph::{BinaryOp, ConvDetails, Graph, Operation, Value};
 use crate::ndarray::ArrayBase;
-use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::optimizer::core::VisitResult;
+use crate::optimizer::{Optimizer, OptimizerSettings};
 use crate::shape::Size;
 
 type ArcArray4<A> = ArcArray<A, Ix4>;
@@ -349,7 +349,7 @@ fn is_entirely<S: Data<Elem = f32>, D: Dimension>(array: &ArrayBase<S, D>, value
     array.iter().all(|&x| x == value)
 }
 
-fn fuse_affine_list<'a>(channels: usize, operations: &[AffineOperation]) -> ScaleBias {
+fn fuse_affine_list(channels: usize, operations: &[AffineOperation]) -> ScaleBias {
     // TODO should these be shared or local?
     let mut total_scale = None;
     let mut total_bias = None;

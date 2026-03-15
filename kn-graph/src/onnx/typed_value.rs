@@ -64,10 +64,10 @@ impl OnnxValue {
                 if let DTensor::I64(value) = value {
                     Ok(value.mapv(SignedSize::from_int).into_shared())
                 } else {
-                    return Err(AsShapeError::WrongType {
+                    Err(AsShapeError::WrongType {
                         expected: DType::I64,
                         actual: value.dtype(),
-                    });
+                    })
                 }
             }
             OnnxValue::Size(size) => Ok(size.clone()),
@@ -92,7 +92,7 @@ impl OnnxValue {
             .iter()
             .map(|v| v.to_size())
             .try_collect()
-            .map_err(|e| AsShapeError::Overflow(e))?;
+            .map_err(AsShapeError::Overflow)?;
         Ok(Shape::new(unsigned))
     }
 

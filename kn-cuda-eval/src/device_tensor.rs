@@ -116,11 +116,11 @@ impl DeviceTensor {
         if self.strided_shape() == other.strided_shape() && self.strided_shape().has_dense_strides() {
             // if strides are dense and match we can just do a simple memcpy
             self.ptr()
-                .copy_linear_from_device(&other.ptr(), self.strided_shape().size() * dtype.size().bytes())
+                .copy_linear_from_device(other.ptr(), self.strided_shape().size() * dtype.size().bytes())
         } else {
             // otherwise use the TensorOp restride trick
             let stream = CudaStream::new(device);
-            self.copy_from_as_scalar_op(&other).run(&stream);
+            self.copy_from_as_scalar_op(other).run(&stream);
             stream.synchronize();
         }
     }

@@ -26,7 +26,7 @@ impl StridedShape {
     pub fn new(shape: Vec<usize>, strides: Vec<isize>) -> Self {
         assert_eq!(shape.len(), strides.len(), "Shape and stride rank mismatch");
 
-        let has_simple_strides = &strides == &simple_strides(&shape);
+        let has_simple_strides = strides == simple_strides(&shape);
         let has_dense_strides = has_dense_strides(&shape, &strides);
 
         if has_simple_strides {
@@ -37,14 +37,12 @@ impl StridedShape {
             );
         }
 
-        let result = StridedShape {
+        StridedShape {
             shape,
             strides,
             has_simple_strides,
             has_dense_strides,
-        };
-
-        result
+        }
     }
 
     pub fn new_simple(shape: Vec<usize>) -> Self {
@@ -327,7 +325,7 @@ fn has_dense_strides(shape: &[usize], strides: &[isize]) -> bool {
 
 fn visit_strided_indices_impl(start: isize, shape: &[usize], strides: &[isize], f: &mut impl FnMut(isize)) {
     match shape {
-        [] => f(start as isize),
+        [] => f(start),
         [size_curr, size_rest @ ..] => {
             for i in 0..*size_curr {
                 let i_start = start + i as isize * strides[0];

@@ -5,12 +5,12 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
 use decorum::Total;
-use itertools::{Itertools, zip_eq};
+use itertools::{zip_eq, Itertools};
 use ndarray::{ArrayView, IxDyn};
 use rand::random;
 
-use crate::cpu::{OperationError, OperationResult, run_cpu_const_operation};
-use crate::dtype::{dispatch_dtensor, dispatch_dtype, DScalar, DTensor, DType, IntoDScalar, map_dscalar_pair, Tensor};
+use crate::cpu::{run_cpu_const_operation, OperationError, OperationResult};
+use crate::dtype::{dispatch_dtensor, dispatch_dtype, map_dscalar_pair, DScalar, DTensor, DType, IntoDScalar, Tensor};
 use crate::optimizer::recurse::heap_recurse;
 use crate::shape;
 use crate::shape::{Shape, Size};
@@ -251,31 +251,31 @@ impl Operation {
     }
 
     pub(crate) fn clone_map_inputs(&self, mut f: impl FnMut(Value) -> Value) -> Operation {
-        match self {
-            &Operation::Input { index } => Operation::Input { index },
-            &Operation::Constant { ref tensor } => Operation::Constant { tensor: tensor.clone() },
-            &Operation::View { input } => Operation::View { input: f(input) },
-            &Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
-            &Operation::Permute { input, ref permutation } => Operation::Permute {
+        match *self {
+            Operation::Input { index } => Operation::Input { index },
+            Operation::Constant { ref tensor } => Operation::Constant { tensor: tensor.clone() },
+            Operation::View { input } => Operation::View { input: f(input) },
+            Operation::Broadcast { input } => Operation::Broadcast { input: f(input) },
+            Operation::Permute { input, ref permutation } => Operation::Permute {
                 input: f(input),
                 permutation: permutation.clone(),
             },
-            &Operation::Slice { input, axis, range } => Operation::Slice {
+            Operation::Slice { input, axis, range } => Operation::Slice {
                 input: f(input),
                 axis,
                 range,
             },
-            &Operation::Flip { input, axis } => Operation::Flip { input: f(input), axis },
-            &Operation::Gather { input, axis, indices } => Operation::Gather {
+            Operation::Flip { input, axis } => Operation::Flip { input: f(input), axis },
+            Operation::Gather { input, axis, indices } => Operation::Gather {
                 input: f(input),
                 axis,
                 indices: f(indices),
             },
-            &Operation::Concat { ref inputs, axis } => Operation::Concat {
+            Operation::Concat { ref inputs, axis } => Operation::Concat {
                 inputs: inputs.iter().copied().map(f).collect(),
                 axis,
             },
-            &Operation::Conv {
+            Operation::Conv {
                 input,
                 filter,
                 details: conv_shape,
@@ -284,23 +284,23 @@ impl Operation {
                 filter: f(filter),
                 details: conv_shape,
             },
-            &Operation::MatMul { left, right } => Operation::MatMul {
+            Operation::MatMul { left, right } => Operation::MatMul {
                 left: f(left),
                 right: f(right),
             },
-            &Operation::Unary { input, op } => Operation::Unary { input: f(input), op },
-            &Operation::Binary { left, right, op } => Operation::Binary {
+            Operation::Unary { input, op } => Operation::Unary { input: f(input), op },
+            Operation::Binary { left, right, op } => Operation::Binary {
                 left: f(left),
                 right: f(right),
                 op,
             },
-            &Operation::Softmax { input, axis } => Operation::Softmax { input: f(input), axis },
-            &Operation::Layernorm { input, axis, eps } => Operation::Layernorm {
+            Operation::Softmax { input, axis } => Operation::Softmax { input: f(input), axis },
+            Operation::Layernorm { input, axis, eps } => Operation::Layernorm {
                 input: f(input),
                 axis,
                 eps,
             },
-            &Operation::Reduce { input, ref axes, op } => Operation::Reduce {
+            Operation::Reduce { input, ref axes, op } => Operation::Reduce {
                 input: f(input),
                 axes: axes.clone(),
                 op,
@@ -475,7 +475,7 @@ impl Graph {
 
     /// Returns whether `value` is effectively a constant with every element equal to `expected`.
     pub fn is_const_filled_with(&self, value: Value, expected: DScalar) -> bool {
-        self.as_single_const(value).map_or(false, |actual| expected == actual)
+        self.as_single_const(value) == Some(expected)
     }
 
     pub fn is_const_zero(&self, value: Value) -> bool {
@@ -512,7 +512,7 @@ impl Graph {
             } => self.as_single_const(input),
             Operation::Concat { ref inputs, axis: _ } => {
                 let f = self.as_single_const(*inputs.first()?)?;
-                inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then(|| f)
+                inputs.iter().all(|&x| self.is_const_filled_with(x, f)).then_some(f)
             }
             Operation::Unary { input, op } => Some(op.map(self.as_single_const(input)?)),
             Operation::Binary { left, right, op } => {
@@ -1432,8 +1432,8 @@ pub fn broadcast_shape_symmetric(left: &Shape, right: &Shape) -> Shape {
     let rank = max(left.rank(), right.rank());
 
     // pad with leading 1 axes
-    let left = Shape::ones(rank - left.rank()).concat(&left);
-    let right = Shape::ones(rank - right.rank()).concat(&right);
+    let left = Shape::ones(rank - left.rank()).concat(left);
+    let right = Shape::ones(rank - right.rank()).concat(right);
 
     // decide the matching axes for both
     let result = zip_eq(&left.dims, &right.dims)

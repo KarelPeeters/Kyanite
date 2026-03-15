@@ -6,16 +6,16 @@ use clap::Parser;
 use image::{ImageBuffer, Rgb, RgbImage};
 use itertools::Itertools;
 use ndarray::Axis;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 
-use kn_graph::{ndarray, shape};
 use kn_graph::dtype::{DTensor, DType, Tensor};
 use kn_graph::graph::{BinaryOp, Graph, SliceRange};
 use kn_graph::ndarray::Array;
 use kn_graph::onnx::load_graph_from_onnx_path;
 use kn_graph::optimizer::optimize_graph;
+use kn_graph::{ndarray, shape};
 use kn_runtime::Device;
 
 use crate::ndarray::{Array1, IxDyn, Slice};
@@ -385,7 +385,6 @@ mod scheduler {
             }
 
             if self.ets.len() == 1 && self.counter == 0 {
-                model_output = model_output;
                 self.cur_sample = Some(sample.clone());
             } else if self.ets.len() == 1 && self.counter == 1 {
                 model_output = ((model_output + self.ets.signed_index(-1)) / 2.0).into_shared();

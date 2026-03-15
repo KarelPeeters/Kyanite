@@ -2,10 +2,10 @@ use std::cmp::max;
 use std::time::Instant;
 
 use clap::Parser;
-use itertools::{Itertools, izip};
+use itertools::{izip, Itertools};
 
-use kn_cuda_eval::CudaDevice;
 use kn_cuda_eval::executor::CudaExecutor;
+use kn_cuda_eval::CudaDevice;
 use kn_graph::cpu::cpu_eval_graph;
 use kn_graph::graph::Graph;
 use kn_graph::onnx::load_graph_from_onnx_path;
@@ -122,7 +122,7 @@ fn profile_different_batch_sizes(device: CudaDevice, graph: &Graph) {
     for (&batch_size, &iterations) in izip!(TEST_BATCH_SIZES, TEST_BATCH_ITERATIONS) {
         println!("Testing batch size {} with {} iterations", batch_size, iterations);
 
-        let mut executor = CudaExecutor::new(device, &graph, batch_size);
+        let mut executor = CudaExecutor::new(device, graph, batch_size);
         let inputs = graph.dummy_zero_inputs(batch_size);
 
         for _ in 0..max(1, iterations / 10) {
@@ -144,7 +144,7 @@ fn profile_different_batch_sizes(device: CudaDevice, graph: &Graph) {
 }
 
 fn profile_single_batch_size_cudnn(device: CudaDevice, graph: &Graph, batch_size: usize, n: usize, skip_io: bool) {
-    let mut executor = CudaExecutor::new(device, &graph, batch_size);
+    let mut executor = CudaExecutor::new(device, graph, batch_size);
     let inputs = graph.dummy_zero_inputs(batch_size);
 
     println!("Warmup");

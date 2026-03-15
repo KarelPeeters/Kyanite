@@ -50,7 +50,7 @@ impl KernelArgs {
     }
 
     fn pad_to(&mut self, alignment: usize) {
-        while self.buffer.len() % alignment != 0 {
+        while !self.buffer.len().is_multiple_of(alignment) {
             self.buffer.push(0);
         }
     }

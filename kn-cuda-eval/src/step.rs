@@ -95,7 +95,7 @@ pub enum OperandKind {
 
 //TODO is there some way to reduce the huge amount of boilerplate here?
 impl<P> Step<P> {
-    pub fn ptr_operands(&self) -> PlanStepOperands<P> {
+    pub fn ptr_operands(&self) -> PlanStepOperands<'_, P> {
         PlanStepOperands(self)
     }
 

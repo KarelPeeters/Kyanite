@@ -4,10 +4,10 @@ use std::ops::Deref;
 use std::path::Path;
 
 use crate::graph::Graph;
-use crate::onnx::{InputShaper, OnnxDimValue};
 use crate::onnx::external_data::{ExternalDataLoader, NoExternalData, PathExternalData};
 use crate::onnx::load::graph_from_onnx_bytes;
 use crate::onnx::result::{OnnxError, OnnxResult, ToOnnxLoadResult};
+use crate::onnx::{InputShaper, OnnxDimValue};
 use crate::shape::{Shape, Size};
 
 /// Load an [ONNX](https://github.com/onnx/onnx/blob/main/docs/IR.md) graph.
@@ -15,7 +15,7 @@ use crate::shape::{Shape, Size};
 /// Many loading settings are customizable:
 /// * the source, either from a path through [Self::from_path] or from bytes through [Self::from_bytes].
 /// * whether [external data](https://github.com/onnx/onnx/blob/main/docs/ExternalData.md) is allowed,
-///     through [Self::from_path] `allow_external` or [Self::set_external_data].
+///   through [Self::from_path] `allow_external` or [Self::set_external_data].
 /// * input shape overrides (in order of priority):
 ///   * fully custom through [Self::set_input_shaper_custom]
 ///   * specific input overrides through [Self::force_input_shapes]
@@ -122,7 +122,7 @@ impl<'a> GraphLoader<'a> {
             for d in dims {
                 let d_new = match *d {
                     OnnxDimValue::Value(value) => Size::fixed(value as usize),
-                    OnnxDimValue::Param(ref param) => self.named_axes.get(param)?.clone(),
+                    OnnxDimValue::Param(ref param) => *self.named_axes.get(param)?,
                 };
                 new_dims.push(d_new);
             }

@@ -1,23 +1,23 @@
 use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
-use itertools::{Itertools, zip_eq};
-use ndarray::{Axis, azip};
+use itertools::{zip_eq, Itertools};
+use ndarray::{azip, Axis};
 use prost::Message;
 
 use crate::cpu::{cpu_flip, cpu_gather, cpu_slice};
-use crate::dtype::{DBool, dispatch_dtensor, DScalar, DTensor, DType, IntoDScalar, map_dtensor_pair, Tensor};
-use crate::graph::{
-    BinaryOp, broadcast_shape_symmetric, broadcast_tensors_symmetric, ReduceOp, SliceRange, UnaryOp, Value,
-};
+use crate::dtype::{dispatch_dtensor, map_dtensor_pair, DBool, DScalar, DTensor, DType, IntoDScalar, Tensor};
 pub use crate::graph::Graph;
+use crate::graph::{
+    broadcast_shape_symmetric, broadcast_tensors_symmetric, BinaryOp, ReduceOp, SliceRange, UnaryOp, Value,
+};
 use crate::onnx::external_data::ExternalDataLoader;
 use crate::onnx::inputs::{Attributes, Inputs};
-use crate::onnx::proto::{ModelProto, TensorProto, TypeProto};
 use crate::onnx::proto::tensor_proto::DataLocation;
 use crate::onnx::proto::tensor_proto::DataType;
 use crate::onnx::proto::tensor_shape_proto::dimension;
 use crate::onnx::proto::type_proto::Value as ProtoTypeValue;
+use crate::onnx::proto::{ModelProto, TensorProto, TypeProto};
 use crate::onnx::result::{Node, OnnxError, OnnxResult, UnwrapProto};
 use crate::onnx::store::Store;
 use crate::onnx::typed_value::{OnnxValue, SignedSize};
@@ -325,7 +325,7 @@ fn visit_node(
                 (OnnxValue::Size(left), OnnxValue::Size(right)) => {
                     // broadcast and compare
                     // TODO we consider batch and ints always not-equal, even though they theoretically could be
-                    let (left, right) = broadcast_tensors_symmetric(&left, &right);
+                    let (left, right) = broadcast_tensors_symmetric(left, right);
 
                     let result = azip!(left, right).map_collect(|l, r| DBool(l == r)).into_shared();
                     graph.constant_tensor(DTensor::Bool(result))
@@ -472,7 +472,7 @@ fn visit_node(
             let _ = attrs.take_float("momentum")?;
             let spatial = attrs.maybe_take_int("spatial")?;
             assert!(
-                spatial == None || spatial == Some(1),
+                spatial.is_none() || spatial == Some(1),
                 "non-spatial cases are not supported and have been deprecated since ONNX version 9"
             );
 
@@ -631,7 +631,7 @@ fn visit_node(
             let shape = inputs.required(1)?.as_shape(graph)?;
 
             // "Expand" is a symmetric broadcast, not just a directional one
-            let result_shape = broadcast_shape_symmetric(&input.shape(&graph), &shape);
+            let result_shape = broadcast_shape_symmetric(&input.shape(graph), &shape);
 
             match input {
                 &OnnxValue::Value(input) => OnnxValue::Value(graph.broadcast(input, result_shape)),
@@ -885,7 +885,7 @@ fn visit_node(
                     // two equally sized outputs by default
                     let len = shape[axis].unwrap_fixed("Split axis length");
                     let num_outputs = 2;
-                    let len_first = (len + num_outputs - 1) / num_outputs;
+                    let len_first = len.div_ceil(num_outputs);
                     vec![SliceRange::simple(0, len_first), SliceRange::simple(len_first, len)]
                 }
                 Some(split) => {
@@ -905,7 +905,7 @@ fn visit_node(
                     ranges.iter().map(|&r| OnnxValue::Value(graph.slice(input, axis, r))).collect_vec()
                 }
                 OnnxValue::Size(input) => {
-                    ranges.iter().map(|&r| OnnxValue::new_size(cpu_slice(&input, axis, r), graph)).collect_vec()
+                    ranges.iter().map(|&r| OnnxValue::new_size(cpu_slice(input, axis, r), graph)).collect_vec()
                 }
             };
 

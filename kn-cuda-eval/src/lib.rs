@@ -1,4 +1,6 @@
 #![warn(missing_debug_implementations)]
+#![allow(clippy::missing_safety_doc)]
+#![allow(clippy::too_many_arguments)]
 
 //! A Cuda CPU executor for neural network graphs from the `kn_graph` crate. The core type is [CudaExecutor](executor::CudaExecutor).
 //!

@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::ControlFlow;
 
-use itertools::Itertools;
+use itertools::{enumerate, Itertools};
 
 #[macro_export]
 macro_rules! shape {
@@ -166,9 +166,9 @@ impl Shape {
         self.assert_has_axis(axis);
 
         let mut dims = self.dims.clone();
-        for i in 0..self.rank() {
+        for (i, d) in enumerate(&mut dims) {
             if i != axis {
-                dims[i] = rest;
+                *d = rest;
             }
         }
         Shape::new(dims)
@@ -356,7 +356,7 @@ pub enum ShapeMismatch {
 /// * `Ok(Some(batch_size))` if the batch size can be inferred
 /// * `Ok(None)` if any batch size would fit
 /// * `Err(ShapeMismatch)` if no batch size would fit,
-/// either because there are conflicting requirements or because there is some other shape mismatch
+///   either because there are conflicting requirements or because there is some other shape mismatch
 pub fn infer_batch_size(expected: &[Shape], actual: &[ConcreteShape]) -> Result<Option<usize>, ShapeMismatch> {
     infer_batch_size_dims(
         expected.iter().flat_map(|s| s.dims.iter().copied()),
@@ -553,12 +553,11 @@ impl Display for ConcreteShape {
 
 fn fmt_shape_impl(f: &mut Formatter, dims: &[impl Display]) -> Result<(), std::fmt::Error> {
     write!(f, "(")?;
-    for i in 0..dims.len() {
+    for (i, d) in enumerate(dims) {
         if i != 0 {
             write!(f, " x ")?;
         }
-
-        write!(f, "{}", dims[i])?;
+        write!(f, "{d}")?;
     }
     write!(f, ")")?;
     Ok(())

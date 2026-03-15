@@ -6,7 +6,7 @@ use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, compile_cached_kernel, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -144,10 +144,10 @@ impl ReduceKernel {
         let threads_per_warp = 32;
 
         let threads_per_block = (threads_per_warp * warps_per_block) as u32;
-        let blocks = ceil_div((warps * threads_per_warp) as u32, threads_per_block as u32);
+        let blocks = ((warps * threads_per_warp) as u32).div_ceil(threads_per_block);
 
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, stream, &args)
             .unwrap();
     }
 }

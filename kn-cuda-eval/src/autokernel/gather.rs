@@ -5,7 +5,7 @@ use kn_cuda_sys::wrapper::status::Status;
 use kn_graph::dtype::DType;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, compile_cached_kernel, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -119,10 +119,9 @@ impl GatherKernel {
         let items = self.output_shape.size();
 
         if items != 0 {
-            let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
-
+            let blocks = (items as u32).div_ceil(items_per_thread * threads_per_block);
             self.function
-                .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+                .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, stream, &args)
                 .unwrap();
         }
     }

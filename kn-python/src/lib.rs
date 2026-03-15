@@ -2,13 +2,13 @@ use std::ops::Deref;
 
 use itertools::Itertools;
 use numpy::{PyArrayDyn, PyUntypedArray};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use pyo3::exceptions::PyTypeError;
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use kn_graph::{graph::Graph, onnx::load_graph_from_onnx_bytes};
 use kn_graph::dtype::{DBool, DTensor};
 use kn_graph::optimizer::optimize_graph;
-use kn_graph::shape::{ConcreteShape, infer_batch_size};
+use kn_graph::shape::{infer_batch_size, ConcreteShape};
+use kn_graph::{graph::Graph, onnx::load_graph_from_onnx_bytes};
 use kn_runtime::{CudaDevice, Device, PreparedGraph};
 
 #[pymodule]
@@ -101,16 +101,16 @@ fn array_to_tensor(py: Python, array: &PyUntypedArray) -> Result<DTensor, PyErr>
 
     // bool needs slightly different code
     if array.dtype().is_equiv_to(numpy::dtype::<bool>(py)) {
-        let array: &PyArrayDyn<bool> = array.downcast().unwrap();
+        let array: &PyArrayDyn<bool> = array.downcast()?;
         let view = unsafe { array.as_array() };
-        let owned = view.mapv(|x| DBool(x));
+        let owned = view.mapv(DBool);
         return Ok(DTensor::Bool(owned.into_shared()));
     }
 
     Err(PyTypeError::new_err(format!("Unsupported dtype {:?} for input tensor", array.dtype())))
 }
 
-fn tensor_to_array(py: Python, tensor: DTensor) -> &PyUntypedArray {
+fn tensor_to_array(py: Python<'_>, tensor: DTensor) -> &PyUntypedArray {
     match tensor {
         DTensor::F32(tensor) => PyArrayDyn::from_array(py, &tensor).deref(),
         DTensor::F64(tensor) => PyArrayDyn::from_array(py, &tensor).deref(),

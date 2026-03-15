@@ -65,15 +65,11 @@ pub fn fill_replacements(src: &str, replacements: &[(&str, String)]) -> String {
 }
 
 pub fn c_nested_array_string(values: &[Vec<isize>]) -> String {
-    assert!(values.len() > 0, "C array cannot be empty");
+    assert!(!values.is_empty(), "C array cannot be empty");
     format!("{{{}}}", values.iter().map(|a| c_array_string(a)).join(", "))
 }
 
 pub fn c_array_string(values: &[isize]) -> String {
-    assert!(values.len() > 0, "C array cannot be empty");
+    assert!(!values.is_empty(), "C array cannot be empty");
     format!("{{{}}}", values.iter().map(|v| v.to_string()).join(", "))
-}
-
-pub fn ceil_div(x: u32, y: u32) -> u32 {
-    (x + y - 1) / y
 }

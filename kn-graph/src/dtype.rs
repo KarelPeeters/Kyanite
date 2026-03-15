@@ -485,14 +485,14 @@ macro_rules! dispatch_dtensor_pair {
 #[macro_export]
 macro_rules! map_dtensor {
     ($outer:expr, |$inner:ident| $expr:expr) => {
-        crate::dtype::dispatch_dtensor!($outer, |_T, f, $inner| f($expr))
+        $crate::dtype::dispatch_dtensor!($outer, |_T, f, $inner| f($expr))
     };
 }
 
 #[macro_export]
 macro_rules! map_dtensor_pair {
     ($out_left:expr, $out_right:expr, |$in_left:ident, $in_right:ident| $expr:expr) => {
-        crate::dtype::dispatch_dtensor_pair!($out_left, $out_right, |_T, f, $in_left, $in_right| f($expr))
+        $crate::dtype::dispatch_dtensor_pair!($out_left, $out_right, |_T, f, $in_left, $in_right| f($expr))
     };
 }
 
@@ -500,7 +500,7 @@ macro_rules! map_dtensor_pair {
 #[macro_export]
 macro_rules! map_dscalar_pair {
     ($out_left:expr, $out_right:expr, |$in_left:ident, $in_right:ident| $expr:expr) => {{
-        use crate::dtype::{DScalar, T32};
+        use $crate::dtype::{DScalar, T32};
         
         let out_left = $out_left;
         let out_right = $out_right;

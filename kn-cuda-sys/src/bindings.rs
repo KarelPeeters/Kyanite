@@ -1,13 +1,10 @@
-#![allow(non_upper_case_globals)]
+// supress lint warnings for bindgen-generated bindings
+#![allow(clippy::all)]
 #![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-// Ignore warnings in bindgen-generated tests, see https://github.com/rust-lang/rust-bindgen/issues/1651.
-#![allow(deref_nullptr)]
+#![allow(non_upper_case_globals)]
 #![allow(missing_debug_implementations)]
-#![allow(improper_ctypes)]
-// Ignore documentation warnings, we can't fix them anyway since they come from bindgen.
-#![allow(rustdoc::all)]
-#![allow(missing_docs)]
+#![allow(non_snake_case)]
+#![allow(unnecessary_transmutes)]
 
 use std::ffi::c_void;
 

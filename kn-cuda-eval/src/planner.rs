@@ -13,7 +13,7 @@ use kn_cuda_sys::wrapper::handle::CudaDevice;
 use kn_cuda_sys::wrapper::mem::device::DevicePtr;
 use kn_cuda_sys::wrapper::operation::STANDARD_CONV_ALGO;
 use kn_graph::dispatch_dtensor;
-use kn_graph::dtype::{DisplayCFloat, DScalar, DType};
+use kn_graph::dtype::{DScalar, DType, DisplayCFloat};
 use kn_graph::graph::{BinaryOp, Graph, Operation, SliceRange, UnaryOp, Value};
 use kn_graph::optimizer::recurse::heap_recurse;
 use kn_graph::shape::{ConcreteShape, Size};
@@ -27,7 +27,10 @@ use crate::autokernel::softmax::SoftmaxKernel;
 use crate::device_tensor::DeviceTensor;
 use crate::offset_tensor::{OffsetPtr, PtrTensor};
 use crate::shape::StridedShape;
-use crate::step::{GatherOpArgs, Handles, LayernormOpArgs, Operand, OperandKind, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step, StepInfo};
+use crate::step::{
+    GatherOpArgs, Handles, LayernormOpArgs, Operand, OperandKind, ReduceOpArgs, ScalarOpArgs, SoftmaxOpArgs, Step,
+    StepInfo,
+};
 
 /// Planner converts a Graph into a concrete cuda execution plan.
 ///
@@ -111,7 +114,7 @@ type VisitResult<T> = Result<T, Value>;
 
 impl<'a> Planner<'a> {
     pub fn plan(handles: &'a Handles, graph: &'a Graph, batch_size: usize) -> Plan {
-        let mut planner = Planner::new(&handles, graph, batch_size);
+        let mut planner = Planner::new(handles, graph, batch_size);
 
         // allocate inputs (even if they're not actually used)
         let inputs = graph
@@ -183,7 +186,7 @@ impl<'a> Planner<'a> {
                     hypo_shared_bytes_peak = max(hypo_shared_bytes_peak, curr_shared_bytes);
                     hypo_shared_bytes_total += size_bytes;
 
-                    let vec = free_allocations.entry(size_bytes).or_insert_with(Vec::new);
+                    let vec = free_allocations.entry(size_bytes).or_default();
                     let ptr = vec.pop().unwrap_or_else(|| {
                         shared_bytes += size_bytes;
                         device.alloc(size_bytes)
@@ -295,9 +298,10 @@ impl<'a> Planner<'a> {
 
     fn visit(&mut self, value: Value) -> Result<PlanTensor, Value> {
         if let Some(result) = self.map.get(&value) {
-            return Ok(result.clone());
+            Ok(result.clone())
+        } else {
+            Err(value)
         }
-        return Err(value);
     }
 
     fn visit_single_cached(&mut self, value: Value) -> VisitResult<PlanTensor> {
@@ -328,7 +332,9 @@ impl<'a> Planner<'a> {
 
         let result: PlanTensor = match &result_info.operation {
             &Operation::Input { index: _ } => self.alloc_tensor_shared(result_shape, result_dtype, Some(value)),
-            Operation::Constant { tensor: WrapDebug(tensor) } => {
+            Operation::Constant {
+                tensor: WrapDebug(tensor),
+            } => {
                 let result = self.alloc_tensor_dedicated(result_shape, tensor.dtype());
 
                 // copy values
@@ -554,7 +560,7 @@ impl<'a> Planner<'a> {
     fn visit_permute(&mut self, input: Value, permutation: &[usize]) -> VisitResult<PlanTensor> {
         if self.can_fuse(input) {
             // avoid creating non-densely strided output for typical attention matmul
-            if permutation == &[1, 0, 2] {
+            if permutation == [1, 0, 2] {
                 if let &Operation::MatMul { left, right } = &self.graph[input].operation {
                     let mat_mul_result = self.visit_matmul(input, left, right, false)?;
                     self.insert_mapping(input, mat_mul_result.clone());
@@ -849,21 +855,29 @@ impl<'a> Planner<'a> {
         let result_y = self.visit_fused_scalar_recurse(value, &mut block, true)?;
         block.store_operand_y(&result, result_y);
 
-        let operands = block.operands.iter().map(|operand| {
-            let ScalarOperand { tensor, loaded_y, stored_to } = operand;
+        let operands = block
+            .operands
+            .iter()
+            .map(|operand| {
+                let ScalarOperand {
+                    tensor,
+                    loaded_y,
+                    stored_to,
+                } = operand;
 
-            let kind = match (loaded_y.is_some(), stored_to) {
-                (true, true) => OperandKind::InOut,
-                (true, false) => OperandKind::In,
-                (false, true) => OperandKind::Out,
-                (false, false) => panic!("Scalar operand needs to be either loaded or stored"),
-            };
+                let kind = match (loaded_y.is_some(), stored_to) {
+                    (true, true) => OperandKind::InOut,
+                    (true, false) => OperandKind::In,
+                    (false, true) => OperandKind::Out,
+                    (false, false) => panic!("Scalar operand needs to be either loaded or stored"),
+                };
 
-            Operand {
-                kind,
-                value: tensor.clone(),
-            }
-        }).collect_vec();
+                Operand {
+                    kind,
+                    value: tensor.clone(),
+                }
+            })
+            .collect_vec();
 
         self.plan_scalar_op(&block.operation, operands, value);
 
@@ -893,12 +907,12 @@ impl<'a> Planner<'a> {
         }
 
         let value_info = &self.graph[value];
-        let op_str = match &value_info.operation {
-            &Operation::Unary { op, input } => {
+        let op_str = match value_info.operation {
+            Operation::Unary { op, input } => {
                 let y_input = self.visit_fused_scalar_recurse(input, block, false)?;
                 unary_op_str(op, &format!("y{}", y_input))
             }
-            &Operation::Binary { op, left, right } => {
+            Operation::Binary { op, left, right } => {
                 let y_left = self.visit_fused_scalar_recurse(left, block, false)?;
                 let y_right = self.visit_fused_scalar_recurse(right, block, false)?;
                 binary_op_str(op, &format!("y{}", y_left), &format!("y{}", y_right))
@@ -934,7 +948,10 @@ impl<'a> Planner<'a> {
         // add extra axis since ironically the scalar kernel doesn't work for scalar operands
         let operand_kinds = operands.iter().map(|op| op.kind).collect_vec();
         let operands = if operands[0].value.strided_shape().rank() == 0 {
-            operands.into_iter().map(|op| op.value.view(vec![1]).unwrap()).collect_vec()
+            operands
+                .into_iter()
+                .map(|op| op.value.view(vec![1]).unwrap())
+                .collect_vec()
         } else {
             operands.into_iter().map(|op| op.value).collect_vec()
         };
@@ -949,7 +966,11 @@ impl<'a> Planner<'a> {
             .collect_vec();
         let kernel = ScalarKernel::new_for_shapes(self.device(), operation, &shapes, types);
 
-        let args = ScalarOpArgs { kernel, operands, operand_kinds };
+        let args = ScalarOpArgs {
+            kernel,
+            operands,
+            operand_kinds,
+        };
         self.push(PlanStep::ScalarOp(args), debug_value);
     }
 
@@ -1014,7 +1035,7 @@ impl ScalarBlock {
     }
 
     fn push_operand_x(&mut self, tensor: &PlanTensor) -> usize {
-        if let Some(other) = self.operands.get(0) {
+        if let Some(other) = self.operands.first() {
             assert_eq!(tensor.strided_shape().shape(), other.tensor.strided_shape().shape());
         }
 

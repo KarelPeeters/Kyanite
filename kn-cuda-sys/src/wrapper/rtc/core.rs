@@ -2,22 +2,22 @@ use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::Write;
 use std::ptr::{null, null_mut};
-use std::sync::Arc;
+use std::rc::Rc;
 
 use itertools::Itertools;
 
 use crate::bindings::{
-    CU_LAUNCH_PARAM_BUFFER_POINTER, CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END, cuLaunchKernel, cuModuleGetFunction,
-    cuModuleLoadDataEx, cuModuleUnload, CUresult, nvrtcAddNameExpression, nvrtcCompileProgram, nvrtcCreateProgram,
-    nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcGetPTX,
-    nvrtcGetPTXSize, nvrtcResult,
+    cuLaunchKernel, cuModuleGetFunction, cuModuleLoadDataEx, cuModuleUnload, nvrtcAddNameExpression,
+    nvrtcCompileProgram, nvrtcCreateProgram, nvrtcDestroyProgram, nvrtcGetLoweredName, nvrtcGetPTX, nvrtcGetPTXSize,
+    nvrtcGetProgramLog, nvrtcGetProgramLogSize, nvrtcResult, CUresult, CU_LAUNCH_PARAM_BUFFER_POINTER,
+    CU_LAUNCH_PARAM_BUFFER_SIZE, CU_LAUNCH_PARAM_END,
 };
 use crate::wrapper::handle::{CudaDevice, CudaStream};
 use crate::wrapper::status::Status;
 
 #[derive(Debug)]
 pub struct CuModule {
-    inner: Arc<CuModuleInner>,
+    inner: Rc<CuModuleInner>,
 }
 
 #[derive(Debug)]
@@ -29,8 +29,8 @@ struct CuModuleInner {
 #[derive(Debug, Clone)]
 pub struct CuFunction {
     // field is never used, but is present to keep module from being dropped
-    //   this is necessary because CUfunction points to something inside of the CUmodule structure
-    module: Arc<CuModuleInner>,
+    //   this is necessary because CUfunction points to something inside the CUmodule structure
+    module: Rc<CuModuleInner>,
     function: crate::bindings::CUfunction,
 }
 
@@ -74,7 +74,7 @@ impl CuModule {
         )
         .unwrap();
         CuModule {
-            inner: Arc::new(CuModuleInner { device, inner }),
+            inner: Rc::new(CuModuleInner { device, inner }),
         }
     }
 
@@ -107,8 +107,8 @@ impl CuModule {
 
             nvrtcCreateProgram(
                 &mut program as *mut _,
-                src_c.as_ptr() as *const i8,
-                name_c.map_or(null(), |name_c| name_c.as_ptr() as *const i8),
+                src_c.as_ptr(),
+                name_c.map_or(null(), |name_c| name_c.as_ptr()),
                 headers.len() as i32,
                 header_sources_ptr.as_ptr(),
                 header_names_ptr.as_ptr(),
@@ -137,7 +137,7 @@ impl CuModule {
                 .map(CString::new)
                 .collect::<Result<Vec<CString>, _>>()
                 .unwrap();
-            let args = args.iter().map(|s| s.as_ptr() as *const i8).collect_vec();
+            let args = args.iter().map(|s| s.as_ptr()).collect_vec();
 
             // actually compile the program
             let result = nvrtcCompileProgram(program, args.len() as i32, args.as_ptr());
@@ -207,7 +207,7 @@ impl CuModule {
             } else {
                 result.unwrap();
                 Some(CuFunction {
-                    module: Arc::clone(&self.inner),
+                    module: Rc::clone(&self.inner),
                     function,
                 })
             }
@@ -329,7 +329,7 @@ pub fn prefix_line_numbers(s: &str) -> String {
         let line_number = i + 1;
         let line_number = format!("{}", line_number);
 
-        result.extend(std::iter::repeat(' ').take(max_number_size - line_number.len()));
+        result.extend(std::iter::repeat_n(' ', max_number_size - line_number.len()));
         writeln!(&mut result, "{}| {}", line_number, line).unwrap();
     }
 

@@ -1,7 +1,14 @@
 [package]
 name = "proto-to-rust"
-version = "0.1.0"
+description = "A small binary to convert protobuf specs to Rust."
+
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+categories.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
 
 [dependencies]
-prost.workspace = true
 prost-build.workspace = true

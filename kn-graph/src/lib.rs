@@ -1,5 +1,7 @@
 #![warn(missing_debug_implementations)]
 #![allow(clippy::new_without_default)]
+#![allow(clippy::len_without_is_empty)]
+#![allow(clippy::let_and_return)]
 
 //! A neural network inference graph intermediate representation, with surrounding utilities.
 //!

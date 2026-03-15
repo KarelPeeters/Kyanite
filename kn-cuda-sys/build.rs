@@ -2,8 +2,8 @@ use std::env::VarError;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
-use bindgen::{Builder, CargoCallbacks, EnumVariation};
 use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
+use bindgen::{Builder, CargoCallbacks, EnumVariation};
 
 struct PlatformSpecific {
     fallback_paths: Vec<PathBuf>,
@@ -65,7 +65,7 @@ fn find_base_dir(platform: &PlatformSpecific) -> PathBuf {
             if !path.exists() {
                 panic!("Path {}={:?} does not exist", CUDA_PATH_VAR, path);
             }
-            return path;
+            path
         }
     }
 }

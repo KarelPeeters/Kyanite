@@ -8,7 +8,7 @@ use kn_cuda_sys::wrapper::rtc::core::{CuFunction, Dim3};
 use kn_cuda_sys::wrapper::status::Status;
 
 use crate::autokernel::common::{
-    c_array_string, c_nested_array_string, ceil_div, compile_cached_kernel, fill_replacements, KernelKey,
+    c_array_string, c_nested_array_string, compile_cached_kernel, fill_replacements, KernelKey,
 };
 use crate::device_tensor::DeviceTensor;
 use crate::shape::StridedShape;
@@ -42,7 +42,7 @@ impl ScalarKernel {
         operand_strides: Vec<Vec<isize>>,
     ) -> Self {
         // TODO try to simplify shape and operand strides if they are contiguous
-        assert!(operand_types.len() > 0);
+        assert!(!operand_types.is_empty());
         assert_eq!(operand_strides.len(), operand_types.len());
         for stride in &operand_strides {
             assert_eq!(stride.len(), inner_shape.len() + 1);
@@ -96,9 +96,9 @@ impl ScalarKernel {
         shapes: &[StridedShape],
         operand_types: Vec<String>,
     ) -> Self {
-        assert!(shapes.len() > 0);
+        assert!(!shapes.is_empty());
         let expected_shape = shapes[0].shape();
-        assert!(expected_shape.len() > 0);
+        assert!(!expected_shape.is_empty());
 
         for shape in shapes {
             assert_eq!(shape.shape(), expected_shape);
@@ -143,12 +143,11 @@ impl ScalarKernel {
         let args = args.finish();
 
         let items = batch_size * self.inner_size;
-
-        let blocks = ceil_div(items as u32, items_per_thread * threads_per_block);
+        let blocks = (items as u32).div_ceil(items_per_thread * threads_per_block);
 
         // TODO cache all of this so we just have to call launch_kernel at the end?
         self.function
-            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, &stream, &args)
+            .launch_kernel(Dim3::single(blocks), Dim3::single(threads_per_block), 0, stream, &args)
             .unwrap();
     }
 }
