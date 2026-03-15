@@ -3,15 +3,14 @@ use std::ptr::null_mut;
 
 use bytemuck::cast_slice;
 
+use crate::bindings::cudaGetDeviceProperties;
 use crate::bindings::{
     cublasCreate_v2, cublasDestroy_v2, cublasHandle_t, cublasLtCreate, cublasLtDestroy, cublasLtHandle_t,
     cublasSetStream_v2, cudaDeviceAttr, cudaDeviceGetAttribute, cudaDeviceProp, cudaEventRecord, cudaGetDevice,
-    cudaGetDeviceCount, cudaSetDevice, cudaStream_t, cudaStreamBeginCapture, cudaStreamCaptureMode,
-    cudaStreamCreate, cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudnnCreate,
+    cudaGetDeviceCount, cudaSetDevice, cudaStreamBeginCapture, cudaStreamCaptureMode, cudaStreamCreate,
+    cudaStreamDestroy, cudaStreamEndCapture, cudaStreamSynchronize, cudaStreamWaitEvent, cudaStream_t, cudnnCreate,
     cudnnDestroy, cudnnHandle_t, cudnnSetStream,
 };
-// TODO fix this annoying v2 import once https://github.com/rust-lang/rust-bindgen/issues/2544 is fixed
-use crate::bindings::cudaGetDeviceProperties_v2 as cudaGetDeviceProperties;
 use crate::wrapper::event::CudaEvent;
 use crate::wrapper::graph::CudaGraph;
 use crate::wrapper::mem::device::DevicePtr;
